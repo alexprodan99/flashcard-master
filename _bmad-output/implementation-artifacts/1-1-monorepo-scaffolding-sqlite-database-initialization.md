@@ -2,7 +2,8 @@
 title: 'Story 1.1: Monorepo Scaffolding & SQLite Database Initialization'
 type: 'feature'
 created: '2026-08-30'
-status: 'ready-for-dev'
+status: 'done'
+baseline_commit: '4c4d9efba37ff40559d0a0d674fb789a4ada5c17'
 review_loop_iteration: 0
 context:
   - _bmad-output/planning-artifacts/architecture/ARCHITECTURE-SPINE.md
@@ -59,14 +60,14 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `package.json` -- Create root monorepo config with npm workspaces and build/test scripts
-- [ ] `tsconfig.json` -- Create root TypeScript base compiler options
-- [ ] `packages/core/package.json` & `packages/core/tsconfig.json` -- Configure core package with dependencies (`better-sqlite3`, `zod`, `@types/better-sqlite3`, `vitest`)
-- [ ] `packages/core/src/storage/schema.sql` -- Define baseline SQL tables (`data_sources`, `sync_state`, `flashcards`, `app_settings`)
-- [ ] `packages/core/src/storage/db.ts` -- Implement `createDatabaseClient(dbPath?: string)` with WAL mode and schema runner
-- [ ] `packages/core/src/index.ts` -- Export storage client and types
-- [ ] `packages/core/test/db.test.ts` -- Unit tests validating in-memory and file-based SQLite database initialization
-- [ ] `packages/adapters/package.json`, `packages/cli/package.json`, `packages/web/package.json` -- Scaffold placeholder packages in the monorepo
+- [x] `package.json` -- Create root monorepo config with npm workspaces and build/test scripts
+- [x] `tsconfig.json` -- Create root TypeScript base compiler options
+- [x] `packages/core/package.json` & `packages/core/tsconfig.json` -- Configure core package with dependencies (`better-sqlite3`, `zod`, `@types/better-sqlite3`, `vitest`)
+- [x] `packages/core/src/storage/schema.sql` -- Define baseline SQL tables (`data_sources`, `sync_state`, `flashcards`, `app_settings`)
+- [x] `packages/core/src/storage/db.ts` -- Implement `createDatabaseClient(dbPath?: string)` with WAL mode and schema runner
+- [x] `packages/core/src/index.ts` -- Export storage client and types
+- [x] `packages/core/test/db.test.ts` -- Unit tests validating in-memory and file-based SQLite database initialization
+- [x] `packages/adapters/package.json`, `packages/cli/package.json`, `packages/web/package.json` -- Scaffold placeholder packages in the monorepo
 
 **Acceptance Criteria:**
 - **Given** an empty project directory
@@ -82,3 +83,32 @@ context:
 - `npm run test` (or `npm test -w @flashcard-master/core`) -- expected: Tests pass with 100% table schema validation.
 - `npm run build` -- expected: TypeScript compiles all workspace packages cleanly with exit code 0.
 
+
+
+
+
+## Suggested Review Order
+
+**Persistence & Database Layer**
+
+- SQLite database client with WAL mode and schema initialization
+  [packages/core/src/storage/db.ts#L47](../../packages/core/src/storage/db.ts#L47)
+
+- Base DDL schema defining all core relational tables and indices
+  [packages/core/src/storage/schema.sql#L1](../../packages/core/src/storage/schema.sql#L1)
+
+**Domain Models & Ports**
+
+- Core domain entities with Zod schema validation
+  [packages/core/src/domain/models.ts#L1](../../packages/core/src/domain/models.ts#L1)
+
+- IngestionStrategy, LLMProviderPort, and ExporterPort interfaces
+  [packages/core/src/ports/index.ts#L1](../../packages/core/src/ports/index.ts#L1)
+
+**Tests & Workspaces Scaffolding**
+
+- SQLite initialization and idempotency test suite
+  [packages/core/test/db.test.ts#L1](../../packages/core/test/db.test.ts#L1)
+
+- Root monorepo configuration with npm workspaces
+  [package.json#L1](../../package.json#L1)

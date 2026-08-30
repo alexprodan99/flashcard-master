@@ -1,0 +1,22 @@
+{
+  "name": "flashcard-master",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Multi-source text ingestion and grounded flashcard generator for Anki, Markdown and PDF",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "tsc --build",
+    "clean": "npm run clean --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20.12.0"
+  }
+}
