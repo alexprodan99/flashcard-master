@@ -7,5 +7,6 @@ export * from "./services/strategy-registry.js";
 export * from "./services/ingestion-service.js";
 export * from "./services/text-chunker.js";
 export * from "./services/prompt-builder.js";
+export * from "./services/grounding-guard.js";
 export * from "./services/card-generation-service.js";
 //# sourceMappingURL=index.js.map
