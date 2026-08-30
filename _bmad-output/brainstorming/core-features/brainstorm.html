@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Brainstorm Keepsake — flashcard-master</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --card-border: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #6366f1;
+      --primary-light: #818cf8;
+      --accent: #06b6d4;
+      --accent-green: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-purple: #a855f7;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 2rem 1rem;
+    }
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    header {
+      text-align: center;
+      margin-bottom: 3rem;
+      padding: 2rem;
+      background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(6, 182, 212, 0.15));
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      background: rgba(99, 102, 241, 0.2);
+      color: var(--primary-light);
+      border: 1px solid rgba(99, 102, 241, 0.4);
+      margin-bottom: 1rem;
+    }
+    h1 {
+      font-size: 2.5rem;
+      font-weight: 800;
+      background: linear-gradient(to right, #818cf8, #06b6d4);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 0.75rem;
+    }
+    .subtitle {
+      color: var(--text-muted);
+      font-size: 1.15rem;
+      max-width: 700px;
+      margin: 0 auto;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 3rem;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      transition: transform 0.2s, border-color 0.2s;
+    }
+    .card:hover {
+      transform: translateY(-4px);
+      border-color: var(--primary-light);
+    }
+    .card-icon {
+      font-size: 2rem;
+      margin-bottom: 0.75rem;
+    }
+    .card h3 {
+      font-size: 1.25rem;
+      margin-bottom: 0.5rem;
+      color: var(--primary-light);
+    }
+    .card p {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+    }
+    .card ul {
+      margin-top: 0.75rem;
+      padding-left: 1.25rem;
+      color: var(--text);
+      font-size: 0.9rem;
+    }
+    .card li { margin-bottom: 0.35rem; }
+    .interactive-section {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 2rem;
+      margin-bottom: 3rem;
+    }
+    .interactive-section h2 {
+      font-size: 1.5rem;
+      margin-bottom: 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .flashcard-preview {
+      background: #0f172a;
+      border: 1px solid #475569;
+      border-radius: 12px;
+      padding: 1.5rem;
+      max-width: 600px;
+      margin: 0 auto;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+    }
+    .flashcard-header {
+      display: flex;
+      justify-content: space-between;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      border-bottom: 1px solid #334155;
+      padding-bottom: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    .flashcard-q {
+      font-size: 1.15rem;
+      font-weight: 600;
+      color: #38bdf8;
+      margin-bottom: 1.25rem;
+    }
+    .flashcard-a {
+      background: rgba(16, 185, 129, 0.1);
+      border-left: 3px solid var(--accent-green);
+      padding: 0.75rem 1rem;
+      border-radius: 4px;
+      margin-bottom: 1rem;
+      font-size: 0.95rem;
+    }
+    .flashcard-quote {
+      background: rgba(245, 158, 11, 0.1);
+      border-left: 3px solid var(--accent-amber);
+      padding: 0.75rem 1rem;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      font-style: italic;
+      color: #fde68a;
+    }
+    .quote-label {
+      font-size: 0.75rem;
+      font-weight: bold;
+      color: var(--accent-amber);
+      text-transform: uppercase;
+      margin-bottom: 0.25rem;
+    }
+    .timeline {
+      margin-top: 2rem;
+      position: relative;
+      padding-left: 2rem;
+    }
+    .timeline::before {
+      content: '';
+      position: absolute;
+      left: 7px;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: var(--card-border);
+    }
+    .timeline-item {
+      position: relative;
+      margin-bottom: 1.5rem;
+    }
+    .timeline-dot {
+      position: absolute;
+      left: -2rem;
+      top: 4px;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--primary);
+      border: 3px solid var(--bg);
+    }
+    .timeline-content {
+      background: #0f172a;
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+    }
+    .author-tag {
+      font-size: 0.75rem;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(99, 102, 241, 0.2);
+      color: var(--primary-light);
+      font-weight: 600;
+      margin-right: 0.5rem;
+    }
+    .author-coach {
+      background: rgba(6, 182, 212, 0.2);
+      color: var(--accent);
+    }
+    footer {
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      padding: 2rem 0;
+      border-top: 1px solid var(--card-border);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="badge">BMAD Creative Partner Brainstorming</div>
+      <h1>flashcard-master</h1>
+      <p class="subtitle">Multi-Source Ingestion & Grounded Q&A Generation for Anki, Markdown & PDF</p>
+    </header>
+
+    <div class="grid">
+      <div class="card">
+        <div class="card-icon">🔌</div>
+        <h3>1. Dynamic Ingestion</h3>
+        <p>Pluggable data source engine based on Strategy Pattern & DB-backed registry.</p>
+        <ul>
+          <li>RSS feeds & Substack newsletters</li>
+          <li>Web article reader-mode extraction</li>
+          <li>Local Markdown & text documents</li>
+          <li>Incremental delta sync & GUID tracking</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-icon">🧠</div>
+        <h3>2. Grounded Q&A</h3>
+        <p>Atomic question generation with verifiable quote proof.</p>
+        <ul>
+          <li>Front/Back card format (v1)</li>
+          <li>Strict verbatim source citations</li>
+          <li>Configurable difficulty levels</li>
+          <li>Custom prompt personas (Socratic, Examiner)</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-icon">📦</div>
+        <h3>3. Multi-Target Export</h3>
+        <p>Zero-friction export into active recall environments.</p>
+        <ul>
+          <li>Anki <code>.apkg</code> packages & CSV/TSV</li>
+          <li>Direct AnkiConnect desktop live sync</li>
+          <li>Collapsible Markdown (<code>&lt;details&gt;</code>)</li>
+          <li>Printable PDF Q&A study guide</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-icon">💻</div>
+        <h3>4. Dual Interface</h3>
+        <p>Ergonomic developer CLI combined with visual local UI.</p>
+        <ul>
+          <li>Interactive terminal wizard for setup</li>
+          <li>Scriptable CLI subcommands</li>
+          <li>Local Web UI dashboard (<code>flashcard-master ui</code>)</li>
+          <li>Question explorer, editor & export center</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="interactive-section">
+      <h2>🎴 Sample Grounded Card Anatomy</h2>
+      <div class="flashcard-preview">
+        <div class="flashcard-header">
+          <span>Source: Distributed Systems Weekly #42 (RSS)</span>
+          <span>Difficulty: Expert</span>
+        </div>
+        <div class="flashcard-q">
+          Q: Why does the Raft consensus algorithm enforce a single leader model instead of multi-leader state replication?
+        </div>
+        <div class="flashcard-a">
+          <strong>A:</strong> Raft decomposes consensus by giving the leader complete responsibility for managing the replicated log, simplifying state machine safety and log flow in a strictly linear direction.
+        </div>
+        <div class="flashcard-quote">
+          <div class="quote-label">Exact Source Citation:</div>
+          "Raft uses a stronger form of leadership than other consensus algorithms... Log entries only flow from the leader to other servers, eliminating ambiguous conflict resolution branches."
+        </div>
+      </div>
+    </div>
+
+    <div class="interactive-section">
+      <h2>✨ Brainstorming Journey & Key Contributions</h2>
+      <div class="timeline">
+        <div class="timeline-item">
+          <div class="timeline-dot"></div>
+          <div class="timeline-content">
+            <span class="author-tag">User</span><strong>Core Scope & Ingestion:</strong> Text-only data for initial release with dynamic source specification via CLI paths and RSS subscriptions.
+          </div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-dot"></div>
+          <div class="timeline-content">
+            <span class="author-tag">User</span><strong>Architecture:</strong> Database-backed configuration with extensible <code>DataSourceType</code> and per-type Ingestion Strategy pattern.
+          </div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-dot"></div>
+          <div class="timeline-content">
+            <span class="author-tag">User</span><strong>Grounding & Accuracy:</strong> Mandatory verbatim quote citations for every card; configurable difficulty and agent personas.
+          </div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-dot"></div>
+          <div class="timeline-content">
+            <span class="author-tag">User</span><strong>Export Targets:</strong> Native <code>.apkg</code>, CSV/TSV, AnkiConnect API, collapsible Markdown, and PDF study guide.
+          </div>
+        </div>
+        <div class="timeline-item">
+          <div class="timeline-dot"></div>
+          <div class="timeline-content">
+            <span class="author-tag">User</span><strong>Dual Interface:</strong> Interactive CLI wizard session for setup & management + local Web UI dashboard.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      Generated with BMAD Method (Brainstorming Module) · flashcard-master
+    </footer>
+  </div>
+</body>
+</html>
