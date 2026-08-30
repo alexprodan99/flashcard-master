@@ -11,4 +11,5 @@ export * from "./services/persona-studio-service.js";
 export * from "./services/prompt-builder.js";
 export * from "./services/grounding-guard.js";
 export * from "./services/card-generation-service.js";
+export * from "./services/card-deduplication-service.js";
 //# sourceMappingURL=index.js.map
