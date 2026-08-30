@@ -5,13 +5,17 @@
   "types": "./dist/index.d.ts",
   "type": "module",
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "test": "vitest run",
+    "clean": "rimraf dist"
   },
   "dependencies": {
-    "@flashcard-master/core": "1.0.0"
+    "@flashcard-master/core": "1.0.0",
+    "fast-xml-parser": "^4.5.3"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.8"
   }
 }
