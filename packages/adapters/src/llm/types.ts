@@ -29,6 +29,13 @@ export class LLMNetworkError extends Error {
   }
 }
 
+export function cleanJsonString(raw: string): string {
+  if (!raw || typeof raw !== "string") {
+    return "";
+  }
+  return raw.replace(/```json\s*|\s*```/gi, "").trim();
+}
+
 export const CardDraftArraySchema = z.array(
   z.object({
     question: z.string().min(1, "Question cannot be empty"),

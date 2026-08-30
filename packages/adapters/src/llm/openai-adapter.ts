@@ -1,5 +1,5 @@
 import type { LLMProviderPort, CardGenerationDraft, DifficultyLevel } from "@flashcard-master/core";
-import { LLMAuthenticationError, LLMRateLimitError, LLMResponseParsingError, LLMNetworkError, CardDraftArraySchema, type LLMConfig } from "./types.js";
+import { LLMAuthenticationError, LLMRateLimitError, LLMResponseParsingError, LLMNetworkError, CardDraftArraySchema, cleanJsonString, type LLMConfig } from "./types.js";
 
 export class OpenAIAdapter implements LLMProviderPort {
   readonly providerName = "openai";
@@ -82,7 +82,8 @@ You MUST respond ONLY with a JSON array matching this exact schema:
         throw new LLMResponseParsingError(this.providerName, "Empty message content received from OpenAI.");
       }
 
-      const parsedJson = JSON.parse(content);
+      const cleanJson = cleanJsonString(content);
+      const parsedJson = JSON.parse(cleanJson);
       const rawArray = Array.isArray(parsedJson) ? parsedJson : (parsedJson.cards || parsedJson.flashcards || Object.values(parsedJson)[0]);
       
       const validated = CardDraftArraySchema.parse(rawArray);

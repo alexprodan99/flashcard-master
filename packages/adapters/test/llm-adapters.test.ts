@@ -4,7 +4,7 @@ import { GeminiAdapter } from "../src/llm/gemini-adapter.js";
 import { AnthropicAdapter } from "../src/llm/anthropic-adapter.js";
 import { OllamaAdapter } from "../src/llm/ollama-adapter.js";
 import { createLLMAdapter } from "../src/llm/llm-factory.js";
-import { LLMAuthenticationError, LLMRateLimitError, LLMResponseParsingError } from "../src/llm/types.js";
+import { LLMAuthenticationError, LLMRateLimitError } from "../src/llm/types.js";
 
 const SAMPLE_DRAFT_RESPONSE = JSON.stringify([
   {
@@ -14,6 +14,17 @@ const SAMPLE_DRAFT_RESPONSE = JSON.stringify([
     difficulty: "intermediate",
   },
 ]);
+
+const SAMPLE_CODE_FENCED_RESPONSE = `\`\`\`json
+[
+  {
+    "question": "What does WAL stand for in SQLite?",
+    "answer": "Write-Ahead Logging",
+    "sourceQuote": "SQLite utilizes Write-Ahead Logging (WAL) for concurrency.",
+    "difficulty": "intermediate"
+  }
+]
+\`\`\``;
 
 describe("LLM Provider Adapters", () => {
   describe("OpenAIAdapter", () => {
@@ -36,6 +47,26 @@ describe("LLM Provider Adapters", () => {
       expect(drafts.length).toBe(1);
       expect(drafts[0].question).toBe("What does WAL stand for in SQLite?");
       expect(drafts[0].sourceQuote).toContain("Write-Ahead Logging");
+    });
+
+    it("parses markdown code fenced JSON output without errors", async () => {
+      const mockFetch = async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [{ message: { content: SAMPLE_CODE_FENCED_RESPONSE } }],
+        }),
+      }) as any;
+
+      const adapter = new OpenAIAdapter({ apiKey: "sk-test", customFetch: mockFetch });
+      const drafts = await adapter.generateQAPairs("SQLite documentation text", {
+        difficulty: "intermediate",
+        personaPrompt: "You are a senior examiner.",
+        targetCount: 1,
+      });
+
+      expect(drafts.length).toBe(1);
+      expect(drafts[0].answer).toBe("Write-Ahead Logging");
     });
 
     it("maps HTTP 401 to LLMAuthenticationError", async () => {
@@ -77,7 +108,7 @@ describe("LLM Provider Adapters", () => {
         ok: true,
         status: 200,
         json: async () => ({
-          candidates: [{ content: { parts: [{ text: SAMPLE_DRAFT_RESPONSE }] } }],
+          candidates: [{ content: { parts: [{ text: SAMPLE_CODE_FENCED_RESPONSE }] } }],
         }),
       }) as any;
 
@@ -98,7 +129,7 @@ describe("LLM Provider Adapters", () => {
         ok: true,
         status: 200,
         json: async () => ({
-          content: [{ text: SAMPLE_DRAFT_RESPONSE }],
+          content: [{ text: SAMPLE_CODE_FENCED_RESPONSE }],
         }),
       }) as any;
 
@@ -119,7 +150,7 @@ describe("LLM Provider Adapters", () => {
         ok: true,
         status: 200,
         json: async () => ({
-          message: { content: SAMPLE_DRAFT_RESPONSE },
+          message: { content: SAMPLE_CODE_FENCED_RESPONSE },
         }),
       }) as any;
 

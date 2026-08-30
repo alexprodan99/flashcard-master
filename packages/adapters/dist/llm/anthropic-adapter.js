@@ -1,4 +1,4 @@
-import { LLMAuthenticationError, LLMRateLimitError, LLMResponseParsingError, LLMNetworkError, CardDraftArraySchema } from "./types.js";
+import { LLMAuthenticationError, LLMRateLimitError, LLMResponseParsingError, LLMNetworkError, CardDraftArraySchema, cleanJsonString } from "./types.js";
 export class AnthropicAdapter {
     providerName = "anthropic";
     apiKey;
@@ -64,7 +64,7 @@ You MUST output ONLY a valid raw JSON array with no markdown code fences:
             if (!rawText) {
                 throw new LLMResponseParsingError(this.providerName, "Empty message response from Anthropic.");
             }
-            const cleanJson = rawText.replace(/```json\n?|\n?```/g, "").trim();
+            const cleanJson = cleanJsonString(rawText);
             const parsedJson = JSON.parse(cleanJson);
             const rawArray = Array.isArray(parsedJson) ? parsedJson : (parsedJson.cards || Object.values(parsedJson)[0]);
             const validated = CardDraftArraySchema.parse(rawArray);

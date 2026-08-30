@@ -1,5 +1,5 @@
 import type { LLMProviderPort, CardGenerationDraft, DifficultyLevel } from "@flashcard-master/core";
-import { LLMAuthenticationError, LLMRateLimitError, LLMResponseParsingError, LLMNetworkError, CardDraftArraySchema, type LLMConfig } from "./types.js";
+import { LLMAuthenticationError, LLMRateLimitError, LLMResponseParsingError, LLMNetworkError, CardDraftArraySchema, cleanJsonString, type LLMConfig } from "./types.js";
 
 export class AnthropicAdapter implements LLMProviderPort {
   readonly providerName = "anthropic";
@@ -81,7 +81,7 @@ You MUST output ONLY a valid raw JSON array with no markdown code fences:
         throw new LLMResponseParsingError(this.providerName, "Empty message response from Anthropic.");
       }
 
-      const cleanJson = rawText.replace(/```json\n?|\n?```/g, "").trim();
+      const cleanJson = cleanJsonString(rawText);
       const parsedJson = JSON.parse(cleanJson);
       const rawArray = Array.isArray(parsedJson) ? parsedJson : (parsedJson.cards || Object.values(parsedJson)[0]);
 

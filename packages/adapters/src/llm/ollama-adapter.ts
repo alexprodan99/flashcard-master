@@ -1,5 +1,5 @@
 import type { LLMProviderPort, CardGenerationDraft, DifficultyLevel } from "@flashcard-master/core";
-import { LLMResponseParsingError, LLMNetworkError, CardDraftArraySchema, type LLMConfig } from "./types.js";
+import { LLMResponseParsingError, LLMNetworkError, CardDraftArraySchema, cleanJsonString, type LLMConfig } from "./types.js";
 
 export class OllamaAdapter implements LLMProviderPort {
   readonly providerName = "ollama";
@@ -69,7 +69,8 @@ Respond with a JSON object containing a "cards" array:
         throw new LLMResponseParsingError(this.providerName, "Empty message response from Ollama.");
       }
 
-      const parsedJson = JSON.parse(content);
+      const cleanJson = cleanJsonString(content);
+      const parsedJson = JSON.parse(cleanJson);
       const rawArray = Array.isArray(parsedJson) ? parsedJson : (parsedJson.cards || Object.values(parsedJson)[0]);
 
       const validated = CardDraftArraySchema.parse(rawArray);

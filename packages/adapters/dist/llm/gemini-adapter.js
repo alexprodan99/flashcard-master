@@ -1,4 +1,4 @@
-import { LLMAuthenticationError, LLMRateLimitError, LLMResponseParsingError, LLMNetworkError, CardDraftArraySchema } from "./types.js";
+import { LLMAuthenticationError, LLMRateLimitError, LLMResponseParsingError, LLMNetworkError, CardDraftArraySchema, cleanJsonString } from "./types.js";
 export class GeminiAdapter {
     providerName = "gemini";
     apiKey;
@@ -64,7 +64,8 @@ ${text}`;
             if (!rawText) {
                 throw new LLMResponseParsingError(this.providerName, "Empty content response from Gemini.");
             }
-            const parsedJson = JSON.parse(rawText);
+            const cleanJson = cleanJsonString(rawText);
+            const parsedJson = JSON.parse(cleanJson);
             const rawArray = Array.isArray(parsedJson) ? parsedJson : (parsedJson.cards || Object.values(parsedJson)[0]);
             const validated = CardDraftArraySchema.parse(rawArray);
             return validated.map((c) => ({

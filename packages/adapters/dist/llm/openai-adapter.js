@@ -1,4 +1,4 @@
-import { LLMAuthenticationError, LLMRateLimitError, LLMResponseParsingError, LLMNetworkError, CardDraftArraySchema } from "./types.js";
+import { LLMAuthenticationError, LLMRateLimitError, LLMResponseParsingError, LLMNetworkError, CardDraftArraySchema, cleanJsonString } from "./types.js";
 export class OpenAIAdapter {
     providerName = "openai";
     apiKey;
@@ -65,7 +65,8 @@ You MUST respond ONLY with a JSON array matching this exact schema:
             if (!content) {
                 throw new LLMResponseParsingError(this.providerName, "Empty message content received from OpenAI.");
             }
-            const parsedJson = JSON.parse(content);
+            const cleanJson = cleanJsonString(content);
+            const parsedJson = JSON.parse(cleanJson);
             const rawArray = Array.isArray(parsedJson) ? parsedJson : (parsedJson.cards || parsedJson.flashcards || Object.values(parsedJson)[0]);
             const validated = CardDraftArraySchema.parse(rawArray);
             return validated.map((c) => ({

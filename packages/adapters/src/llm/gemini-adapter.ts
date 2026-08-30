@@ -1,5 +1,5 @@
 import type { LLMProviderPort, CardGenerationDraft, DifficultyLevel } from "@flashcard-master/core";
-import { LLMAuthenticationError, LLMRateLimitError, LLMResponseParsingError, LLMNetworkError, CardDraftArraySchema, type LLMConfig } from "./types.js";
+import { LLMAuthenticationError, LLMRateLimitError, LLMResponseParsingError, LLMNetworkError, CardDraftArraySchema, cleanJsonString, type LLMConfig } from "./types.js";
 
 export class GeminiAdapter implements LLMProviderPort {
   readonly providerName = "gemini";
@@ -81,7 +81,8 @@ ${text}`;
         throw new LLMResponseParsingError(this.providerName, "Empty content response from Gemini.");
       }
 
-      const parsedJson = JSON.parse(rawText);
+      const cleanJson = cleanJsonString(rawText);
+      const parsedJson = JSON.parse(cleanJson);
       const rawArray = Array.isArray(parsedJson) ? parsedJson : (parsedJson.cards || Object.values(parsedJson)[0]);
       
       const validated = CardDraftArraySchema.parse(rawArray);

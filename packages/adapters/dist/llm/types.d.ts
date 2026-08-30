@@ -12,6 +12,7 @@ export declare class LLMResponseParsingError extends Error {
 export declare class LLMNetworkError extends Error {
     constructor(provider: string, message: string);
 }
+export declare function cleanJsonString(raw: string): string;
 export declare const CardDraftArraySchema: z.ZodArray<z.ZodObject<{
     question: z.ZodString;
     answer: z.ZodString;

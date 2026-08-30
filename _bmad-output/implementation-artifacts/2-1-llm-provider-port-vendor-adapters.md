@@ -113,3 +113,9 @@ context:
 
 - Mocked unit tests for all 4 LLM providers and error mappings
   [packages/adapters/test/llm-adapters.test.ts#L1](../../packages/adapters/test/llm-adapters.test.ts#L1)
+
+
+### Review Findings
+
+- [x] [Review][Patch] Strip markdown code fences before JSON.parse across OpenAI, Gemini, and Ollama adapters [packages/adapters/src/llm/openai-adapter.ts:80]
+
