@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createDatabaseClient } from "../src/storage/db.js";
+import { DataSourceSchema } from "../src/domain/models.js";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -49,12 +50,27 @@ describe("SQLite Database Client", () => {
     db.prepare(`
       INSERT INTO data_sources (id, name, type, uri, target_deck, tags)
       VALUES (?, ?, ?, ?, ?, ?)
-    `).run("test-id-1", "Test Feed", "rss", "https://example.com/feed.xml", "Default", JSON.stringify(["tech"]));
+    `).run("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", "Test Feed", "rss", "https://example.com/feed.xml", "Default", JSON.stringify(["tech"]));
 
-    const row = db.prepare("SELECT * FROM data_sources WHERE id = ?").get("test-id-1") as any;
+    const row = db.prepare("SELECT * FROM data_sources WHERE id = ?").get("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11") as any;
     expect(row).toBeDefined();
     expect(row.name).toBe("Test Feed");
     expect(row.type).toBe("rss");
+
+    // Verify Zod schema validation parses SQLite output with ISO-8601 timestamp
+    const parsedSource = DataSourceSchema.parse({
+      id: row.id,
+      name: row.name,
+      type: row.type,
+      uri: row.uri,
+      targetDeck: row.target_deck,
+      tags: JSON.parse(row.tags),
+      isActive: Boolean(row.is_active),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    });
+    expect(parsedSource.id).toBe("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11");
+    expect(parsedSource.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
 
     db.close();
     expect(fs.existsSync(tempDbPath)).toBe(true);

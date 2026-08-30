@@ -112,3 +112,10 @@ context:
 
 - Root monorepo configuration with npm workspaces
   [package.json#L1](../../package.json#L1)
+
+
+### Review Findings
+
+- [x] [Review][Patch] Standardize SQLite timestamp default format to ISO-8601 UTC (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')) [packages/core/src/storage/schema.sql:10]
+- [x] [Review][Patch] Add Zod schema parsing integration test for SQLite retrieved rows [packages/core/test/db.test.ts:50]
+
