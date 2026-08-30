@@ -31,6 +31,15 @@ export type DifficultyLevel = z.infer<typeof DifficultyLevelSchema>;
 export const PersonaTypeSchema = z.enum(["socratic-mentor", "strict-examiner", "executive-synthesizer"]);
 export type PersonaType = z.infer<typeof PersonaTypeSchema>;
 
+export const PersonaDefinitionSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string().default(""),
+  systemPrompt: z.string().min(10),
+  isBuiltIn: z.boolean().default(false),
+});
+export type PersonaDefinition = z.infer<typeof PersonaDefinitionSchema>;
+
 export const FlashcardSchema = z.object({
   id: z.string().uuid(),
   sourceId: z.string().uuid().nullable().optional(),

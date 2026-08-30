@@ -1,4 +1,5 @@
 import type { DifficultyLevel, PersonaType } from "../domain/models.js";
+import { PersonaStudioService } from "./persona-studio-service.js";
 
 export interface PromptConfig {
   difficulty: DifficultyLevel;
@@ -6,27 +7,28 @@ export interface PromptConfig {
   targetCount?: number;
 }
 
-export const PERSONA_PROMPTS: Record<PersonaType, string> = {
-  "socratic-mentor": "You are a thoughtful Socratic Mentor guiding the learner toward deep conceptual clarity by asking precise questions that highlight underlying mechanics.",
-  "strict-examiner": "You are a rigorous Examiner creating definitive, high-stakes technical test questions with zero ambiguity.",
-  "executive-synthesizer": "You are an Executive Synthesizer focusing on high-level architecture, strategic trade-offs, and critical takeaways.",
-};
-
 export class PromptBuilder {
+  constructor(private readonly studioService: PersonaStudioService = new PersonaStudioService()) {}
+
   buildSystemPersona(persona: PersonaType | string): string {
-    if (persona in PERSONA_PROMPTS) {
-      return PERSONA_PROMPTS[persona as PersonaType];
+    const found = this.studioService.getPersona(persona);
+    if (found) {
+      return found.systemPrompt;
     }
     return typeof persona === "string" && persona.trim().length > 0
       ? persona
-      : PERSONA_PROMPTS["socratic-mentor"];
+      : this.studioService.getPersona("socratic-mentor")!.systemPrompt;
   }
 
   buildGenerationInstructions(config: PromptConfig): string {
     const personaIntro = this.buildSystemPersona(config.persona);
+    const difficultyGuide = this.studioService.getDifficultyModifier(config.difficulty);
     const count = config.targetCount ?? 4;
 
     return `${personaIntro}
+
+DIFFICULTY LEVEL (${config.difficulty.toUpperCase()}):
+${difficultyGuide}
 
 TASK: Extract exactly ${count} atomic Front/Back flashcards from the text at a "${config.difficulty}" difficulty level.
 

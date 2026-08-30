@@ -57,6 +57,26 @@ export declare const DifficultyLevelSchema: z.ZodEnum<["beginner", "intermediate
 export type DifficultyLevel = z.infer<typeof DifficultyLevelSchema>;
 export declare const PersonaTypeSchema: z.ZodEnum<["socratic-mentor", "strict-examiner", "executive-synthesizer"]>;
 export type PersonaType = z.infer<typeof PersonaTypeSchema>;
+export declare const PersonaDefinitionSchema: z.ZodObject<{
+    id: z.ZodString;
+    name: z.ZodString;
+    description: z.ZodDefault<z.ZodString>;
+    systemPrompt: z.ZodString;
+    isBuiltIn: z.ZodDefault<z.ZodBoolean>;
+}, "strip", z.ZodTypeAny, {
+    id: string;
+    name: string;
+    description: string;
+    systemPrompt: string;
+    isBuiltIn: boolean;
+}, {
+    id: string;
+    name: string;
+    systemPrompt: string;
+    description?: string | undefined;
+    isBuiltIn?: boolean | undefined;
+}>;
+export type PersonaDefinition = z.infer<typeof PersonaDefinitionSchema>;
 export declare const FlashcardSchema: z.ZodObject<{
     id: z.ZodString;
     sourceId: z.ZodOptional<z.ZodNullable<z.ZodString>>;

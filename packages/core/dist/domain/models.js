@@ -20,6 +20,13 @@ export const SyncStateSchema = z.object({
 });
 export const DifficultyLevelSchema = z.enum(["beginner", "intermediate", "expert"]);
 export const PersonaTypeSchema = z.enum(["socratic-mentor", "strict-examiner", "executive-synthesizer"]);
+export const PersonaDefinitionSchema = z.object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    description: z.string().default(""),
+    systemPrompt: z.string().min(10),
+    isBuiltIn: z.boolean().default(false),
+});
 export const FlashcardSchema = z.object({
     id: z.string().uuid(),
     sourceId: z.string().uuid().nullable().optional(),
