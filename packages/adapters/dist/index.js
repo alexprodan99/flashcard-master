@@ -9,4 +9,5 @@ export * from "./llm/ollama-adapter.js";
 export * from "./llm/llm-factory.js";
 export * from "./export/anki-package-exporter.js";
 export * from "./export/ankiconnect-adapter.js";
+export * from "./export/delimited-exporter.js";
 //# sourceMappingURL=index.js.map
