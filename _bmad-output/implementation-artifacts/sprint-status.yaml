@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 08-30-2026 20:47
-last_updated: 08-30-2026 22:14
+last_updated: 08-30-2026 22:18
 project: flashcard-master
 project_key: NOKEY
 tracking_system: file-system
@@ -55,7 +55,7 @@ development_status:
 
   epic-3: in-progress
   3-1-native-anki-package-apkg-exporter: done
-  3-2-desktop-ankiconnect-live-sync-client: backlog
+  3-2-desktop-ankiconnect-live-sync-client: done
   3-3-delimited-csv-tsv-exporter: backlog
   3-4-active-recall-collapsible-markdown-exporter: backlog
   3-5-two-column-printable-pdf-study-guide-exporter: backlog

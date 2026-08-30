@@ -8,3 +8,4 @@ export * from "./llm/anthropic-adapter.js";
 export * from "./llm/ollama-adapter.js";
 export * from "./llm/llm-factory.js";
 export * from "./export/anki-package-exporter.js";
+export * from "./export/ankiconnect-adapter.js";
