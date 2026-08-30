@@ -1,6 +1,7 @@
 import type { IngestionStrategy, DataSource, RawDocument, CleanTextDocument, SyncState } from "@flashcard-master/core";
 import { XMLParser } from "fast-xml-parser";
 import crypto from "node:crypto";
+import { safeIsoDate } from "../utils/date.js";
 
 export class FeedParsingError extends Error {
   constructor(message: string, public readonly originalError?: unknown) {
@@ -12,26 +13,6 @@ export class FeedParsingError extends Error {
 export interface RssStrategyOptions {
   timeoutMs?: number;
   customFetch?: typeof fetch;
-}
-
-export function safeIsoDate(dateStr?: string): string | undefined {
-  if (!dateStr || typeof dateStr !== "string") {
-    return undefined;
-  }
-  try {
-    const d = new Date(dateStr);
-    const time = d.getTime();
-    if (isNaN(time)) {
-      return undefined;
-    }
-    const year = d.getFullYear();
-    if (year < 1970 || year > 2100) {
-      return undefined;
-    }
-    return d.toISOString();
-  } catch {
-    return undefined;
-  }
 }
 
 export class RssIngestionStrategy implements IngestionStrategy {

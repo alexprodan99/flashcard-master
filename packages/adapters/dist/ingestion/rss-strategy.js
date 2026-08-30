@@ -1,31 +1,12 @@
 import { XMLParser } from "fast-xml-parser";
 import crypto from "node:crypto";
+import { safeIsoDate } from "../utils/date.js";
 export class FeedParsingError extends Error {
     originalError;
     constructor(message, originalError) {
         super(message);
         this.originalError = originalError;
         this.name = "FeedParsingError";
-    }
-}
-export function safeIsoDate(dateStr) {
-    if (!dateStr || typeof dateStr !== "string") {
-        return undefined;
-    }
-    try {
-        const d = new Date(dateStr);
-        const time = d.getTime();
-        if (isNaN(time)) {
-            return undefined;
-        }
-        const year = d.getFullYear();
-        if (year < 1970 || year > 2100) {
-            return undefined;
-        }
-        return d.toISOString();
-    }
-    catch {
-        return undefined;
     }
 }
 export class RssIngestionStrategy {
