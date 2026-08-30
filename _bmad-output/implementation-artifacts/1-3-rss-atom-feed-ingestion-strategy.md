@@ -95,3 +95,9 @@ context:
 
 - Package exports for adapters
   [packages/adapters/src/index.ts#L1](../../packages/adapters/src/index.ts#L1)
+
+
+### Review Findings
+
+- [x] [Review][Patch] Safely parse pubDate/updated timestamps to prevent RangeError on malformed feed dates [packages/adapters/src/ingestion/rss-strategy.ts:74]
+

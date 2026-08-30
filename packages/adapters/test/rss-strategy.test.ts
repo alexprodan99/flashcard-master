@@ -33,6 +33,18 @@ const SAMPLE_ATOM_1_0 = `<?xml version="1.0" encoding="utf-8"?>
   </entry>
 </feed>`;
 
+const SAMPLE_MALFORMED_DATE_FEED = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Edge Cases</title>
+    <item>
+      <title>Malformed Date Post</title>
+      <pubDate>Invalid-Date-String-12345</pubDate>
+      <description>Resilience test</description>
+    </item>
+  </channel>
+</rss>`;
+
 describe("RssIngestionStrategy", () => {
   const strategy = new RssIngestionStrategy();
 
@@ -46,6 +58,7 @@ describe("RssIngestionStrategy", () => {
     expect(doc.originUrl).toBe("https://techinsights.dev/posts/raft");
     expect(doc.guid).toBe("https://techinsights.dev/posts/raft");
     expect(doc.rawContent).toContain("Raft consensus decomposes leader election");
+    expect(doc.publishedAt).toBe("2026-08-30T12:00:00.000Z");
   });
 
   it("parses Atom 1.0 XML feeds with alternate links and entry IDs", () => {
@@ -58,6 +71,13 @@ describe("RssIngestionStrategy", () => {
     expect(doc.originUrl).toBe("https://eng.example.com/zero-downtime");
     expect(doc.guid).toBe("tag:eng.example.com,2026:post-42");
     expect(doc.rawContent).toContain("Always expand before contracting");
+    expect(doc.publishedAt).toBe("2026-08-30T09:00:00.000Z");
+  });
+
+  it("handles malformed pubDate strings gracefully without throwing RangeError", () => {
+    const docs = strategy.parseXml(SAMPLE_MALFORMED_DATE_FEED, "source-uuid-3");
+    expect(docs.length).toBe(1);
+    expect(docs[0].publishedAt).toBeUndefined();
   });
 
   it("extracts clean text, strips HTML tags, and calculates sha256 contentHash", () => {

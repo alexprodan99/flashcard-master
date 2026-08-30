@@ -14,6 +14,26 @@ export interface RssStrategyOptions {
   customFetch?: typeof fetch;
 }
 
+export function safeIsoDate(dateStr?: string): string | undefined {
+  if (!dateStr || typeof dateStr !== "string") {
+    return undefined;
+  }
+  try {
+    const d = new Date(dateStr);
+    const time = d.getTime();
+    if (isNaN(time)) {
+      return undefined;
+    }
+    const year = d.getFullYear();
+    if (year < 1970 || year > 2100) {
+      return undefined;
+    }
+    return d.toISOString();
+  } catch {
+    return undefined;
+  }
+}
+
 export class RssIngestionStrategy implements IngestionStrategy {
   readonly type = "rss" as const;
   private readonly parser: XMLParser;
@@ -82,7 +102,7 @@ export class RssIngestionStrategy implements IngestionStrategy {
             item.description ||
             "";
           const originUrl = item.link ? String(item.link) : originUri;
-          const publishedAt = item.pubDate ? new Date(item.pubDate).toISOString() : undefined;
+          const publishedAt = safeIsoDate(item.pubDate);
           const guid =
             typeof item.guid === "object"
               ? item.guid["#text"] || JSON.stringify(item.guid)
@@ -130,7 +150,7 @@ export class RssIngestionStrategy implements IngestionStrategy {
             }
           }
 
-          const publishedAt = entry.published || entry.updated ? new Date(entry.published || entry.updated).toISOString() : undefined;
+          const publishedAt = safeIsoDate(entry.published || entry.updated);
           const guid = entry.id ? String(entry.id) : (originUrl || String(title));
 
           docs.push({
