@@ -18,14 +18,21 @@ export interface LLMProviderPort {
         targetCount?: number;
     }): Promise<CardGenerationDraft[]>;
 }
+export interface ExportOptions {
+    outputPath?: string;
+    targetDeck?: string;
+    includeCitationFootnotes?: boolean;
+    tags?: string[];
+}
 export interface ExportResult {
     format: string;
     successCount: number;
     outputPath?: string;
+    data?: Buffer | string;
     message?: string;
 }
 export interface ExporterPort {
     readonly format: string;
-    export(cards: Flashcard[], options?: Record<string, unknown>): Promise<ExportResult>;
+    export(cards: Flashcard[], options?: ExportOptions): Promise<ExportResult>;
 }
 //# sourceMappingURL=index.d.ts.map

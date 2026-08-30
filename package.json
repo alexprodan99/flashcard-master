@@ -7,7 +7,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
+    "build": "npm run build -w @flashcard-master/core && npm run build --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "typecheck": "tsc --build",
     "clean": "npm run clean --workspaces --if-present"
