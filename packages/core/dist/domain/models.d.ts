@@ -55,6 +55,8 @@ export declare const SyncStateSchema: z.ZodObject<{
 export type SyncState = z.infer<typeof SyncStateSchema>;
 export declare const DifficultyLevelSchema: z.ZodEnum<["beginner", "intermediate", "expert"]>;
 export type DifficultyLevel = z.infer<typeof DifficultyLevelSchema>;
+export declare const PersonaTypeSchema: z.ZodEnum<["socratic-mentor", "strict-examiner", "executive-synthesizer"]>;
+export type PersonaType = z.infer<typeof PersonaTypeSchema>;
 export declare const FlashcardSchema: z.ZodObject<{
     id: z.ZodString;
     sourceId: z.ZodOptional<z.ZodNullable<z.ZodString>>;

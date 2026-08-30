@@ -28,6 +28,9 @@ export type SyncState = z.infer<typeof SyncStateSchema>;
 export const DifficultyLevelSchema = z.enum(["beginner", "intermediate", "expert"]);
 export type DifficultyLevel = z.infer<typeof DifficultyLevelSchema>;
 
+export const PersonaTypeSchema = z.enum(["socratic-mentor", "strict-examiner", "executive-synthesizer"]);
+export type PersonaType = z.infer<typeof PersonaTypeSchema>;
+
 export const FlashcardSchema = z.object({
   id: z.string().uuid(),
   sourceId: z.string().uuid().nullable().optional(),

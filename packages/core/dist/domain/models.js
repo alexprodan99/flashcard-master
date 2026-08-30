@@ -19,6 +19,7 @@ export const SyncStateSchema = z.object({
     itemCount: z.number().int().nonnegative().default(0),
 });
 export const DifficultyLevelSchema = z.enum(["beginner", "intermediate", "expert"]);
+export const PersonaTypeSchema = z.enum(["socratic-mentor", "strict-examiner", "executive-synthesizer"]);
 export const FlashcardSchema = z.object({
     id: z.string().uuid(),
     sourceId: z.string().uuid().nullable().optional(),
