@@ -7,6 +7,7 @@ export interface RssStrategyOptions {
     timeoutMs?: number;
     customFetch?: typeof fetch;
 }
+export declare function safeIsoDate(dateStr?: string): string | undefined;
 export declare class RssIngestionStrategy implements IngestionStrategy {
     readonly type: "rss";
     private readonly parser;

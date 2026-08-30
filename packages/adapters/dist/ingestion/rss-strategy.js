@@ -8,6 +8,26 @@ export class FeedParsingError extends Error {
         this.name = "FeedParsingError";
     }
 }
+export function safeIsoDate(dateStr) {
+    if (!dateStr || typeof dateStr !== "string") {
+        return undefined;
+    }
+    try {
+        const d = new Date(dateStr);
+        const time = d.getTime();
+        if (isNaN(time)) {
+            return undefined;
+        }
+        const year = d.getFullYear();
+        if (year < 1970 || year > 2100) {
+            return undefined;
+        }
+        return d.toISOString();
+    }
+    catch {
+        return undefined;
+    }
+}
 export class RssIngestionStrategy {
     type = "rss";
     parser;
@@ -67,7 +87,7 @@ export class RssIngestionStrategy {
                         item.description ||
                         "";
                     const originUrl = item.link ? String(item.link) : originUri;
-                    const publishedAt = item.pubDate ? new Date(item.pubDate).toISOString() : undefined;
+                    const publishedAt = safeIsoDate(item.pubDate);
                     const guid = typeof item.guid === "object"
                         ? item.guid["#text"] || JSON.stringify(item.guid)
                         : item.guid || item.link || title;
@@ -108,7 +128,7 @@ export class RssIngestionStrategy {
                             originUrl = String(entry.link);
                         }
                     }
-                    const publishedAt = entry.published || entry.updated ? new Date(entry.published || entry.updated).toISOString() : undefined;
+                    const publishedAt = safeIsoDate(entry.published || entry.updated);
                     const guid = entry.id ? String(entry.id) : (originUrl || String(title));
                     docs.push({
                         id: crypto.randomUUID(),
