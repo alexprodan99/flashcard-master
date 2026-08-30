@@ -95,3 +95,9 @@ context:
 
 - Adapters export entry point
   [packages/adapters/src/index.ts#L1](../../packages/adapters/src/index.ts#L1)
+
+
+### Review Findings
+
+- [x] [Review][Patch] Safely parse article.publishedTime using safeIsoDate to prevent RangeError [packages/adapters/src/ingestion/web-reader-strategy.ts:74]
+

@@ -2,6 +2,7 @@ import type { IngestionStrategy, DataSource, RawDocument, CleanTextDocument, Syn
 import { Readability } from "@mozilla/readability";
 import { JSDOM } from "jsdom";
 import crypto from "node:crypto";
+import { safeIsoDate } from "../utils/date.js";
 
 export interface WebReaderStrategyOptions {
   timeoutMs?: number;
@@ -68,13 +69,15 @@ export class WebReaderStrategy implements IngestionStrategy {
         rawContent = document.body?.innerHTML || html;
       }
 
+      const publishedAt = safeIsoDate(article?.publishedTime) || new Date().toISOString();
+
       return {
         id: crypto.randomUUID(),
         sourceId,
         title: title || "Untitled Document",
         rawContent,
         originUrl,
-        publishedAt: article?.publishedTime ? new Date(article.publishedTime).toISOString() : new Date().toISOString(),
+        publishedAt,
         guid: originUrl,
       };
     } catch (err: any) {

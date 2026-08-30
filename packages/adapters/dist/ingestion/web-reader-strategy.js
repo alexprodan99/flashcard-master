@@ -1,6 +1,7 @@
 import { Readability } from "@mozilla/readability";
 import { JSDOM } from "jsdom";
 import crypto from "node:crypto";
+import { safeIsoDate } from "../utils/date.js";
 export class WebReaderStrategy {
     type = "web";
     timeoutMs;
@@ -51,13 +52,14 @@ export class WebReaderStrategy {
                 title = title || document.querySelector("title")?.textContent?.trim() || "Untitled Document";
                 rawContent = document.body?.innerHTML || html;
             }
+            const publishedAt = safeIsoDate(article?.publishedTime) || new Date().toISOString();
             return {
                 id: crypto.randomUUID(),
                 sourceId,
                 title: title || "Untitled Document",
                 rawContent,
                 originUrl,
-                publishedAt: article?.publishedTime ? new Date(article.publishedTime).toISOString() : new Date().toISOString(),
+                publishedAt,
                 guid: originUrl,
             };
         }
