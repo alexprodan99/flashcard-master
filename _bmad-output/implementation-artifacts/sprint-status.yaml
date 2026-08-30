@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 08-30-2026 20:47
-last_updated: 08-30-2026 21:21
+last_updated: 08-30-2026 21:28
 project: flashcard-master
 project_key: NOKEY
 tracking_system: file-system
@@ -40,7 +40,7 @@ development_status:
   1-2-data-source-registry-ingestion-strategy-interface: done
   1-3-rss-atom-feed-ingestion-strategy: done
   1-4-web-article-reader-mode-extraction-strategy: done
-  1-5-local-document-directory-ingestion-strategy: backlog
+  1-5-local-document-directory-ingestion-strategy: done
   1-6-incremental-delta-sync-hash-tracking: backlog
   epic-1-retrospective: optional
 
