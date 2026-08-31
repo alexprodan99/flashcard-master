@@ -50,7 +50,7 @@
   - `Ollama (Local & Free)` -> `phi4-mini` (Local endpoint `http://127.0.0.1:11434`)
   - `Google Gemini` -> `gemini-2.0-flash`
   - `OpenAI` -> `gpt-4o-mini`
-  - `Anthropic` -> `claude-3-5-haiku-latest`
+  - `Anthropic` -> `claude-haiku-4-5-20251001`
 - Custom model input allowing arbitrary model text overrides.
 - Optional API key input (shown for cloud providers, auto-fallback to server environment variables if blank).
 - Learning persona selector with description callouts (`Socratic Mentor`, `Strict Examiner`, `Analogy Builder`).

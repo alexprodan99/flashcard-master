@@ -400,7 +400,7 @@ So that I can generate new grounded flashcards directly in the browser with live
 **Acceptance Criteria:**
 - **Given** the user navigates to the "⚡ Generate Studio" tab in the Web UI
 - **When** the user selects an AI provider (Ollama, Gemini, OpenAI, Anthropic), model, persona, difficulty, and target source
-- **Then** the model defaults auto-populate with the modern optimal choices (`phi4-mini`, `gemini-2.0-flash`, `gpt-4o-mini`, `claude-3-5-haiku-latest`).
+- **Then** the model defaults auto-populate with the modern optimal choices (`phi4-mini`, `gemini-2.0-flash`, `gpt-4o-mini`, `claude-haiku-4-5-20251001`).
 - **And** clicking "Start AI Generation" triggers `POST /api/generate` to synthesize cards, run verbatim grounding checks, deduplicate against existing cards, and save new cards to SQLite.
 - **And** a live progress spinner displays while generating, followed by a results summary banner and card previews.
 - **And** the dashboard KPI counters and Question Explorer card grid update dynamically.
