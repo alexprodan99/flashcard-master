@@ -129,6 +129,7 @@ npm run cli -- stats
 - **🗂️ Embedded Web UI Dashboard:**
   - **Zero-Install SPA:** Native dark-theme Single Page Application served directly by Node.js with zero external framework dependencies or CDN tracking.
   - **📊 Dashboard Overview:** Real-time KPIs for total cards, active sources, and deck categories.
+  - **⚡ AI Generation Studio:** In-browser flashcard synthesizer with provider switching (Ollama, Gemini, OpenAI, Anthropic), model presets (`phi4-mini`, `gemini-2.0-flash`, `gpt-4o-mini`, `claude-3-5-haiku-latest`), custom model overrides, persona selectors, single/multi-source scope, live spinning execution feedback, and card previews.
   - **🌐 Data Sources Manager:** Add, configure, and synchronize sources with live spinner feedback.
   - **🗂️ Question Explorer:** Search bar, interactive filter chips (Decks, Difficulties, Tag clouds), and click-to-reveal flashcards with source grounding callouts.
   - **✏️ Slide-Over Card Editor:** Smooth slide-in drawer to edit questions, answers, difficulty, tags, and citations with instant optimistic updates.
@@ -163,9 +164,10 @@ Open your browser at **`http://127.0.0.1:3000`** to access the dashboard.
 
 #### 🌐 Web Dashboard Tour:
 1. **📊 Dashboard:** View real-time database KPIs and recent flashcards.
-2. **🌐 Data Sources:** Click `+ Add Data Source` to register an RSS feed (e.g. `https://martinfowler.com/feed.atom`), a web article URL, or a local Markdown directory. Click `🔄 Sync` to ingest documents.
-3. **🗂️ Question Explorer:** Search your knowledge base, filter with deck or tag chips, click `👁️ Reveal Answer` for self-testing, and click `✏️ Edit` on any card to open the slide-over editor.
-4. **🚀 Export Center:** Filter cards by Deck and Tag, download your `.apkg`, `.csv`, `.tsv`, `.md`, or `.html` file with 1-click, or click `🚀 Push to Anki` if Anki desktop is open with AnkiConnect!
+2. **⚡ Generate Studio:** Pick your AI provider (`Ollama`, `Gemini`, `OpenAI`, `Anthropic`), select your cognitive persona (`Socratic Mentor`, `Strict Examiner`, `Analogy Builder`), customize the model name or use 2026 presets, choose your target data sources, and click `⚡ Start AI Generation` with live progress feedback and instant card previews!
+3. **🌐 Data Sources:** Click `+ Add Data Source` to register an RSS feed (e.g. `https://martinfowler.com/feed.atom`), a web article URL, or a local Markdown directory. Click `🔄 Sync` to ingest documents.
+4. **🗂️ Question Explorer:** Search your knowledge base, filter with deck or tag chips, click `👁️ Reveal Answer` for self-testing, and click `✏️ Edit` on any card to open the slide-over editor.
+5. **🚀 Export Center:** Filter cards by Deck and Tag, download your `.apkg`, `.csv`, `.tsv`, `.md`, or `.html` file with 1-click, or click `🚀 Push to Anki` if Anki desktop is open with AnkiConnect!
 
 ---
 
