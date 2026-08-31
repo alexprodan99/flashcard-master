@@ -106,6 +106,7 @@ export class WebServer {
       flex-direction: column;
       overflow-y: auto;
       padding: 32px 40px;
+      position: relative;
     }
 
     header {
@@ -195,7 +196,14 @@ export class WebServer {
       transform: translateY(-2px);
     }
 
-    .card-meta { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+    .card-header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 12px;
+    }
+
+    .card-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .badge {
       font-size: 11px;
       padding: 3px 8px;
@@ -225,6 +233,12 @@ export class WebServer {
       font-size: 12px;
       color: #94a3b8;
       font-style: italic;
+    }
+
+    .card-actions-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 14px;
     }
 
     /* Filter Controls */
@@ -300,7 +314,7 @@ export class WebServer {
     }
     tr:last-child td { border-bottom: none; }
 
-    /* Modal */
+    /* Modals & Slide-Over Drawer */
     .modal-overlay {
       position: fixed;
       top: 0; left: 0; right: 0; bottom: 0;
@@ -318,11 +332,39 @@ export class WebServer {
       max-width: 90vw;
       padding: 24px;
     }
-    .modal-header {
+
+    /* Slide-over Drawer */
+    .drawer-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.6);
+      display: none;
+      justify-content: flex-end;
+      z-index: 150;
+      backdrop-filter: blur(2px);
+    }
+    .drawer {
+      width: 520px;
+      max-width: 95vw;
+      height: 100%;
+      background: var(--card-bg);
+      border-left: 1px solid var(--card-border);
+      padding: 32px 28px;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      animation: slideIn 0.25s ease-out;
+    }
+    @keyframes slideIn {
+      from { transform: translateX(100%); }
+      to { transform: translateX(0); }
+    }
+
+    .modal-header, .drawer-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 20px;
+      margin-bottom: 24px;
     }
     .form-group {
       margin-bottom: 16px;
@@ -332,6 +374,7 @@ export class WebServer {
     }
     .form-group label {
       font-size: 13px;
+      font-weight: 500;
       color: var(--text-muted);
     }
     .form-input {
@@ -339,16 +382,22 @@ export class WebServer {
       border: 1px solid var(--card-border);
       border-radius: 6px;
       color: var(--text);
-      padding: 8px 12px;
+      padding: 10px 12px;
       font-size: 14px;
+      font-family: inherit;
       outline: none;
     }
     .form-input:focus { border-color: var(--primary); }
-    .modal-actions {
+    textarea.form-input { resize: vertical; min-height: 80px; line-height: 1.4; }
+
+    .drawer-actions, .modal-actions {
       display: flex;
-      justify-content: flex-end;
+      justify-content: space-between;
+      align-items: center;
       gap: 10px;
-      margin-top: 24px;
+      margin-top: 28px;
+      padding-top: 20px;
+      border-top: 1px solid var(--card-border);
     }
   </style>
 </head>
@@ -530,6 +579,62 @@ export class WebServer {
     </div>
   </div>
 
+  <!-- SLIDE-OVER CARD EDITOR DRAWER -->
+  <div id="card-drawer-overlay" class="drawer-overlay" onclick="if (event.target === this) closeCardDrawer();">
+    <div class="drawer">
+      <div class="drawer-header">
+        <h3>✏️ Edit Flashcard</h3>
+        <button class="btn btn-secondary btn-sm" onclick="closeCardDrawer()">✕</button>
+      </div>
+      <form onsubmit="handleSaveCardEdits(event)" style="display: flex; flex-direction: column; flex: 1;">
+        <input type="hidden" id="edit-card-id" />
+        
+        <div class="form-group">
+          <label>Question</label>
+          <textarea class="form-input" id="edit-card-question" rows="3" required></textarea>
+        </div>
+
+        <div class="form-group">
+          <label>Answer</label>
+          <textarea class="form-input" id="edit-card-answer" rows="4" required></textarea>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label>Difficulty</label>
+            <select class="form-input" id="edit-card-difficulty">
+              <option value="beginner">Beginner</option>
+              <option value="intermediate">Intermediate</option>
+              <option value="expert">Expert</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Target Deck</label>
+            <input class="form-input" id="edit-card-deck" placeholder="Default" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Tags (comma-separated)</label>
+          <input class="form-input" id="edit-card-tags" placeholder="tag1, tag2" />
+        </div>
+
+        <div class="form-group">
+          <label>Source Verbatim Excerpt</label>
+          <textarea class="form-input" id="edit-card-quote" rows="2" style="font-size: 13px; color: var(--text-muted);"></textarea>
+        </div>
+
+        <div class="drawer-actions">
+          <button type="button" class="btn btn-danger btn-sm" onclick="handleDeleteCurrentCard()">🗑️ Delete Card</button>
+          <div style="display: flex; gap: 8px;">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="closeCardDrawer()">Cancel</button>
+            <button type="submit" class="btn btn-sm">💾 Save Changes</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script>
     let activeFilters = {
       search: '',
@@ -538,6 +643,7 @@ export class WebServer {
       tag: ''
     };
     let searchDebounceTimer = null;
+    let cardCache = new Map();
 
     async function loadStats() {
       try {
@@ -557,14 +663,18 @@ export class WebServer {
         let html = '';
         for (let i = 0; i < data.recentCards.length; i++) {
           const c = data.recentCards[i];
+          cardCache.set(c.id, c);
           const tagsHtml = (c.tags || []).map(function(t) { return '<span class="badge">#' + t + '</span>'; }).join('');
           const quoteHtml = c.sourceQuote ? '<div class="source-quote">"' + c.sourceQuote + '"</div>' : '';
 
           html += '<div class="card-box">' +
-            '<div class="card-meta">' +
-              '<span class="badge badge-deck">' + c.targetDeck + '</span>' +
-              '<span class="badge badge-diff">' + c.difficulty + '</span>' +
-              tagsHtml +
+            '<div class="card-header-row">' +
+              '<div class="card-meta">' +
+                '<span class="badge badge-deck">' + c.targetDeck + '</span>' +
+                '<span class="badge badge-diff">' + c.difficulty + '</span>' +
+                tagsHtml +
+              '</div>' +
+              '<button class="btn btn-secondary btn-sm" onclick="openCardDrawer(\'' + c.id + '\')">✏️ Edit</button>' +
             '</div>' +
             '<div class="card-q">' + c.question + '</div>' +
             '<div class="card-a">' + c.answer + '</div>' +
@@ -665,15 +775,19 @@ export class WebServer {
         let html = '';
         for (let i = 0; i < cards.length; i++) {
           const c = cards[i];
+          cardCache.set(c.id, c);
           const tagsHtml = (c.tags || []).map(function(t) { return '<span class="badge">#' + t + '</span>'; }).join('');
           const quoteHtml = c.sourceQuote ? '<div class="source-quote"><strong>Source Excerpt:</strong> "' + c.sourceQuote + '"</div>' : '';
 
           html += '<div class="card-box" id="card-box-' + c.id + '">' +
             '<div>' +
-              '<div class="card-meta">' +
-                '<span class="badge badge-deck">' + c.targetDeck + '</span>' +
-                '<span class="badge badge-diff">' + c.difficulty + '</span>' +
-                tagsHtml +
+              '<div class="card-header-row">' +
+                '<div class="card-meta">' +
+                  '<span class="badge badge-deck">' + c.targetDeck + '</span>' +
+                  '<span class="badge badge-diff">' + c.difficulty + '</span>' +
+                  tagsHtml +
+                '</div>' +
+                '<button class="btn btn-secondary btn-sm" onclick="openCardDrawer(\'' + c.id + '\')">✏️ Edit</button>' +
               '</div>' +
               '<div class="card-q">' + c.question + '</div>' +
             '</div>' +
@@ -724,6 +838,75 @@ export class WebServer {
         activeFilters.search = document.getElementById('search-query').value.trim();
         loadExplorerCards();
       }, 250);
+    }
+
+    function openCardDrawer(cardId) {
+      const card = cardCache.get(cardId);
+      if (!card) return;
+
+      document.getElementById('edit-card-id').value = card.id;
+      document.getElementById('edit-card-question').value = card.question || '';
+      document.getElementById('edit-card-answer').value = card.answer || '';
+      document.getElementById('edit-card-difficulty').value = card.difficulty || 'intermediate';
+      document.getElementById('edit-card-deck').value = card.targetDeck || 'Default';
+      document.getElementById('edit-card-tags').value = (card.tags || []).join(', ');
+      document.getElementById('edit-card-quote').value = card.sourceQuote || '';
+
+      document.getElementById('card-drawer-overlay').style.display = 'flex';
+    }
+
+    function closeCardDrawer() {
+      document.getElementById('card-drawer-overlay').style.display = 'none';
+    }
+
+    async function handleSaveCardEdits(e) {
+      e.preventDefault();
+      const id = document.getElementById('edit-card-id').value;
+      const question = document.getElementById('edit-card-question').value;
+      const answer = document.getElementById('edit-card-answer').value;
+      const difficulty = document.getElementById('edit-card-difficulty').value;
+      const targetDeck = document.getElementById('edit-card-deck').value || 'Default';
+      const tagsStr = document.getElementById('edit-card-tags').value;
+      const tags = tagsStr ? tagsStr.split(',').map(function(t) { return t.trim(); }).filter(Boolean) : [];
+      const sourceQuote = document.getElementById('edit-card-quote').value;
+
+      try {
+        const res = await fetch('/api/cards/' + id, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question, answer, difficulty, targetDeck, tags, sourceQuote })
+        });
+        if (res.ok) {
+          const updated = await res.json();
+          cardCache.set(updated.id, updated);
+          closeCardDrawer();
+          loadExplorerCards();
+          loadStats();
+        } else {
+          alert('Failed to save card edits');
+        }
+      } catch (err) {
+        alert('Error saving card: ' + err.message);
+      }
+    }
+
+    async function handleDeleteCurrentCard() {
+      const id = document.getElementById('edit-card-id').value;
+      if (!confirm('Are you sure you want to permanently delete this flashcard?')) return;
+
+      try {
+        const res = await fetch('/api/cards/' + id, { method: 'DELETE' });
+        if (res.ok) {
+          cardCache.delete(id);
+          closeCardDrawer();
+          loadExplorerCards();
+          loadStats();
+        } else {
+          alert('Failed to delete card');
+        }
+      } catch (err) {
+        alert('Error deleting card: ' + err.message);
+      }
     }
 
     function switchTab(tab) {
@@ -961,7 +1144,31 @@ export class WebServer {
             }
           }
 
-          // 8. Cards Endpoint
+          // 8. Single Card Update (PATCH) / Delete (DELETE) / Get (GET): /api/cards/:id
+          if (pathname.startsWith("/api/cards/") && pathname !== "/api/cards") {
+            const id = pathname.slice("/api/cards/".length);
+
+            if (method === "GET") {
+              const card = this.options.cardRepo.getById(id);
+              this.sendJson(res, card ? 200 : 404, card || { error: "Card not found" });
+              return;
+            }
+
+            if (method === "DELETE") {
+              const deleted = this.options.cardRepo.delete(id);
+              this.sendJson(res, deleted ? 200 : 404, { success: deleted });
+              return;
+            }
+
+            if (method === "PATCH" || method === "PUT") {
+              const body = await this.parseBody(req);
+              const updated = this.options.cardRepo.update(id, body);
+              this.sendJson(res, updated ? 200 : 404, updated || { error: "Card not found" });
+              return;
+            }
+          }
+
+          // 9. Cards List Endpoint: /api/cards
           if (pathname === "/api/cards" && method === "GET") {
             const query = parsedUrl.query;
             const filter: CardFilter = {
@@ -976,14 +1183,14 @@ export class WebServer {
             return;
           }
 
-          // 9. Decks Endpoint
+          // 10. Decks Endpoint
           if (pathname === "/api/decks" && method === "GET") {
             const decks = this.options.cardRepo.listDecks();
             this.sendJson(res, 200, decks);
             return;
           }
 
-          // 10. Tags Endpoint
+          // 11. Tags Endpoint
           if (pathname === "/api/tags" && method === "GET") {
             const tags = this.options.cardRepo.listTags ? this.options.cardRepo.listTags() : [];
             this.sendJson(res, 200, tags);

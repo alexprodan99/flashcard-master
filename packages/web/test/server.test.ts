@@ -97,14 +97,15 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     db.close();
   });
 
-  it("serves HTML Single Page Application dashboard at / with Question Explorer", async () => {
+  it("serves HTML Single Page Application dashboard at / with Question Explorer and Slide-over Drawer", async () => {
     const res = await fetch(`${serverUrl}/`);
     expect(res.status).toBe(200);
     const text = await res.text();
     expect(text).toContain("Flashcard Master");
     expect(text).toContain("Data Sources Manager");
     expect(text).toContain("Question Explorer");
-    expect(text).toContain("filter-chip");
+    expect(text).toContain("card-drawer-overlay");
+    expect(text).toContain("✏️ Edit Flashcard");
   });
 
   it("returns health status at /api/health", async () => {
@@ -139,6 +140,45 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     const searchCards = await searchRes.json();
     expect(searchCards.length).toBe(1);
     expect(searchCards[0].question).toBe("What is WAL?");
+  });
+
+  it("supports updating and deleting individual cards via REST", async () => {
+    const cards = cardRepo.list();
+    const cardId = cards[0].id;
+
+    // GET /api/cards/:id
+    const getRes = await fetch(`${serverUrl}/api/cards/${cardId}`);
+    expect(getRes.status).toBe(200);
+    const card = await getRes.json();
+    expect(card.id).toBe(cardId);
+
+    // PATCH /api/cards/:id
+    const patchRes = await fetch(`${serverUrl}/api/cards/${cardId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        question: "Updated Question?",
+        difficulty: "beginner",
+        tags: ["updated-tag"],
+      }),
+    });
+    expect(patchRes.status).toBe(200);
+    const updated = await patchRes.json();
+    expect(updated.question).toBe("Updated Question?");
+    expect(updated.difficulty).toBe("beginner");
+    expect(updated.tags).toEqual(["updated-tag"]);
+
+    // DELETE /api/cards/:id
+    const deleteRes = await fetch(`${serverUrl}/api/cards/${cardId}`, {
+      method: "DELETE",
+    });
+    expect(deleteRes.status).toBe(200);
+    const delResult = await deleteRes.json();
+    expect(delResult.success).toBe(true);
+
+    // Confirm deletion
+    const checkRes = await fetch(`${serverUrl}/api/cards/${cardId}`);
+    expect(checkRes.status).toBe(404);
   });
 
   it("returns distinct tags at /api/tags", async () => {
