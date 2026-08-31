@@ -843,16 +843,24 @@ export class WebServer {
       }
     }
 
+    function setDeckFilter(val) {
+      setFilter('deck', val || '');
+    }
+
+    function setTagFilter(val) {
+      setFilter('tag', val || '');
+    }
+
     async function loadExplorerFilterChips() {
       try {
         // Decks
         const decksRes = await fetch('/api/decks');
         const decks = await decksRes.json();
         const deckContainer = document.getElementById('deck-chips-row');
-        let deckHtml = '<span class="chip-label">Deck:</span><span class="filter-chip ' + (activeFilters.deck === '' ? 'active' : '') + '" onclick="setFilter(\'deck\', \'\')">All Decks</span>';
+        let deckHtml = '<span class="chip-label">Deck:</span><span class="filter-chip ' + (activeFilters.deck === '' ? 'active' : '') + '" data-deck="" onclick="setDeckFilter(this.dataset.deck)">All Decks</span>';
         for (let i = 0; i < decks.length; i++) {
           const d = decks[i];
-          deckHtml += '<span class="filter-chip ' + (activeFilters.deck === d ? 'active' : '') + '" data-deck="' + escapeAttr(d) + '" onclick="setFilter(\'deck\', this.dataset.deck)">' + escapeHtml(d) + '</span>';
+          deckHtml += '<span class="filter-chip ' + (activeFilters.deck === d ? 'active' : '') + '" data-deck="' + escapeAttr(d) + '" onclick="setDeckFilter(this.dataset.deck)">' + escapeHtml(d) + '</span>';
         }
         deckContainer.innerHTML = deckHtml;
 
@@ -860,10 +868,10 @@ export class WebServer {
         const tagsRes = await fetch('/api/tags');
         const tags = await tagsRes.json();
         const tagContainer = document.getElementById('tag-chips-row');
-        let tagHtml = '<span class="chip-label">Tags:</span><span class="filter-chip ' + (activeFilters.tag === '' ? 'active' : '') + '" onclick="setFilter(\'tag\', \'\')">All Tags</span>';
+        let tagHtml = '<span class="chip-label">Tags:</span><span class="filter-chip ' + (activeFilters.tag === '' ? 'active' : '') + '" data-tag="" onclick="setTagFilter(this.dataset.tag)">All Tags</span>';
         for (let i = 0; i < tags.length; i++) {
           const t = tags[i];
-          tagHtml += '<span class="filter-chip ' + (activeFilters.tag === t ? 'active' : '') + '" data-tag="' + escapeAttr(t) + '" onclick="setFilter(\'tag\', this.dataset.tag)">#' + escapeHtml(t) + '</span>';
+          tagHtml += '<span class="filter-chip ' + (activeFilters.tag === t ? 'active' : '') + '" data-tag="' + escapeAttr(t) + '" onclick="setTagFilter(this.dataset.tag)">#' + escapeHtml(t) + '</span>';
         }
         tagContainer.innerHTML = tagHtml;
       } catch (err) {
