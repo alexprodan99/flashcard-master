@@ -74,14 +74,64 @@ stateDiagram-v2
 - **Connected (`🟢 Anki Ready`):** Direct 1-click push enabled.
 - **Offline / Disconnected (`⚪ Anki Offline`):** Button displays `"Push to Anki (Offline)"` with tooltip explaining how to launch Anki Desktop, while highlighting the `.apkg` fallback button.
 
+### 3.4 1-Click Export Center & Anki Badging
+
+```text
+┌  Export Center ─────────────────────────────────────────────────────────────┐
+│  Filter Scope: [ All Decks ▾ ]  [ All Tags ▾ ]           [ 128 Cards Selected ]
+├──────────────────────────────────────────────────────────────────────────────┤
+│  ⚡ Desktop Integration:                                                     │
+│  [ AnkiConnect Status: 🟢 Connected (v6) ]                                  │
+│  [ 🚀 Push 128 Cards to Anki Desktop ]                                       │
+│                                                                              │
+│  📦 File Downloads:                                                          │
+│  [ 📦 Anki Package (.apkg) ]   [ 📄 CSV Spreadsheet ]   [ 📑 TSV File ]      │
+│  [ 📝 Active-Recall Markdown ] [ 🖨️ Printable HTML Study Guide ]             │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 3.5 AI Generation Studio (In-Browser Studio & Model Controls)
+
+```text
+┌  ⚡ AI Flashcard Generation Studio ─────────────────────────────────────────┐
+│  Extract grounded, atomic flashcards directly from your ingested materials.   │
+├──────────────────────────────────────┬───────────────────────────────────────┤
+│  ⚙️ Studio Configuration             │  📊 Live Execution & Results          │
+│                                      │                                       │
+│  1. AI Provider:                     │  Status: [ 🟢 Ready to Generate ]     │
+│  [ 🔵 Google Gemini              ▾ ] │                                       │
+│                                      │  Summary Metrics:                     │
+│  2. Model Identifier:                │  • Cards Created: 0                   │
+│  [ gemini-2.0-flash                ] │  • Duplicates Filtered: 0             │
+│                                      │  • Ungrounded Rejected: 0             │
+│  3. API Key (Optional Override):     │                                       │
+│  [ ••••••••••••••••••••••••••••••  ] │  Generated Card Previews:             │
+│  (Leave blank to use GEMINI_API_KEY) │  ┌─────────────────────────────────┐ │
+│                                      │  │ [System Design] [Intermediate]  │ │
+│  4. Learning Persona:                │  │ Q: What is WAL mode in SQLite?  │ │
+│  [ 🎓 Socratic Mentor            ▾ ] │  │ A: Write-Ahead Logging for ...  │ │
+│                                      │  │ "SQLite uses WAL mode for..."   │ │
+│  5. Difficulty:                      │  └─────────────────────────────────┘ │
+│  [ 🟡 Intermediate               ▾ ] │                                       │
+│                                      │  [ 👁️ View in Question Explorer ]     │
+│  6. Ingested Sources Scope:          │                                       │
+│  [ All Active Ingested Sources   ▾ ] │                                       │
+│                                      │                                       │
+│  7. Cards per Document: [ 5 ]        │                                       │
+│                                      │                                       │
+│  [ ⚡ Start AI Generation          ] │                                       │
+└──────────────────────────────────────┴───────────────────────────────────────┘
+```
+
 ---
 
-## 4. Interaction Primitives & Keyboard Shortcuts
+## 4. Keyboard Navigation & Global Shortcuts
 
 | Shortcut Key | Action | Context |
 | :--- | :--- | :--- |
 | **`/`** or **`Cmd/Ctrl + K`** | Focus global search bar | Anywhere in Web UI |
 | **`s`** or **`Cmd/Ctrl + Shift + S`** | Trigger sync on all active sources | Web UI & CLI |
+| **`g`** | Open AI Generation Studio | Web UI |
 | **`e`** | Open Export Center | Web UI |
 | **`j` / `k`** | Next / Previous flashcard | Question Explorer |
 | **`Enter`** | Open card edit drawer | Question Explorer |
