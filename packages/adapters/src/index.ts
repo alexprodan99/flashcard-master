@@ -10,3 +10,4 @@ export * from "./llm/llm-factory.js";
 export * from "./export/anki-package-exporter.js";
 export * from "./export/ankiconnect-adapter.js";
 export * from "./export/delimited-exporter.js";
+export * from "./export/markdown-exporter.js";
