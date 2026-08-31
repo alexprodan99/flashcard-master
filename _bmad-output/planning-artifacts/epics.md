@@ -385,5 +385,26 @@ So that I can push cards to Anki or download .apkg, Markdown, and PDF files with
 - **Then** the UI shows a 🟢 Anki Ready badge and enables the 1-click "Push to Anki" button.
 - **And** 1-click download buttons generate and stream .apkg, Markdown, and PDF files directly to the browser.
 
+---
+
+## Epic 5: Interactive Web Generation Studio & In-Browser AI Workflows
+
+### Epic Goal
+Bring full AI flashcard generation into the local Web UI dashboard, allowing users to configure providers (Ollama, Gemini, OpenAI, Anthropic), modern model presets, learning personas, and difficulty tiers directly in the browser with live visual feedback and automated persistence.
+
+### Story 5.1: Web UI AI Card Generation Studio & REST API
+As a learner using the Web UI Dashboard,  
+I want an interactive "⚡ Generate Studio" tab in the browser where I can select my AI Provider (`Ollama`, `Gemini`, `OpenAI`, `Anthropic`), pick the Model, choose a Learning Persona, and set Difficulty,  
+So that I can generate new grounded flashcards directly in the browser with live visual feedback.
+
+**Acceptance Criteria:**
+- **Given** the user navigates to the "⚡ Generate Studio" tab in the Web UI
+- **When** the user selects an AI provider (Ollama, Gemini, OpenAI, Anthropic), model, persona, difficulty, and target source
+- **Then** the model defaults auto-populate with the modern optimal choices (`phi4-mini`, `gemini-2.0-flash`, `gpt-4o-mini`, `claude-3-5-haiku-latest`).
+- **And** clicking "Start AI Generation" triggers `POST /api/generate` to synthesize cards, run verbatim grounding checks, deduplicate against existing cards, and save new cards to SQLite.
+- **And** a live progress spinner displays while generating, followed by a results summary banner and card previews.
+- **And** the dashboard KPI counters and Question Explorer card grid update dynamically.
+
+
 
 
