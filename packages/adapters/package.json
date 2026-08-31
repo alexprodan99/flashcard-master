@@ -1,9 +1,17 @@
 {
   "name": "@flashcard-master/adapters",
   "version": "1.0.0",
+  "description": "Multi-source ingestion strategies, LLM vendor adapters, and multi-format exporters for Flashcard Master",
+  "license": "MIT",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "type": "module",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc",
     "test": "vitest run",

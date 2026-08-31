@@ -1,9 +1,17 @@
 {
   "name": "@flashcard-master/core",
   "version": "1.0.0",
+  "description": "Core domain models, SQLite storage, grounding guard, and card generation services for Flashcard Master",
+  "license": "MIT",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "type": "module",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
