@@ -3,25 +3,38 @@ name: Publish Packages
 on:
   push:
     tags:
-      - "v*.*.*"
+      - "v[0-9]+.[0-9]+.[0-9]+*"
   workflow_dispatch:
     inputs:
-      tag:
-        description: "Release tag (e.g. latest, beta)"
+      npm_tag:
+        description: "npm Distribution Tag"
         required: true
-        default: "latest"
+        default: "preview"
+        type: choice
+        options:
+          - preview
+          - beta
+          - next
+          - latest
+      bump_prerelease:
+        description: "Append automated preview run number to version (e.g. 1.0.0-preview.12) to avoid npm version collisions?"
+        required: true
+        type: boolean
+        default: true
 
 permissions:
   contents: write
 
 jobs:
   publish:
-    name: Build & Publish to npm Registry
+    name: Build & Publish Packages
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -32,6 +45,28 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
+      - name: Configure Release Mode & Distribution Tag
+        id: config
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "is_official_release=true" >> "$GITHUB_OUTPUT"
+            echo "dist_tag=latest" >> "$GITHUB_OUTPUT"
+            echo "🚀 Official Tagged Release: Tag '${{ github.ref_name }}' -> npm tag 'latest'"
+          else
+            echo "is_official_release=false" >> "$GITHUB_OUTPUT"
+            echo "dist_tag=${{ github.event.inputs.npm_tag || 'preview' }}" >> "$GITHUB_OUTPUT"
+            echo "🧪 Manual Testing Release: npm tag '${{ github.event.inputs.npm_tag || 'preview' }}'"
+
+            if [[ "${{ github.event.inputs.bump_prerelease }}" == "true" ]]; then
+              PRE_ID="${{ github.event.inputs.npm_tag || 'preview' }}.${{ github.run_number }}"
+              echo "Applying preview prerelease version with identifier: $PRE_ID"
+              BASE_VER=$(node -p "require('./packages/core/package.json').version.split('-')[0]")
+              NEW_VER="${BASE_VER}-${PRE_ID}"
+              echo "Setting workspace version to: $NEW_VER"
+              npm version "$NEW_VER" --workspaces --include-workspace-root --no-git-tag-version
+            fi
+          fi
+
       - name: Build All Monorepo Workspaces
         run: npm run build
 
@@ -39,28 +74,28 @@ jobs:
         run: npm test
 
       - name: Publish @flashcard-master/core
-        run: npm publish -w @flashcard-master/core --access public --tag ${{ github.event.inputs.tag || 'latest' }}
+        run: npm publish -w @flashcard-master/core --access public --tag ${{ steps.config.outputs.dist_tag }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @flashcard-master/adapters
-        run: npm publish -w @flashcard-master/adapters --access public --tag ${{ github.event.inputs.tag || 'latest' }}
+        run: npm publish -w @flashcard-master/adapters --access public --tag ${{ steps.config.outputs.dist_tag }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @flashcard-master/web
-        run: npm publish -w @flashcard-master/web --access public --tag ${{ github.event.inputs.tag || 'latest' }}
+        run: npm publish -w @flashcard-master/web --access public --tag ${{ steps.config.outputs.dist_tag }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @flashcard-master/cli
-        run: npm publish -w @flashcard-master/cli --access public --tag ${{ github.event.inputs.tag || 'latest' }}
+        run: npm publish -w @flashcard-master/cli --access public --tag ${{ steps.config.outputs.dist_tag }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Create GitHub Release
+      - name: Create GitHub Release (Official Tagged Releases Only)
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
+        if: steps.config.outputs.is_official_release == 'true'
         with:
           generate_release_notes: true
         env:
