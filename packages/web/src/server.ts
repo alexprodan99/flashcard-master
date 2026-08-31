@@ -708,10 +708,13 @@ export class WebServer {
             </div>
 
             <div class="form-group">
-              <label>6. Ingested Data Sources Scope</label>
-              <select class="form-input" id="gen-source-select">
-                <option value="">All Ingested Active Sources</option>
-              </select>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <label style="margin-bottom: 0;">6. Ingested Data Sources Scope <span id="gen-source-count-badge" class="badge badge-diff" style="margin-left: 8px;">0 Selected</span></label>
+                <button type="button" class="btn btn-secondary btn-sm" style="padding: 3px 8px; font-size: 11px;" onclick="toggleAllGenerateSources()">Toggle All</button>
+              </div>
+              <div id="gen-sources-checkbox-list" style="background: #0f172a; border: 1px solid var(--card-border); border-radius: 6px; padding: 8px; max-height: 140px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;">
+                <div style="color: var(--text-muted); font-size: 12px;">Loading active data sources...</div>
+              </div>
             </div>
 
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
@@ -1317,14 +1320,43 @@ export class WebServer {
       try {
         const res = await fetch('/api/sources');
         const sources = await res.json();
-        const select = document.getElementById('gen-source-select');
-        let html = '<option value="">All Ingested Active Sources</option>';
-        sources.filter(function(s) { return s.isActive; }).forEach(function(s) {
-          html += '<option value="' + escapeAttr(s.id) + '">' + escapeHtml(s.name) + ' (' + escapeHtml(s.type) + ')</option>';
+        const container = document.getElementById('gen-sources-checkbox-list');
+        const activeSources = sources.filter(function(s) { return s.isActive; });
+        if (activeSources.length === 0) {
+          container.innerHTML = '<div style="color: var(--text-muted); font-size: 12px;">No active data sources found. Please add a data source first.</div>';
+          document.getElementById('gen-source-count-badge').innerText = '0 Selected';
+          return;
+        }
+        let html = '';
+        activeSources.forEach(function(s) {
+          html += '<label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; color: var(--text); padding: 4px 6px; border-radius: 4px; background: rgba(255,255,255,0.02);">' +
+            '<input type="checkbox" class="gen-source-checkbox" value="' + escapeAttr(s.id) + '" checked onchange="updateSelectedSourcesCount()" />' +
+            '<span style="font-weight: 500;">' + escapeHtml(s.name) + '</span>' +
+            '<span class="badge badge-diff" style="font-size: 10px; padding: 1px 6px;">' + escapeHtml(s.type) + '</span>' +
+            '<span style="color: var(--text-muted); font-size: 11px; margin-left: auto;">Deck: ' + escapeHtml(s.targetDeck || 'Default') + '</span>' +
+          '</label>';
         });
-        select.innerHTML = html;
+        container.innerHTML = html;
+        updateSelectedSourcesCount();
       } catch (err) {
         console.error('Failed to load sources for generator:', err);
+      }
+    }
+
+    function toggleAllGenerateSources() {
+      const checkboxes = document.querySelectorAll('.gen-source-checkbox');
+      const allChecked = Array.from(checkboxes).every(function(cb) { return cb.checked; });
+      checkboxes.forEach(function(cb) { cb.checked = !allChecked; });
+      updateSelectedSourcesCount();
+    }
+
+    function updateSelectedSourcesCount() {
+      const checkboxes = document.querySelectorAll('.gen-source-checkbox');
+      const total = checkboxes.length;
+      const checked = Array.from(checkboxes).filter(function(cb) { return cb.checked; }).length;
+      const badge = document.getElementById('gen-source-count-badge');
+      if (badge) {
+        badge.innerText = checked + ' / ' + total + ' Selected';
       }
     }
 
@@ -1335,13 +1367,20 @@ export class WebServer {
       const apiKey = document.getElementById('gen-apikey').value || undefined;
       const persona = document.getElementById('gen-persona').value;
       const difficulty = document.getElementById('gen-difficulty').value;
-      const sourceId = document.getElementById('gen-source-select').value || undefined;
       const targetDeck = document.getElementById('gen-deck').value || undefined;
       const limit = parseInt(document.getElementById('gen-limit').value, 10) || 5;
 
+      const checkedBoxes = Array.from(document.querySelectorAll('.gen-source-checkbox:checked'));
+      const sourceIds = checkedBoxes.map(function(cb) { return cb.value; });
+
+      if (sourceIds.length === 0) {
+        alert('⚠️ Please select at least one data source to generate flashcards from.');
+        return;
+      }
+
       const btn = document.getElementById('gen-submit-btn');
       const origText = btn.innerText;
-      btn.innerText = '⏳ Synthesizing Cards...';
+      btn.innerText = '⏳ Synthesizing Cards (' + sourceIds.length + ' source' + (sourceIds.length > 1 ? 's' : '') + ')...';
       btn.disabled = true;
 
       document.getElementById('gen-status-badge').innerText = '🟡 Generating...';
@@ -1353,7 +1392,7 @@ export class WebServer {
         const res = await fetch('/api/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ provider, model, apiKey, persona, difficulty, sourceId, targetDeck, limit })
+          body: JSON.stringify({ provider, model, apiKey, persona, difficulty, sourceIds, targetDeck, limit })
         });
         const data = await res.json();
 

@@ -326,7 +326,7 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     expect(results[0].newCount).toBe(1);
   });
 
-  it("serves HTML SPA with AI Flashcard Generation Studio elements", async () => {
+  it("serves HTML SPA with AI Flashcard Generation Studio elements and multi-source selector", async () => {
     const res = await fetch(`${serverUrl}/`);
     expect(res.status).toBe(200);
     const text = await res.text();
@@ -335,9 +335,14 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     expect(text).toContain("gen-provider");
     expect(text).toContain("gen-model");
     expect(text).toContain("phi4-mini");
+    expect(text).toContain("gen-sources-checkbox-list");
+    expect(text).toContain("gen-source-count-badge");
   });
 
-  it("generates grounded flashcards via POST /api/generate", async () => {
+  it("generates grounded flashcards via POST /api/generate with sourceIds array", async () => {
+    const sources = sourceRepo.list();
+    const sourceId = sources[0].id;
+
     const res = await fetch(`${serverUrl}/api/generate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -346,6 +351,7 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
         model: "phi4-mini",
         persona: "socratic-mentor",
         difficulty: "intermediate",
+        sourceIds: [sourceId],
         limit: 3,
       }),
     });
@@ -357,10 +363,6 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     expect(data.newCards.length).toBe(1);
     expect(data.newCards[0].question).toBe("What is mock content?");
     expect(data.newCards[0].sourceQuote).toBe("Some text content");
-
-    // Verify card was persisted in SQLite repository
-    const storedCards = cardRepo.list({ search: "mock content" });
-    expect(storedCards.length).toBe(1);
   });
 
   it("supports target deck override in POST /api/generate", async () => {

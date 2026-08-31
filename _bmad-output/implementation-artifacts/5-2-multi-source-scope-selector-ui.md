@@ -1,7 +1,7 @@
 # Story 5.2: Multi-Source Scope Selector UI in Generation Studio
 
 **Epic:** Epic 5 - Interactive Web Generation Studio & In-Browser AI Workflows  
-**Status:** in-progress  
+**Status:** done  
 **Date:** 2026-08-31  
 
 ---
@@ -33,8 +33,8 @@
 
 ## 3. Acceptance Criteria
 
-- [ ] **AC1 — Multi-Source Checkbox Container:** Interactive checkbox list showing active sources with type badges and target decks.
-- [ ] **AC2 — Master Toggle & Count Badge:** "Select All / Deselect All" master button and dynamic count badge `[ X / Y Selected ]`.
-- [ ] **AC3 — Multi-Source Request Serialization:** Submitting generation sends `sourceIds: string[]` to `POST /api/generate`.
-- [ ] **AC4 — Empty Selection Guard:** Display error alert if generation is submitted with 0 sources selected.
-- [ ] **AC5 — Automated Integration Tests:** Integration tests in `packages/web/test/server.test.ts` verifying multi-source payload and HTML elements.
+- [x] **AC1 — Multi-Source Checkbox Container:** Interactive checkbox list showing active sources with type badges and target decks.
+- [x] **AC2 — Master Toggle & Count Badge:** "Select All / Deselect All" master button and dynamic count badge `[ X / Y Selected ]`.
+- [x] **AC3 — Multi-Source Request Serialization:** Submitting generation sends `sourceIds: string[]` to `POST /api/generate`.
+- [x] **AC4 — Empty Selection Guard:** Display error alert if generation is submitted with 0 sources selected.
+- [x] **AC5 — Automated Integration Tests:** Integration tests in `packages/web/test/server.test.ts` verifying multi-source payload and HTML elements.
