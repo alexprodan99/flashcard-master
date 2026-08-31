@@ -1444,7 +1444,18 @@ export class WebServer {
               const health = await this.options.ankiConnectAdapter.checkHealth();
               this.sendJson(res, 200, health);
             } else {
-              this.sendJson(res, 200, { isOnline: false, error: "AnkiConnect adapter not configured" });
+              try {
+                const checkRes = await fetch("http://127.0.0.1:8765", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ action: "version", version: 6 }),
+                  signal: AbortSignal.timeout(2000),
+                });
+                const data = (await checkRes.json()) as any;
+                this.sendJson(res, 200, { isOnline: !data.error, version: data.result || 6 });
+              } catch {
+                this.sendJson(res, 200, { isOnline: false, error: "AnkiConnect unreachable" });
+              }
             }
             return;
           }

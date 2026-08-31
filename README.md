@@ -243,11 +243,21 @@ Flashcard Master supports two seamless methods to get your flashcards into Anki:
 
 Push cards directly into your open Anki desktop app with zero manual file handling:
 
-1. **Install the AnkiConnect Add-on in Anki:**
+1. **Install & Configure the AnkiConnect Add-on in Anki:**
    * Open the **Anki desktop app**.
    * In the top menu, go to: **`Tools`** $\rightarrow$ **`Add-ons`** $\rightarrow$ **`Get Add-ons...`**
    * Paste the add-on code: **`2055492159`** and click **OK**.
-   * Restart Anki.
+   * Select **`AnkiConnect`** in the add-ons list, click **`Config`**, and ensure `"webCorsOriginList"` allows local web origins (or `"*"`):
+     ```json
+     {
+       "apiKey": null,
+       "apiLogPath": null,
+       "webBindAddress": "127.0.0.1",
+       "webBindPort": 8765,
+       "webCorsOriginList": ["http://localhost", "http://127.0.0.1:3000", "*"]
+     }
+     ```
+   * Click **OK** and restart Anki.
 2. **Push to Anki:**
    * **In the Web UI (`http://127.0.0.1:3000`):** Navigate to the **`🚀 Export Center`** tab. The badge will show **`🟢 Connected (v6)`**. Select your target deck and click **`🚀 Push to Anki Desktop`**.
    * **In the CLI:** Run `flashcard-master export -f ankiconnect -d "Computer Science"`.

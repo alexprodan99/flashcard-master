@@ -41,6 +41,7 @@ export function createCli(providedContext?: AppContext): Command {
           cardRepo: context.cardRepo,
           ingestionService: context.ingestionService,
           exportService: context.exportService,
+          ankiConnectAdapter: context.ankiConnectAdapter,
         });
 
         const { url } = await server.listen(port);

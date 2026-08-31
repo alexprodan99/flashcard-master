@@ -43,6 +43,7 @@ export interface AppContext {
   promptBuilder: PromptBuilder;
   groundingGuard: GroundingGuard;
   dedupService: CardDeduplicationService;
+  ankiConnectAdapter: AnkiConnectAdapter;
   close: () => void;
 }
 
@@ -77,9 +78,10 @@ export function createAppContext(options: AppOptions = {}): AppContext {
   const ingestionService = new IngestionService(sourceRepo, syncRepo, strategyRegistry);
 
   // Exporters
+  const ankiConnectAdapter = new AnkiConnectAdapter();
   const exporterRegistry = new ExporterRegistry();
   exporterRegistry.register(new AnkiPackageExporter());
-  exporterRegistry.register(new AnkiConnectAdapter());
+  exporterRegistry.register(ankiConnectAdapter);
   exporterRegistry.register(new CsvExporter());
   exporterRegistry.register(new TsvExporter());
   exporterRegistry.register(new MarkdownExporter());
@@ -106,6 +108,7 @@ export function createAppContext(options: AppOptions = {}): AppContext {
     promptBuilder,
     groundingGuard,
     dedupService,
+    ankiConnectAdapter,
     close: () => db.close(),
   };
 }
