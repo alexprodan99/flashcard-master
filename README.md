@@ -164,8 +164,8 @@ Open your browser at **`http://127.0.0.1:3000`** to access the dashboard.
 
 #### 🌐 Web Dashboard Tour:
 1. **📊 Dashboard:** View real-time database KPIs and recent flashcards.
-2. **⚡ Generate Studio:** Pick your AI provider (`Ollama`, `Gemini`, `OpenAI`, `Anthropic`), select your cognitive persona (`Socratic Mentor`, `Strict Examiner`, `Analogy Builder`), customize the model name or use 2026 presets, choose your target data sources, and click `⚡ Start AI Generation` with live progress feedback and instant card previews!
-3. **🌐 Data Sources:** Click `+ Add Data Source` to register an RSS feed (e.g. `https://martinfowler.com/feed.atom`), a web article URL, or a local Markdown directory. Click `🔄 Sync` to ingest documents.
+2. **🌐 Data Sources:** Click `+ Add Data Source` to register an RSS feed (e.g. `https://martinfowler.com/feed.atom`), a web article URL, or a local Markdown directory. Click `🔄 Sync` to ingest documents.
+3. **⚡ Generate Studio:** Pick your AI provider (`Ollama`, `Gemini`, `OpenAI`, `Anthropic`), select your cognitive persona (`Socratic Mentor`, `Strict Examiner`, `Analogy Builder`), customize the model name or use 2026 presets, choose your target data sources, and click `⚡ Start AI Generation` with live progress feedback and instant card previews!
 4. **🗂️ Question Explorer:** Search your knowledge base, filter with deck or tag chips, click `👁️ Reveal Answer` for self-testing, and click `✏️ Edit` on any card to open the slide-over editor.
 5. **🚀 Export Center:** Filter cards by Deck and Tag, download your `.apkg`, `.csv`, `.tsv`, `.md`, or `.html` file with 1-click, or click `🚀 Push to Anki` if Anki desktop is open with AnkiConnect!
 
