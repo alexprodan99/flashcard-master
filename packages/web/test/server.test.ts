@@ -67,7 +67,7 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       targetDeck: "Engineering",
       difficulty: "intermediate",
       personaUsed: "socratic-mentor",
-      tags: ["raft"],
+      tags: ["raft", "distributed-systems"],
     });
 
     cardRepo.create({
@@ -77,7 +77,7 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       targetDeck: "Engineering",
       difficulty: "expert",
       personaUsed: "strict-examiner",
-      tags: ["sqlite"],
+      tags: ["sqlite", "databases"],
     });
 
     server = createWebServer({
@@ -97,12 +97,14 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     db.close();
   });
 
-  it("serves HTML Single Page Application dashboard at /", async () => {
+  it("serves HTML Single Page Application dashboard at / with Question Explorer", async () => {
     const res = await fetch(`${serverUrl}/`);
     expect(res.status).toBe(200);
     const text = await res.text();
     expect(text).toContain("Flashcard Master");
     expect(text).toContain("Data Sources Manager");
+    expect(text).toContain("Question Explorer");
+    expect(text).toContain("filter-chip");
   });
 
   it("returns health status at /api/health", async () => {
@@ -124,12 +126,29 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     expect(json.recentCards.length).toBe(2);
   });
 
-  it("supports querying cards with filters at /api/cards", async () => {
+  it("supports querying cards with filters and substring search at /api/cards", async () => {
     const res = await fetch(`${serverUrl}/api/cards?deck=Engineering&tag=raft`);
     expect(res.status).toBe(200);
     const cards = await res.json();
     expect(cards.length).toBe(1);
     expect(cards[0].question).toBe("What is Raft?");
+
+    // Substring search in answer
+    const searchRes = await fetch(`${serverUrl}/api/cards?search=Logging`);
+    expect(searchRes.status).toBe(200);
+    const searchCards = await searchRes.json();
+    expect(searchCards.length).toBe(1);
+    expect(searchCards[0].question).toBe("What is WAL?");
+  });
+
+  it("returns distinct tags at /api/tags", async () => {
+    const res = await fetch(`${serverUrl}/api/tags`);
+    expect(res.status).toBe(200);
+    const tags = await res.json();
+    expect(tags).toContain("databases");
+    expect(tags).toContain("distributed-systems");
+    expect(tags).toContain("raft");
+    expect(tags).toContain("sqlite");
   });
 
   it("supports creating and updating sources via REST", async () => {
@@ -187,8 +206,3 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     expect(results[0].newCount).toBe(1);
   });
 });
-
-
-
-
-

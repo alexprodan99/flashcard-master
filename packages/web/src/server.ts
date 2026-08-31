@@ -112,7 +112,7 @@ export class WebServer {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 32px;
+      margin-bottom: 24px;
     }
 
     h1 { font-size: 26px; font-weight: 700; }
@@ -144,6 +144,8 @@ export class WebServer {
       justify-content: space-between;
       align-items: center;
       margin-bottom: 20px;
+      gap: 12px;
+      flex-wrap: wrap;
     }
 
     .kpi-grid {
@@ -169,13 +171,31 @@ export class WebServer {
 
     .section-title { font-size: 18px; font-weight: 600; margin-bottom: 16px; }
     .card-list { display: flex; flex-direction: column; gap: 14px; }
-    .card-item {
+    
+    /* Visual Flashcards Grid */
+    .flashcards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 18px;
+      margin-top: 16px;
+    }
+
+    .card-box {
       background: var(--card-bg);
       border: 1px solid var(--card-border);
       border-radius: var(--radius);
-      padding: 18px 20px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: border-color 0.15s ease, transform 0.15s ease;
     }
-    .card-meta { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+    .card-box:hover {
+      border-color: rgba(99, 102, 241, 0.5);
+      transform: translateY(-2px);
+    }
+
+    .card-meta { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
     .badge {
       font-size: 11px;
       padding: 3px 8px;
@@ -189,17 +209,67 @@ export class WebServer {
     .badge-web { background: rgba(56, 189, 248, 0.15); color: var(--accent); }
     .badge-local { background: rgba(16, 185, 129, 0.15); color: var(--success); }
 
-    .card-q { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
-    .card-a { font-size: 14px; color: var(--text-muted); line-height: 1.4; }
+    .card-q { font-size: 15px; font-weight: 600; margin-bottom: 12px; line-height: 1.4; }
+    .card-a-container {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px dashed var(--card-border);
+      display: none;
+    }
+    .card-a { font-size: 14px; color: #e2e8f0; line-height: 1.4; margin-bottom: 8px; }
 
     .source-quote {
-      margin-top: 10px;
+      margin-top: 8px;
       padding-left: 10px;
       border-left: 2px solid var(--primary);
       font-size: 12px;
       color: #94a3b8;
       font-style: italic;
     }
+
+    /* Filter Controls */
+    .filter-panel {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      margin-bottom: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .search-input {
+      background: #0f172a;
+      border: 1px solid var(--card-border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 10px 14px;
+      font-size: 14px;
+      outline: none;
+      width: 100%;
+    }
+    .search-input:focus { border-color: var(--primary); }
+
+    .chip-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .chip-label { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; margin-right: 4px; }
+    .filter-chip {
+      background: #0f172a;
+      border: 1px solid var(--card-border);
+      border-radius: 9999px;
+      padding: 4px 12px;
+      font-size: 12px;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .filter-chip:hover { border-color: var(--primary); color: var(--text); }
+    .filter-chip.active { background: rgba(99, 102, 241, 0.2); border-color: var(--primary); color: #818cf8; font-weight: 600; }
 
     /* Table Styles */
     .table-container {
@@ -290,7 +360,7 @@ export class WebServer {
     <ul class="nav-list">
       <li class="nav-item active" id="nav-dashboard" onclick="switchTab('dashboard')">📊 Dashboard</li>
       <li class="nav-item" id="nav-sources" onclick="switchTab('sources')">🌐 Data Sources</li>
-      <li class="nav-item" id="nav-cards" onclick="switchTab('cards')">🗂️ Flashcards</li>
+      <li class="nav-item" id="nav-cards" onclick="switchTab('cards')">🗂️ Question Explorer</li>
       <li class="nav-item" id="nav-export" onclick="switchTab('export')">🚀 Export Center</li>
     </ul>
   </aside>
@@ -362,16 +432,40 @@ export class WebServer {
       </div>
     </div>
 
-    <!-- 3. FLASHCARDS VIEW -->
+    <!-- 3. QUESTION EXPLORER VIEW -->
     <div id="view-cards" style="display:none;">
       <header>
         <div>
-          <h1>Flashcards Explorer</h1>
-          <p class="subtitle">Explore all grounded study cards by deck and difficulty</p>
+          <h1>Question Explorer</h1>
+          <p class="subtitle">Explore, search, and self-test verified flashcards with filter chips</p>
         </div>
+        <div id="cards-count-badge" class="badge badge-diff">0 Cards Found</div>
       </header>
-      <div id="all-cards-list" class="card-list">
-        <p style="color: var(--text-muted); font-size: 14px;">Select or filter cards...</p>
+
+      <div class="filter-panel">
+        <input class="search-input" id="search-query" placeholder="🔍 Search questions, answers, and source quotes..." oninput="handleSearchInput()" />
+        
+        <div class="chip-row" id="deck-chips-row">
+          <span class="chip-label">Deck:</span>
+          <span class="filter-chip active" onclick="setFilter('deck', '')">All Decks</span>
+        </div>
+
+        <div class="chip-row">
+          <span class="chip-label">Difficulty:</span>
+          <span class="filter-chip active" id="diff-chip-all" onclick="setFilter('difficulty', '')">All</span>
+          <span class="filter-chip" id="diff-chip-beginner" onclick="setFilter('difficulty', 'beginner')">🟢 Beginner</span>
+          <span class="filter-chip" id="diff-chip-intermediate" onclick="setFilter('difficulty', 'intermediate')">🟡 Intermediate</span>
+          <span class="filter-chip" id="diff-chip-expert" onclick="setFilter('difficulty', 'expert')">🔴 Expert</span>
+        </div>
+
+        <div class="chip-row" id="tag-chips-row">
+          <span class="chip-label">Tags:</span>
+          <span class="filter-chip active" onclick="setFilter('tag', '')">All Tags</span>
+        </div>
+      </div>
+
+      <div id="explorer-grid" class="flashcards-grid">
+        <p style="color: var(--text-muted); font-size: 14px;">Loading cards...</p>
       </div>
     </div>
 
@@ -437,6 +531,14 @@ export class WebServer {
   </div>
 
   <script>
+    let activeFilters = {
+      search: '',
+      deck: '',
+      difficulty: '',
+      tag: ''
+    };
+    let searchDebounceTimer = null;
+
     async function loadStats() {
       try {
         const res = await fetch('/api/stats');
@@ -455,10 +557,10 @@ export class WebServer {
         let html = '';
         for (let i = 0; i < data.recentCards.length; i++) {
           const c = data.recentCards[i];
-          const tagsHtml = (c.tags || []).map(function(t) { return '<span class="badge">' + t + '</span>'; }).join('');
+          const tagsHtml = (c.tags || []).map(function(t) { return '<span class="badge">#' + t + '</span>'; }).join('');
           const quoteHtml = c.sourceQuote ? '<div class="source-quote">"' + c.sourceQuote + '"</div>' : '';
 
-          html += '<div class="card-item">' +
+          html += '<div class="card-box">' +
             '<div class="card-meta">' +
               '<span class="badge badge-deck">' + c.targetDeck + '</span>' +
               '<span class="badge badge-diff">' + c.difficulty + '</span>' +
@@ -510,6 +612,120 @@ export class WebServer {
       }
     }
 
+    async function loadExplorerFilterChips() {
+      try {
+        // Decks
+        const decksRes = await fetch('/api/decks');
+        const decks = await decksRes.json();
+        const deckContainer = document.getElementById('deck-chips-row');
+        let deckHtml = '<span class="chip-label">Deck:</span><span class="filter-chip ' + (activeFilters.deck === '' ? 'active' : '') + '" onclick="setFilter(\'deck\', \'\')">All Decks</span>';
+        for (let i = 0; i < decks.length; i++) {
+          const d = decks[i];
+          deckHtml += '<span class="filter-chip ' + (activeFilters.deck === d ? 'active' : '') + '" onclick="setFilter(\'deck\', \'' + d + '\')">' + d + '</span>';
+        }
+        deckContainer.innerHTML = deckHtml;
+
+        // Tags
+        const tagsRes = await fetch('/api/tags');
+        const tags = await tagsRes.json();
+        const tagContainer = document.getElementById('tag-chips-row');
+        let tagHtml = '<span class="chip-label">Tags:</span><span class="filter-chip ' + (activeFilters.tag === '' ? 'active' : '') + '" onclick="setFilter(\'tag\', \'\')">All Tags</span>';
+        for (let i = 0; i < tags.length; i++) {
+          const t = tags[i];
+          tagHtml += '<span class="filter-chip ' + (activeFilters.tag === t ? 'active' : '') + '" onclick="setFilter(\'tag\', \'' + t + '\')">#' + t + '</span>';
+        }
+        tagContainer.innerHTML = tagHtml;
+      } catch (err) {
+        console.error('Failed to load filter chips:', err);
+      }
+    }
+
+    async function loadExplorerCards() {
+      try {
+        const params = new URLSearchParams();
+        if (activeFilters.search) params.append('search', activeFilters.search);
+        if (activeFilters.deck) params.append('deck', activeFilters.deck);
+        if (activeFilters.difficulty) params.append('difficulty', activeFilters.difficulty);
+        if (activeFilters.tag) params.append('tag', activeFilters.tag);
+
+        const res = await fetch('/api/cards?' + params.toString());
+        const cards = await res.json();
+
+        document.getElementById('cards-count-badge').innerText = cards.length + ' Cards Found';
+
+        const grid = document.getElementById('explorer-grid');
+        if (!cards || cards.length === 0) {
+          grid.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--text-muted);">' +
+            '<h3>🔍 No matching flashcards found</h3>' +
+            '<p style="margin-top: 6px; font-size: 14px;">Try clearing filters or search terms.</p>' +
+          '</div>';
+          return;
+        }
+
+        let html = '';
+        for (let i = 0; i < cards.length; i++) {
+          const c = cards[i];
+          const tagsHtml = (c.tags || []).map(function(t) { return '<span class="badge">#' + t + '</span>'; }).join('');
+          const quoteHtml = c.sourceQuote ? '<div class="source-quote"><strong>Source Excerpt:</strong> "' + c.sourceQuote + '"</div>' : '';
+
+          html += '<div class="card-box" id="card-box-' + c.id + '">' +
+            '<div>' +
+              '<div class="card-meta">' +
+                '<span class="badge badge-deck">' + c.targetDeck + '</span>' +
+                '<span class="badge badge-diff">' + c.difficulty + '</span>' +
+                tagsHtml +
+              '</div>' +
+              '<div class="card-q">' + c.question + '</div>' +
+            '</div>' +
+            '<div>' +
+              '<div class="card-a-container" id="ans-' + c.id + '">' +
+                '<div class="card-a"><strong>Answer:</strong> ' + c.answer + '</div>' +
+                quoteHtml +
+              '</div>' +
+              '<button class="btn btn-secondary btn-sm" style="margin-top: 14px; width: 100%;" onclick="toggleAnswer(\'' + c.id + '\')">👁️ Reveal Answer</button>' +
+            '</div>' +
+          '</div>';
+        }
+        grid.innerHTML = html;
+      } catch (err) {
+        console.error('Failed to load explorer cards:', err);
+      }
+    }
+
+    function toggleAnswer(cardId) {
+      const container = document.getElementById('ans-' + cardId);
+      const btn = event.currentTarget;
+      if (container.style.display === 'block') {
+        container.style.display = 'none';
+        btn.innerText = '👁️ Reveal Answer';
+      } else {
+        container.style.display = 'block';
+        btn.innerText = '🙈 Hide Answer';
+      }
+    }
+
+    function setFilter(key, value) {
+      activeFilters[key] = value;
+
+      if (key === 'difficulty') {
+        document.querySelectorAll('[id^="diff-chip-"]').forEach(function(el) { el.classList.remove('active'); });
+        const targetId = value === '' ? 'diff-chip-all' : 'diff-chip-' + value;
+        const targetEl = document.getElementById(targetId);
+        if (targetEl) targetEl.classList.add('active');
+      }
+
+      loadExplorerFilterChips();
+      loadExplorerCards();
+    }
+
+    function handleSearchInput() {
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = setTimeout(function() {
+        activeFilters.search = document.getElementById('search-query').value.trim();
+        loadExplorerCards();
+      }, 250);
+    }
+
     function switchTab(tab) {
       document.querySelectorAll('.nav-item').forEach(function(i) { i.classList.remove('active'); });
       document.getElementById('view-dashboard').style.display = 'none';
@@ -522,6 +738,10 @@ export class WebServer {
 
       if (tab === 'dashboard') loadStats();
       if (tab === 'sources') loadSources();
+      if (tab === 'cards') {
+        loadExplorerFilterChips();
+        loadExplorerCards();
+      }
     }
 
     function openAddSourceModal() {
@@ -639,7 +859,6 @@ export class WebServer {
 
     return new Promise((resolve, reject) => {
       this.server = http.createServer(async (req, res) => {
-
         const parsedUrl = url.parse(req.url || "/", true);
         const pathname = parsedUrl.pathname || "/";
         const method = req.method || "GET";
@@ -750,6 +969,7 @@ export class WebServer {
               tag: query.tag as string,
               difficulty: query.difficulty as any,
               sourceId: query.sourceId as string,
+              search: query.search as string,
             };
             const cards = this.options.cardRepo.list(filter);
             this.sendJson(res, 200, cards);
@@ -760,6 +980,13 @@ export class WebServer {
           if (pathname === "/api/decks" && method === "GET") {
             const decks = this.options.cardRepo.listDecks();
             this.sendJson(res, 200, decks);
+            return;
+          }
+
+          // 10. Tags Endpoint
+          if (pathname === "/api/tags" && method === "GET") {
+            const tags = this.options.cardRepo.listTags ? this.options.cardRepo.listTags() : [];
+            this.sendJson(res, 200, tags);
             return;
           }
 
@@ -800,6 +1027,3 @@ export class WebServer {
 export function createWebServer(options: WebServerOptions): WebServer {
   return new WebServer(options);
 }
-
-
-

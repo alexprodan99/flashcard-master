@@ -7,6 +7,7 @@ export interface CardFilter {
   sourceId?: string;
   difficulty?: DifficultyLevel;
   tag?: string;
+  search?: string;
 }
 
 export class FlashcardRepository {
@@ -120,6 +121,10 @@ export class FlashcardRepository {
       conditions.push("difficulty = ?");
       params.push(filter.difficulty);
     }
+    if (filter.search) {
+      conditions.push("(question LIKE ? OR answer LIKE ?)");
+      params.push(`%${filter.search}%`, `%${filter.search}%`);
+    }
 
     let sql = "SELECT * FROM flashcards";
     if (conditions.length > 0) {
@@ -205,6 +210,22 @@ export class FlashcardRepository {
   listDecks(): string[] {
     const rows = this.db.prepare("SELECT DISTINCT target_deck FROM flashcards ORDER BY target_deck ASC").all() as any[];
     return rows.map((r) => r.target_deck);
+  }
+
+  listTags(): string[] {
+    const rows = this.db.prepare("SELECT tags FROM flashcards").all() as any[];
+    const tagSet = new Set<string>();
+    for (const r of rows) {
+      try {
+        const tags = typeof r.tags === "string" ? JSON.parse(r.tags) : r.tags || [];
+        for (const t of tags) {
+          if (typeof t === "string" && t.trim()) {
+            tagSet.add(t.trim());
+          }
+        }
+      } catch {}
+    }
+    return Array.from(tagSet).sort();
   }
 
   count(filter: CardFilter = {}): number {
