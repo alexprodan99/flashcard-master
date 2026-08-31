@@ -11,7 +11,7 @@ export class AnthropicAdapter implements LLMProviderPort {
 
   constructor(config: Partial<LLMConfig> = {}) {
     this.apiKey = config.apiKey;
-    this.model = config.model || "claude-3-5-sonnet-20241022";
+    this.model = config.model || "claude-3-5-haiku-latest";
     this.baseUrl = config.baseUrl || "https://api.anthropic.com/v1";
     this.timeoutMs = config.timeoutMs ?? 30000;
     this.fetchFn = config.customFetch ?? globalThis.fetch;

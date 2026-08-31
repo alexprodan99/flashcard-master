@@ -9,7 +9,7 @@ export class OllamaAdapter implements LLMProviderPort {
   private readonly fetchFn: typeof fetch;
 
   constructor(config: Partial<LLMConfig> = {}) {
-    this.model = config.model || "llama3";
+    this.model = config.model || "phi4-mini";
     this.baseUrl = config.baseUrl || "http://localhost:11434";
     this.timeoutMs = config.timeoutMs ?? 60000;
     this.fetchFn = config.customFetch ?? globalThis.fetch;

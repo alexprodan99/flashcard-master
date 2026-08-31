@@ -235,16 +235,16 @@ flashcard-master stats
 
 ---
 
-## ⚙️ Supported LLM Providers
+## ⚙️ Supported LLM Providers (Optimized for Performance-per-Dollar)
 
 You can switch between local and cloud AI providers seamlessly via CLI flags or environment variables:
 
-| Provider | Model Flag / Default | Configuration / API Key | Privacy |
+| Provider | Recommended Default | Alternatives / Supported Models | Privacy & Cost Tier |
 |---|---|---|---|
-| **Ollama** *(Default)* | `--provider ollama` (`llama3.2`) | `OLLAMA_HOST` (default: `http://127.0.0.1:11434`) | 🟢 **100% Local & Offline** |
-| **OpenAI** | `--provider openai` (`gpt-4o-mini`) | `export OPENAI_API_KEY="sk-..."` | 🟡 Cloud API |
-| **Anthropic** | `--provider anthropic` (`claude-3-5-sonnet-latest`) | `export ANTHROPIC_API_KEY="sk-ant-..."` | 🟡 Cloud API |
-| **Google Gemini** | `--provider gemini` (`gemini-1.5-flash`) | `export GEMINI_API_KEY="AIza..."` | 🟡 Cloud API |
+| 🦙 **Ollama** *(Default)* | `--provider ollama` (**`phi4-mini`**) | `llama3.3`, `deepseek-r1`, `qwen2.5`, `mistral` | 🟢 **100% Local, Offline & Free** |
+| 🔵 **Google Gemini** | `--provider gemini` (**`gemini-2.0-flash`**) | `gemini-2.0-pro-exp`, `gemini-1.5-pro` | 🟡 Cloud API (~$0.10 / 1M tokens) |
+| 🟢 **OpenAI** | `--provider openai` (**`gpt-4o-mini`**) | `o3-mini`, `gpt-4o`, `gpt-4.5-preview` | 🟡 Cloud API (~$0.15 / 1M tokens) |
+| 🟣 **Anthropic** | `--provider anthropic` (**`claude-3-5-haiku-latest`**) | `claude-3-7-sonnet-latest`, `claude-3-5-sonnet-latest` | 🟡 Cloud API (~$1.00 / 1M tokens) |
 
 ---
 
