@@ -68,6 +68,13 @@ journey
 2. `flashcard-master` transmits cards directly to the running desktop Anki application via AnkiConnect HTTP API.
 3. Alternatively, Alex exports a styled `.apkg` file, an active-recall Markdown document (`<details>` blocks), or a PDF study sheet.
 
+#### UJ-5: In-Browser AI Card Generation Studio
+1. Alex navigates to the "⚡ Generate Studio" tab on `http://127.0.0.1:3000`.
+2. Alex selects the AI Provider (Ollama, Google Gemini, OpenAI, or Anthropic). The UI auto-populates the recommended cost-effective default model (`phi4-mini`, `gemini-2.0-flash`, `gpt-4o-mini`, `claude-3-5-haiku-latest`), with full freedom to override with any custom model name.
+3. Alex selects single, multiple, or all active data sources, sets target deck, and picks a cognitive learning persona (`socratic-mentor`, `strict-examiner`, `analogy-builder`).
+4. Alex clicks "Start AI Generation". The UI displays live spinning progress feedback as cards are synthesized, verified against verbatim grounding citations, and deduplicated.
+5. On completion, the UI presents a generation summary banner (`Cards Created`, `Duplicates Filtered`, `Ungrounded Rejected`) and immediate card previews, dynamically updating overview KPIs and the Question Explorer.
+
 ---
 
 ## 3. Functional Requirements (FRs)
@@ -115,6 +122,10 @@ journey
 | **FR-404** | **UI Sources Management** | The Web UI MUST allow users to add, edit, toggle, and trigger manual sync on data sources with live progress feedback. | High |
 | **FR-405** | **UI Question Explorer & Editor** | The Web UI MUST provide a searchable card database with keyword search, filter chips, and inline card editing. | High |
 | **FR-406** | **UI 1-Click Export Center** | The Web UI MUST offer 1-click downloads for `.apkg`, Markdown, PDF, and 1-click Push to running AnkiConnect. | High |
+| **FR-407** | **UI AI Generation Studio** | The Web UI MUST provide an in-browser generation studio with provider switching (Ollama, Gemini, OpenAI, Anthropic), smart model defaults, and custom model text overrides. | Critical |
+| **FR-408** | **UI Multi-Source Scope Selector** | The Web UI MUST allow selecting "All Ingested Sources", a single source, or multiple selected sources for targeted flashcard extraction. | High |
+| **FR-409** | **UI Secure API Key Input** | The Web UI MUST allow optional in-browser API key entry for cloud LLM providers with automatic fallback to server environment variables. | Medium |
+| **FR-410** | **UI Live Generation Feedback** | The Web UI MUST display real-time spinning state during generation, followed by metric reporting (cards created, duplicates skipped, ungrounded rejected) and card previews. | High |
 
 ---
 
