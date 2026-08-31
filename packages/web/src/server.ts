@@ -9,6 +9,14 @@ import {
   type CardFilter,
 } from "@flashcard-master/core";
 
+export type ExportFormat = "apkg" | "csv" | "tsv" | "markdown" | "html";
+
+export interface AnkiConnectHealthCheck {
+  isOnline: boolean;
+  version?: number;
+  error?: string;
+}
+
 export interface WebServerOptions {
   port?: number;
   host?: string;
@@ -17,6 +25,10 @@ export interface WebServerOptions {
   cardRepo: FlashcardRepository;
   ingestionService?: IngestionService;
   exportService?: ExportService;
+  ankiConnectAdapter?: {
+    checkHealth(): Promise<AnkiConnectHealthCheck>;
+    syncCards(cards: any[], options?: any): Promise<any>;
+  };
 }
 
 export class WebServer {
@@ -136,6 +148,8 @@ export class WebServer {
     .btn:hover { background: var(--primary-hover); }
     .btn-secondary { background: #334155; color: #f8fafc; }
     .btn-secondary:hover { background: #475569; }
+    .btn-success { background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4); }
+    .btn-success:hover { background: rgba(16, 185, 129, 0.3); }
     .btn-danger { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); }
     .btn-danger:hover { background: rgba(239, 68, 68, 0.3); }
     .btn-sm { padding: 4px 10px; font-size: 12px; }
@@ -235,12 +249,6 @@ export class WebServer {
       font-style: italic;
     }
 
-    .card-actions-row {
-      display: flex;
-      gap: 8px;
-      margin-top: 14px;
-    }
-
     /* Filter Controls */
     .filter-panel {
       background: var(--card-bg);
@@ -314,24 +322,27 @@ export class WebServer {
     }
     tr:last-child td { border-bottom: none; }
 
-    /* Modals & Slide-Over Drawer */
-    .modal-overlay {
-      position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0,0,0,0.7);
-      display: none;
-      justify-content: center;
-      align-items: center;
-      z-index: 100;
+    /* Export Center Styles */
+    .export-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 20px;
+      margin-top: 20px;
     }
-    .modal {
+    .export-card {
       background: var(--card-bg);
       border: 1px solid var(--card-border);
       border-radius: var(--radius);
-      width: 480px;
-      max-width: 90vw;
       padding: 24px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 16px;
+      transition: border-color 0.15s ease;
     }
+    .export-card:hover { border-color: var(--primary); }
+    .export-card-title { font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+    .export-card-desc { font-size: 13px; color: var(--text-muted); line-height: 1.4; }
 
     /* Slide-over Drawer */
     .drawer-overlay {
@@ -358,6 +369,24 @@ export class WebServer {
     @keyframes slideIn {
       from { transform: translateX(100%); }
       to { transform: translateX(0); }
+    }
+
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.7);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 100;
+    }
+    .modal {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      width: 480px;
+      max-width: 90vw;
+      padding: 24px;
     }
 
     .modal-header, .drawer-header {
@@ -522,18 +551,89 @@ export class WebServer {
     <div id="view-export" style="display:none;">
       <header>
         <div>
-          <h1>Export Center</h1>
-          <p class="subtitle">Export flashcards to Anki (.apkg), CSV/TSV, Markdown, or PDF</p>
+          <h1>1-Click Export Center</h1>
+          <p class="subtitle">Download flashcards in multiple formats or sync directly with desktop Anki</p>
         </div>
+        <div id="export-count-badge" class="badge badge-diff">All Cards Selected</div>
       </header>
-      <div class="kpi-card" style="max-width: 600px;">
-        <h3 style="margin-bottom: 12px;">One-Click Format Export</h3>
-        <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 20px;">Choose a target format to generate output files directly:</p>
-        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-          <button class="btn" onclick="triggerExport('apkg')">📦 Anki Package (.apkg)</button>
-          <button class="btn btn-secondary" onclick="triggerExport('csv')">📄 Spreadsheet (.csv)</button>
-          <button class="btn btn-secondary" onclick="triggerExport('markdown')">📝 Markdown (.md)</button>
-          <button class="btn btn-secondary" onclick="triggerExport('html')">🖨️ Printable HTML</button>
+
+      <!-- Scope Filter Card -->
+      <div class="filter-panel" style="margin-bottom: 24px;">
+        <h3 style="font-size: 15px; font-weight: 600;">🎯 Export Scoping Filters</h3>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 8px;">
+          <div class="form-group" style="margin-bottom: 0;">
+            <label>Filter by Target Deck</label>
+            <select class="form-input" id="export-deck-select" onchange="updateExportScope()">
+              <option value="">All Decks (Entire Collection)</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label>Filter by Tag</label>
+            <select class="form-input" id="export-tag-select" onchange="updateExportScope()">
+              <option value="">All Tags</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- AnkiConnect Live Status Card -->
+      <div class="kpi-card" style="margin-bottom: 24px; border-color: rgba(99, 102, 241, 0.4);">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+          <div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <h3 style="font-size: 16px;">🔄 Desktop AnkiConnect Integration</h3>
+              <span id="ankiconnect-badge" class="badge" style="background: rgba(148, 163, 184, 0.15); color: #94a3b8;">Checking Status...</span>
+            </div>
+            <p style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">Synchronize flashcard notes directly into the running Anki desktop app</p>
+          </div>
+          <div style="display: flex; gap: 10px;">
+            <button class="btn btn-secondary btn-sm" onclick="checkAnkiConnectStatus()">🔄 Refresh Status</button>
+            <button id="ankiconnect-sync-btn" class="btn btn-sm" onclick="syncToAnkiConnect()">🚀 Push to Anki</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Format Download Cards -->
+      <div class="section-title">📦 Download Standalone Deliverables</div>
+      <div class="export-grid">
+        <div class="export-card">
+          <div>
+            <div class="export-card-title">📦 Anki Package (.apkg)</div>
+            <p class="export-card-desc">Native SQLite Anki package bundled with full deck hierarchy, tags, and CSS styling for 1-click import.</p>
+          </div>
+          <button class="btn" onclick="triggerFileDownload('apkg')">⬇️ Download .apkg</button>
+        </div>
+
+        <div class="export-card">
+          <div>
+            <div class="export-card-title">📄 Spreadsheet (.csv)</div>
+            <p class="export-card-desc">RFC 4180 standard comma-delimited spreadsheet format with quote escaping, deck headers, and tags.</p>
+          </div>
+          <button class="btn btn-secondary" onclick="triggerFileDownload('csv')">⬇️ Download .csv</button>
+        </div>
+
+        <div class="export-card">
+          <div>
+            <div class="export-card-title">📋 Tab-Separated (.tsv)</div>
+            <p class="export-card-desc">Standard tab-delimited text format compatible with Quizlet, Google Sheets, and legacy flashcard apps.</p>
+          </div>
+          <button class="btn btn-secondary" onclick="triggerFileDownload('tsv')">⬇️ Download .tsv</button>
+        </div>
+
+        <div class="export-card">
+          <div>
+            <div class="export-card-title">📝 Active-Recall Markdown (.md)</div>
+            <p class="export-card-desc">Obsidian &amp; Notion compatible markdown with YAML metadata frontmatter and collapsible &lt;details&gt; answer blocks.</p>
+          </div>
+          <button class="btn btn-secondary" onclick="triggerFileDownload('markdown')">⬇️ Download .md</button>
+        </div>
+
+        <div class="export-card">
+          <div>
+            <div class="export-card-title">🖨️ Two-Column Printable Study Guide (.html)</div>
+            <p class="export-card-desc">Print-optimized two-column fold-over HTML document with @media print CSS for offline physical flashcard review.</p>
+          </div>
+          <button class="btn btn-secondary" onclick="triggerFileDownload('html')">⬇️ Download .html</button>
         </div>
       </div>
     </div>
@@ -640,6 +740,10 @@ export class WebServer {
       search: '',
       deck: '',
       difficulty: '',
+      tag: ''
+    };
+    let exportScope = {
+      deck: '',
       tag: ''
     };
     let searchDebounceTimer = null;
@@ -909,6 +1013,115 @@ export class WebServer {
       }
     }
 
+    // EXPORT CENTER LOGIC
+    async function loadExportCenter() {
+      try {
+        const [decksRes, tagsRes] = await Promise.all([
+          fetch('/api/decks'),
+          fetch('/api/tags')
+        ]);
+        const decks = await decksRes.json();
+        const tags = await tagsRes.json();
+
+        const deckSelect = document.getElementById('export-deck-select');
+        let deckOpts = '<option value="">All Decks (Entire Collection)</option>';
+        for (let d of decks) {
+          deckOpts += '<option value="' + d + '">' + d + '</option>';
+        }
+        deckSelect.innerHTML = deckOpts;
+
+        const tagSelect = document.getElementById('export-tag-select');
+        let tagOpts = '<option value="">All Tags</option>';
+        for (let t of tags) {
+          tagOpts += '<option value="' + t + '">#' + t + '</option>';
+        }
+        tagSelect.innerHTML = tagOpts;
+
+        updateExportScope();
+        checkAnkiConnectStatus();
+      } catch (err) {
+        console.error('Failed to initialize export center:', err);
+      }
+    }
+
+    function updateExportScope() {
+      exportScope.deck = document.getElementById('export-deck-select').value;
+      exportScope.tag = document.getElementById('export-tag-select').value;
+
+      let badgeText = 'All Cards Selected';
+      if (exportScope.deck && exportScope.tag) {
+        badgeText = 'Deck: ' + exportScope.deck + ' | Tag: #' + exportScope.tag;
+      } else if (exportScope.deck) {
+        badgeText = 'Deck: ' + exportScope.deck;
+      } else if (exportScope.tag) {
+        badgeText = 'Tag: #' + exportScope.tag;
+      }
+      document.getElementById('export-count-badge').innerText = badgeText;
+    }
+
+    function triggerFileDownload(format) {
+      const params = new URLSearchParams();
+      params.append('format', format);
+      if (exportScope.deck) params.append('deck', exportScope.deck);
+      if (exportScope.tag) params.append('tag', exportScope.tag);
+
+      window.location.href = '/api/export?' + params.toString();
+    }
+
+    async function checkAnkiConnectStatus() {
+      const badge = document.getElementById('ankiconnect-badge');
+      badge.innerText = 'Checking...';
+      badge.style.background = 'rgba(148, 163, 184, 0.15)';
+      badge.style.color = '#94a3b8';
+
+      try {
+        const res = await fetch('/api/ankiconnect/status');
+        const data = await res.json();
+
+        if (data.isOnline) {
+          badge.innerText = '🟢 Connected (v' + (data.version || 6) + ')';
+          badge.style.background = 'rgba(16, 185, 129, 0.15)';
+          badge.style.color = '#34d399';
+        } else {
+          badge.innerText = '🔴 Offline (Anki closed)';
+          badge.style.background = 'rgba(239, 68, 68, 0.15)';
+          badge.style.color = '#f87171';
+        }
+      } catch (err) {
+        badge.innerText = '🔴 Unreachable';
+        badge.style.background = 'rgba(239, 68, 68, 0.15)';
+        badge.style.color = '#f87171';
+      }
+    }
+
+    async function syncToAnkiConnect() {
+      const btn = document.getElementById('ankiconnect-sync-btn');
+      const origText = btn.innerText;
+      btn.innerText = '⏳ Syncing...';
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/api/ankiconnect/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ targetDeck: exportScope.deck, tag: exportScope.tag })
+        });
+        const data = await res.json();
+
+        if (data.error) {
+          alert('❌ AnkiConnect Sync Failed: ' + data.error);
+        } else {
+          alert('✅ AnkiConnect Sync Success!\n\nAdded ' + (data.addedCards || 0) + ' new cards to Anki.\nDuplicates/Skipped: ' + (data.duplicateOrFailedCards || 0));
+        }
+      } catch (err) {
+        alert('❌ Error: ' + err.message);
+      } finally {
+        btn.innerText = origText;
+        btn.disabled = false;
+        checkAnkiConnectStatus();
+      }
+    }
+
     function switchTab(tab) {
       document.querySelectorAll('.nav-item').forEach(function(i) { i.classList.remove('active'); });
       document.getElementById('view-dashboard').style.display = 'none';
@@ -924,6 +1137,9 @@ export class WebServer {
       if (tab === 'cards') {
         loadExplorerFilterChips();
         loadExplorerCards();
+      }
+      if (tab === 'export') {
+        loadExportCenter();
       }
     }
 
@@ -1195,6 +1411,90 @@ export class WebServer {
             const tags = this.options.cardRepo.listTags ? this.options.cardRepo.listTags() : [];
             this.sendJson(res, 200, tags);
             return;
+          }
+
+          // 12. AnkiConnect Status Endpoint: GET /api/ankiconnect/status
+          if (pathname === "/api/ankiconnect/status" && method === "GET") {
+            if (this.options.ankiConnectAdapter) {
+              const health = await this.options.ankiConnectAdapter.checkHealth();
+              this.sendJson(res, 200, health);
+            } else {
+              this.sendJson(res, 200, { isOnline: false, error: "AnkiConnect adapter not configured" });
+            }
+            return;
+          }
+
+          // 13. AnkiConnect Sync Endpoint: POST /api/ankiconnect/sync
+          if (pathname === "/api/ankiconnect/sync" && method === "POST") {
+            const body = await this.parseBody(req);
+            const filter: CardFilter = {
+              targetDeck: body.targetDeck || undefined,
+              tag: body.tag || undefined,
+            };
+            const cards = this.options.cardRepo.list(filter);
+
+            if (this.options.ankiConnectAdapter) {
+              const syncRes = await this.options.ankiConnectAdapter.syncCards(cards, {
+                targetDeck: body.targetDeck,
+              });
+              this.sendJson(res, 200, syncRes);
+            } else {
+              this.sendJson(res, 200, {
+                totalCards: cards.length,
+                addedCards: 0,
+                duplicateOrFailedCards: cards.length,
+                error: "AnkiConnect adapter not configured",
+              });
+            }
+            return;
+          }
+
+          // 14. Export File Download Endpoint: GET /api/export
+          if (pathname === "/api/export" && method === "GET") {
+            const query = parsedUrl.query;
+            const format = (query.format as ExportFormat) || "csv";
+            const filter: CardFilter = {
+              targetDeck: query.deck as string,
+              tag: query.tag as string,
+              difficulty: query.difficulty as any,
+              search: query.search as string,
+            };
+
+            const cards = this.options.cardRepo.list(filter);
+
+            if (this.options.exportService) {
+              const result = await this.options.exportService.export({ format, filter });
+              const filename = `flashcards.${format === "markdown" ? "md" : format}`;
+
+              let contentType = "text/plain";
+              if (format === "apkg") contentType = "application/octet-stream";
+              else if (format === "csv") contentType = "text/csv; charset=utf-8";
+              else if (format === "tsv") contentType = "text/tab-separated-values; charset=utf-8";
+              else if (format === "markdown") contentType = "text/markdown; charset=utf-8";
+              else if (format === "html") contentType = "text/html; charset=utf-8";
+
+              res.writeHead(200, {
+                "Content-Type": contentType,
+                "Content-Disposition": `attachment; filename="${filename}"`,
+                "Access-Control-Allow-Origin": "*",
+              });
+
+              if (result.data) {
+                res.end(result.data);
+              } else {
+                res.end("");
+              }
+              return;
+            } else {
+              // Fallback simple CSV export
+              const csvContent = "Question,Answer\n" + cards.map((c) => `"${c.question.replace(/"/g, '""')}","${c.answer.replace(/"/g, '""')}"`).join("\n");
+              res.writeHead(200, {
+                "Content-Type": "text/csv; charset=utf-8",
+                "Content-Disposition": 'attachment; filename="flashcards.csv"',
+              });
+              res.end(csvContent);
+              return;
+            }
           }
 
           // Fallback 404

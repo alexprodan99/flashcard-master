@@ -6,7 +6,17 @@ import {
   FlashcardRepository,
   IngestionService,
   StrategyRegistry,
+  ExporterRegistry,
+  ExportService,
 } from "@flashcard-master/core";
+import {
+  CsvExporter,
+  TsvExporter,
+  MarkdownExporter,
+  HtmlStudyGuideExporter,
+  AnkiPackageExporter,
+  AnkiConnectAdapter,
+} from "@flashcard-master/adapters";
 import { createWebServer, WebServer } from "../src/server.js";
 import type Database from "better-sqlite3";
 import type { IngestionStrategyPort, RawDocument, CleanTextDocument, DataSource } from "@flashcard-master/core";
@@ -39,6 +49,8 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
   let syncRepo: SyncStateRepository;
   let cardRepo: FlashcardRepository;
   let ingestionService: IngestionService;
+  let exportService: ExportService;
+  let ankiConnectAdapter: AnkiConnectAdapter;
   let server: WebServer;
   let serverUrl: string;
 
@@ -51,6 +63,16 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     const stratRegistry = new StrategyRegistry();
     stratRegistry.register(new MockStrategy());
     ingestionService = new IngestionService(sourceRepo, syncRepo, stratRegistry);
+
+    const exporterRegistry = new ExporterRegistry();
+    exporterRegistry.register(new CsvExporter());
+    exporterRegistry.register(new TsvExporter());
+    exporterRegistry.register(new MarkdownExporter());
+    exporterRegistry.register(new HtmlStudyGuideExporter());
+    exporterRegistry.register(new AnkiPackageExporter());
+    exportService = new ExportService(cardRepo, exporterRegistry);
+
+    ankiConnectAdapter = new AnkiConnectAdapter({ endpointUrl: "http://127.0.0.1:9999" }); // unreachable mock port
 
     // Seed test data
     sourceRepo.create({
@@ -86,6 +108,8 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       syncRepo,
       cardRepo,
       ingestionService,
+      exportService,
+      ankiConnectAdapter,
     });
 
     const info = await server.listen();
@@ -97,15 +121,14 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     db.close();
   });
 
-  it("serves HTML Single Page Application dashboard at / with Question Explorer and Slide-over Drawer", async () => {
+  it("serves HTML Single Page Application dashboard at / with Export Center", async () => {
     const res = await fetch(`${serverUrl}/`);
     expect(res.status).toBe(200);
     const text = await res.text();
     expect(text).toContain("Flashcard Master");
-    expect(text).toContain("Data Sources Manager");
-    expect(text).toContain("Question Explorer");
-    expect(text).toContain("card-drawer-overlay");
-    expect(text).toContain("✏️ Edit Flashcard");
+    expect(text).toContain("1-Click Export Center");
+    expect(text).toContain("Desktop AnkiConnect Integration");
+    expect(text).toContain("Download .apkg");
   });
 
   it("returns health status at /api/health", async () => {
@@ -125,6 +148,41 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     expect(json.totalDecks).toBe(1);
     expect(json.decks).toEqual(["Engineering"]);
     expect(json.recentCards.length).toBe(2);
+  });
+
+  it("supports downloading exported deliverables via GET /api/export", async () => {
+    // CSV export
+    const csvRes = await fetch(`${serverUrl}/api/export?format=csv&deck=Engineering`);
+    expect(csvRes.status).toBe(200);
+    expect(csvRes.headers.get("content-type")).toContain("text/csv");
+    expect(csvRes.headers.get("content-disposition")).toContain('filename="flashcards.csv"');
+    const csvText = await csvRes.text();
+    expect(csvText).toContain("What is Raft?");
+    expect(csvText).toContain("What is WAL?");
+
+    // Markdown export
+    const mdRes = await fetch(`${serverUrl}/api/export?format=markdown`);
+    expect(mdRes.status).toBe(200);
+    expect(mdRes.headers.get("content-type")).toContain("text/markdown");
+    const mdText = await mdRes.text();
+    expect(mdText).toContain("<details>");
+    expect(mdText).toContain("What is Raft?");
+  });
+
+  it("returns AnkiConnect status and handles sync requests gracefully", async () => {
+    const statusRes = await fetch(`${serverUrl}/api/ankiconnect/status`);
+    expect(statusRes.status).toBe(200);
+    const status = await statusRes.json();
+    expect(typeof status.isOnline).toBe("boolean");
+
+    const syncRes = await fetch(`${serverUrl}/api/ankiconnect/sync`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ targetDeck: "Engineering" }),
+    });
+    expect(syncRes.status).toBe(200);
+    const syncResult = await syncRes.json();
+    expect(syncResult.totalCards).toBe(2);
   });
 
   it("supports querying cards with filters and substring search at /api/cards", async () => {
