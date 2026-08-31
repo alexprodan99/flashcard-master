@@ -749,6 +749,23 @@ export class WebServer {
     let searchDebounceTimer = null;
     let cardCache = new Map();
 
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function escapeAttr(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
     async function loadStats() {
       try {
         const res = await fetch('/api/stats');
@@ -768,20 +785,20 @@ export class WebServer {
         for (let i = 0; i < data.recentCards.length; i++) {
           const c = data.recentCards[i];
           cardCache.set(c.id, c);
-          const tagsHtml = (c.tags || []).map(function(t) { return '<span class="badge">#' + t + '</span>'; }).join('');
-          const quoteHtml = c.sourceQuote ? '<div class="source-quote">"' + c.sourceQuote + '"</div>' : '';
+          const tagsHtml = (c.tags || []).map(function(t) { return '<span class="badge">#' + escapeHtml(t) + '</span>'; }).join('');
+          const quoteHtml = c.sourceQuote ? '<div class="source-quote">"' + escapeHtml(c.sourceQuote) + '"</div>' : '';
 
           html += '<div class="card-box">' +
             '<div class="card-header-row">' +
               '<div class="card-meta">' +
-                '<span class="badge badge-deck">' + c.targetDeck + '</span>' +
-                '<span class="badge badge-diff">' + c.difficulty + '</span>' +
+                '<span class="badge badge-deck">' + escapeHtml(c.targetDeck) + '</span>' +
+                '<span class="badge badge-diff">' + escapeHtml(c.difficulty) + '</span>' +
                 tagsHtml +
               '</div>' +
-              '<button class="btn btn-secondary btn-sm" onclick="openCardDrawer(\'' + c.id + '\')">✏️ Edit</button>' +
+              '<button class="btn btn-secondary btn-sm" data-id="' + escapeAttr(c.id) + '" onclick="openCardDrawer(this.getAttribute(\'data-id\'))">✏️ Edit</button>' +
             '</div>' +
-            '<div class="card-q">' + c.question + '</div>' +
-            '<div class="card-a">' + c.answer + '</div>' +
+            '<div class="card-q">' + escapeHtml(c.question) + '</div>' +
+            '<div class="card-a">' + escapeHtml(c.answer) + '</div>' +
             quoteHtml +
           '</div>';
         }
@@ -805,18 +822,18 @@ export class WebServer {
         let html = '';
         for (let i = 0; i < sources.length; i++) {
           const s = sources[i];
-          const typeBadge = '<span class="badge badge-' + s.type + '">' + s.type.toUpperCase() + '</span>';
+          const typeBadge = '<span class="badge badge-' + escapeAttr(s.type) + '">' + escapeHtml(s.type.toUpperCase()) + '</span>';
           const statusBadge = s.isActive ? '<span class="badge" style="color: #34d399;">● Active</span>' : '<span class="badge" style="color: #94a3b8;">○ Inactive</span>';
 
           html += '<tr>' +
-            '<td><strong>' + s.name + '</strong></td>' +
+            '<td><strong>' + escapeHtml(s.name) + '</strong></td>' +
             '<td>' + typeBadge + '</td>' +
-            '<td style="font-family: monospace; font-size: 12px; color: var(--text-muted);">' + s.uri + '</td>' +
-            '<td><span class="badge badge-deck">' + s.targetDeck + '</span></td>' +
+            '<td style="font-family: monospace; font-size: 12px; color: var(--text-muted);">' + escapeHtml(s.uri) + '</td>' +
+            '<td><span class="badge badge-deck">' + escapeHtml(s.targetDeck) + '</span></td>' +
             '<td>' + statusBadge + '</td>' +
             '<td>' +
-              '<button class="btn btn-secondary btn-sm" onclick="syncSingleSource(\'' + s.id + '\')">🔄 Sync</button> ' +
-              '<button class="btn btn-danger btn-sm" onclick="deleteSingleSource(\'' + s.id + '\')">🗑️</button>' +
+              '<button class="btn btn-secondary btn-sm" data-id="' + escapeAttr(s.id) + '" onclick="syncSingleSource(this.getAttribute(\'data-id\'))">🔄 Sync</button> ' +
+              '<button class="btn btn-danger btn-sm" data-id="' + escapeAttr(s.id) + '" onclick="deleteSingleSource(this.getAttribute(\'data-id\'))">🗑️</button>' +
             '</td>' +
           '</tr>';
         }
@@ -835,7 +852,7 @@ export class WebServer {
         let deckHtml = '<span class="chip-label">Deck:</span><span class="filter-chip ' + (activeFilters.deck === '' ? 'active' : '') + '" onclick="setFilter(\'deck\', \'\')">All Decks</span>';
         for (let i = 0; i < decks.length; i++) {
           const d = decks[i];
-          deckHtml += '<span class="filter-chip ' + (activeFilters.deck === d ? 'active' : '') + '" onclick="setFilter(\'deck\', \'' + d + '\')">' + d + '</span>';
+          deckHtml += '<span class="filter-chip ' + (activeFilters.deck === d ? 'active' : '') + '" data-deck="' + escapeAttr(d) + '" onclick="setFilter(\'deck\', this.getAttribute(\'data-deck\'))">' + escapeHtml(d) + '</span>';
         }
         deckContainer.innerHTML = deckHtml;
 
@@ -846,7 +863,7 @@ export class WebServer {
         let tagHtml = '<span class="chip-label">Tags:</span><span class="filter-chip ' + (activeFilters.tag === '' ? 'active' : '') + '" onclick="setFilter(\'tag\', \'\')">All Tags</span>';
         for (let i = 0; i < tags.length; i++) {
           const t = tags[i];
-          tagHtml += '<span class="filter-chip ' + (activeFilters.tag === t ? 'active' : '') + '" onclick="setFilter(\'tag\', \'' + t + '\')">#' + t + '</span>';
+          tagHtml += '<span class="filter-chip ' + (activeFilters.tag === t ? 'active' : '') + '" data-tag="' + escapeAttr(t) + '" onclick="setFilter(\'tag\', this.getAttribute(\'data-tag\'))">#' + escapeHtml(t) + '</span>';
         }
         tagContainer.innerHTML = tagHtml;
       } catch (err) {
@@ -880,27 +897,27 @@ export class WebServer {
         for (let i = 0; i < cards.length; i++) {
           const c = cards[i];
           cardCache.set(c.id, c);
-          const tagsHtml = (c.tags || []).map(function(t) { return '<span class="badge">#' + t + '</span>'; }).join('');
-          const quoteHtml = c.sourceQuote ? '<div class="source-quote"><strong>Source Excerpt:</strong> "' + c.sourceQuote + '"</div>' : '';
+          const tagsHtml = (c.tags || []).map(function(t) { return '<span class="badge">#' + escapeHtml(t) + '</span>'; }).join('');
+          const quoteHtml = c.sourceQuote ? '<div class="source-quote"><strong>Source Excerpt:</strong> "' + escapeHtml(c.sourceQuote) + '"</div>' : '';
 
-          html += '<div class="card-box" id="card-box-' + c.id + '">' +
+          html += '<div class="card-box" id="card-box-' + escapeAttr(c.id) + '">' +
             '<div>' +
               '<div class="card-header-row">' +
                 '<div class="card-meta">' +
-                  '<span class="badge badge-deck">' + c.targetDeck + '</span>' +
-                  '<span class="badge badge-diff">' + c.difficulty + '</span>' +
+                  '<span class="badge badge-deck">' + escapeHtml(c.targetDeck) + '</span>' +
+                  '<span class="badge badge-diff">' + escapeHtml(c.difficulty) + '</span>' +
                   tagsHtml +
                 '</div>' +
-                '<button class="btn btn-secondary btn-sm" onclick="openCardDrawer(\'' + c.id + '\')">✏️ Edit</button>' +
+                '<button class="btn btn-secondary btn-sm" data-id="' + escapeAttr(c.id) + '" onclick="openCardDrawer(this.getAttribute(\'data-id\'))">✏️ Edit</button>' +
               '</div>' +
-              '<div class="card-q">' + c.question + '</div>' +
+              '<div class="card-q">' + escapeHtml(c.question) + '</div>' +
             '</div>' +
             '<div>' +
-              '<div class="card-a-container" id="ans-' + c.id + '">' +
-                '<div class="card-a"><strong>Answer:</strong> ' + c.answer + '</div>' +
+              '<div class="card-a-container" id="ans-' + escapeAttr(c.id) + '">' +
+                '<div class="card-a"><strong>Answer:</strong> ' + escapeHtml(c.answer) + '</div>' +
                 quoteHtml +
               '</div>' +
-              '<button class="btn btn-secondary btn-sm" style="margin-top: 14px; width: 100%;" onclick="toggleAnswer(\'' + c.id + '\')">👁️ Reveal Answer</button>' +
+              '<button class="btn btn-secondary btn-sm" style="margin-top: 14px; width: 100%;" data-id="' + escapeAttr(c.id) + '" onclick="toggleAnswer(this, this.getAttribute(\'data-id\'))">👁️ Reveal Answer</button>' +
             '</div>' +
           '</div>';
         }
@@ -910,15 +927,15 @@ export class WebServer {
       }
     }
 
-    function toggleAnswer(cardId) {
+    function toggleAnswer(btn, cardId) {
       const container = document.getElementById('ans-' + cardId);
-      const btn = event.currentTarget;
+      if (!container) return;
       if (container.style.display === 'block') {
         container.style.display = 'none';
-        btn.innerText = '👁️ Reveal Answer';
+        if (btn) btn.innerText = '👁️ Reveal Answer';
       } else {
         container.style.display = 'block';
-        btn.innerText = '🙈 Hide Answer';
+        if (btn) btn.innerText = '🙈 Hide Answer';
       }
     }
 
@@ -1026,14 +1043,14 @@ export class WebServer {
         const deckSelect = document.getElementById('export-deck-select');
         let deckOpts = '<option value="">All Decks (Entire Collection)</option>';
         for (let d of decks) {
-          deckOpts += '<option value="' + d + '">' + d + '</option>';
+          deckOpts += '<option value="' + escapeAttr(d) + '">' + escapeHtml(d) + '</option>';
         }
         deckSelect.innerHTML = deckOpts;
 
         const tagSelect = document.getElementById('export-tag-select');
         let tagOpts = '<option value="">All Tags</option>';
         for (let t of tags) {
-          tagOpts += '<option value="' + t + '">#' + t + '</option>';
+          tagOpts += '<option value="' + escapeAttr(t) + '">#' + escapeHtml(t) + '</option>';
         }
         tagSelect.innerHTML = tagOpts;
 
