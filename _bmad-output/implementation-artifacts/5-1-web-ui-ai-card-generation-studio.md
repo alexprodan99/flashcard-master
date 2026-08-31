@@ -10,8 +10,8 @@
 
 ### User Story
 > **As a learner using the Web UI Dashboard,**  
-> I want an interactive **"⚡ Generate Studio"** tab / modal in the browser where I can select my AI Provider (`Ollama`, `Gemini`, `OpenAI`, `Anthropic`), customize the Model, pick a Learning Persona, and set Difficulty,  
-> **So that I can generate new grounded flashcards directly in the browser with live visual feedback.**
+> I want an interactive **"⚡ Generate Studio"** tab in the browser where I can select my AI Provider (`Ollama`, `Gemini`, `OpenAI`, `Anthropic`), pick or customize the Model, choose a Learning Persona, and set Difficulty,  
+> **So that I can generate new grounded flashcards from single, multiple, or all active sources directly in the browser with live visual feedback.**
 
 ---
 
@@ -22,10 +22,11 @@
   - **Body:**
     ```json
     {
-      "sourceId": "optional-uuid",
+      "sourceIds": ["optional-uuid-1", "optional-uuid-2"],
+      "sourceId": "optional-single-uuid",
       "provider": "ollama | gemini | openai | anthropic",
-      "model": "optional-model-name",
-      "apiKey": "optional-api-key",
+      "model": "optional-custom-model-name",
+      "apiKey": "optional-transient-api-key",
       "endpoint": "optional-custom-base-url",
       "persona": "socratic-mentor | strict-examiner | analogy-builder",
       "difficulty": "beginner | intermediate | expert",
@@ -35,31 +36,50 @@
     ```
   - **Handler Logic:**
     1. Instantiates `createLLMAdapter({ provider, model, apiKey, baseUrl: endpoint })`.
-    2. Runs `CardGenerationService.generateFromDocument` on ingested documents from target source(s).
-    3. Runs `GroundingGuard` to verify verbatim citations.
-    4. Runs `CardDeduplicationService` against existing deck cards.
-    5. Persists non-duplicate grounded cards to SQLite via `FlashcardRepository`.
-    6. Returns execution summary `{ success: true, cardsCreated, discardedUngrounded, duplicatesSkipped, newCards }`.
+    2. Gathers targeted active data sources based on `sourceIds`, `sourceId`, or all active sources.
+    3. Fetches documents using registered `IngestionStrategy` and cleans text.
+    4. Runs `CardGenerationService.generateFromDocument` on ingested text.
+    5. Runs `GroundingGuard` to verify verbatim citations against source text.
+    6. Runs `CardDeduplicationService` against existing deck cards.
+    7. Persists non-duplicate grounded cards to SQLite via `FlashcardRepository`.
+    8. Returns execution summary `{ success: true, cardsCreated, totalDraftsGenerated, duplicatesSkipped, newCards }`.
 
 ### Frontend Web UI Component
-- Add **`⚡ Generate Cards`** studio tab (`#view-generate` and `#nav-generate`).
-- Dynamic provider selector with automatic model defaults:
-  - `Ollama (Local & Free)` -> `phi4-mini` (Local endpoint `http://localhost:11434`)
+- Add **`⚡ Generate Studio`** navigation item and view container (`#view-generate` & `#nav-generate`).
+- Dynamic provider dropdown with automatic model presets:
+  - `Ollama (Local & Free)` -> `phi4-mini` (Local endpoint `http://127.0.0.1:11434`)
   - `Google Gemini` -> `gemini-2.0-flash`
   - `OpenAI` -> `gpt-4o-mini`
   - `Anthropic` -> `claude-3-5-haiku-latest`
-- Custom model input override.
-- Password input for cloud API keys (auto-populates from environment if left blank).
-- Persona selector with visual badges (`Socratic Mentor`, `Strict Examiner`, `Analogy Builder`).
+- Custom model input allowing arbitrary model text overrides.
+- Optional API key input (shown for cloud providers, auto-fallback to server environment variables if blank).
+- Learning persona selector with description callouts (`Socratic Mentor`, `Strict Examiner`, `Analogy Builder`).
 - Difficulty selector (`Beginner`, `Intermediate`, `Expert`).
-- Source picker (all active sources or a specific source).
+- Source selection (All Active Sources, Single Source, or Multi-select).
 - Live generation progress indicator with spinning state and summary card preview.
 
 ---
 
 ## 3. Acceptance Criteria
 
-- [ ] **AC1 — REST Generation Endpoint:** `POST /api/generate` runs full card generation pipeline and persists grounded cards.
-- [ ] **AC2 — Web UI Generation Studio:** Interactive form with provider, model, persona, difficulty, and source selection.
-- [ ] **AC3 — Live Generation Feedback:** Loading states, animated spinner, and success summary toast with newly generated card previews.
-- [ ] **AC4 — Automated Integration Tests:** Integration tests in `packages/web/test/server.test.ts` verifying `/api/generate` with mocked LLM adapter.
+- [ ] **AC1 — REST Generation Endpoint:**
+  - **Given** valid generation parameters sent to `POST /api/generate`
+  - **When** the endpoint processes documents with `CardGenerationService`, `GroundingGuard`, and `CardDeduplicationService`
+  - **Then** grounded unique flashcards are saved to SQLite and returned in the JSON response with metric counts.
+- [ ] **AC2 — Web UI Generation Studio:**
+  - **Given** the user navigates to the "⚡ Generate Studio" tab
+  - **When** selecting a provider (Ollama, Gemini, OpenAI, Anthropic)
+  - **Then** default model fields update automatically, API key inputs toggle dynamically, and custom model overrides are supported.
+- [ ] **AC3 — Multi-Source Selection & Deck Routing:**
+  - **Given** the user configures source scope (All, Single, or Selected) and target deck
+  - **When** generation executes
+  - **Then** flashcards are correctly generated from the targeted sources and routed to the specified deck.
+- [ ] **AC4 — Live Generation Feedback & Optimistic UI Update:**
+  - **Given** generation is triggered
+  - **When** waiting for LLM completion
+  - **Then** an animated spinner is displayed, followed by real-time metric reporting and preview cards, with dashboard KPIs updating dynamically.
+- [ ] **AC5 — Automated Integration Tests:**
+  - **Given** test suites in `packages/web/test/server.test.ts`
+  - **When** `npm test` executes
+  - **Then** all `/api/generate` integration tests pass with 100% assertions.
+
