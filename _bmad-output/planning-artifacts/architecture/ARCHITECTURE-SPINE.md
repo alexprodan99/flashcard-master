@@ -126,6 +126,15 @@ flowchart TD
 - **Prevents:** Re-fetching, re-parsing, and duplicate LLM card generation from previously processed posts or unmodified files.
 - **Rule:** For RSS sources, check article `guid` / publication date. For local files and web pages, compute SHA-256 hash of extracted text. Skip generation if hash matches `sync_state.content_hash`.
 
+### AD-9: In-Browser Web Generation Studio Controller (`POST /api/generate`)
+- **Binds:** `WebServer` driving controller directly to `LLMProviderPort`, `CardGenerationService`, `GroundingGuard`, and `CardDeduplicationService`.
+- **Prevents:** Business logic duplication in UI routes and insecure persistence of runtime API keys.
+- **Rule:** 
+  1. API keys passed via `POST /api/generate` body MUST be used transiently for the lifetime of that request and NEVER written to the database or logged to disk.
+  2. The controller supports single source, multiple selected source IDs, or all active sources.
+  3. All generated cards undergo mandatory verbatim substring verification via `GroundingGuard` and duplicate filtering via `CardDeduplicationService` before atomic persistence to SQLite.
+  4. The response returns structured metrics: `{ success: true, cardsCreated, totalDraftsGenerated, duplicatesSkipped, newCards }`.
+
 ---
 
 ## 3. Database Schema Specification (SQLite)
