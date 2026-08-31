@@ -94,7 +94,12 @@ You MUST respond ONLY with a JSON array matching this exact schema:
         difficulty: c.difficulty as DifficultyLevel,
       }));
     } catch (err: any) {
-      if (err instanceof LLMAuthenticationError || err instanceof LLMRateLimitError || err instanceof LLMResponseParsingError) {
+      if (
+        err instanceof LLMAuthenticationError ||
+        err instanceof LLMRateLimitError ||
+        err instanceof LLMNetworkError ||
+        err instanceof LLMResponseParsingError
+      ) {
         throw err;
       }
       if (err.name === "AbortError") {

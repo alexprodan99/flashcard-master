@@ -11,7 +11,7 @@ export class OllamaAdapter implements LLMProviderPort {
   constructor(config: Partial<LLMConfig> = {}) {
     this.model = config.model || "phi4-mini";
     this.baseUrl = config.baseUrl || "http://localhost:11434";
-    this.timeoutMs = config.timeoutMs ?? 60000;
+    this.timeoutMs = config.timeoutMs ?? 300000;
     this.fetchFn = config.customFetch ?? globalThis.fetch;
   }
 

@@ -11,9 +11,12 @@ export class AnthropicAdapter implements LLMProviderPort {
 
   constructor(config: Partial<LLMConfig> = {}) {
     this.apiKey = config.apiKey;
-    this.model = config.model || "claude-3-5-haiku-latest";
+    const rawModel = config.model || "claude-3-5-haiku-20241022";
+    this.model = (rawModel === "claude-3-5-haiku-latest" || rawModel === "claude-3-5-haiku")
+      ? "claude-3-5-haiku-20241022"
+      : rawModel;
     this.baseUrl = config.baseUrl || "https://api.anthropic.com/v1";
-    this.timeoutMs = config.timeoutMs ?? 30000;
+    this.timeoutMs = config.timeoutMs ?? 60000;
     this.fetchFn = config.customFetch ?? globalThis.fetch;
   }
 
@@ -93,7 +96,12 @@ You MUST output ONLY a valid raw JSON array with no markdown code fences:
         difficulty: c.difficulty as DifficultyLevel,
       }));
     } catch (err: any) {
-      if (err instanceof LLMAuthenticationError || err instanceof LLMRateLimitError || err instanceof LLMResponseParsingError) {
+      if (
+        err instanceof LLMAuthenticationError ||
+        err instanceof LLMRateLimitError ||
+        err instanceof LLMNetworkError ||
+        err instanceof LLMResponseParsingError
+      ) {
         throw err;
       }
       if (err.name === "AbortError") {

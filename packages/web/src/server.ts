@@ -1318,7 +1318,7 @@ export class WebServer {
         modelInput.value = 'gpt-4o-mini';
         apiKeyContainer.style.display = 'flex';
       } else if (provider === 'anthropic') {
-        modelInput.value = 'claude-3-5-haiku-latest';
+        modelInput.value = 'claude-3-5-haiku-20241022';
         apiKeyContainer.style.display = 'flex';
       }
     }

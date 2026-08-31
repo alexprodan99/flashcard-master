@@ -142,6 +142,22 @@ describe("LLM Provider Adapters", () => {
       expect(drafts.length).toBe(1);
       expect(drafts[0].difficulty).toBe("intermediate");
     });
+
+    it("maps HTTP error response to LLMNetworkError preserving exact status and body", async () => {
+      const mockFetch = async () => ({
+        ok: false,
+        status: 404,
+        text: async () => '{"type":"error","error":{"type":"not_found_error","message":"model: not-found"}}',
+      }) as any;
+
+      const adapter = new AnthropicAdapter({ apiKey: "claude-key", customFetch: mockFetch });
+      await expect(
+        adapter.generateQAPairs("sample text", {
+          difficulty: "intermediate",
+          personaPrompt: "test",
+        })
+      ).rejects.toThrow("HTTP error 404");
+    });
   });
 
   describe("OllamaAdapter", () => {

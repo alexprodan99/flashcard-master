@@ -93,7 +93,12 @@ ${text}`;
         difficulty: c.difficulty as DifficultyLevel,
       }));
     } catch (err: any) {
-      if (err instanceof LLMAuthenticationError || err instanceof LLMRateLimitError || err instanceof LLMResponseParsingError) {
+      if (
+        err instanceof LLMAuthenticationError ||
+        err instanceof LLMRateLimitError ||
+        err instanceof LLMNetworkError ||
+        err instanceof LLMResponseParsingError
+      ) {
         throw err;
       }
       if (err.name === "AbortError") {

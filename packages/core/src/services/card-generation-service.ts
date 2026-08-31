@@ -56,6 +56,8 @@ export class CardGenerationService {
       targetCount,
     });
 
+    const chunkErrors: string[] = [];
+
     for (const chunk of chunks) {
       try {
         const rawDrafts = await this.llmProvider.generateQAPairs(chunk, {
@@ -82,8 +84,12 @@ export class CardGenerationService {
         }
       } catch (err: any) {
         console.warn(`[CardGenerationService] Error generating cards for chunk in doc "${doc.title}":`, err.message);
-        // Error isolation: Continue with other chunks
+        chunkErrors.push(err.message);
       }
+    }
+
+    if (allDrafts.length === 0 && chunkErrors.length > 0) {
+      throw new Error(chunkErrors[0]);
     }
 
     return allDrafts;

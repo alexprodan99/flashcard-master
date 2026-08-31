@@ -65,4 +65,26 @@ describe("CardGenerationService", () => {
     expect(card.originUrl).toBe("https://raft.github.io");
     expect(card.documentTitle).toBe("Raft Protocol");
   });
+
+  it("throws fatal error when all chunks fail to generate cards", async () => {
+    const failingProvider: LLMProviderPort = {
+      providerName: "failing-llm",
+      async generateQAPairs(): Promise<CardGenerationDraft[]> {
+        throw new Error("[failing-llm] Network communication error: Request timed out");
+      },
+    };
+
+    const service = new CardGenerationService(failingProvider);
+    const doc: CleanTextDocument = {
+      id: "doc-3",
+      sourceId: "source-3",
+      title: "Timeout Doc",
+      textContent: "Valid content that will timeout when sending to LLM.",
+      contentHash: "hash-timeout",
+    };
+
+    await expect(service.generateFromDocument(doc)).rejects.toThrow(
+      "[failing-llm] Network communication error: Request timed out"
+    );
+  });
 });
