@@ -326,7 +326,7 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     expect(results[0].newCount).toBe(1);
   });
 
-  it("serves HTML SPA with AI Flashcard Generation Studio elements and multi-source selector", async () => {
+  it("serves HTML SPA with progressive 5-stage navigation order and AI Flashcard Generation Studio", async () => {
     const res = await fetch(`${serverUrl}/`);
     expect(res.status).toBe(200);
     const text = await res.text();
@@ -337,6 +337,18 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     expect(text).toContain("phi4-mini");
     expect(text).toContain("gen-sources-checkbox-list");
     expect(text).toContain("gen-source-count-badge");
+
+    // Verify 5-stage progressive learning pipeline navigation order
+    const dashboardPos = text.indexOf('id="nav-dashboard"');
+    const sourcesPos = text.indexOf('id="nav-sources"');
+    const generatePos = text.indexOf('id="nav-generate"');
+    const cardsPos = text.indexOf('id="nav-cards"');
+    const exportPos = text.indexOf('id="nav-export"');
+
+    expect(dashboardPos).toBeLessThan(sourcesPos);
+    expect(sourcesPos).toBeLessThan(generatePos);
+    expect(generatePos).toBeLessThan(cardsPos);
+    expect(cardsPos).toBeLessThan(exportPos);
   });
 
   it("generates grounded flashcards via POST /api/generate with sourceIds array", async () => {

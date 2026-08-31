@@ -450,8 +450,8 @@ export class WebServer {
     </div>
     <ul class="nav-list">
       <li class="nav-item active" id="nav-dashboard" onclick="switchTab('dashboard')">📊 Dashboard</li>
-      <li class="nav-item" id="nav-generate" onclick="switchTab('generate')">⚡ Generate Studio</li>
       <li class="nav-item" id="nav-sources" onclick="switchTab('sources')">🌐 Data Sources</li>
+      <li class="nav-item" id="nav-generate" onclick="switchTab('generate')">⚡ Generate Studio</li>
       <li class="nav-item" id="nav-cards" onclick="switchTab('cards')">🗂️ Question Explorer</li>
       <li class="nav-item" id="nav-export" onclick="switchTab('export')">🚀 Export Center</li>
     </ul>
@@ -496,14 +496,21 @@ export class WebServer {
     <div id="view-sources" style="display:none;">
       <header>
         <div>
-          <h1>Data Sources Manager</h1>
-          <p class="subtitle">Manage RSS feeds, web reader links, and local markdown folders</p>
+          <h1>Ingested Data Sources</h1>
+          <p class="subtitle">Manage RSS feeds, web articles, and local Markdown documentation</p>
         </div>
-        <div class="toolbar">
-          <button class="btn btn-secondary" onclick="syncAllSources()">🔄 Sync All Sources</button>
-          <button class="btn" onclick="openAddSourceModal()" style="margin-left: 10px;">+ Add Data Source</button>
-        </div>
+        <button class="btn" onclick="openAddSourceModal()">+ Add Data Source</button>
       </header>
+
+      <div class="card" style="margin-bottom: 24px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <h3 style="font-size:16px;">🔄 Incremental Delta Sync</h3>
+            <p style="color:var(--text-muted); font-size:13px; margin-top:4px;">Fetch newly published articles and local file changes across all active sources</p>
+          </div>
+          <button class="btn btn-secondary" id="sync-all-btn" onclick="triggerBulkSync()">⚡ Sync All Sources</button>
+        </div>
+      </div>
 
       <div class="table-container">
         <table>
@@ -524,135 +531,7 @@ export class WebServer {
       </div>
     </div>
 
-    <!-- 3. QUESTION EXPLORER VIEW -->
-    <div id="view-cards" style="display:none;">
-      <header>
-        <div>
-          <h1>Question Explorer</h1>
-          <p class="subtitle">Explore, search, and self-test verified flashcards with filter chips</p>
-        </div>
-        <div id="cards-count-badge" class="badge badge-diff">0 Cards Found</div>
-      </header>
-
-      <div class="filter-panel">
-        <input class="search-input" id="search-query" placeholder="🔍 Search questions, answers, and source quotes..." oninput="handleSearchInput()" />
-        
-        <div class="chip-row" id="deck-chips-row">
-          <span class="chip-label">Deck:</span>
-          <span class="filter-chip active" onclick="setFilter('deck', '')">All Decks</span>
-        </div>
-
-        <div class="chip-row">
-          <span class="chip-label">Difficulty:</span>
-          <span class="filter-chip active" id="diff-chip-all" onclick="setFilter('difficulty', '')">All</span>
-          <span class="filter-chip" id="diff-chip-beginner" onclick="setFilter('difficulty', 'beginner')">🟢 Beginner</span>
-          <span class="filter-chip" id="diff-chip-intermediate" onclick="setFilter('difficulty', 'intermediate')">🟡 Intermediate</span>
-          <span class="filter-chip" id="diff-chip-expert" onclick="setFilter('difficulty', 'expert')">🔴 Expert</span>
-        </div>
-
-        <div class="chip-row" id="tag-chips-row">
-          <span class="chip-label">Tags:</span>
-          <span class="filter-chip active" onclick="setFilter('tag', '')">All Tags</span>
-        </div>
-      </div>
-
-      <div id="explorer-grid" class="flashcards-grid">
-        <p style="color: var(--text-muted); font-size: 14px;">Loading cards...</p>
-      </div>
-    </div>
-
-    <!-- 4. EXPORT CENTER VIEW -->
-    <div id="view-export" style="display:none;">
-      <header>
-        <div>
-          <h1>1-Click Export Center</h1>
-          <p class="subtitle">Download flashcards in multiple formats or sync directly with desktop Anki</p>
-        </div>
-        <div id="export-count-badge" class="badge badge-diff">All Cards Selected</div>
-      </header>
-
-      <!-- Scope Filter Card -->
-      <div class="filter-panel" style="margin-bottom: 24px;">
-        <h3 style="font-size: 15px; font-weight: 600;">🎯 Export Scoping Filters</h3>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 8px;">
-          <div class="form-group" style="margin-bottom: 0;">
-            <label>Filter by Target Deck</label>
-            <select class="form-input" id="export-deck-select" onchange="updateExportScope()">
-              <option value="">All Decks (Entire Collection)</option>
-            </select>
-          </div>
-          <div class="form-group" style="margin-bottom: 0;">
-            <label>Filter by Tag</label>
-            <select class="form-input" id="export-tag-select" onchange="updateExportScope()">
-              <option value="">All Tags</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      <!-- AnkiConnect Live Status Card -->
-      <div class="kpi-card" style="margin-bottom: 24px; border-color: rgba(99, 102, 241, 0.4);">
-        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
-          <div>
-            <div style="display: flex; align-items: center; gap: 10px;">
-              <h3 style="font-size: 16px;">🔄 Desktop AnkiConnect Integration</h3>
-              <span id="ankiconnect-badge" class="badge" style="background: rgba(148, 163, 184, 0.15); color: #94a3b8;">Checking Status...</span>
-            </div>
-            <p style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">Synchronize flashcard notes directly into the running Anki desktop app</p>
-          </div>
-          <div style="display: flex; gap: 10px;">
-            <button class="btn btn-secondary btn-sm" onclick="checkAnkiConnectStatus()">🔄 Refresh Status</button>
-            <button id="ankiconnect-sync-btn" class="btn btn-sm" onclick="syncToAnkiConnect()">🚀 Push to Anki</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Format Download Cards -->
-      <div class="section-title">📦 Download Standalone Deliverables</div>
-      <div class="export-grid">
-        <div class="export-card">
-          <div>
-            <div class="export-card-title">📦 Anki Package (.apkg)</div>
-            <p class="export-card-desc">Native SQLite Anki package bundled with full deck hierarchy, tags, and CSS styling for 1-click import.</p>
-          </div>
-          <button class="btn" onclick="triggerFileDownload('apkg')">⬇️ Download .apkg</button>
-        </div>
-
-        <div class="export-card">
-          <div>
-            <div class="export-card-title">📄 Spreadsheet (.csv)</div>
-            <p class="export-card-desc">RFC 4180 standard comma-delimited spreadsheet format with quote escaping, deck headers, and tags.</p>
-          </div>
-          <button class="btn btn-secondary" onclick="triggerFileDownload('csv')">⬇️ Download .csv</button>
-        </div>
-
-        <div class="export-card">
-          <div>
-            <div class="export-card-title">📋 Tab-Separated (.tsv)</div>
-            <p class="export-card-desc">Standard tab-delimited text format compatible with Quizlet, Google Sheets, and legacy flashcard apps.</p>
-          </div>
-          <button class="btn btn-secondary" onclick="triggerFileDownload('tsv')">⬇️ Download .tsv</button>
-        </div>
-
-        <div class="export-card">
-          <div>
-            <div class="export-card-title">📝 Active-Recall Markdown (.md)</div>
-            <p class="export-card-desc">Obsidian &amp; Notion compatible markdown with YAML metadata frontmatter and collapsible &lt;details&gt; answer blocks.</p>
-          </div>
-          <button class="btn btn-secondary" onclick="triggerFileDownload('markdown')">⬇️ Download .md</button>
-        </div>
-
-        <div class="export-card">
-          <div>
-            <div class="export-card-title">🖨️ Two-Column Printable Study Guide (.html)</div>
-            <p class="export-card-desc">Print-optimized two-column fold-over HTML document with @media print CSS for offline physical flashcard review.</p>
-          </div>
-          <button class="btn btn-secondary" onclick="triggerFileDownload('html')">⬇️ Download .html</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 5. GENERATE STUDIO VIEW -->
+    <!-- 3. GENERATE STUDIO VIEW -->
     <div id="view-generate" style="display: none;">
       <header>
         <div>
@@ -757,6 +636,134 @@ export class WebServer {
             <div style="font-weight: 600; font-size: 13px; color: var(--text-muted); margin-bottom: 8px;">Newly Generated Cards Preview:</div>
             <div id="gen-cards-list" style="overflow-y: auto; max-height: 360px; display: flex; flex-direction: column; gap: 10px;"></div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. QUESTION EXPLORER VIEW -->
+    <div id="view-cards" style="display:none;">
+      <header>
+        <div>
+          <h1>Question Explorer</h1>
+          <p class="subtitle">Explore, search, and self-test verified flashcards with filter chips</p>
+        </div>
+        <div id="cards-count-badge" class="badge badge-diff">0 Cards Found</div>
+      </header>
+
+      <div class="filter-panel">
+        <input class="search-input" id="search-query" placeholder="🔍 Search questions, answers, and source quotes..." oninput="handleSearchInput()" />
+        
+        <div class="chip-row" id="deck-chips-row">
+          <span class="chip-label">Deck:</span>
+          <span class="filter-chip active" onclick="setFilter('deck', '')">All Decks</span>
+        </div>
+
+        <div class="chip-row">
+          <span class="chip-label">Difficulty:</span>
+          <span class="filter-chip active" id="diff-chip-all" onclick="setFilter('difficulty', '')">All</span>
+          <span class="filter-chip" id="diff-chip-beginner" onclick="setFilter('difficulty', 'beginner')">🟢 Beginner</span>
+          <span class="filter-chip" id="diff-chip-intermediate" onclick="setFilter('difficulty', 'intermediate')">🟡 Intermediate</span>
+          <span class="filter-chip" id="diff-chip-expert" onclick="setFilter('difficulty', 'expert')">🔴 Expert</span>
+        </div>
+
+        <div class="chip-row" id="tag-chips-row">
+          <span class="chip-label">Tags:</span>
+          <span class="filter-chip active" onclick="setFilter('tag', '')">All Tags</span>
+        </div>
+      </div>
+
+      <div id="explorer-grid" class="flashcards-grid">
+        <p style="color: var(--text-muted); font-size: 14px;">Loading cards...</p>
+      </div>
+    </div>
+
+    <!-- 5. EXPORT CENTER VIEW -->
+    <div id="view-export" style="display:none;">
+      <header>
+        <div>
+          <h1>1-Click Export Center</h1>
+          <p class="subtitle">Download flashcards in multiple formats or sync directly with desktop Anki</p>
+        </div>
+        <div id="export-count-badge" class="badge badge-diff">All Cards Selected</div>
+      </header>
+
+      <!-- Scope Filter Card -->
+      <div class="filter-panel" style="margin-bottom: 24px;">
+        <h3 style="font-size: 15px; font-weight: 600;">🎯 Export Scoping Filters</h3>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 8px;">
+          <div class="form-group" style="margin-bottom: 0;">
+            <label>Filter by Target Deck</label>
+            <select class="form-input" id="export-deck-select" onchange="updateExportScope()">
+              <option value="">All Decks (Entire Collection)</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label>Filter by Tag</label>
+            <select class="form-input" id="export-tag-select" onchange="updateExportScope()">
+              <option value="">All Tags</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- AnkiConnect Live Status Card -->
+      <div class="kpi-card" style="margin-bottom: 24px; border-color: rgba(99, 102, 241, 0.4);">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+          <div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <h3 style="font-size: 16px;">🔄 Desktop AnkiConnect Integration</h3>
+              <span id="ankiconnect-badge" class="badge" style="background: rgba(148, 163, 184, 0.15); color: #94a3b8;">Checking Status...</span>
+            </div>
+            <p style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">Synchronize flashcard notes directly into the running Anki desktop app</p>
+          </div>
+          <div style="display: flex; gap: 10px;">
+            <button class="btn btn-secondary btn-sm" onclick="checkAnkiConnectStatus()">🔄 Refresh Status</button>
+            <button id="ankiconnect-sync-btn" class="btn btn-sm" onclick="syncToAnkiConnect()">🚀 Push to Anki</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Format Download Cards -->
+      <div class="section-title">📦 Download Standalone Deliverables</div>
+      <div class="export-grid">
+        <div class="export-card">
+          <div>
+            <div class="export-card-title">📦 Anki Package (.apkg)</div>
+            <p class="export-card-desc">Native SQLite Anki package bundled with full deck hierarchy, tags, and CSS styling for 1-click import.</p>
+          </div>
+          <button class="btn" onclick="triggerFileDownload('apkg')">⬇️ Download .apkg</button>
+        </div>
+
+        <div class="export-card">
+          <div>
+            <div class="export-card-title">📄 Spreadsheet (.csv)</div>
+            <p class="export-card-desc">RFC 4180 standard comma-delimited spreadsheet format with quote escaping, deck headers, and tags.</p>
+          </div>
+          <button class="btn btn-secondary" onclick="triggerFileDownload('csv')">⬇️ Download .csv</button>
+        </div>
+
+        <div class="export-card">
+          <div>
+            <div class="export-card-title">📋 Tab-Separated (.tsv)</div>
+            <p class="export-card-desc">Standard tab-delimited text format compatible with Quizlet, Google Sheets, and legacy flashcard apps.</p>
+          </div>
+          <button class="btn btn-secondary" onclick="triggerFileDownload('tsv')">⬇️ Download .tsv</button>
+        </div>
+
+        <div class="export-card">
+          <div>
+            <div class="export-card-title">📝 Active-Recall Markdown (.md)</div>
+            <p class="export-card-desc">Obsidian &amp; Notion compatible markdown with YAML metadata frontmatter and collapsible &lt;details&gt; answer blocks.</p>
+          </div>
+          <button class="btn btn-secondary" onclick="triggerFileDownload('markdown')">⬇️ Download .md</button>
+        </div>
+
+        <div class="export-card">
+          <div>
+            <div class="export-card-title">🖨️ Two-Column Printable Study Guide (.html)</div>
+            <p class="export-card-desc">Print-optimized two-column fold-over HTML document with @media print CSS for offline physical flashcard review.</p>
+          </div>
+          <button class="btn btn-secondary" onclick="triggerFileDownload('html')">⬇️ Download .html</button>
         </div>
       </div>
     </div>

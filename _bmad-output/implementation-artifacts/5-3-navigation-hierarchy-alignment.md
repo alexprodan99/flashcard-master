@@ -1,7 +1,7 @@
 # Story 5.3: Navigation Hierarchy Alignment with Progressive Learning Pipeline
 
 **Epic:** Epic 5 - Interactive Web Generation Studio & In-Browser AI Workflows  
-**Status:** in-progress  
+**Status:** done  
 **Date:** 2026-08-31  
 
 ---
@@ -38,15 +38,15 @@ Ensure corresponding view `div` containers in `packages/web/src/server.ts` follo
 
 ## 3. Acceptance Criteria
 
-- [ ] **AC1 — Sidebar Navigation Order:**
+- [x] **AC1 — Sidebar Navigation Order:**
   - **Given** the Web UI SPA is loaded
   - **When** inspecting `#sidebar` navigation buttons
   - **Then** the visual and DOM order is Dashboard $\rightarrow$ Data Sources $\rightarrow$ Generate Studio $\rightarrow$ Question Explorer $\rightarrow$ Export Center.
-- [ ] **AC2 — View Switching & Event Wiring:**
+- [x] **AC2 — View Switching & Event Wiring:**
   - **Given** any navigation button is clicked
   - **When** `switchTab(...)` executes
   - **Then** the target view is displayed, its corresponding data loader runs (`loadSources()`, `loadGenerateSources()`, `loadCards()`, `loadExportData()`), and the active nav class updates.
-- [ ] **AC3 — Integration Test Verification:**
+- [x] **AC3 — Integration Test Verification:**
   - **Given** `packages/web/test/server.test.ts`
   - **When** `npm test` runs
   - **Then** tests verify the exact 5-stage navigation order in the rendered HTML output.
