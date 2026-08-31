@@ -288,7 +288,7 @@ You can switch between local and cloud AI providers seamlessly via CLI flags or 
 | 🦙 **Ollama** *(Default)* | `--provider ollama` (**`phi4-mini`**) | `llama3.3`, `deepseek-r1`, `qwen2.5`, `mistral` | 🟢 **100% Local, Offline & Free** |
 | 🔵 **Google Gemini** | `--provider gemini` (**`gemini-2.0-flash`**) | `gemini-2.0-pro-exp`, `gemini-1.5-pro` | 🟡 Cloud API (~$0.10 / 1M tokens) |
 | 🟢 **OpenAI** | `--provider openai` (**`gpt-4o-mini`**) | `o3-mini`, `gpt-4o`, `gpt-4.5-preview` | 🟡 Cloud API (~$0.15 / 1M tokens) |
-| 🟣 **Anthropic** | `--provider anthropic` (**`claude-3-5-haiku-latest`**) | `claude-3-7-sonnet-latest`, `claude-3-5-sonnet-latest` | 🟡 Cloud API (~$1.00 / 1M tokens) |
+| 🟣 **Anthropic** | `--provider anthropic` (**`claude-3-5-haiku-20241022`**) | `claude-3-7-sonnet-latest`, `claude-3-5-sonnet-20241022` | 🟡 Cloud API (~$1.00 / 1M tokens) |
 
 ---
 
@@ -313,7 +313,7 @@ flashcard-master/
 Run the full automated test suite across all workspace packages:
 
 ```bash
-# Run all 23 test suites and 99 unit & integration tests
+# Run all 23 test suites and 105 unit & integration tests
 npm test
 
 # Build all packages with strict TypeScript type-checking
