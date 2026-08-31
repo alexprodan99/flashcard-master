@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 08-30-2026 20:47
-last_updated: 08-31-2026 12:40
+last_updated: 08-31-2026 12:54
 project: flashcard-master
 project_key: NOKEY
 tracking_system: file-system
@@ -64,7 +64,7 @@ development_status:
 
   epic-4: in-progress
   4-1-interactive-terminal-setup-wizard-scriptable-cli: done
-  4-2-local-web-ui-dashboard-server-design-system-foundation: backlog
+  4-2-local-web-ui-dashboard-server-design-system-foundation: done
   4-3-sources-manager-ui-with-live-sync-status: backlog
   4-4-question-explorer-filter-chips-visual-card-grid: backlog
   4-5-inline-card-editor-slide-over-drawer: backlog

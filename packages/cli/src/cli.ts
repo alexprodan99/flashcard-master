@@ -11,6 +11,7 @@ import {
   CardGenerationService,
 } from "@flashcard-master/core";
 import { createLLMAdapter } from "@flashcard-master/adapters";
+import { createWebServer } from "@flashcard-master/web";
 
 export function createCli(providedContext?: AppContext): Command {
   const program = new Command();
@@ -20,6 +21,36 @@ export function createCli(providedContext?: AppContext): Command {
     .name("flashcard-master")
     .description("Multi-source text ingestion and grounded flashcard generator for Anki, Markdown, CSV and PDF")
     .version("1.0.0");
+
+  // ==========================================
+  // SERVE COMMAND (LOCAL WEB UI)
+  // ==========================================
+  program
+    .command("serve")
+    .description("Launch local Web UI dashboard server")
+    .option("-p, --port <port>", "Port to bind local Web UI to", "3000")
+    .option("-h, --host <host>", "Host address to bind to", "127.0.0.1")
+    .action(async (options: { port: string; host: string }) => {
+      try {
+        const port = parseInt(options.port, 10) || 3000;
+        const server = createWebServer({
+          port,
+          host: options.host,
+          sourceRepo: context.sourceRepo,
+          syncRepo: context.syncRepo,
+          cardRepo: context.cardRepo,
+          ingestionService: context.ingestionService,
+          exportService: context.exportService,
+        });
+
+        const { url } = await server.listen(port);
+        console.log(`\n🎴 Flashcard Master Web UI is running at: ${url}`);
+        console.log("Press Ctrl+C to stop.\n");
+      } catch (err: any) {
+        console.error(`Failed to start Web UI server: ${err.message}`);
+        process.exitCode = 1;
+      }
+    });
 
   // ==========================================
   // SOURCES COMMANDS

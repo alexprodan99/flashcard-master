@@ -1,15 +1,20 @@
 {
   "name": "@flashcard-master/web",
   "version": "1.0.0",
+  "main": "./dist/index.js",
   "type": "module",
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "test": "vitest run",
+    "clean": "rimraf dist"
   },
   "dependencies": {
-    "@flashcard-master/core": "1.0.0"
+    "@flashcard-master/core": "1.0.0",
+    "@flashcard-master/adapters": "1.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.8"
   }
 }

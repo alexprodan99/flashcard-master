@@ -14,6 +14,7 @@
   "dependencies": {
     "@flashcard-master/adapters": "1.0.0",
     "@flashcard-master/core": "1.0.0",
+    "@flashcard-master/web": "1.0.0",
     "commander": "^12.1.0"
   },
   "devDependencies": {

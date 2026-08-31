@@ -2,21 +2,19 @@
   "name": "flashcard-master",
   "version": "1.0.0",
   "private": true,
-  "description": "Multi-source text ingestion and grounded flashcard generator for Anki, Markdown and PDF",
+  "type": "module",
   "workspaces": [
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build -w @flashcard-master/core && npm run build --workspaces --if-present",
+    "build": "npm run build -w @flashcard-master/core && npm run build -w @flashcard-master/adapters && npm run build -w @flashcard-master/web && npm run build -w @flashcard-master/cli",
     "test": "npm run test --workspaces --if-present",
-    "typecheck": "tsc --build",
-    "clean": "npm run clean --workspaces --if-present"
+    "lint": "eslint packages/*/src/**/*.ts",
+    "typecheck": "tsc -b",
+    "clean": "rimraf packages/*/dist"
   },
   "devDependencies": {
-    "@types/node": "^22.10.0",
-    "typescript": "^5.7.0"
-  },
-  "engines": {
-    "node": ">=20.12.0"
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.8"
   }
 }
