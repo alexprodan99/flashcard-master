@@ -6,8 +6,16 @@ import {
   type FlashcardRepository,
   type IngestionService,
   type ExportService,
+  type StrategyRegistry,
+  type PromptBuilder,
+  type GroundingGuard,
+  type CardDeduplicationService,
   type CardFilter,
+  type DifficultyLevel,
+  type PersonaType,
+  CardGenerationService,
 } from "@flashcard-master/core";
+import { createLLMAdapter } from "@flashcard-master/adapters";
 
 export type ExportFormat = "apkg" | "csv" | "tsv" | "markdown" | "html";
 
@@ -25,6 +33,11 @@ export interface WebServerOptions {
   cardRepo: FlashcardRepository;
   ingestionService?: IngestionService;
   exportService?: ExportService;
+  strategyRegistry?: StrategyRegistry;
+  promptBuilder?: PromptBuilder;
+  groundingGuard?: GroundingGuard;
+  dedupService?: CardDeduplicationService;
+  createLLMAdapterFn?: (config: any) => any;
   ankiConnectAdapter?: {
     checkHealth(): Promise<AnkiConnectHealthCheck>;
     syncCards(cards: any[], options?: any): Promise<any>;
@@ -437,6 +450,7 @@ export class WebServer {
     </div>
     <ul class="nav-list">
       <li class="nav-item active" id="nav-dashboard" onclick="switchTab('dashboard')">📊 Dashboard</li>
+      <li class="nav-item" id="nav-generate" onclick="switchTab('generate')">⚡ Generate Studio</li>
       <li class="nav-item" id="nav-sources" onclick="switchTab('sources')">🌐 Data Sources</li>
       <li class="nav-item" id="nav-cards" onclick="switchTab('cards')">🗂️ Question Explorer</li>
       <li class="nav-item" id="nav-export" onclick="switchTab('export')">🚀 Export Center</li>
@@ -634,6 +648,112 @@ export class WebServer {
             <p class="export-card-desc">Print-optimized two-column fold-over HTML document with @media print CSS for offline physical flashcard review.</p>
           </div>
           <button class="btn btn-secondary" onclick="triggerFileDownload('html')">⬇️ Download .html</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5. GENERATE STUDIO VIEW -->
+    <div id="view-generate" style="display: none;">
+      <header>
+        <div>
+          <h1>⚡ AI Flashcard Generation Studio</h1>
+          <p class="subtitle">Extract grounded, atomic flashcards directly from your ingested materials with customizable models and cognitive personas</p>
+        </div>
+        <div id="gen-status-badge" class="badge badge-diff">🟢 Ready to Generate</div>
+      </header>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 20px;">
+        <!-- Left: Configuration Form -->
+        <div class="card">
+          <h3 style="margin-bottom: 16px;">⚙️ Studio Configuration</h3>
+          <form onsubmit="handleGenerateStudioSubmit(event)">
+            <div class="form-group">
+              <label>1. AI Provider</label>
+              <select class="form-input" id="gen-provider" onchange="updateProviderDefaults()">
+                <option value="ollama">🦙 Ollama (100% Local &amp; Free)</option>
+                <option value="gemini">🔵 Google Gemini (Recommended Cloud)</option>
+                <option value="openai">🟢 OpenAI</option>
+                <option value="anthropic">🟣 Anthropic</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label>2. Model Identifier (or type custom model)</label>
+              <input class="form-input" id="gen-model" value="phi4-mini" placeholder="e.g. phi4-mini, gemini-2.0-flash, gpt-4o-mini" required />
+            </div>
+
+            <div class="form-group" id="gen-apikey-container" style="display: none;">
+              <label>3. API Key (Optional)</label>
+              <input class="form-input" id="gen-apikey" type="password" placeholder="Leave empty to use server environment variable" />
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+              <div class="form-group">
+                <label>4. Learning Persona</label>
+                <select class="form-input" id="gen-persona">
+                  <option value="socratic-mentor">🎓 Socratic Mentor</option>
+                  <option value="strict-examiner">⚖️ Strict Examiner</option>
+                  <option value="analogy-builder">💡 Analogy Builder</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label>5. Difficulty Tier</label>
+                <select class="form-input" id="gen-difficulty">
+                  <option value="intermediate">🟡 Intermediate</option>
+                  <option value="beginner">🟢 Beginner</option>
+                  <option value="expert">🔴 Expert</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>6. Ingested Data Sources Scope</label>
+              <select class="form-input" id="gen-source-select">
+                <option value="">All Ingested Active Sources</option>
+              </select>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+              <div class="form-group">
+                <label>7. Target Deck Override</label>
+                <input class="form-input" id="gen-deck" placeholder="Leave blank to use Source Deck" />
+              </div>
+
+              <div class="form-group">
+                <label>8. Max Cards per Doc</label>
+                <input class="form-input" id="gen-limit" type="number" min="1" max="20" value="5" />
+              </div>
+            </div>
+
+            <button type="submit" id="gen-submit-btn" class="btn" style="width: 100%; margin-top: 16px; font-weight: 600;">⚡ Start AI Generation</button>
+          </form>
+        </div>
+
+        <!-- Right: Real-time Execution Feedback & Card Previews -->
+        <div class="card" style="display: flex; flex-direction: column;">
+          <h3 style="margin-bottom: 16px;">📊 Live Execution &amp; Results</h3>
+          
+          <div id="gen-placeholder" style="color: var(--text-muted); font-size: 14px; line-height: 1.6; padding: 24px 0; text-align: center;">
+            <div style="font-size: 32px; margin-bottom: 8px;">✨</div>
+            Configure your AI generation settings on the left and click <strong>Start AI Generation</strong> to synthesize grounded flashcards.
+          </div>
+
+          <div id="gen-loading" style="display: none; padding: 32px 0; text-align: center;">
+            <div style="font-size: 36px; animation: spin 1s linear infinite; display: inline-block; margin-bottom: 12px;">⏳</div>
+            <div style="font-weight: 600; color: var(--text);">Synthesizing flashcards with AI...</div>
+            <div style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">Enforcing verbatim citations and filtering duplicates</div>
+          </div>
+
+          <div id="gen-results" style="display: none; flex: 1; display: flex; flex-direction: column;">
+            <div id="gen-metrics-banner" style="background: rgba(99, 102, 241, 0.15); border: 1px solid var(--primary); border-radius: 6px; padding: 12px 16px; margin-bottom: 16px; font-size: 13px; display: flex; justify-content: space-between; align-items: center;">
+              <span id="gen-metrics-text">✅ Created 0 new flashcards</span>
+              <button class="btn btn-secondary btn-sm" onclick="switchTab('cards')">👁️ View in Explorer</button>
+            </div>
+
+            <div style="font-weight: 600; font-size: 13px; color: var(--text-muted); margin-bottom: 8px;">Newly Generated Cards Preview:</div>
+            <div id="gen-cards-list" style="overflow-y: auto; max-height: 360px; display: flex; flex-direction: column; gap: 10px;"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -1150,6 +1270,7 @@ export class WebServer {
     function switchTab(tab) {
       document.querySelectorAll('.nav-item').forEach(function(i) { i.classList.remove('active'); });
       document.getElementById('view-dashboard').style.display = 'none';
+      document.getElementById('view-generate').style.display = 'none';
       document.getElementById('view-sources').style.display = 'none';
       document.getElementById('view-cards').style.display = 'none';
       document.getElementById('view-export').style.display = 'none';
@@ -1158,6 +1279,10 @@ export class WebServer {
       document.getElementById('view-' + tab).style.display = 'block';
 
       if (tab === 'dashboard') loadStats();
+      if (tab === 'generate') {
+        loadGenerateSources();
+        updateProviderDefaults();
+      }
       if (tab === 'sources') loadSources();
       if (tab === 'cards') {
         loadExplorerFilterChips();
@@ -1165,6 +1290,118 @@ export class WebServer {
       }
       if (tab === 'export') {
         loadExportCenter();
+      }
+    }
+
+    function updateProviderDefaults() {
+      const provider = document.getElementById('gen-provider').value;
+      const modelInput = document.getElementById('gen-model');
+      const apiKeyContainer = document.getElementById('gen-apikey-container');
+
+      if (provider === 'ollama') {
+        modelInput.value = 'phi4-mini';
+        apiKeyContainer.style.display = 'none';
+      } else if (provider === 'gemini') {
+        modelInput.value = 'gemini-2.0-flash';
+        apiKeyContainer.style.display = 'flex';
+      } else if (provider === 'openai') {
+        modelInput.value = 'gpt-4o-mini';
+        apiKeyContainer.style.display = 'flex';
+      } else if (provider === 'anthropic') {
+        modelInput.value = 'claude-3-5-haiku-latest';
+        apiKeyContainer.style.display = 'flex';
+      }
+    }
+
+    async function loadGenerateSources() {
+      try {
+        const res = await fetch('/api/sources');
+        const sources = await res.json();
+        const select = document.getElementById('gen-source-select');
+        let html = '<option value="">All Ingested Active Sources</option>';
+        sources.filter(function(s) { return s.isActive; }).forEach(function(s) {
+          html += '<option value="' + escapeAttr(s.id) + '">' + escapeHtml(s.name) + ' (' + escapeHtml(s.type) + ')</option>';
+        });
+        select.innerHTML = html;
+      } catch (err) {
+        console.error('Failed to load sources for generator:', err);
+      }
+    }
+
+    async function handleGenerateStudioSubmit(e) {
+      e.preventDefault();
+      const provider = document.getElementById('gen-provider').value;
+      const model = document.getElementById('gen-model').value;
+      const apiKey = document.getElementById('gen-apikey').value || undefined;
+      const persona = document.getElementById('gen-persona').value;
+      const difficulty = document.getElementById('gen-difficulty').value;
+      const sourceId = document.getElementById('gen-source-select').value || undefined;
+      const targetDeck = document.getElementById('gen-deck').value || undefined;
+      const limit = parseInt(document.getElementById('gen-limit').value, 10) || 5;
+
+      const btn = document.getElementById('gen-submit-btn');
+      const origText = btn.innerText;
+      btn.innerText = '⏳ Synthesizing Cards...';
+      btn.disabled = true;
+
+      document.getElementById('gen-status-badge').innerText = '🟡 Generating...';
+      document.getElementById('gen-placeholder').style.display = 'none';
+      document.getElementById('gen-loading').style.display = 'block';
+      document.getElementById('gen-results').style.display = 'none';
+
+      try {
+        const res = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ provider, model, apiKey, persona, difficulty, sourceId, targetDeck, limit })
+        });
+        const data = await res.json();
+
+        document.getElementById('gen-loading').style.display = 'none';
+        document.getElementById('gen-results').style.display = 'flex';
+
+        if (!res.ok || data.error) {
+          document.getElementById('gen-status-badge').innerText = '🔴 Generation Failed';
+          document.getElementById('gen-metrics-banner').style.background = 'rgba(244, 63, 94, 0.15)';
+          document.getElementById('gen-metrics-banner').style.borderColor = 'var(--accent-rose, #f43f5e)';
+          document.getElementById('gen-metrics-text').innerText = '❌ ' + (data.error || 'Failed to generate flashcards');
+          document.getElementById('gen-cards-list').innerHTML = '<div style="color: var(--text-muted); padding: 12px 0;">Check that your AI provider is running / API key is valid.</div>';
+        } else {
+          document.getElementById('gen-status-badge').innerText = '🟢 Generation Complete';
+          document.getElementById('gen-metrics-banner').style.background = 'rgba(99, 102, 241, 0.15)';
+          document.getElementById('gen-metrics-banner').style.borderColor = 'var(--primary)';
+          document.getElementById('gen-metrics-text').innerText = '✅ Created ' + (data.cardsCreated || 0) + ' new cards (' + (data.duplicatesSkipped || 0) + ' duplicates filtered, ' + (data.discardedUngrounded || 0) + ' ungrounded rejected)';
+
+          const newCards = data.newCards || [];
+          if (newCards.length === 0) {
+            document.getElementById('gen-cards-list').innerHTML = '<div style="color: var(--text-muted); padding: 12px 0;">No new unique cards were generated (existing cards already cover these concepts or sources are empty).</div>';
+          } else {
+            let html = '';
+            newCards.slice(0, 10).forEach(function(card) {
+              html += '<div style="background: #0f172a; border: 1px solid var(--card-border); border-radius: 6px; padding: 12px;">' +
+                '<div style="display: flex; justify-content: space-between; margin-bottom: 6px;">' +
+                  '<span class="badge badge-diff">' + escapeHtml(card.targetDeck) + '</span>' +
+                  '<span class="badge">' + escapeHtml(card.difficulty) + '</span>' +
+                '</div>' +
+                '<div style="font-weight: 600; font-size: 14px; margin-bottom: 4px;">Q: ' + escapeHtml(card.question) + '</div>' +
+                '<div style="color: var(--text-muted); font-size: 13px; margin-bottom: 6px;">A: ' + escapeHtml(card.answer) + '</div>' +
+                '<div style="font-size: 12px; color: var(--accent); background: rgba(56, 189, 248, 0.08); padding: 4px 8px; border-radius: 4px;">💬 "' + escapeHtml(card.sourceQuote) + '"</div>' +
+              '</div>';
+            });
+            document.getElementById('gen-cards-list').innerHTML = html;
+          }
+          loadStats();
+        }
+      } catch (err) {
+        document.getElementById('gen-loading').style.display = 'none';
+        document.getElementById('gen-results').style.display = 'flex';
+        document.getElementById('gen-status-badge').innerText = '🔴 Error';
+        document.getElementById('gen-metrics-banner').style.background = 'rgba(244, 63, 94, 0.15)';
+        document.getElementById('gen-metrics-banner').style.borderColor = 'var(--accent-rose, #f43f5e)';
+        document.getElementById('gen-metrics-text').innerText = '❌ Error: ' + err.message;
+      } finally {
+        btn.innerText = origText;
+        btn.disabled = false;
       }
     }
 
@@ -1347,6 +1584,103 @@ export class WebServer {
               this.sendJson(res, 200, syncResults);
             } else {
               this.sendJson(res, 200, []);
+            }
+            return;
+          }
+
+          // 6. Generation Endpoint: POST /api/generate
+          if (pathname === "/api/generate" && method === "POST") {
+            const body = await this.parseBody(req);
+            const provider = body.provider || "ollama";
+            const model = body.model || undefined;
+            const apiKey = body.apiKey || (provider === "openai" ? process.env.OPENAI_API_KEY : provider === "gemini" ? process.env.GEMINI_API_KEY : provider === "anthropic" ? process.env.ANTHROPIC_API_KEY : undefined);
+            const baseUrl = body.endpoint || undefined;
+            const persona = (body.persona as PersonaType) || "socratic-mentor";
+            const difficulty = (body.difficulty as DifficultyLevel) || "intermediate";
+            const targetDeckOverride = body.targetDeck || undefined;
+            const limit = typeof body.limit === "number" ? body.limit : 5;
+            const enforceGrounding = body.enforceGrounding !== false;
+
+            try {
+              const createLLMFn = this.options.createLLMAdapterFn || createLLMAdapter;
+              const llm = createLLMFn({ provider, model, apiKey, baseUrl });
+              const genService = new CardGenerationService(
+                llm,
+                undefined,
+                this.options.promptBuilder,
+                this.options.groundingGuard
+              );
+
+              let sources: any[] = [];
+              if (Array.isArray(body.sourceIds) && body.sourceIds.length > 0) {
+                sources = body.sourceIds.map((id: string) => this.options.sourceRepo.getById(id)).filter(Boolean);
+              } else if (body.sourceId) {
+                const s = this.options.sourceRepo.getById(body.sourceId);
+                if (s) sources = [s];
+              } else {
+                sources = this.options.sourceRepo.list().filter((s) => s.isActive);
+              }
+
+              if (sources.length === 0) {
+                this.sendJson(res, 400, { error: "No active data sources found to generate cards from." });
+                return;
+              }
+
+              const createdCards: any[] = [];
+              let totalDrafts = 0;
+              let totalDuplicates = 0;
+
+              for (const s of sources) {
+                if (!s) continue;
+                const strategy = this.options.strategyRegistry
+                  ? this.options.strategyRegistry.getStrategy(s.type)
+                  : undefined;
+
+                if (!strategy) continue;
+                const rawDocs = await strategy.fetch(s);
+                for (const raw of rawDocs) {
+                  const cleanDoc = strategy.extractCleanText(raw);
+                  const drafts = await genService.generateFromDocument(cleanDoc, {
+                    difficulty,
+                    persona,
+                    targetCountPerChunk: limit,
+                    enforceGrounding,
+                  });
+                  totalDrafts += drafts.length;
+
+                  const targetDeck = targetDeckOverride || s.targetDeck || "Default";
+                  const existingCards = this.options.cardRepo.list({ targetDeck });
+                  const dedupResult = this.options.dedupService
+                    ? this.options.dedupService.filterUnique(drafts, existingCards)
+                    : { unique: drafts, duplicates: [] };
+
+                  totalDuplicates += dedupResult.duplicates.length;
+
+                  for (const draft of dedupResult.unique) {
+                    const card = this.options.cardRepo.create({
+                      sourceId: s.id,
+                      question: draft.question,
+                      answer: draft.answer,
+                      sourceQuote: draft.sourceQuote,
+                      difficulty: draft.difficulty,
+                      personaUsed: persona,
+                      targetDeck,
+                      tags: s.tags || [],
+                    });
+                    createdCards.push(card);
+                  }
+                }
+              }
+
+              this.sendJson(res, 200, {
+                success: true,
+                cardsCreated: createdCards.length,
+                totalDraftsGenerated: totalDrafts,
+                duplicatesSkipped: totalDuplicates,
+                newCards: createdCards,
+              });
+            } catch (err: any) {
+              this.sendJson(res, 500, { error: err.message || "Failed to generate cards" });
             }
             return;
           }

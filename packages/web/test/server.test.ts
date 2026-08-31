@@ -8,6 +8,10 @@ import {
   StrategyRegistry,
   ExporterRegistry,
   ExportService,
+  PromptBuilder,
+  GroundingGuard,
+  CardDeduplicationService,
+  type LLMProviderPort,
 } from "@flashcard-master/core";
 import {
   CsvExporter,
@@ -20,6 +24,19 @@ import {
 import { createWebServer, WebServer } from "../src/server.js";
 import type Database from "better-sqlite3";
 import type { IngestionStrategyPort, RawDocument, CleanTextDocument, DataSource } from "@flashcard-master/core";
+
+class MockLLM implements LLMProviderPort {
+  async generateQAPairs(text: string, options: any): Promise<any[]> {
+    return [
+      {
+        question: "What is mock content?",
+        answer: "Mock answer.",
+        sourceQuote: "Some text content",
+        difficulty: options?.difficulty || "intermediate",
+      },
+    ];
+  }
+}
 
 class MockStrategy implements IngestionStrategyPort {
   readonly type = "rss" as const;
@@ -110,6 +127,11 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       ingestionService,
       exportService,
       ankiConnectAdapter,
+      strategyRegistry: stratRegistry,
+      promptBuilder: new PromptBuilder(),
+      groundingGuard: new GroundingGuard(),
+      dedupService: new CardDeduplicationService(),
+      createLLMAdapterFn: () => new MockLLM(),
     });
 
     const info = await server.listen();
@@ -302,5 +324,74 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     const results = await res.json();
     expect(results.length).toBe(1);
     expect(results[0].newCount).toBe(1);
+  });
+
+  it("serves HTML SPA with AI Flashcard Generation Studio elements", async () => {
+    const res = await fetch(`${serverUrl}/`);
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toContain("⚡ Generate Studio");
+    expect(text).toContain("AI Flashcard Generation Studio");
+    expect(text).toContain("gen-provider");
+    expect(text).toContain("gen-model");
+    expect(text).toContain("phi4-mini");
+  });
+
+  it("generates grounded flashcards via POST /api/generate", async () => {
+    const res = await fetch(`${serverUrl}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: "ollama",
+        model: "phi4-mini",
+        persona: "socratic-mentor",
+        difficulty: "intermediate",
+        limit: 3,
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.success).toBe(true);
+    expect(data.cardsCreated).toBe(1);
+    expect(data.newCards.length).toBe(1);
+    expect(data.newCards[0].question).toBe("What is mock content?");
+    expect(data.newCards[0].sourceQuote).toBe("Some text content");
+
+    // Verify card was persisted in SQLite repository
+    const storedCards = cardRepo.list({ search: "mock content" });
+    expect(storedCards.length).toBe(1);
+  });
+
+  it("supports target deck override in POST /api/generate", async () => {
+    const res = await fetch(`${serverUrl}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: "gemini",
+        model: "gemini-2.0-flash",
+        targetDeck: "Custom Generation Deck",
+        limit: 2,
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.success).toBe(true);
+    expect(data.newCards[0].targetDeck).toBe("Custom Generation Deck");
+  });
+
+  it("returns error 400 when generating from non-existent sourceId", async () => {
+    const res = await fetch(`${serverUrl}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sourceId: "non-existent-source-id",
+      }),
+    });
+
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toContain("No active data sources found");
   });
 });

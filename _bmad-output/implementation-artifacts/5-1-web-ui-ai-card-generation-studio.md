@@ -1,7 +1,7 @@
 # Story 5.1: Web UI AI Card Generation Studio
 
 **Epic:** Epic 5 - Interactive Web Generation Studio & In-Browser AI Workflows  
-**Status:** in-progress  
+**Status:** done  
 **Date:** 2026-08-31  
 
 ---
@@ -62,23 +62,23 @@
 
 ## 3. Acceptance Criteria
 
-- [ ] **AC1 — REST Generation Endpoint:**
+- [x] **AC1 — REST Generation Endpoint:**
   - **Given** valid generation parameters sent to `POST /api/generate`
   - **When** the endpoint processes documents with `CardGenerationService`, `GroundingGuard`, and `CardDeduplicationService`
   - **Then** grounded unique flashcards are saved to SQLite and returned in the JSON response with metric counts.
-- [ ] **AC2 — Web UI Generation Studio:**
+- [x] **AC2 — Web UI Generation Studio:**
   - **Given** the user navigates to the "⚡ Generate Studio" tab
   - **When** selecting a provider (Ollama, Gemini, OpenAI, Anthropic)
   - **Then** default model fields update automatically, API key inputs toggle dynamically, and custom model overrides are supported.
-- [ ] **AC3 — Multi-Source Selection & Deck Routing:**
+- [x] **AC3 — Multi-Source Selection & Deck Routing:**
   - **Given** the user configures source scope (All, Single, or Selected) and target deck
   - **When** generation executes
   - **Then** flashcards are correctly generated from the targeted sources and routed to the specified deck.
-- [ ] **AC4 — Live Generation Feedback & Optimistic UI Update:**
+- [x] **AC4 — Live Generation Feedback & Optimistic UI Update:**
   - **Given** generation is triggered
   - **When** waiting for LLM completion
   - **Then** an animated spinner is displayed, followed by real-time metric reporting and preview cards, with dashboard KPIs updating dynamically.
-- [ ] **AC5 — Automated Integration Tests:**
+- [x] **AC5 — Automated Integration Tests:**
   - **Given** test suites in `packages/web/test/server.test.ts`
   - **When** `npm test` executes
   - **Then** all `/api/generate` integration tests pass with 100% assertions.
