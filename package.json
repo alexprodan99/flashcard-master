@@ -7,6 +7,8 @@
     "packages/*"
   ],
   "scripts": {
+    "start": "node packages/cli/dist/bin.js serve",
+    "cli": "node packages/cli/dist/bin.js",
     "build": "npm run build -w @flashcard-master/core && npm run build -w @flashcard-master/adapters && npm run build -w @flashcard-master/web && npm run build -w @flashcard-master/cli",
     "test": "npm run test --workspaces --if-present",
     "lint": "eslint packages/*/src/**/*.ts",
