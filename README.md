@@ -203,7 +203,7 @@ flashcard-master sync <source-id>
 # Generate flashcards from ingested unread documents
 flashcard-master generate \
   --provider ollama \
-  --model llama3.2 \
+  --model phi4-mini \
   --persona socratic-mentor \
   --difficulty intermediate \
   --deck "System Design" \
@@ -232,6 +232,38 @@ flashcard-master export -f ankiconnect -d "Engineering"
 ```bash
 flashcard-master stats
 ```
+
+---
+
+## 🎴 Anki Connection & Export Guide
+
+Flashcard Master supports two seamless methods to get your flashcards into Anki:
+
+### ⚡ Method 1: 1-Click Desktop Live Sync (via AnkiConnect) — *Recommended*
+
+Push cards directly into your open Anki desktop app with zero manual file handling:
+
+1. **Install the AnkiConnect Add-on in Anki:**
+   * Open the **Anki desktop app**.
+   * In the top menu, go to: **`Tools`** $\rightarrow$ **`Add-ons`** $\rightarrow$ **`Get Add-ons...`**
+   * Paste the add-on code: **`2055492159`** and click **OK**.
+   * Restart Anki.
+2. **Push to Anki:**
+   * **In the Web UI (`http://127.0.0.1:3000`):** Navigate to the **`🚀 Export Center`** tab. The badge will show **`🟢 Connected (v6)`**. Select your target deck and click **`🚀 Push to Anki Desktop`**.
+   * **In the CLI:** Run `flashcard-master export -f ankiconnect -d "Computer Science"`.
+
+---
+
+### 📦 Method 2: Native `.apkg` File Export (Zero Add-ons Required)
+
+If you prefer offline files without installing add-ons:
+
+1. **Export the `.apkg` package:**
+   * **In the Web UI:** Click **`📦 Download Anki Package (.apkg)`** in the Export Center.
+   * **In the CLI:** Run `flashcard-master export -f apkg -o ./my-cards.apkg`.
+2. **Import into Anki:**
+   * Double-click the generated `.apkg` file, or click **`File`** $\rightarrow$ **`Import...`** in Anki.
+   * All decks, tags, custom CSS styling, and active-recall cards will import instantly!
 
 ---
 
