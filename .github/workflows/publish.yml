@@ -45,13 +45,35 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      - name: Configure Release Mode & Distribution Tag
+      - name: Configure Release Mode & Synchronize Workspace Versions
         id: config
         run: |
           if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             echo "is_official_release=true" >> "$GITHUB_OUTPUT"
             echo "dist_tag=latest" >> "$GITHUB_OUTPUT"
-            echo "🚀 Official Tagged Release: Tag '${{ github.ref_name }}' -> npm tag 'latest'"
+            
+            # Extract tag version (e.g. v1.0.0 -> 1.0.0)
+            TAG_VER="${GITHUB_REF#refs/tags/v}"
+            echo "🚀 Official Tagged Release: Tag '${TAG_VER}' -> npm tag 'latest'"
+            
+            # Ensure all package versions and internal workspace deps match the Git tag
+            node -e '
+              const fs = require("fs");
+              const targetVer = process.argv[1];
+              const files = ["package.json", "packages/core/package.json", "packages/adapters/package.json", "packages/web/package.json", "packages/cli/package.json"];
+              files.forEach(f => {
+                const pkg = JSON.parse(fs.readFileSync(f, "utf8"));
+                pkg.version = targetVer;
+                if (pkg.dependencies) {
+                  for (const dep of Object.keys(pkg.dependencies)) {
+                    if (dep.startsWith("@flashcard-master/")) {
+                      pkg.dependencies[dep] = targetVer;
+                    }
+                  }
+                }
+                fs.writeFileSync(f, JSON.stringify(pkg, null, 2) + "\n");
+              });
+            ' "$TAG_VER"
           else
             echo "is_official_release=false" >> "$GITHUB_OUTPUT"
             echo "dist_tag=${{ github.event.inputs.npm_tag || 'preview' }}" >> "$GITHUB_OUTPUT"
@@ -62,8 +84,25 @@ jobs:
               echo "Applying preview prerelease version with identifier: $PRE_ID"
               BASE_VER=$(node -p "require('./packages/core/package.json').version.split('-')[0]")
               NEW_VER="${BASE_VER}-${PRE_ID}"
-              echo "Setting workspace version to: $NEW_VER"
-              npm version "$NEW_VER" --workspaces --include-workspace-root --no-git-tag-version
+              echo "Setting workspace version and internal dependencies to: $NEW_VER"
+              
+              node -e '
+                const fs = require("fs");
+                const targetVer = process.argv[1];
+                const files = ["package.json", "packages/core/package.json", "packages/adapters/package.json", "packages/web/package.json", "packages/cli/package.json"];
+                files.forEach(f => {
+                  const pkg = JSON.parse(fs.readFileSync(f, "utf8"));
+                  pkg.version = targetVer;
+                  if (pkg.dependencies) {
+                    for (const dep of Object.keys(pkg.dependencies)) {
+                      if (dep.startsWith("@flashcard-master/")) {
+                        pkg.dependencies[dep] = targetVer;
+                      }
+                    }
+                  }
+                  fs.writeFileSync(f, JSON.stringify(pkg, null, 2) + "\n");
+                });
+              ' "$NEW_VER"
             fi
           fi
 
