@@ -6,6 +6,94 @@ Flashcard Master automatically turns your learning materials—RSS/Atom feeds, w
 
 ---
 
+## 📦 Installation & Getting Started
+
+### ⚡ Option 1: Instant Zero-Install (Recommended)
+
+You can run Flashcard Master immediately without installing anything:
+
+```bash
+# Launch the interactive setup wizard:
+npx @flashcard-master/cli init
+
+# Or launch the local Web UI Dashboard directly:
+npx @flashcard-master/cli serve
+```
+
+---
+
+### 🌐 Option 2: Global CLI Installation
+
+Install Flashcard Master globally to have the `flashcard-master` command available anywhere in your terminal:
+
+```bash
+# Using npm:
+npm install -g @flashcard-master/cli
+
+# Using pnpm:
+pnpm add -g @flashcard-master/cli
+
+# Using yarn:
+yarn global add @flashcard-master/cli
+
+# Using bun:
+bun add -g @flashcard-master/cli
+```
+
+Once installed, simply run:
+```bash
+flashcard-master serve
+flashcard-master --help
+```
+
+---
+
+### 🧩 Option 3: Use as a Node.js Library in Your Own Projects
+
+Import the domain logic or adapters directly into your own TypeScript / JavaScript applications:
+
+```bash
+npm install @flashcard-master/core @flashcard-master/adapters
+```
+
+```typescript
+import {
+  createDatabaseClient,
+  FlashcardRepository,
+  CardGenerationService,
+  PersonaStudioService,
+  GroundingGuard,
+} from "@flashcard-master/core";
+import { OllamaAdapter } from "@flashcard-master/adapters";
+
+const db = createDatabaseClient({ inMemory: true });
+const cardRepo = new FlashcardRepository(db);
+const llm = new OllamaAdapter({ model: "llama3.2" });
+const personaStudio = new PersonaStudioService();
+const groundingGuard = new GroundingGuard();
+
+const cardGen = new CardGenerationService(llm, personaStudio, groundingGuard, cardRepo);
+```
+
+---
+
+### 🛠️ Option 4: Build from Source (Developers & Contributors)
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/your-username/flashcard-master.git
+cd flashcard-master
+
+# 2. Install dependencies & build all workspace packages
+npm install
+npm run build
+
+# 3. Run the test suite
+npm test
+```
+
+---
+
 ## ✨ Features
 
 - **🌐 Multi-Source Ingestion Engine:**
@@ -44,28 +132,6 @@ Flashcard Master automatically turns your learning materials—RSS/Atom feeds, w
 
 ---
 
-## 🚀 Quick Start
-
-### 1. Prerequisites
-
-- **Node.js** >= 20.12.0 (or v22.x LTS recommended)
-- **npm** >= 10.x
-- *(Optional)* **Ollama** running locally on `http://127.0.0.1:11434` for 100% offline AI card generation, or an API key for OpenAI / Anthropic / Google Gemini.
-
-### 2. Installation & Build
-
-```bash
-# Clone the repository
-git clone https://github.com/your-username/flashcard-master.git
-cd flashcard-master
-
-# Install dependencies and build all workspace packages
-npm install
-npm run build
-```
-
----
-
 ## 🖥️ Usage Guide
 
 ### Option A: Launch the Web UI Dashboard (Recommended)
@@ -73,9 +139,9 @@ npm run build
 Start the local web dashboard on port `3000` (or any available port):
 
 ```bash
-npx flashcard-master serve
+flashcard-master serve
 # Or specify a custom port:
-npx flashcard-master serve --port 8080
+flashcard-master serve --port 8080
 ```
 
 Open your browser at **`http://127.0.0.1:3000`** to access the dashboard.
@@ -93,7 +159,7 @@ Open your browser at **`http://127.0.0.1:3000`** to access the dashboard.
 If you prefer terminal-driven workflows, run the interactive setup wizard:
 
 ```bash
-npx flashcard-master init
+flashcard-master init
 ```
 
 The wizard will guide you through:
@@ -111,16 +177,16 @@ Flashcard Master includes a full CLI suite for automated scripts and cron workfl
 #### 1. Ingest Data Sources (`sync`)
 ```bash
 # Sync all active data sources
-npx flashcard-master sync
+flashcard-master sync
 
 # Sync a specific source by UUID
-npx flashcard-master sync <source-id>
+flashcard-master sync <source-id>
 ```
 
 #### 2. Generate AI Flashcards (`generate`)
 ```bash
 # Generate flashcards from ingested unread documents
-npx flashcard-master generate \
+flashcard-master generate \
   --provider ollama \
   --model llama3.2 \
   --persona socratic-mentor \
@@ -132,24 +198,24 @@ npx flashcard-master generate \
 #### 3. Export Study Deliverables (`export`)
 ```bash
 # Export all cards to native Anki package (.apkg)
-npx flashcard-master export -f apkg -o ./dist/flashcards.apkg
+flashcard-master export -f apkg -o ./dist/flashcards.apkg
 
 # Export a specific deck to active-recall Markdown
-npx flashcard-master export -f markdown -d "Distributed Systems" -o ./notes/study-guide.md
+flashcard-master export -f markdown -d "Distributed Systems" -o ./notes/study-guide.md
 
 # Export all cards to RFC 4180 CSV
-npx flashcard-master export -f csv -o ./flashcards.csv
+flashcard-master export -f csv -o ./flashcards.csv
 
 # Export two-column printable PDF/HTML study sheet
-npx flashcard-master export -f html -o ./study-guide.html
+flashcard-master export -f html -o ./study-guide.html
 
 # Sync directly to desktop Anki via AnkiConnect
-npx flashcard-master export -f ankiconnect -d "Engineering"
+flashcard-master export -f ankiconnect -d "Engineering"
 ```
 
 #### 4. View Database Stats (`stats`)
 ```bash
-npx flashcard-master stats
+flashcard-master stats
 ```
 
 ---
