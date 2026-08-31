@@ -1136,7 +1136,7 @@ export class WebServer {
         if (data.error) {
           alert('❌ AnkiConnect Sync Failed: ' + data.error);
         } else {
-          alert('✅ AnkiConnect Sync Success!\n\nAdded ' + (data.addedCards || 0) + ' new cards to Anki.\nDuplicates/Skipped: ' + (data.duplicateOrFailedCards || 0));
+          alert('✅ AnkiConnect Sync Success!\\n\\nAdded ' + (data.addedCards || 0) + ' new cards to Anki.\\nDuplicates/Skipped: ' + (data.duplicateOrFailedCards || 0));
         }
       } catch (err) {
         alert('❌ Error: ' + err.message);
