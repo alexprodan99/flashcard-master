@@ -795,7 +795,7 @@ export class WebServer {
                 '<span class="badge badge-diff">' + escapeHtml(c.difficulty) + '</span>' +
                 tagsHtml +
               '</div>' +
-              '<button class="btn btn-secondary btn-sm" data-id="' + escapeAttr(c.id) + '" onclick="openCardDrawer(this.getAttribute(\'data-id\'))">✏️ Edit</button>' +
+              '<button class="btn btn-secondary btn-sm" data-id="' + escapeAttr(c.id) + '" onclick="openCardDrawer(this.dataset.id)">✏️ Edit</button>' +
             '</div>' +
             '<div class="card-q">' + escapeHtml(c.question) + '</div>' +
             '<div class="card-a">' + escapeHtml(c.answer) + '</div>' +
@@ -832,8 +832,8 @@ export class WebServer {
             '<td><span class="badge badge-deck">' + escapeHtml(s.targetDeck) + '</span></td>' +
             '<td>' + statusBadge + '</td>' +
             '<td>' +
-              '<button class="btn btn-secondary btn-sm" data-id="' + escapeAttr(s.id) + '" onclick="syncSingleSource(this.getAttribute(\'data-id\'))">🔄 Sync</button> ' +
-              '<button class="btn btn-danger btn-sm" data-id="' + escapeAttr(s.id) + '" onclick="deleteSingleSource(this.getAttribute(\'data-id\'))">🗑️</button>' +
+              '<button class="btn btn-secondary btn-sm" data-id="' + escapeAttr(s.id) + '" onclick="syncSingleSource(this.dataset.id)">🔄 Sync</button> ' +
+              '<button class="btn btn-danger btn-sm" data-id="' + escapeAttr(s.id) + '" onclick="deleteSingleSource(this.dataset.id)">🗑️</button>' +
             '</td>' +
           '</tr>';
         }
@@ -852,7 +852,7 @@ export class WebServer {
         let deckHtml = '<span class="chip-label">Deck:</span><span class="filter-chip ' + (activeFilters.deck === '' ? 'active' : '') + '" onclick="setFilter(\'deck\', \'\')">All Decks</span>';
         for (let i = 0; i < decks.length; i++) {
           const d = decks[i];
-          deckHtml += '<span class="filter-chip ' + (activeFilters.deck === d ? 'active' : '') + '" data-deck="' + escapeAttr(d) + '" onclick="setFilter(\'deck\', this.getAttribute(\'data-deck\'))">' + escapeHtml(d) + '</span>';
+          deckHtml += '<span class="filter-chip ' + (activeFilters.deck === d ? 'active' : '') + '" data-deck="' + escapeAttr(d) + '" onclick="setFilter(\'deck\', this.dataset.deck)">' + escapeHtml(d) + '</span>';
         }
         deckContainer.innerHTML = deckHtml;
 
@@ -863,7 +863,7 @@ export class WebServer {
         let tagHtml = '<span class="chip-label">Tags:</span><span class="filter-chip ' + (activeFilters.tag === '' ? 'active' : '') + '" onclick="setFilter(\'tag\', \'\')">All Tags</span>';
         for (let i = 0; i < tags.length; i++) {
           const t = tags[i];
-          tagHtml += '<span class="filter-chip ' + (activeFilters.tag === t ? 'active' : '') + '" data-tag="' + escapeAttr(t) + '" onclick="setFilter(\'tag\', this.getAttribute(\'data-tag\'))">#' + escapeHtml(t) + '</span>';
+          tagHtml += '<span class="filter-chip ' + (activeFilters.tag === t ? 'active' : '') + '" data-tag="' + escapeAttr(t) + '" onclick="setFilter(\'tag\', this.dataset.tag)">#' + escapeHtml(t) + '</span>';
         }
         tagContainer.innerHTML = tagHtml;
       } catch (err) {
@@ -908,7 +908,7 @@ export class WebServer {
                   '<span class="badge badge-diff">' + escapeHtml(c.difficulty) + '</span>' +
                   tagsHtml +
                 '</div>' +
-                '<button class="btn btn-secondary btn-sm" data-id="' + escapeAttr(c.id) + '" onclick="openCardDrawer(this.getAttribute(\'data-id\'))">✏️ Edit</button>' +
+                '<button class="btn btn-secondary btn-sm" data-id="' + escapeAttr(c.id) + '" onclick="openCardDrawer(this.dataset.id)">✏️ Edit</button>' +
               '</div>' +
               '<div class="card-q">' + escapeHtml(c.question) + '</div>' +
             '</div>' +
@@ -917,7 +917,7 @@ export class WebServer {
                 '<div class="card-a"><strong>Answer:</strong> ' + escapeHtml(c.answer) + '</div>' +
                 quoteHtml +
               '</div>' +
-              '<button class="btn btn-secondary btn-sm" style="margin-top: 14px; width: 100%;" data-id="' + escapeAttr(c.id) + '" onclick="toggleAnswer(this, this.getAttribute(\'data-id\'))">👁️ Reveal Answer</button>' +
+              '<button class="btn btn-secondary btn-sm" style="margin-top: 14px; width: 100%;" data-id="' + escapeAttr(c.id) + '" onclick="toggleAnswer(this, this.dataset.id)">👁️ Reveal Answer</button>' +
             '</div>' +
           '</div>';
         }
