@@ -27,53 +27,43 @@ Alex reads technical blogs (Netflix TechBlog, ByteByteGo, HackerNews), engineeri
 
 ```mermaid
 journey
-    title Alex's Journey with flashcard-master
-    section 1. Onboarding & Source Setup
-      Runs interactive CLI wizard: 5: Alex
-      Adds RSS feed & local docs path: 5: Alex
-      Selects prompt persona & model: 4: Alex
-    section 2. Automated Sync & Ingestion
-      Runs sync command or triggers background sync: 5: flashcard-master
-      Parses text & filters duplicate GUIDs: 5: flashcard-master
-      Generates grounded atomic Q&A cards: 5: flashcard-master
-    section 3. Review & Exploration
-      Opens local web UI (flashcard-master ui): 4: Alex
-      Filters cards by tag & inspects verbatim quote citations: 5: Alex
-    section 4. Export to Spaced Repetition
-      1-Clicks push to desktop Anki via AnkiConnect: 5: Alex
-      Downloads Markdown study guide with collapsible details: 4: Alex
-      Studies cards in daily Anki routine: 5: Alex
+    title Alex's Progressive Learning Pipeline in flashcard-master
+    section 1. Overview
+      Views database KPIs & recent cards: 5: Alex
+    section 2. Ingestion (Data Sources)
+      Registers RSS feeds, web URLs, & local notes: 5: Alex
+      Syncs documents & tracks content hashes: 5: flashcard-master
+    section 3. Synthesis (Generate Studio)
+      Selects AI provider, model, persona, & sources: 5: Alex
+      Synthesizes grounded Q&A with verbatim citations: 5: flashcard-master
+    section 4. Curation & Study (Question Explorer)
+      Searches knowledge base & inspects source quotes: 5: Alex
+      Performs active-recall testing & inline edits: 5: Alex
+    section 5. Deliverables (Export Center)
+      Pushes to Anki desktop or downloads .apkg / markdown: 5: Alex
 ```
 
 ### Core User Journeys (UJ)
 
-#### UJ-1: Zero-Friction Setup via Interactive CLI Wizard
-1. Alex runs `flashcard-master config init`.
-2. The interactive terminal prompt guides Alex through selecting an LLM provider (e.g. OpenAI, Anthropic, Gemini, or local Ollama), configuring API keys, and picking a default generation persona.
-3. The wizard prompts to add initial data sources (e.g. an RSS feed URL or `./docs/**/*.md` path) with default target deck names.
-4. Configuration is validated and saved to the local SQLite database.
+#### UJ-1: Zero-Friction Setup via Interactive Wizard & Dashboard
+1. Alex launches Flashcard Master and views the Dashboard overview displaying database statistics, deck breakdowns, and recent cards.
 
-#### UJ-2: Automated Ingestion, Delta Sync & Verbatim Q&A Generation
-1. Alex executes `flashcard-master sync` (or triggers sync via the Web UI).
-2. The ingestion engine fetches only new articles from subscribed feeds by checking GUID and SHA-256 content hashes.
-3. The generation engine analyzes the extracted text, enforces the Minimum Information Principle, attaches verbatim quote citations, and auto-commits the cards to the database.
+#### UJ-2: Data Sources Ingestion & Content Tracking
+1. Alex navigates to **🌐 Data Sources** (the second menu stage) to register subscribed RSS feeds, web article URLs, or local Markdown directories.
+2. Alex clicks "Sync" to ingest clean, reader-mode documents into local storage while tracking delta hashes to prevent duplication.
 
-#### UJ-3: Visual Exploration, Search & Inline Curation (Web UI)
-1. Alex runs `flashcard-master ui` and opens `http://localhost:3000`.
-2. Alex browses the Question Explorer, searches by keyword or source, views the front/back card anatomy, and verifies the highlighted source quote.
-3. Alex can optionally edit or tag cards before export.
+#### UJ-3: In-Browser AI Card Generation Studio
+1. Alex navigates to **⚡ Generate Studio** (the third menu stage) to synthesize flashcards from the ingested materials.
+2. Alex selects the AI Provider (Ollama, Gemini, OpenAI, Anthropic), configures the model (with smart 2026 presets or custom text overrides), chooses a cognitive persona (`socratic-mentor`, `strict-examiner`, `analogy-builder`), and checks the target data sources.
+3. Alex clicks "Start AI Generation", watching real-time spinner feedback as cards are synthesized, verified against verbatim grounding citations, and deduplicated into SQLite.
 
-#### UJ-4: Multi-Target Export & Spaced Repetition Study
-1. Alex selects a target deck or tags and clicks "Sync to Anki".
-2. `flashcard-master` transmits cards directly to the running desktop Anki application via AnkiConnect HTTP API.
-3. Alternatively, Alex exports a styled `.apkg` file, an active-recall Markdown document (`<details>` blocks), or a PDF study sheet.
+#### UJ-4: Visual Exploration, Search & Active-Recall Practice
+1. Alex navigates to **🗂️ Question Explorer** (the fourth menu stage) to browse the generated knowledge base.
+2. Alex searches by keyword, filters with interactive deck/tag/difficulty chips, tests knowledge using click-to-reveal answer cards, and performs inline edits via the slide-over drawer.
 
-#### UJ-5: In-Browser AI Card Generation Studio
-1. Alex navigates to the "⚡ Generate Studio" tab on `http://127.0.0.1:3000`.
-2. Alex selects the AI Provider (Ollama, Google Gemini, OpenAI, or Anthropic). The UI auto-populates the recommended cost-effective default model (`phi4-mini`, `gemini-2.0-flash`, `gpt-4o-mini`, `claude-3-5-haiku-latest`), with full freedom to override with any custom model name.
-3. Alex selects single, multiple, or all active data sources, sets target deck, and picks a cognitive learning persona (`socratic-mentor`, `strict-examiner`, `analogy-builder`).
-4. Alex clicks "Start AI Generation". The UI displays live spinning progress feedback as cards are synthesized, verified against verbatim grounding citations, and deduplicated.
-5. On completion, the UI presents a generation summary banner (`Cards Created`, `Duplicates Filtered`, `Ungrounded Rejected`) and immediate card previews, dynamically updating overview KPIs and the Question Explorer.
+#### UJ-5: Multi-Target Export & Spaced Repetition Study
+1. Alex navigates to **🚀 Export Center** (the final menu stage) to deliver flashcards to external study environments.
+2. Alex 1-clicks "Push to Anki Desktop" via live AnkiConnect, or downloads `.apkg`, active-recall Markdown (`<details>` blocks), CSV, or printable two-column HTML study sheets.
 
 ---
 
@@ -118,7 +108,7 @@ journey
 | :--- | :--- | :--- | :--- |
 | **FR-401** | **Interactive CLI Setup Wizard** | The CLI MUST provide an interactive terminal wizard (`flashcard-master config init` / `source add -i`) with keyboard navigation. | High |
 | **FR-402** | **Scriptable CLI Subcommands** | The CLI MUST provide non-interactive subcommands (`source`, `sync`, `export`, `cards`, `config`) for headless scripting. | High |
-| **FR-403** | **Local Web UI Dashboard** | The system MUST serve a lightweight local web dashboard (`flashcard-master ui` on `localhost:3000`). | High |
+| **FR-403** | **Progressive 5-Stage Web UI Dashboard** | The system MUST serve a lightweight local web dashboard (`flashcard-master serve` on `localhost:3000`) structured chronologically: **1. Dashboard 📊 $\rightarrow$ 2. Data Sources 🌐 $\rightarrow$ 3. Generate Studio ⚡ $\rightarrow$ 4. Question Explorer 🗂️ $\rightarrow$ 5. Export Center 🚀**. | High |
 | **FR-404** | **UI Sources Management** | The Web UI MUST allow users to add, edit, toggle, and trigger manual sync on data sources with live progress feedback. | High |
 | **FR-405** | **UI Question Explorer & Editor** | The Web UI MUST provide a searchable card database with keyword search, filter chips, and inline card editing. | High |
 | **FR-406** | **UI 1-Click Export Center** | The Web UI MUST offer 1-click downloads for `.apkg`, Markdown, PDF, and 1-click Push to running AnkiConnect. | High |

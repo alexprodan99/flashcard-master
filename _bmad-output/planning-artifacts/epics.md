@@ -419,6 +419,19 @@ So that I can selectively generate flashcards from any subset of ingested data s
 - **And** submitting generation packages the array of selected source IDs (`sourceIds: string[]`) and executes multi-source batch generation.
 - **And** if no sources are selected, the UI displays a clear validation message preventing submission.
 
+### Story 5.3: Navigation Hierarchy Alignment with Progressive Learning Pipeline
+As a learner navigating the Flashcard Master Web UI,  
+I want the sidebar navigation tabs to follow the chronological learning workflow: **1. Dashboard 📊 $\rightarrow$ 2. Data Sources 🌐 $\rightarrow$ 3. Generate Studio ⚡ $\rightarrow$ 4. Question Explorer 🗂️ $\rightarrow$ 5. Export Center 🚀**,  
+So that the interface naturally guides me from data ingestion to flashcard generation, curation, and export.
+
+**Acceptance Criteria:**
+- **Given** the user accesses the Web UI dashboard
+- **When** viewing the sidebar navigation
+- **Then** the menu tabs are ordered: **Dashboard (`#nav-dashboard`), Data Sources (`#nav-sources`), Generate Studio (`#nav-generate`), Question Explorer (`#nav-cards`), Export Center (`#nav-export`)**.
+- **And** clicking each tab switches to the corresponding view seamlessly and loads relevant data.
+- **And** keyboard shortcut `s` navigates to Sources, `g` navigates to Generate Studio, `e` navigates to Export Center.
+
+
 
 
 

@@ -72,25 +72,7 @@ stateDiagram-v2
 
 ### AnkiConnect Integration State
 - **Connected (`🟢 Anki Ready`):** Direct 1-click push enabled.
-- **Offline / Disconnected (`⚪ Anki Offline`):** Button displays `"Push to Anki (Offline)"` with tooltip explaining how to launch Anki Desktop, while highlighting the `.apkg` fallback button.
-
-### 3.4 1-Click Export Center & Anki Badging
-
-```text
-┌  Export Center ─────────────────────────────────────────────────────────────┐
-│  Filter Scope: [ All Decks ▾ ]  [ All Tags ▾ ]           [ 128 Cards Selected ]
-├──────────────────────────────────────────────────────────────────────────────┤
-│  ⚡ Desktop Integration:                                                     │
-│  [ AnkiConnect Status: 🟢 Connected (v6) ]                                  │
-│  [ 🚀 Push 128 Cards to Anki Desktop ]                                       │
-│                                                                              │
-│  📦 File Downloads:                                                          │
-│  [ 📦 Anki Package (.apkg) ]   [ 📄 CSV Spreadsheet ]   [ 📑 TSV File ]      │
-│  [ 📝 Active-Recall Markdown ] [ 🖨️ Printable HTML Study Guide ]             │
-└──────────────────────────────────────────────────────────────────────────────┘
-```
-
-### 3.5 AI Generation Studio (In-Browser Studio & Model Controls)
+### 3.3 AI Generation Studio (In-Browser Studio & Model Controls)
 
 ```text
 ┌  ⚡ AI Flashcard Generation Studio ─────────────────────────────────────────┐
@@ -127,6 +109,22 @@ stateDiagram-v2
 │                                      │                                       │
 │  [ ⚡ Start AI Generation          ] │                                       │
 └──────────────────────────────────────┴───────────────────────────────────────┘
+```
+
+### 3.4 1-Click Export Center & Anki Badging
+
+```text
+┌  Export Center ─────────────────────────────────────────────────────────────┐
+│  Filter Scope: [ All Decks ▾ ]  [ All Tags ▾ ]           [ 128 Cards Selected ]
+├──────────────────────────────────────────────────────────────────────────────┤
+│  ⚡ Desktop Integration:                                                     │
+│  [ AnkiConnect Status: 🟢 Connected (v6) ]                                  │
+│  [ 🚀 Push 128 Cards to Anki Desktop ]                                       │
+│                                                                              │
+│  📦 File Downloads:                                                          │
+│  [ 📦 Anki Package (.apkg) ]   [ 📄 CSV Spreadsheet ]   [ 📑 TSV File ]      │
+│  [ 📝 Active-Recall Markdown ] [ 🖨️ Printable HTML Study Guide ]             │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
