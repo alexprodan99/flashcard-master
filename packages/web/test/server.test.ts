@@ -4,15 +4,41 @@ import {
   DataSourceRepository,
   SyncStateRepository,
   FlashcardRepository,
+  IngestionService,
+  StrategyRegistry,
 } from "@flashcard-master/core";
 import { createWebServer, WebServer } from "../src/server.js";
 import type Database from "better-sqlite3";
+import type { IngestionStrategyPort, RawDocument, CleanTextDocument, DataSource } from "@flashcard-master/core";
 
-describe("WebServer REST API and Dashboard SPA", () => {
+class MockStrategy implements IngestionStrategyPort {
+  readonly type = "rss" as const;
+  async fetch(source: DataSource): Promise<RawDocument[]> {
+    return [{
+      id: "doc-1",
+      sourceId: source.id,
+      title: "Mock Doc",
+      rawContent: "Some text content",
+      guid: "g-1",
+    }];
+  }
+  extractCleanText(raw: RawDocument): CleanTextDocument {
+    return {
+      id: raw.id,
+      sourceId: raw.sourceId,
+      title: raw.title,
+      textContent: raw.rawContent,
+      contentHash: "hash-1",
+    };
+  }
+}
+
+describe.sequential("WebServer REST API and Dashboard SPA", () => {
   let db: Database.Database;
   let sourceRepo: DataSourceRepository;
   let syncRepo: SyncStateRepository;
   let cardRepo: FlashcardRepository;
+  let ingestionService: IngestionService;
   let server: WebServer;
   let serverUrl: string;
 
@@ -21,6 +47,10 @@ describe("WebServer REST API and Dashboard SPA", () => {
     sourceRepo = new DataSourceRepository(db);
     syncRepo = new SyncStateRepository(db);
     cardRepo = new FlashcardRepository(db);
+
+    const stratRegistry = new StrategyRegistry();
+    stratRegistry.register(new MockStrategy());
+    ingestionService = new IngestionService(sourceRepo, syncRepo, stratRegistry);
 
     // Seed test data
     sourceRepo.create({
@@ -51,10 +81,11 @@ describe("WebServer REST API and Dashboard SPA", () => {
     });
 
     server = createWebServer({
-      port: 0, // dynamic port for tests
+      port: 0,
       sourceRepo,
       syncRepo,
       cardRepo,
+      ingestionService,
     });
 
     const info = await server.listen();
@@ -71,7 +102,7 @@ describe("WebServer REST API and Dashboard SPA", () => {
     expect(res.status).toBe(200);
     const text = await res.text();
     expect(text).toContain("Flashcard Master");
-    expect(text).toContain("Dashboard Overview");
+    expect(text).toContain("Data Sources Manager");
   });
 
   it("returns health status at /api/health", async () => {
@@ -101,7 +132,7 @@ describe("WebServer REST API and Dashboard SPA", () => {
     expect(cards[0].question).toBe("What is Raft?");
   });
 
-  it("supports creating sources via POST /api/sources", async () => {
+  it("supports creating and updating sources via REST", async () => {
     const res = await fetch(`${serverUrl}/api/sources`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -117,7 +148,47 @@ describe("WebServer REST API and Dashboard SPA", () => {
     const created = await res.json();
     expect(created.name).toBe("New Web Source");
 
-    const allSources = sourceRepo.list();
-    expect(allSources.length).toBe(2);
+    // Test PATCH
+    const patchRes = await fetch(`${serverUrl}/api/sources/${created.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isActive: false }),
+    });
+    expect(patchRes.status).toBe(200);
+    const updated = await patchRes.json();
+    expect(updated.isActive).toBe(false);
+  });
+
+  it("triggers sync for a single source via POST /api/sync/:id", async () => {
+    const sources = sourceRepo.list();
+    const sourceId = sources[0].id;
+
+    const res = await fetch(`${serverUrl}/api/sync/${sourceId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Connection": "close" },
+      body: JSON.stringify({}),
+    });
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.sourceId).toBe(sourceId);
+    expect(json.newCount).toBe(1);
+  });
+
+  it("triggers bulk sync via POST /api/sync", async () => {
+    const res = await fetch(`${serverUrl}/api/sync`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+
+    expect(res.status).toBe(200);
+    const results = await res.json();
+    expect(results.length).toBe(1);
+    expect(results[0].newCount).toBe(1);
   });
 });
+
+
+
+
+
