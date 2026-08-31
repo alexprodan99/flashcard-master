@@ -123,7 +123,7 @@ journey
 | **FR-405** | **UI Question Explorer & Editor** | The Web UI MUST provide a searchable card database with keyword search, filter chips, and inline card editing. | High |
 | **FR-406** | **UI 1-Click Export Center** | The Web UI MUST offer 1-click downloads for `.apkg`, Markdown, PDF, and 1-click Push to running AnkiConnect. | High |
 | **FR-407** | **UI AI Generation Studio** | The Web UI MUST provide an in-browser generation studio with provider switching (Ollama, Gemini, OpenAI, Anthropic), smart model defaults, and custom model text overrides. | Critical |
-| **FR-408** | **UI Multi-Source Scope Selector** | The Web UI MUST allow selecting "All Ingested Sources", a single source, or multiple selected sources for targeted flashcard extraction. | High |
+| **FR-408** | **UI Multi-Source Scope Selector** | The Web UI MUST provide an interactive multi-source checkbox list with type badges, master "Toggle All" control, and real-time selection counter to selectively synthesize cards from any subset of sources. | High |
 | **FR-409** | **UI Secure API Key Input** | The Web UI MUST allow optional in-browser API key entry for cloud LLM providers with automatic fallback to server environment variables. | Medium |
 | **FR-410** | **UI Live Generation Feedback** | The Web UI MUST display real-time spinning state during generation, followed by metric reporting (cards created, duplicates skipped, ungrounded rejected) and card previews. | High |
 

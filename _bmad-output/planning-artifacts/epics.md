@@ -405,6 +405,21 @@ So that I can generate new grounded flashcards directly in the browser with live
 - **And** a live progress spinner displays while generating, followed by a results summary banner and card previews.
 - **And** the dashboard KPI counters and Question Explorer card grid update dynamically.
 
+### Story 5.2: Multi-Source Scope Selector UI
+As a learner using the Generation Studio,  
+I want an interactive multi-source selection grid with individual checkboxes, type badges, and a "Select All / Deselect All" master control,  
+So that I can selectively generate flashcards from any subset of ingested data sources simultaneously.
+
+**Acceptance Criteria:**
+- **Given** the user opens the "⚡ Generate Studio" tab
+- **When** the active data sources are loaded
+- **Then** an interactive multi-source checkbox container is displayed showing each source's name, type badge (`rss`, `web`, `local`), and target deck.
+- **And** a master "Toggle All / Deselect All" button selects or deselects all active sources with one click.
+- **And** a real-time badge indicates the number of selected sources (e.g. `[ 3 / 5 Sources Selected ]`).
+- **And** submitting generation packages the array of selected source IDs (`sourceIds: string[]`) and executes multi-source batch generation.
+- **And** if no sources are selected, the UI displays a clear validation message preventing submission.
+
+
 
 
 

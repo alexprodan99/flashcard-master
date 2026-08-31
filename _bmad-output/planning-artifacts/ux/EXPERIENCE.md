@@ -115,7 +115,13 @@ stateDiagram-v2
 │  [ 🟡 Intermediate               ▾ ] │                                       │
 │                                      │  [ 👁️ View in Question Explorer ]     │
 │  6. Ingested Sources Scope:          │                                       │
-│  [ All Active Ingested Sources   ▾ ] │                                       │
+│  [ 3 / 4 Sources Selected ] [Toggle] │                                       │
+│  ┌─────────────────────────────────┐ │                                       │
+│  │ [x] Martin Fowler Blog  [rss]   │ │                                       │
+│  │ [x] SQLite WAL Spec     [web]   │ │                                       │
+│  │ [ ] CS Notes            [local] │ │                                       │
+│  │ [x] Kubernetes Docs     [web]   │ │                                       │
+│  └─────────────────────────────────┘ │                                       │
 │                                      │                                       │
 │  7. Cards per Document: [ 5 ]        │                                       │
 │                                      │                                       │
