@@ -77,7 +77,7 @@ const cardGen = new CardGenerationService(llm, personaStudio, groundingGuard, ca
 
 ---
 
-### 🛠️ Option 4: Build from Source (Developers & Contributors)
+### 🛠️ Option 4: Build & Run from Source (Local Development)
 
 ```bash
 # 1. Clone the repository
@@ -90,6 +90,21 @@ npm run build
 
 # 3. Run the test suite
 npm test
+
+# 4. Launch the local Web UI Dashboard immediately:
+npm start
+
+# 5. (Optional) Link the CLI globally so 'flashcard-master' works everywhere:
+npm link -w @flashcard-master/cli
+flashcard-master serve
+flashcard-master init
+
+# 6. (Optional) Run CLI commands directly without global linking:
+npm run cli -- init
+npm run cli -- sync
+npm run cli -- generate --provider ollama
+npm run cli -- export -f apkg -o ./flashcards.apkg
+npm run cli -- stats
 ```
 
 ---
