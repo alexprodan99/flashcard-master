@@ -64,7 +64,7 @@
 <div class="view-container">
   <div class="view-header">
     <div>
-      <h1 class="view-title">🚀 Export Center</h1>
+      <h1 class="view-title">🚀 Export & Anki Center</h1>
       <p class="view-subtitle">Export curated flashcards to Anki Desktop, printable PDFs, and Markdown notes.</p>
     </div>
     <div class="deck-filter-wrapper">
