@@ -2,6 +2,7 @@ export * from "./ingestion/rss-strategy.js";
 export * from "./ingestion/web-reader-strategy.js";
 export * from "./ingestion/local-file-strategy.js";
 export * from "./ingestion/sitemap-strategy.js";
+export * from "./ingestion/llms-txt-strategy.js";
 export * from "./llm/types.js";
 export * from "./llm/openai-adapter.js";
 export * from "./llm/gemini-adapter.js";
