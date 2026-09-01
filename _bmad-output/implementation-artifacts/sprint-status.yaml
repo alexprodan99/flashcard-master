@@ -84,3 +84,10 @@ development_status:
   6-4-web-server-static-asset-delivery-and-e2e-tests: done
   epic-6-retrospective: done
 
+  epic-7: in-progress
+  7-1-xml-sitemap-ingestion-strategy: ready-for-dev
+  7-2-llms-txt-ingestion-strategy: backlog
+  7-3-cli-sitemap-support: backlog
+  7-4-web-ui-sitemap-integration: backlog
+  epic-7-retrospective: optional
+

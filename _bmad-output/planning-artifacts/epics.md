@@ -473,6 +473,50 @@ So that the interface naturally guides me from data ingestion to flashcard gener
 - **Then** `WebServer` serves the compiled Svelte SPA with correct MIME types and cache headers.
 - **And** all existing integration test suites in `packages/web/test/server.test.ts` pass with 100% success.
 
+---
+
+## Epic 7: XML Sitemap & LLMs.txt Multi-Article Ingestion Engine
+
+**Goal:** Expand Flashcard Master's ingestion capabilities to ingest entire publication archives, documentation portals, and blogs by implementing pluggable **XML Sitemap** (`<urlset>` & `<sitemapindex>`) and **LLMs.txt** (`/llms.txt` & `/llms-full.txt`) strategies with recursive URL discovery, path filtering, rate-limited reader extraction, and full UI/CLI configuration.
+
+### Story 7.1: XML Sitemap Strategy & Domain Types
+**ID:** `7-1-xml-sitemap-ingestion-strategy`
+**Description:** Implement `SitemapIngestionStrategy` in `packages/adapters/src/ingestion/sitemap-strategy.ts` supporting standard XML sitemaps and recursive sitemap indexes, path/glob filtering (e.g. `/blog/*`), and parallel reader-mode text extraction with concurrency control. Extend `DataSource` and `schema.sql` to support `'sitemap'` type.
+**Acceptance Criteria:**
+- **Given** a data source with type `sitemap` and URI (e.g. `https://milanjovanovic.tech/sitemap-0.xml` or `https://milanjovanovic.tech/sitemap-index.xml`)
+- **When** `IngestionService.syncSource(id)` is triggered
+- **Then** all nested sitemaps are resolved and canonical URLs extracted.
+- **And** web pages are fetched in reader mode with clean text and SHA-256 hashes generated for each document.
+- **And** incremental delta sync tracks ingested URLs to prevent re-fetching unchanged pages.
+
+### Story 7.2: LLMs.txt & Markdown Catalog Strategy
+**ID:** `7-2-llms-txt-ingestion-strategy`
+**Description:** Implement `LlmsTxtIngestionStrategy` in `packages/adapters/src/ingestion/llms-txt-strategy.ts` supporting `/llms.txt` and `/llms-full.txt` catalogs, extracting canonical URLs, topic categories, and fetching article contents. Extend `DataSource` and `schema.sql` to support `'llms-txt'` type.
+**Acceptance Criteria:**
+- **Given** a data source with type `llms-txt` and URI (e.g. `https://milanjovanovic.tech/llms-full.txt`)
+- **When** `IngestionService.syncSource(id)` is triggered
+- **Then** Markdown link definitions and topic headers are parsed into cataloged items.
+- **And** articles are fetched, cleaned, and stored with their section topics as tags.
+
+### Story 7.3: CLI Subcommand & Interactive Wizard Support
+**ID:** `7-3-cli-sitemap-support`
+**Description:** Update CLI commands (`flashcard-master source add`) and interactive setup wizard (`flashcard-master init`) to allow selecting `sitemap` and `llms-txt` types with optional URL path filtering.
+**Acceptance Criteria:**
+- **Given** user runs `flashcard-master source add "Milan Sitemap" sitemap "https://milanjovanovic.tech/sitemap-0.xml"`
+- **When** the source is created
+- **Then** the record is stored in SQLite and can be synced via `flashcard-master sync <id>`.
+- **And** `flashcard-master init` interactive wizard presents `sitemap` and `llms-txt` in the source type menu.
+
+### Story 7.4: Svelte 5 Web UI Integration & E2E Validation
+**ID:** `7-4-web-ui-sitemap-integration`
+**Description:** Add `sitemap` and `llms-txt` options with visual type badges in `AddSourceModal.svelte`, `SourcesView.svelte`, and `GenerateStudio.svelte`. Verify end-to-end batch ingestion and card generation with automated test suites.
+**Acceptance Criteria:**
+- **Given** user opens "+ Add Ingestion Source" modal in Web UI
+- **When** selecting "XML Sitemap" or "LLMs.txt Catalog"
+- **Then** appropriate placeholder hints and fields appear.
+- **And** newly created sources display `sitemap` / `llms-txt` badges and trigger live sync with progress feedback.
+- **And** all unit and integration tests across all workspaces pass with 100% success.
+
 
 
 
