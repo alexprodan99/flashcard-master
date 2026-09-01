@@ -1,5 +1,8 @@
 import http from "node:http";
 import url from "node:url";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   type DataSourceRepository,
   type SyncStateRepository,
@@ -1581,8 +1584,41 @@ export class WebServer {
         }
 
         try {
-          // 1. Static SPA Dashboard
-          if (pathname === "/" || pathname === "/index.html") {
+          // 1. Static Asset / Svelte SPA Serving
+          if (!pathname.startsWith("/api/")) {
+            const currentDir = path.dirname(fileURLToPath(import.meta.url));
+            const clientDistDir = path.resolve(currentDir, "client");
+
+            const requestedFile = pathname === "/" ? "index.html" : pathname.replace(/^\//, "");
+            const filePath = path.join(clientDistDir, requestedFile);
+
+            if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+              const ext = path.extname(filePath).toLowerCase();
+              let contentType = "application/octet-stream";
+              if (ext === ".html") contentType = "text/html; charset=utf-8";
+              else if (ext === ".js") contentType = "application/javascript; charset=utf-8";
+              else if (ext === ".css") contentType = "text/css; charset=utf-8";
+              else if (ext === ".json") contentType = "application/json; charset=utf-8";
+              else if (ext === ".svg") contentType = "image/svg+xml";
+              else if (ext === ".png") contentType = "image/png";
+
+              res.writeHead(200, {
+                "Content-Type": contentType,
+                "Cache-Control": ext === ".html" ? "no-cache" : "public, max-age=31536000, immutable",
+              });
+              res.end(fs.readFileSync(filePath));
+              return;
+            }
+
+            // Fallback for SPA routing if dist/client/index.html exists
+            const spaIndex = path.join(clientDistDir, "index.html");
+            if (fs.existsSync(spaIndex)) {
+              res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+              res.end(fs.readFileSync(spaIndex));
+              return;
+            }
+
+            // Fallback to embedded template if static client bundle is not yet built
             res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
             res.end(this.getHtmlSpa());
             return;
@@ -1865,10 +1901,11 @@ export class WebServer {
             return;
           }
 
-          // 14. Export File Download Endpoint: GET /api/export
-          if (pathname === "/api/export" && method === "GET") {
+          // 14. Export File Download Endpoint: GET /api/export or GET /api/export/:format
+          if ((pathname === "/api/export" || pathname.startsWith("/api/export/")) && method === "GET") {
             const query = parsedUrl.query;
-            const format = (query.format as ExportFormat) || "csv";
+            const subFormat = pathname.startsWith("/api/export/") ? pathname.slice("/api/export/".length) : undefined;
+            const format = (subFormat as ExportFormat) || (query.format as ExportFormat) || "csv";
             const filter: CardFilter = {
               targetDeck: query.deck as string,
               tag: query.tag as string,

@@ -45,7 +45,7 @@ This document provides the complete epic and story breakdown for `flashcard-mast
 - **FR-403**: Local Web UI Dashboard (`flashcard-master ui` serving web app on `localhost:3000`).
 - **FR-404**: UI Sources Management (Add, edit, toggle, and trigger manual sync on data sources with live progress feedback).
 - **FR-405**: UI Question Explorer & Editor (Searchable card database with keyword search, filter chips, and inline card editor drawer).
-- **FR-406**: UI 1-Click Export Center (1-click downloads for `.apkg`, Markdown, PDF, and 1-click Push to running AnkiConnect).
+- **FR-406**: UI 1-Click Export & Anki Center (1-click downloads for `.apkg`, Markdown, PDF, and 1-click Push to running AnkiConnect).
 
 ### Non-Functional Requirements
 
@@ -72,7 +72,7 @@ This document provides the complete epic and story breakdown for `flashcard-mast
 - **UX-DR3**: Sources Manager Interface (Table of active feeds/paths, status badges, and Add Source modal with type selector).
 - **UX-DR4**: Question Explorer & Filter Bar (Real-time full-text search, source filter chips, difficulty badges, and card grid).
 - **UX-DR5**: Inline Card Editor Slide-over Drawer (Edit question, answer, tags, and difficulty without navigating away).
-- **UX-DR6**: 1-Click Export Center & Anki Badging (Real-time AnkiConnect status badge `🟢 Anki Ready` / `⚪ Anki Offline`, format selector).
+- **UX-DR6**: 1-Click Export & Anki Center (Real-time AnkiConnect status badge `🟢 Anki Ready` / `⚪ Anki Offline`, format selector).
 - **UX-DR7**: Keyboard Shortcuts (Global shortcuts `⌘K` / `/` search, `s` sync, `j/k` card navigation, `Enter` edit, `Esc` close).
 - **UX-DR8**: Accessibility & Focus Management (WCAG 2.1 AA compliant color contrast, focus traps on modals/drawers).
 
@@ -103,7 +103,7 @@ This document provides the complete epic and story breakdown for `flashcard-mast
 - **FR-403**: Epic 4 - Local Web UI Dashboard Server
 - **FR-404**: Epic 4 - UI Sources Management
 - **FR-405**: Epic 4 - UI Question Database Explorer & Inline Editor
-- **FR-406**: Epic 4 - UI 1-Click Export Center
+- **FR-406**: Epic 4 - UI 1-Click Export & Anki Center
 
 ## Epic 1: Project Foundation & Core Ingestion Pipeline
 
@@ -319,7 +319,7 @@ So that I can create targeted decks for specific exams or study sessions.
 
 ## Epic 4: Dual Presentation Layer (Interactive CLI Wizard & Web UI Dashboard)
 
-**Goal:** Deliver the user-facing interfaces: an interactive terminal setup wizard and scriptable CLI subcommands, alongside a local visual Web UI dashboard with Sources Manager, Question Explorer, and 1-Click Export Center.
+**Goal:** Deliver the user-facing interfaces: an interactive terminal setup wizard and scriptable CLI subcommands, alongside a local visual Web UI dashboard with Sources Manager, Question Explorer, and 1-Click Export & Anki Center.
 
 ### Story 4.1: Interactive Terminal Setup Wizard & Scriptable CLI
 As a command-line developer,  
@@ -327,19 +327,19 @@ I want an interactive terminal wizard and scriptable CLI subcommands,
 So that I can configure sources, trigger syncs, and export cards directly from my terminal.
 
 **Acceptance Criteria:**
-- **Given** the user runs lashcard-master config init
+- **Given** the user runs `flashcard-master config init`
 - **When** the interactive wizard opens
 - **Then** arrow-key menus guide the user through provider selection, API keys, persona choices, and initial data sources.
-- **And** CLI subcommands (source add, sync, xport, cards list) execute headlessly with exit codes.
+- **And** CLI subcommands (`source add`, `sync`, `export`, `cards list`) execute headlessly with exit codes.
 
 ### Story 4.2: Local Web UI Dashboard Server & Design System Foundation
 As a user,  
-I want a local web dashboard served by lashcard-master ui,  
+I want a local web dashboard served by `flashcard-master ui`,  
 So that I have a beautiful visual interface for managing my knowledge base.
 
 **Acceptance Criteria:**
-- **Given** the user runs lashcard-master ui
-- **When** the local Fastify/Vite server starts on http://localhost:3000
+- **Given** the user runs `flashcard-master ui`
+- **When** the local Fastify/Vite server starts on `http://localhost:3000`
 - **Then** the web app loads with dark/light theme tokens, responsive sidebar navigation, and status badges.
 
 ### Story 4.3: Sources Manager UI with Live Sync Status
@@ -374,13 +374,13 @@ So that I can refine card phrasing without leaving the explorer grid.
 - **Then** the user can modify the question, answer, difficulty, or tags and click "Save".
 - **And** changes are atomically committed to SQLite and instantly updated in the UI.
 
-### Story 4.6: 1-Click Export Center & AnkiConnect Badging
+### Story 4.6: 1-Click Export & Anki Center & AnkiConnect Badging
 As a user,  
-I want a dedicated Export Center in the Web UI with live AnkiConnect detection,  
+I want a dedicated Export & Anki Center in the Web UI with live AnkiConnect detection,  
 So that I can push cards to Anki or download .apkg, Markdown, and PDF files with one click.
 
 **Acceptance Criteria:**
-- **Given** the user opens the Export Center
+- **Given** the user opens the Export & Anki Center
 - **When** desktop Anki is running on the machine
 - **Then** the UI shows a 🟢 Anki Ready badge and enables the 1-click "Push to Anki" button.
 - **And** 1-click download buttons generate and stream .apkg, Markdown, and PDF files directly to the browser.
@@ -389,47 +389,90 @@ So that I can push cards to Anki or download .apkg, Markdown, and PDF files with
 
 ## Epic 5: Interactive Web Generation Studio & In-Browser AI Workflows
 
-### Epic Goal
-Bring full AI flashcard generation into the local Web UI dashboard, allowing users to configure providers (Ollama, Gemini, OpenAI, Anthropic), modern model presets, learning personas, and difficulty tiers directly in the browser with live visual feedback and automated persistence.
+**Goal:** Deliver an integrated, in-browser AI generation studio allowing users to synthesize grounded flashcards with provider switching (Ollama, Gemini, OpenAI, Anthropic), cognitive personas, multi-source scoping, and real-time progress feedback.
 
-### Story 5.1: Web UI AI Card Generation Studio & REST API
-As a learner using the Web UI Dashboard,  
-I want an interactive "⚡ Generate Studio" tab in the browser where I can select my AI Provider (`Ollama`, `Gemini`, `OpenAI`, `Anthropic`), pick the Model, choose a Learning Persona, and set Difficulty,  
-So that I can generate new grounded flashcards directly in the browser with live visual feedback.
+### Story 5.1: Web UI AI Card Generation Studio
+As a learner using the Web UI,  
+I want an in-browser Generation Studio interface,  
+So that I can configure AI providers, choose models, select cognitive personas, and generate flashcards without terminal commands.
 
 **Acceptance Criteria:**
-- **Given** the user navigates to the "⚡ Generate Studio" tab in the Web UI
-- **When** the user selects an AI provider (Ollama, Gemini, OpenAI, Anthropic), model, persona, difficulty, and target source
-- **Then** the model defaults auto-populate with the modern optimal choices (`phi4-mini`, `gemini-2.0-flash`, `gpt-4o-mini`, `claude-haiku-4-5-20251001`).
-- **And** clicking "Start AI Generation" triggers `POST /api/generate` to synthesize cards, run verbatim grounding checks, deduplicate against existing cards, and save new cards to SQLite.
-- **And** a live progress spinner displays while generating, followed by a results summary banner and card previews.
-- **And** the dashboard KPI counters and Question Explorer card grid update dynamically.
+- **Given** the user navigates to the "⚡ Generate Studio" tab
+- **When** selecting a provider and clicking "Start AI Generation"
+- **Then** the backend synthesizes flashcards using the selected model, enforces verbatim grounding citations, and deduplicates cards.
+- **And** the UI displays live spinner feedback and newly generated card previews.
 
 ### Story 5.2: Multi-Source Scope Selector UI
-As a learner using the Generation Studio,  
-I want an interactive multi-source selection grid with individual checkboxes, type badges, and a "Select All / Deselect All" master control,  
-So that I can selectively generate flashcards from any subset of ingested data sources simultaneously.
+As a learner with multiple ingested sources,  
+I want to choose specific data sources to synthesize cards from,  
+So that I can generate flashcards focused on particular articles or topics.
 
 **Acceptance Criteria:**
-- **Given** the user opens the "⚡ Generate Studio" tab
-- **When** the active data sources are loaded
-- **Then** an interactive multi-source checkbox container is displayed showing each source's name, type badge (`rss`, `web`, `local`), and target deck.
-- **And** a master "Toggle All / Deselect All" button selects or deselects all active sources with one click.
-- **And** a real-time badge indicates the number of selected sources (e.g. `[ 3 / 5 Sources Selected ]`).
-- **And** submitting generation packages the array of selected source IDs (`sourceIds: string[]`) and executes multi-source batch generation.
+- **Given** the Generate Studio configuration form
+- **When** viewing the "Target Data Sources" section
+- **Then** an interactive checkbox grid lists all active sources with type badges, master "Toggle All", and selection counter.
 - **And** if no sources are selected, the UI displays a clear validation message preventing submission.
 
 ### Story 5.3: Navigation Hierarchy Alignment with Progressive Learning Pipeline
 As a learner navigating the Flashcard Master Web UI,  
-I want the sidebar navigation tabs to follow the chronological learning workflow: **1. Dashboard 📊 $\rightarrow$ 2. Data Sources 🌐 $\rightarrow$ 3. Generate Studio ⚡ $\rightarrow$ 4. Question Explorer 🗂️ $\rightarrow$ 5. Export Center 🚀**,  
+I want the sidebar navigation tabs to follow the chronological learning workflow: **1. Dashboard 📊 $\rightarrow$ 2. Data Sources 🌐 $\rightarrow$ 3. Generate Studio ⚡ $\rightarrow$ 4. Question Explorer 🗂️ $\rightarrow$ 5. Export & Anki 🚀**,  
 So that the interface naturally guides me from data ingestion to flashcard generation, curation, and export.
 
 **Acceptance Criteria:**
 - **Given** the user accesses the Web UI dashboard
 - **When** viewing the sidebar navigation
-- **Then** the menu tabs are ordered: **Dashboard (`#nav-dashboard`), Data Sources (`#nav-sources`), Generate Studio (`#nav-generate`), Question Explorer (`#nav-cards`), Export Center (`#nav-export`)**.
+- **Then** the menu tabs are ordered: **Dashboard (`#nav-dashboard`), Data Sources (`#nav-sources`), Generate Studio (`#nav-generate`), Question Explorer (`#nav-cards`), Export & Anki (`#nav-export`)**.
 - **And** clicking each tab switches to the corresponding view seamlessly and loads relevant data.
-- **And** keyboard shortcut `s` navigates to Sources, `g` navigates to Generate Studio, `e` navigates to Export Center.
+- **And** keyboard shortcut `s` navigates to Sources, `g` navigates to Generate Studio, `e` navigates to Export & Anki.
+
+---
+
+## Epic 6: Modern UI Migration to Svelte 5 & Component Architecture
+
+**Goal:** Modernize the embedded Web UI dashboard by migrating from inline imperative vanilla HTML/JS string templating to a compile-time, zero-Virtual-DOM **Svelte 5** single-file component architecture with reactive runes (`$state`, `$derived`, `$props`), compiled via Vite and served locally by the Node.js backend server.
+
+### Story 6.1: Svelte 5 & Vite Build Pipeline Setup
+**ID:** `6-1-svelte-vite-build-pipeline-setup`
+**Description:** Configure Vite and `@sveltejs/vite-plugin-svelte` inside `packages/web`, set up TypeScript compilation for `.svelte` components, establish `packages/web/client/` scaffold, and integrate client build into `npm run build`.
+**Acceptance Criteria:**
+- **Given** developer runs `npm run build` from monorepo root or `npm run build -w @flashcard-master/web`
+- **When** Vite compiles `packages/web/client/`
+- **Then** static HTML, JS chunks, and CSS bundle are generated in `packages/web/dist/client/`.
+- **And** TypeScript type checks pass with zero errors.
+
+### Story 6.2: Migrate Dashboard & Data Sources Views to Svelte 5
+**ID:** `6-2-migrate-dashboard-and-sources-views-to-svelte`
+**Description:** Implement Svelte 5 reactive components for the Root App container, Sidebar Navigation, Global Stats KPI Cards, Dashboard View, and Data Sources Manager (including Add Source Modal, Sync triggers, and delete action).
+**Acceptance Criteria:**
+- **Given** the Svelte client renders in browser
+- **When** user views Dashboard or Data Sources tab
+- **Then** KPI counters load reactively from `GET /api/stats`
+- **And** Data sources list from `GET /api/sources`, with live sync triggers (`POST /api/sync`), add source modal (`POST /api/sources`), and toggle active status.
+- **And** UI styling, dark theme tokens, and typography match existing design specification.
+
+### Story 6.3: Migrate Generate Studio, Question Explorer, and Export & Anki Center to Svelte 5
+**ID:** `6-3-migrate-generate-studio-question-explorer-and-export-center-to-svelte`
+**Description:** Implement Svelte 5 reactive components for AI Generate Studio (with multi-source selection grid, provider presets, custom model overrides, and progress banner), Question Explorer (search bar, filter chips, card grid, and Slide-Over Card Editor drawer), and Export & Anki Center (1-click download cards and AnkiConnect live push).
+**Acceptance Criteria:**
+- **Given** user navigates to "⚡ Generate Studio"
+- **When** user selects sources, provider, model, persona, and difficulty and clicks "Start AI Generation"
+- **Then** `POST /api/generate` is triggered with reactive progress spinner, and newly created cards display in live preview banner.
+- **Given** user navigates to "🗂️ Question Explorer"
+- **When** user types in search or clicks deck/difficulty filter chips
+- **Then** cards filter reactively, and clicking "Edit" opens the reactive slide-over drawer to update or delete cards.
+- **Given** user navigates to "🚀 Export & Anki"
+- **When** user clicks an export button (.apkg, Markdown, PDF, AnkiConnect)
+- **Then** file downloads or AnkiConnect push triggers seamlessly.
+
+### Story 6.4: WebServer Static Asset Delivery & End-to-End Test Suite
+**ID:** `6-4-web-server-static-asset-delivery-and-e2e-tests`
+**Description:** Update Node.js `WebServer` in `packages/web/src/server.ts` to serve compiled static assets from `dist/client/` with fallback to SPA routing, while maintaining all JSON REST API endpoints and ensuring 100% automated test suite coverage.
+**Acceptance Criteria:**
+- **Given** `flashcard-master serve` is started
+- **When** browser requests `GET /` or any static asset (`/assets/*.js`, `/assets/*.css`)
+- **Then** `WebServer` serves the compiled Svelte SPA with correct MIME types and cache headers.
+- **And** all existing integration test suites in `packages/web/test/server.test.ts` pass with 100% success.
+
 
 
 

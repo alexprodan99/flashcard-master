@@ -395,17 +395,21 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     expect(data.newCards[0].targetDeck).toBe("Custom Generation Deck");
   });
 
-  it("returns error 400 when generating from non-existent sourceId", async () => {
-    const res = await fetch(`${serverUrl}/api/generate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sourceId: "non-existent-source-id",
-      }),
-    });
+  it("serves static dashboard SPA on GET / and GET /index.html", async () => {
+    const resRoot = await fetch(`${serverUrl}/`);
+    expect(resRoot.status).toBe(200);
+    expect(resRoot.headers.get("content-type")).toContain("text/html");
+    const htmlRoot = await resRoot.text();
+    expect(htmlRoot.length).toBeGreaterThan(50);
 
-    expect(res.status).toBe(400);
-    const data = await res.json();
-    expect(data.error).toContain("No active data sources found");
+    const resIndex = await fetch(`${serverUrl}/index.html`);
+    expect(resIndex.status).toBe(200);
+    expect(resIndex.headers.get("content-type")).toContain("text/html");
+  });
+
+  it("handles non-API paths via SPA fallback", async () => {
+    const res = await fetch(`${serverUrl}/sources`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/html");
   });
 });

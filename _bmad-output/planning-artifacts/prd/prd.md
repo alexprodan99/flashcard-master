@@ -39,7 +39,7 @@ journey
     section 4. Curation & Study (Question Explorer)
       Searches knowledge base & inspects source quotes: 5: Alex
       Performs active-recall testing & inline edits: 5: Alex
-    section 5. Deliverables (Export Center)
+    section 5. Deliverables (Export & Anki Center)
       Pushes to Anki desktop or downloads .apkg / markdown: 5: Alex
 ```
 
@@ -62,7 +62,7 @@ journey
 2. Alex searches by keyword, filters with interactive deck/tag/difficulty chips, tests knowledge using click-to-reveal answer cards, and performs inline edits via the slide-over drawer.
 
 #### UJ-5: Multi-Target Export & Spaced Repetition Study
-1. Alex navigates to **🚀 Export Center** (the final menu stage) to deliver flashcards to external study environments.
+1. Alex navigates to **🚀 Export & Anki** (the final menu stage) to deliver flashcards to external study environments.
 2. Alex 1-clicks "Push to Anki Desktop" via live AnkiConnect, or downloads `.apkg`, active-recall Markdown (`<details>` blocks), CSV, or printable two-column HTML study sheets.
 
 ---
@@ -108,14 +108,15 @@ journey
 | :--- | :--- | :--- | :--- |
 | **FR-401** | **Interactive CLI Setup Wizard** | The CLI MUST provide an interactive terminal wizard (`flashcard-master config init` / `source add -i`) with keyboard navigation. | High |
 | **FR-402** | **Scriptable CLI Subcommands** | The CLI MUST provide non-interactive subcommands (`source`, `sync`, `export`, `cards`, `config`) for headless scripting. | High |
-| **FR-403** | **Progressive 5-Stage Web UI Dashboard** | The system MUST serve a lightweight local web dashboard (`flashcard-master serve` on `localhost:3000`) structured chronologically: **1. Dashboard 📊 $\rightarrow$ 2. Data Sources 🌐 $\rightarrow$ 3. Generate Studio ⚡ $\rightarrow$ 4. Question Explorer 🗂️ $\rightarrow$ 5. Export Center 🚀**. | High |
+| **FR-403** | **Progressive 5-Stage Web UI Dashboard** | The system MUST serve a lightweight local web dashboard (`flashcard-master serve` on `localhost:3000`) structured chronologically: **1. Dashboard 📊 $\rightarrow$ 2. Data Sources 🌐 $\rightarrow$ 3. Generate Studio ⚡ $\rightarrow$ 4. Question Explorer 🗂️ $\rightarrow$ 5. Export & Anki 🚀**. | High |
 | **FR-404** | **UI Sources Management** | The Web UI MUST allow users to add, edit, toggle, and trigger manual sync on data sources with live progress feedback. | High |
 | **FR-405** | **UI Question Explorer & Editor** | The Web UI MUST provide a searchable card database with keyword search, filter chips, and inline card editing. | High |
-| **FR-406** | **UI 1-Click Export Center** | The Web UI MUST offer 1-click downloads for `.apkg`, Markdown, PDF, and 1-click Push to running AnkiConnect. | High |
+| **FR-406** | **UI 1-Click Export & Anki Center** | The Web UI MUST offer 1-click downloads for `.apkg`, Markdown, PDF, and 1-click Push to running AnkiConnect. | High |
 | **FR-407** | **UI AI Generation Studio** | The Web UI MUST provide an in-browser generation studio with provider switching (Ollama, Gemini, OpenAI, Anthropic), smart model defaults, and custom model text overrides. | Critical |
 | **FR-408** | **UI Multi-Source Scope Selector** | The Web UI MUST provide an interactive multi-source checkbox list with type badges, master "Toggle All" control, and real-time selection counter to selectively synthesize cards from any subset of sources. | High |
 | **FR-409** | **UI Secure API Key Input** | The Web UI MUST allow optional in-browser API key entry for cloud LLM providers with automatic fallback to server environment variables. | Medium |
 | **FR-410** | **UI Live Generation Feedback** | The Web UI MUST display real-time spinning state during generation, followed by metric reporting (cards created, duplicates skipped, ungrounded rejected) and card previews. | High |
+| **FR-411** | **Svelte 5 Reactive Client Architecture** | The Web UI MUST be architected with Svelte 5 single-file components and reactive runes ($state, $derived), compiled via Vite into static client assets served locally by the Node.js backend server with zero Virtual DOM overhead. | High |
 
 ---
 

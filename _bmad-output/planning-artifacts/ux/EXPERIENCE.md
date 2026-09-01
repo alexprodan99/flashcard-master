@@ -13,31 +13,28 @@ updated: "2026-08-30"
 1. **Interactive CLI Wizard & Terminal Commands:** High-velocity developer workflow.
 2. **Local Web UI Dashboard (`flashcard-master ui`):** Rich visual curation, search, and 1-click export.
 
-### Web Dashboard Information Architecture (IA)
+### Web Dashboard Information Architecture & Svelte Component Hierarchy
 
 ```mermaid
 graph TD
-    App[flashcard-master UI] --> Nav[Global Sidebar Navigation]
-    Nav --> Sources[1. Sources Manager]
-    Nav --> Explorer[2. Question Explorer]
-    Nav --> Export[3. Export Center]
-    Nav --> Settings[4. Settings & Personas]
+    App[App.svelte Root Container] --> Nav[Navigation.svelte Sidebar]
+    App --> Main[Main View Switcher]
+    App --> Drawer[CardEditorDrawer.svelte]
+    App --> Modal[AddSourceModal.svelte]
 
-    Sources --> S_Add[Add RSS / URL / Local Path Modal]
-    Sources --> S_List[Active Sources Table & Sync Triggers]
-    Sources --> S_SyncLog[Sync History & Delta Log]
+    Main --> View1[DashboardView.svelte]
+    Main --> View2[SourcesView.svelte]
+    Main --> View3[GenerateStudio.svelte]
+    Main --> View4[QuestionExplorer.svelte]
+    Main --> View5[ExportCenter.svelte]
 
-    Explorer --> E_Search[Full-Text Search & Filter Bar]
-    Explorer --> E_Grid[Flashcard Card Grid / Table View]
-    Explorer --> E_Drawer[Inline Card Edit Drawer]
-
-    Export --> X_AnkiConnect[Live Push to Anki Desktop]
-    Export --> X_Apkg[Download .apkg Package]
-    Export --> X_Markdown[Export Collapsible Markdown]
-    Export --> X_PDF[Download Printable PDF Study Guide]
-
-    Settings --> Set_LLM[LLM Provider & API Keys]
-    Settings --> Set_Personas[Custom Prompt Persona Studio]
+    View2 --> SourceTable[SourcesTable.svelte]
+    View3 --> SourceScope[MultiSourceCheckboxGrid.svelte]
+    View3 --> LiveResults[GenerationPreviewBanner.svelte]
+    View4 --> FilterBar[FilterChipsBar.svelte]
+    View4 --> CardGrid[FlashcardCardGrid.svelte]
+    View5 --> AnkiBadge[AnkiConnectStatusCard.svelte]
+    View5 --> ExportGrid[ExportFormatGrid.svelte]
 ```
 
 ---
@@ -111,14 +108,14 @@ stateDiagram-v2
 └──────────────────────────────────────┴───────────────────────────────────────┘
 ```
 
-### 3.4 1-Click Export Center & Anki Badging
+### 3.4 1-Click Export & Anki Center & Anki Badging
 
 ```text
-┌  Export Center ─────────────────────────────────────────────────────────────┐
+┌  Export & Anki Center ────────────────────────────────────────────────────────┐
 │  Filter Scope: [ All Decks ▾ ]  [ All Tags ▾ ]           [ 128 Cards Selected ]
 ├──────────────────────────────────────────────────────────────────────────────┤
 │  ⚡ Desktop Integration:                                                     │
-│  [ AnkiConnect Status: 🟢 Connected (v6) ]                                  │
+│  [ AnkiConnect Status: 🟢 Connected (Port 8765) ]                            │
 │  [ 🚀 Push 128 Cards to Anki Desktop ]                                       │
 │                                                                              │
 │  📦 File Downloads:                                                          │
@@ -136,7 +133,7 @@ stateDiagram-v2
 | **`/`** or **`Cmd/Ctrl + K`** | Focus global search bar | Anywhere in Web UI |
 | **`s`** or **`Cmd/Ctrl + Shift + S`** | Trigger sync on all active sources | Web UI & CLI |
 | **`g`** | Open AI Generation Studio | Web UI |
-| **`e`** | Open Export Center | Web UI |
+| **`e`** | Open Export & Anki Center | Web UI |
 | **`j` / `k`** | Next / Previous flashcard | Question Explorer |
 | **`Enter`** | Open card edit drawer | Question Explorer |
 | **`Esc`** | Close drawer / modal | Anywhere in Web UI |
