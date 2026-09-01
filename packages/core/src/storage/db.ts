@@ -7,7 +7,7 @@ export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS data_sources (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    type TEXT NOT NULL CHECK(type IN ('rss', 'web', 'local')),
+    type TEXT NOT NULL CHECK(type IN ('rss', 'web', 'local', 'sitemap', 'llms-txt')),
     uri TEXT NOT NULL,
     target_deck TEXT NOT NULL DEFAULT 'Default',
     tags TEXT NOT NULL DEFAULT '[]',

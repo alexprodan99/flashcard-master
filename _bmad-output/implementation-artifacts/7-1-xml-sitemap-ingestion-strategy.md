@@ -1,7 +1,7 @@
 # Story 7.1: XML Sitemap Ingestion Strategy & Domain Types
 
 **Epic:** Epic 7 - XML Sitemap & LLMs.txt Multi-Article Ingestion Engine  
-**Status:** ready-for-dev  
+**Status:** done  
 **Date:** 2026-09-01  
 
 ---
@@ -38,20 +38,20 @@
 
 ## 3. Acceptance Criteria
 
-- [ ] **AC1 — XML Sitemap Parsing:**
+- [x] **AC1 — XML Sitemap Parsing:**
   - Given a sitemap URL (`<urlset>` format or `<sitemapindex>` format)
   - When `strategy.fetch(source)` is executed
   - Then all nested article URLs are discovered and resolved into absolute URLs.
-- [ ] **AC2 — Reader-Mode Extraction & Concurrency:**
+- [x] **AC2 — Reader-Mode Extraction & Concurrency:**
   - Given discovered article URLs
   - When scraping article contents
   - Then reader-mode clean text is extracted (boilerplate stripped) with SHA-256 content hashes generated.
   - And requests execute with concurrency limits preventing socket exhaustion.
-- [ ] **AC3 — Incremental Delta Synchronization:**
+- [x] **AC3 — Incremental Delta Synchronization:**
   - Given a previously synced sitemap source
   - When syncing again
   - Then only new/modified URLs are processed, skipping already ingested pages.
-- [ ] **AC4 — Strategy Registration & Unit Tests:**
+- [x] **AC4 — Strategy Registration & Unit Tests:**
   - Given `StrategyRegistry` in core
   - When `SitemapIngestionStrategy` is registered
   - Then unit tests in `packages/adapters/test/sitemap-strategy.test.ts` pass with 100% success.

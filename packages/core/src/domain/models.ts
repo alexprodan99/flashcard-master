@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const DataSourceTypeSchema = z.enum(["rss", "web", "local"]);
+export const DataSourceTypeSchema = z.enum(["rss", "web", "local", "sitemap", "llms-txt"]);
 export type DataSourceType = z.infer<typeof DataSourceTypeSchema>;
 
 export const DataSourceSchema = z.object({

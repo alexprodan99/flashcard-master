@@ -20,6 +20,7 @@ import {
   RssIngestionStrategy,
   WebReaderStrategy,
   LocalFileStrategy,
+  SitemapIngestionStrategy,
   createLLMAdapter,
   AnkiPackageExporter,
   AnkiConnectAdapter,
@@ -74,6 +75,7 @@ export function createAppContext(options: AppOptions = {}): AppContext {
   strategyRegistry.register(new RssIngestionStrategy());
   strategyRegistry.register(new WebReaderStrategy());
   strategyRegistry.register(new LocalFileStrategy());
+  strategyRegistry.register(new SitemapIngestionStrategy());
 
   const ingestionService = new IngestionService(sourceRepo, syncRepo, strategyRegistry);
 
