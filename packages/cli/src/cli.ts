@@ -69,7 +69,7 @@ export function createCli(providedContext?: AppContext): Command {
     .option("-t, --tags <tags>", "Comma-separated list of tags", "")
     .action((name: string, type: string, uri: string, options: { deck: string; tags: string }) => {
       try {
-        const validTypes: DataSourceType[] = ["rss", "web", "local"];
+        const validTypes: DataSourceType[] = ["rss", "web", "local", "sitemap", "llms-txt"];
         if (!validTypes.includes(type as DataSourceType)) {
           console.error(`Error: Invalid source type "${type}". Must be one of: ${validTypes.join(", ")}`);
           process.exitCode = 1;
@@ -338,11 +338,11 @@ export function createCli(providedContext?: AppContext): Command {
 
       try {
         const sourceName = (await question("1. First data source name (e.g. 'Tech Blog'): ")) || "Tech Blog";
-        const sourceType = (await question("2. Source type (rss, web, local) [rss]: ")) || "rss";
+        const sourceType = (await question("2. Source type (rss, web, local, sitemap, llms-txt) [rss]: ")) || "rss";
         const sourceUri = (await question("3. Source URI / feed URL / folder path: ")) || "https://news.ycombinator.com/rss";
         const targetDeck = (await question("4. Target Deck name ['Computer Science']: ")) || "Computer Science";
 
-        const validTypes: DataSourceType[] = ["rss", "web", "local"];
+        const validTypes: DataSourceType[] = ["rss", "web", "local", "sitemap", "llms-txt"];
         const finalType = validTypes.includes(sourceType as DataSourceType)
           ? (sourceType as DataSourceType)
           : "rss";

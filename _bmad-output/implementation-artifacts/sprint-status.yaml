@@ -87,7 +87,7 @@ development_status:
   epic-7: in-progress
   7-1-xml-sitemap-ingestion-strategy: done
   7-2-llms-txt-ingestion-strategy: done
-  7-3-cli-sitemap-support: ready-for-dev
-  7-4-web-ui-sitemap-integration: backlog
+  7-3-cli-sitemap-support: done
+  7-4-web-ui-sitemap-integration: ready-for-dev
   epic-7-retrospective: optional
 
