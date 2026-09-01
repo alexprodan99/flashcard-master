@@ -11,6 +11,8 @@
   let syncingId = $state<string | null>(null);
   let toastMessage = $state<string | null>(null);
 
+  let isSyncingAll = $state(false);
+
   async function loadSources() {
     loading = true;
     error = null;
@@ -47,13 +49,33 @@
     toastMessage = null;
     try {
       const result = await syncSource(source.id);
-      toastMessage = `✅ Synced "${source.name}": ${result.cardsCreated} new cards created.`;
+      if (result.newCount > 0) {
+        toastMessage = `✅ Synced "${source.name}": ${result.newCount} new documents ingested (${result.totalFetched} total found).`;
+      } else {
+        toastMessage = `✅ Synced "${source.name}": Up to date (0 new documents, ${result.totalFetched} total checked).`;
+      }
       setTimeout(() => (toastMessage = null), 5000);
       await loadSources();
     } catch (err: any) {
       alert('Sync failed: ' + err.message);
     } finally {
       syncingId = null;
+    }
+  }
+
+  async function handleSyncAll() {
+    isSyncingAll = true;
+    toastMessage = null;
+    try {
+      const results = await syncAllSources();
+      const totalNew = results.reduce((acc, r) => acc + (r.newCount || 0), 0);
+      toastMessage = `✅ Bulk sync completed: ${totalNew} new documents ingested across ${results.length} sources.`;
+      setTimeout(() => (toastMessage = null), 5000);
+      await loadSources();
+    } catch (err: any) {
+      alert('Bulk sync failed: ' + err.message);
+    } finally {
+      isSyncingAll = false;
     }
   }
 
@@ -72,11 +94,20 @@
   <div class="view-header">
     <div>
       <h1 class="view-title">Data Sources Manager</h1>
-      <p class="view-subtitle">Connect and synchronize RSS feeds, technical blogs, and local notes.</p>
+      <p class="view-subtitle">Connect and synchronize RSS feeds, XML sitemaps, technical blogs, and local notes.</p>
     </div>
-    <button class="btn btn-primary" onclick={() => (isAddModalOpen = true)}>
-      ➕ Add Ingestion Source
-    </button>
+    <div class="header-actions">
+      <button class="btn btn-secondary" onclick={handleSyncAll} disabled={isSyncingAll || sources.length === 0}>
+        {#if isSyncingAll}
+          <span class="mini-spinner"></span> Syncing All...
+        {:else}
+          🔄 Sync All Sources
+        {/if}
+      </button>
+      <button class="btn btn-primary" onclick={() => (isAddModalOpen = true)}>
+        ➕ Add Ingestion Source
+      </button>
+    </div>
   </div>
 
   {#if toastMessage}

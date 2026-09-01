@@ -356,7 +356,7 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     expect(results[0].newCount).toBe(1);
   });
 
-  it("serves HTML SPA with progressive 5-stage navigation order and AI Flashcard Generation Studio", async () => {
+  it("serves HTML SPA with progressive learning pipeline navigation order and AI Flashcard Generation Studio", async () => {
     const res = await fetch(`${serverUrl}/`);
     expect(res.status).toBe(200);
     const text = await res.text();
@@ -368,7 +368,7 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     expect(text).toContain("gen-sources-checkbox-list");
     expect(text).toContain("gen-source-count-badge");
 
-    // Verify 5-stage progressive learning pipeline navigation order
+    // Verify progressive learning pipeline navigation order (Dashboard -> 1. Sources -> 2. Generate -> 3. Cards -> 4. Export)
     const dashboardPos = text.indexOf('id="nav-dashboard"');
     const sourcesPos = text.indexOf('id="nav-sources"');
     const generatePos = text.indexOf('id="nav-generate"');

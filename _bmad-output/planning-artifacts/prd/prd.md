@@ -110,7 +110,7 @@ journey
 | :--- | :--- | :--- | :--- |
 | **FR-401** | **Interactive CLI Setup Wizard** | The CLI MUST provide an interactive terminal wizard (`flashcard-master config init` / `source add -i`) with keyboard navigation. | High |
 | **FR-402** | **Scriptable CLI Subcommands** | The CLI MUST provide non-interactive subcommands (`source`, `sync`, `export`, `cards`, `config`) for headless scripting. | High |
-| **FR-403** | **Progressive 5-Stage Web UI Dashboard** | The system MUST serve a lightweight local web dashboard (`flashcard-master serve` on `localhost:3000`) structured chronologically: **1. Dashboard 📊 $\rightarrow$ 2. Data Sources 🌐 $\rightarrow$ 3. Generate Studio ⚡ $\rightarrow$ 4. Question Explorer 🗂️ $\rightarrow$ 5. Export & Anki 🚀**. | High |
+| **FR-403** | **Progressive 4-Step Web UI Pipeline** | The system MUST serve a lightweight local web dashboard (`flashcard-master serve` on `localhost:3000`) structured with a Central Dashboard Overview 📊 and a chronological 4-Step Learning Pipeline: **1. Ingest Sources 🌐 $\rightarrow$ 2. Generate Studio ⚡ $\rightarrow$ 3. Question Explorer 🗂️ $\rightarrow$ 4. Export & Anki 🚀**. | High |
 | **FR-404** | **UI Sources Management** | The Web UI MUST allow users to add, edit, toggle, and trigger manual sync on data sources with live progress feedback. | High |
 | **FR-405** | **UI Question Explorer & Editor** | The Web UI MUST provide a searchable card database with keyword search, filter chips, and inline card editing. | High |
 | **FR-406** | **UI 1-Click Export & Anki Center** | The Web UI MUST offer 1-click downloads for `.apkg`, Markdown, PDF, and 1-click Push to running AnkiConnect. | High |
