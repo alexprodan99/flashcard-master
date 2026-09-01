@@ -113,6 +113,8 @@ npm run cli -- stats
 
 - **🌐 Multi-Source Ingestion Engine:**
   - **RSS / Atom Feeds:** Ingest technical blogs, newsletters, and release feeds.
+  - **XML Sitemaps (`<urlset>` & `<sitemapindex>`):** Ingest entire publication archives (e.g. 300+ blog articles) with recursive discovery and concurrency limits.
+  - **LLMs.txt Catalogs (`/llms.txt` & `/llms-full.txt`):** Ingest structured AI documentation catalogs with auto-categorized topic tagging.
   - **Web Articles (Reader Mode):** Extract clean, ad-free article text from URLs using readability algorithms.
   - **Local Markdown & Text Folders:** Crawl local note repositories (e.g. Obsidian vaults, documentation folders).
   - **Incremental Delta Sync:** SHA-256 content hashing guarantees zero duplicate document processing.

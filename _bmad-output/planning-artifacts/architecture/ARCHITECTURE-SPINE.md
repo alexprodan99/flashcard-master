@@ -32,6 +32,8 @@ flowchart TD
             RSS[RSS / Atom Strategy]
             Web[Web Reader-Mode Strategy]
             Local[Local Markdown / Text Strategy]
+            Sitemap[XML Sitemap Strategy]
+            LLMsTxt[LLMs.txt Catalog Strategy]
         end
 
         subgraph LLMAdapters ["LLM Provider Adapters"]
