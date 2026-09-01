@@ -31,7 +31,7 @@
 ## 3. Acceptance Criteria
 
 - [x] **AC1 — `sources add` Validation:**
-  - Given CLI invocation `flashcard-master sources add "Milan Sitemap" sitemap "https://milanjovanovic.tech/sitemap-0.xml"`
+  - Given CLI invocation `flashcard-master sources add "Tech Sitemap" sitemap "https://example.com/sitemap.xml"`
   - When executed
   - Then the source is successfully created and persisted with type `sitemap`.
 - [x] **AC2 — `init` Wizard Support:**

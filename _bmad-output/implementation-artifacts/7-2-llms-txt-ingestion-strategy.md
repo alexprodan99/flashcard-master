@@ -10,7 +10,7 @@
 
 ### User Story
 > **As a learner using Flashcard Master,**  
-> I want to register an `/llms.txt` or `/llms-full.txt` catalog URL (e.g. `https://milanjovanovic.tech/llms-full.txt`) as an ingestion source,  
+> I want to register an `/llms.txt` or `/llms-full.txt` catalog URL (e.g. `https://example.com/llms-full.txt`) as an ingestion source,  
 > **So that Flashcard Master parses all cataloged articles, automatically applies section topics as deck tags, extracts clean reader-mode text in parallel, and keeps my flashcard knowledge base synchronized.**
 
 ---

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { fetchSources, toggleSourceActive, deleteSource, syncSource } from '../lib/api';
+  import { fetchSources, toggleSourceActive, deleteSource, syncSource, syncAllSources } from '../lib/api';
   import type { DataSource } from '../lib/types';
   import AddSourceModal from '../components/AddSourceModal.svelte';
 

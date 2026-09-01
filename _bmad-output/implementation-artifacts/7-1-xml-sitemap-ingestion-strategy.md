@@ -10,7 +10,7 @@
 
 ### User Story
 > **As a learner using Flashcard Master,**  
-> I want to register an XML Sitemap (e.g. `https://milanjovanovic.tech/sitemap-0.xml` or `https://milanjovanovic.tech/sitemap-index.xml`) as an ingestion source,  
+> I want to register an XML Sitemap (e.g. `https://example.com/sitemap.xml` or `https://example.com/sitemap-index.xml`) as an ingestion source,  
 > **So that Flashcard Master recursively discovers all canonical article URLs, extracts clean reader-mode text in parallel, and enables synthesizing flashcards across entire publication archives.**
 
 ---

@@ -483,7 +483,7 @@ So that the interface naturally guides me from data ingestion to flashcard gener
 **ID:** `7-1-xml-sitemap-ingestion-strategy`
 **Description:** Implement `SitemapIngestionStrategy` in `packages/adapters/src/ingestion/sitemap-strategy.ts` supporting standard XML sitemaps and recursive sitemap indexes, path/glob filtering (e.g. `/blog/*`), and parallel reader-mode text extraction with concurrency control. Extend `DataSource` and `schema.sql` to support `'sitemap'` type.
 **Acceptance Criteria:**
-- **Given** a data source with type `sitemap` and URI (e.g. `https://milanjovanovic.tech/sitemap-0.xml` or `https://milanjovanovic.tech/sitemap-index.xml`)
+- **Given** a data source with type `sitemap` and URI (e.g. `https://example.com/sitemap.xml` or `https://example.com/sitemap-index.xml`)
 - **When** `IngestionService.syncSource(id)` is triggered
 - **Then** all nested sitemaps are resolved and canonical URLs extracted.
 - **And** web pages are fetched in reader mode with clean text and SHA-256 hashes generated for each document.
@@ -493,7 +493,7 @@ So that the interface naturally guides me from data ingestion to flashcard gener
 **ID:** `7-2-llms-txt-ingestion-strategy`
 **Description:** Implement `LlmsTxtIngestionStrategy` in `packages/adapters/src/ingestion/llms-txt-strategy.ts` supporting `/llms.txt` and `/llms-full.txt` catalogs, extracting canonical URLs, topic categories, and fetching article contents. Extend `DataSource` and `schema.sql` to support `'llms-txt'` type.
 **Acceptance Criteria:**
-- **Given** a data source with type `llms-txt` and URI (e.g. `https://milanjovanovic.tech/llms-full.txt`)
+- **Given** a data source with type `llms-txt` and URI (e.g. `https://example.com/llms-full.txt`)
 - **When** `IngestionService.syncSource(id)` is triggered
 - **Then** Markdown link definitions and topic headers are parsed into cataloged items.
 - **And** articles are fetched, cleaned, and stored with their section topics as tags.
@@ -502,7 +502,7 @@ So that the interface naturally guides me from data ingestion to flashcard gener
 **ID:** `7-3-cli-sitemap-support`
 **Description:** Update CLI commands (`flashcard-master source add`) and interactive setup wizard (`flashcard-master init`) to allow selecting `sitemap` and `llms-txt` types with optional URL path filtering.
 **Acceptance Criteria:**
-- **Given** user runs `flashcard-master source add "Milan Sitemap" sitemap "https://milanjovanovic.tech/sitemap-0.xml"`
+- **Given** user runs `flashcard-master source add "Tech Sitemap" sitemap "https://example.com/sitemap.xml"`
 - **When** the source is created
 - **Then** the record is stored in SQLite and can be synced via `flashcard-master sync <id>`.
 - **And** `flashcard-master init` interactive wizard presents `sitemap` and `llms-txt` in the source type menu.

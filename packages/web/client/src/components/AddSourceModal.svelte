@@ -101,7 +101,7 @@
           <input
             id="src-name"
             type="text"
-            placeholder="e.g. Milan Jovanovic Blog Sitemap"
+            placeholder="e.g. Engineering Architecture Blog"
             bind:value={name}
             required
           />

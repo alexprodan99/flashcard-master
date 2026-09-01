@@ -292,9 +292,9 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: "Milan Blog Sitemap",
+        name: "Engineering Sitemap",
         type: "sitemap",
-        uri: "https://milanjovanovic.tech/sitemap-0.xml",
+        uri: "https://example.com/sitemap.xml",
         targetDeck: "DotNet Architecture",
       }),
     });
@@ -307,9 +307,9 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: "Milan LLMs Catalog",
+        name: "Architecture LLMs Catalog",
         type: "llms-txt",
-        uri: "https://milanjovanovic.tech/llms-full.txt",
+        uri: "https://example.com/llms-full.txt",
         targetDeck: "DotNet Architecture",
       }),
     });

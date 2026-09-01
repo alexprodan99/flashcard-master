@@ -5,7 +5,7 @@ import type { DataSource } from "@flashcard-master/core";
 describe("LlmsTxtIngestionStrategy", () => {
   const dummySource: DataSource = {
     id: "llms-src-123",
-    name: "Milan LLMs Catalog",
+    name: "Tech Architecture LLMs Catalog",
     type: "llms-txt",
     uri: "https://example.com/llms-full.txt",
     targetDeck: "DotNet Architecture",
@@ -13,9 +13,9 @@ describe("LlmsTxtIngestionStrategy", () => {
     isActive: true,
   };
 
-  const sampleLlmsTxt = `# Milan Jovanović: full content catalog
+  const sampleLlmsTxt = `# Software Engineering: full content catalog
 
-> Every published article and newsletter issue on milanjovanovic.tech.
+> Every published article and guide on software architecture.
 
 ## AI for .NET
 
@@ -25,7 +25,7 @@ describe("LlmsTxtIngestionStrategy", () => {
 ## Architecture
 
 - [Vertical Slice Architecture](https://example.com/blog/vertical-slice-architecture): Organizing code by features.
-- [About Milan](https://example.com/about): Background info.
+- [About Us](https://example.com/about): Background info.
 `;
 
   const sampleArticleHtml = (title: string, body: string) => `<!DOCTYPE html>
