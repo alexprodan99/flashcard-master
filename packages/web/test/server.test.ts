@@ -287,6 +287,36 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     const created = await res.json();
     expect(created.name).toBe("New Web Source");
 
+    // Test creating Sitemap Source
+    const sitemapRes = await fetch(`${serverUrl}/api/sources`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Milan Blog Sitemap",
+        type: "sitemap",
+        uri: "https://milanjovanovic.tech/sitemap-0.xml",
+        targetDeck: "DotNet Architecture",
+      }),
+    });
+    expect(sitemapRes.status).toBe(201);
+    const sitemapCreated = await sitemapRes.json();
+    expect(sitemapCreated.type).toBe("sitemap");
+
+    // Test creating LLMs.txt Catalog Source
+    const llmsRes = await fetch(`${serverUrl}/api/sources`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Milan LLMs Catalog",
+        type: "llms-txt",
+        uri: "https://milanjovanovic.tech/llms-full.txt",
+        targetDeck: "DotNet Architecture",
+      }),
+    });
+    expect(llmsRes.status).toBe(201);
+    const llmsCreated = await llmsRes.json();
+    expect(llmsCreated.type).toBe("llms-txt");
+
     // Test PATCH
     const patchRes = await fetch(`${serverUrl}/api/sources/${created.id}`, {
       method: "PATCH",

@@ -307,6 +307,18 @@
     border: 1px solid rgba(168, 85, 247, 0.3);
   }
 
+  .type-badge.sitemap {
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+  }
+
+  .type-badge.llms-txt {
+    background: rgba(236, 72, 153, 0.15);
+    color: #f472b6;
+    border: 1px solid rgba(236, 72, 153, 0.3);
+  }
+
   .deck-badge {
     background: rgba(255, 255, 255, 0.05);
     padding: 3px 8px;
