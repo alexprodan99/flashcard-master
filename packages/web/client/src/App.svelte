@@ -3,6 +3,9 @@
   import Navigation from './components/Navigation.svelte';
   import DashboardView from './views/DashboardView.svelte';
   import SourcesView from './views/SourcesView.svelte';
+  import GenerateStudio from './views/GenerateStudio.svelte';
+  import QuestionExplorer from './views/QuestionExplorer.svelte';
+  import ExportCenter from './views/ExportCenter.svelte';
 
   let activeTab = $state('dashboard');
 
@@ -41,20 +44,11 @@
     {:else if activeTab === 'sources'}
       <SourcesView />
     {:else if activeTab === 'generate'}
-      <div class="placeholder-view">
-        <h2>⚡ Generate Studio</h2>
-        <p>Loading AI synthesizer...</p>
-      </div>
+      <GenerateStudio onNavigate={handleSelectTab} />
     {:else if activeTab === 'cards'}
-      <div class="placeholder-view">
-        <h2>🗂️ Question Explorer</h2>
-        <p>Loading flashcard database...</p>
-      </div>
+      <QuestionExplorer />
     {:else if activeTab === 'export'}
-      <div class="placeholder-view">
-        <h2>🚀 Export Center</h2>
-        <p>Loading export targets...</p>
-      </div>
+      <ExportCenter />
     {/if}
   </main>
 </div>
@@ -84,15 +78,5 @@
     flex: 1;
     overflow-y: auto;
     background: #0b0f19;
-  }
-
-  .placeholder-view {
-    padding: 40px;
-    color: #94a3b8;
-  }
-
-  .placeholder-view h2 {
-    color: #f8fafc;
-    margin: 0 0 8px 0;
   }
 </style>

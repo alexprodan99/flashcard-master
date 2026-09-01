@@ -80,7 +80,7 @@ development_status:
   epic-6: in-progress
   6-1-svelte-vite-build-pipeline-setup: done
   6-2-migrate-dashboard-and-sources-views-to-svelte: done
-  6-3-migrate-generate-studio-question-explorer-and-export-center-to-svelte: ready-for-dev
-  6-4-web-server-static-asset-delivery-and-e2e-tests: backlog
+  6-3-migrate-generate-studio-question-explorer-and-export-center-to-svelte: done
+  6-4-web-server-static-asset-delivery-and-e2e-tests: ready-for-dev
   epic-6-retrospective: optional
 
