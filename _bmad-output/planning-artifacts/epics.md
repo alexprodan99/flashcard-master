@@ -431,6 +431,55 @@ So that the interface naturally guides me from data ingestion to flashcard gener
 - **And** clicking each tab switches to the corresponding view seamlessly and loads relevant data.
 - **And** keyboard shortcut `s` navigates to Sources, `g` navigates to Generate Studio, `e` navigates to Export Center.
 
+---
+
+## Epic 6: Modern UI Migration to Svelte 5 & Component Architecture
+
+**Goal:** Modernize the embedded Web UI dashboard by migrating from inline imperative vanilla HTML/JS string templating to a compile-time, zero-Virtual-DOM **Svelte 5** single-file component architecture with reactive runes (`$state`, `$derived`, `$props`), compiled via Vite and served locally by the Node.js backend server.
+
+### Story 6.1: Svelte 5 & Vite Build Pipeline Setup
+**ID:** `6-1-svelte-vite-build-pipeline-setup`
+**Description:** Configure Vite and `@sveltejs/vite-plugin-svelte` inside `packages/web`, set up TypeScript compilation for `.svelte` components, establish `packages/web/client/` scaffold, and integrate client build into `npm run build`.
+**Acceptance Criteria:**
+- **Given** developer runs `npm run build` from monorepo root or `npm run build -w @flashcard-master/web`
+- **When** Vite compiles `packages/web/client/`
+- **Then** static HTML, JS chunks, and CSS bundle are generated in `packages/web/dist/client/`.
+- **And** TypeScript type checks pass with zero errors.
+
+### Story 6.2: Migrate Dashboard & Data Sources Views to Svelte 5
+**ID:** `6-2-migrate-dashboard-and-sources-views-to-svelte`
+**Description:** Implement Svelte 5 reactive components for the Root App container, Sidebar Navigation, Global Stats KPI Cards, Dashboard View, and Data Sources Manager (including Add Source Modal, Sync triggers, and delete action).
+**Acceptance Criteria:**
+- **Given** the Svelte client renders in browser
+- **When** user views Dashboard or Data Sources tab
+- **Then** KPI counters load reactively from `GET /api/stats`
+- **And** Data sources list from `GET /api/sources`, with live sync triggers (`POST /api/sync`), add source modal (`POST /api/sources`), and toggle active status.
+- **And** UI styling, dark theme tokens, and typography match existing design specification.
+
+### Story 6.3: Migrate Generate Studio, Question Explorer, and Export Center to Svelte 5
+**ID:** `6-3-migrate-generate-studio-question-explorer-and-export-center-to-svelte`
+**Description:** Implement Svelte 5 reactive components for AI Generate Studio (with multi-source selection grid, provider presets, custom model overrides, and progress banner), Question Explorer (search bar, filter chips, card grid, and Slide-Over Card Editor drawer), and Export Center (1-click download cards and AnkiConnect live push).
+**Acceptance Criteria:**
+- **Given** user navigates to "⚡ Generate Studio"
+- **When** user selects sources, provider, model, persona, and difficulty and clicks "Start AI Generation"
+- **Then** `POST /api/generate` is triggered with reactive progress spinner, and newly created cards display in live preview banner.
+- **Given** user navigates to "🗂️ Question Explorer"
+- **When** user types in search or clicks deck/difficulty filter chips
+- **Then** cards filter reactively, and clicking "Edit" opens the reactive slide-over drawer to update or delete cards.
+- **Given** user navigates to "🚀 Export Center"
+- **When** user clicks an export button (.apkg, Markdown, PDF, AnkiConnect)
+- **Then** file downloads or AnkiConnect push triggers seamlessly.
+
+### Story 6.4: WebServer Static Asset Delivery & End-to-End Test Suite
+**ID:** `6-4-web-server-static-asset-delivery-and-e2e-tests`
+**Description:** Update Node.js `WebServer` in `packages/web/src/server.ts` to serve compiled static assets from `dist/client/` with fallback to SPA routing, while maintaining all JSON REST API endpoints and ensuring 100% automated test suite coverage.
+**Acceptance Criteria:**
+- **Given** `flashcard-master serve` is started
+- **When** browser requests `GET /` or any static asset (`/assets/*.js`, `/assets/*.css`)
+- **Then** `WebServer` serves the compiled Svelte SPA with correct MIME types and cache headers.
+- **And** all existing integration test suites in `packages/web/test/server.test.ts` pass with 100% success.
+
+
 
 
 

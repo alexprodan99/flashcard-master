@@ -116,6 +116,7 @@ journey
 | **FR-408** | **UI Multi-Source Scope Selector** | The Web UI MUST provide an interactive multi-source checkbox list with type badges, master "Toggle All" control, and real-time selection counter to selectively synthesize cards from any subset of sources. | High |
 | **FR-409** | **UI Secure API Key Input** | The Web UI MUST allow optional in-browser API key entry for cloud LLM providers with automatic fallback to server environment variables. | Medium |
 | **FR-410** | **UI Live Generation Feedback** | The Web UI MUST display real-time spinning state during generation, followed by metric reporting (cards created, duplicates skipped, ungrounded rejected) and card previews. | High |
+| **FR-411** | **Svelte 5 Reactive Client Architecture** | The Web UI MUST be architected with Svelte 5 single-file components and reactive runes ($state, $derived), compiled via Vite into static client assets served locally by the Node.js backend server with zero Virtual DOM overhead. | High |
 
 ---
 

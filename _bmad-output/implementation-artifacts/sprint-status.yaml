@@ -76,3 +76,11 @@ development_status:
   5-2-multi-source-scope-selector-ui: done
   5-3-navigation-hierarchy-alignment: done
   epic-5-retrospective: done
+
+  epic-6: in-progress
+  6-1-svelte-vite-build-pipeline-setup: ready-for-dev
+  6-2-migrate-dashboard-and-sources-views-to-svelte: backlog
+  6-3-migrate-generate-studio-question-explorer-and-export-center-to-svelte: backlog
+  6-4-web-server-static-asset-delivery-and-e2e-tests: backlog
+  epic-6-retrospective: optional
+

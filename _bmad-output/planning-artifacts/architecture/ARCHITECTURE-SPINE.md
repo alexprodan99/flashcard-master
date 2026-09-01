@@ -135,6 +135,15 @@ flowchart TD
   3. All generated cards undergo mandatory verbatim substring verification via `GroundingGuard` and duplicate filtering via `CardDeduplicationService` before atomic persistence to SQLite.
   4. The response returns structured metrics: `{ success: true, cardsCreated, totalDraftsGenerated, duplicatesSkipped, newCards }`.
 
+### AD-10: Svelte 5 Client Build & Static Asset Delivery Pipeline
+- **Binds:** Frontend application architecture in `packages/web/client/` using Svelte 5 runes (`$state`, `$derived`, `$props`) compiled via Vite into static assets in `packages/web/dist/client/`.
+- **Prevents:** Fragile imperative string-interpolated HTML templating, Virtual DOM runtime overhead, and cross-view state synchronization bugs.
+- **Rule:**
+  1. The Web UI client MUST be written in Svelte 5 single-file components with scoped styles and TypeScript.
+  2. `npm run build -w @flashcard-master/web` executes both `vite build` (compiling Svelte components) and `tsc` (compiling Node backend server).
+  3. The `WebServer` serves compiled static assets (`index.html`, JS chunks, CSS bundles) from `dist/client/` when available, while routing all `/api/*` requests to the REST controllers.
+  4. The backend server remains 100% decoupled from the UI framework, relying solely on JSON REST endpoints.
+
 ---
 
 ## 3. Database Schema Specification (SQLite)
