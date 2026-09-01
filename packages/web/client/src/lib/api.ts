@@ -113,21 +113,31 @@ export async function generateCards(payload: {
   return res.json();
 }
 
-export async function checkAnkiStatus(): Promise<{ connected: boolean }> {
+export async function checkAnkiStatus(): Promise<{ connected: boolean; version?: number }> {
   try {
-    const res = await fetch('/api/export/anki-status');
+    const res = await fetch('/api/ankiconnect/status');
     if (!res.ok) return { connected: false };
-    return res.json();
+    const data = await res.json();
+    return { connected: !!data.isOnline, version: data.version };
   } catch {
     return { connected: false };
   }
 }
 
-export async function pushToAnki(): Promise<{ success: boolean; cardsPushed: number; message?: string }> {
-  const res = await fetch('/api/export/anki-push', { method: 'POST' });
+export async function pushToAnki(targetDeck?: string): Promise<{ success: boolean; cardsPushed: number; message?: string }> {
+  const res = await fetch('/api/ankiconnect/sync', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ targetDeck }),
+  });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || 'Failed to push to AnkiConnect');
   }
-  return res.json();
+  const data = await res.json();
+  return {
+    success: true,
+    cardsPushed: data.addedCards ?? data.totalCards ?? 0,
+    message: `Added ${data.addedCards ?? 0} cards (${data.duplicateOrFailedCards ?? 0} skipped).`,
+  };
 }

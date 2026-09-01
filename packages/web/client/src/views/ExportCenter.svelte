@@ -27,8 +27,8 @@
     isPushing = true;
     pushMessage = null;
     try {
-      const res = await pushToAnki();
-      pushMessage = `✅ Successfully pushed ${res.cardsPushed} cards to Anki Desktop!`;
+      const res = await pushToAnki(selectedDeck !== 'all' ? selectedDeck : undefined);
+      pushMessage = `✅ ${res.message || `Successfully pushed ${res.cardsPushed} cards to Anki Desktop!`}`;
     } catch (err: any) {
       pushMessage = '⚠️ Push failed: ' + err.message;
     } finally {

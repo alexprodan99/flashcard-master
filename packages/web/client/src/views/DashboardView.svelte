@@ -119,7 +119,7 @@
         <button type="button" class="action-card" onclick={() => onNavigate('export')}>
           <div class="action-icon">🚀</div>
           <div class="action-info">
-            <h3>5. Export Center</h3>
+            <h3>5. Export Center & Anki</h3>
             <p>1-click export to native Anki .apkg, live AnkiConnect, and Markdown.</p>
           </div>
           <span class="action-arrow">→</span>

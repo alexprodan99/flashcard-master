@@ -1901,10 +1901,11 @@ export class WebServer {
             return;
           }
 
-          // 14. Export File Download Endpoint: GET /api/export
-          if (pathname === "/api/export" && method === "GET") {
+          // 14. Export File Download Endpoint: GET /api/export or GET /api/export/:format
+          if ((pathname === "/api/export" || pathname.startsWith("/api/export/")) && method === "GET") {
             const query = parsedUrl.query;
-            const format = (query.format as ExportFormat) || "csv";
+            const subFormat = pathname.startsWith("/api/export/") ? pathname.slice("/api/export/".length) : undefined;
+            const format = (subFormat as ExportFormat) || (query.format as ExportFormat) || "csv";
             const filter: CardFilter = {
               targetDeck: query.deck as string,
               tag: query.tag as string,
