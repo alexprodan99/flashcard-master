@@ -1,4 +1,4 @@
-# Story 6.3: Migrate Generate Studio, Question Explorer, and Export Center to Svelte 5
+# Story 6.3: Migrate Generate Studio, Question Explorer, and Export & Anki Center to Svelte 5
 
 **Epic:** Epic 6 - Modern UI Migration to Svelte 5 & Component Architecture  
 **Status:** done  
@@ -10,7 +10,7 @@
 
 ### User Story
 > **As a learner using Flashcard Master,**  
-> I want the AI Generate Studio, Question Explorer with Card Editor Drawer, and Export Center migrated to reactive Svelte 5 components,  
+> I want the AI Generate Studio, Question Explorer with Card Editor Drawer, and Export & Anki Center migrated to reactive Svelte 5 components,  
 > **So that I can synthesize flashcards, curate knowledge, and export decks with instantaneous reactivity, live previews, and zero page reloads.**
 
 ---
@@ -40,7 +40,7 @@ packages/web/client/src/
   - **Given** Question Explorer view
   - **When** user searches or filters by deck/difficulty/tag
   - **Then** card grid filters reactively; clicking "Edit" opens `CardEditorDrawer.svelte` to modify question/answer/tags and save via `PUT /api/cards/:id`.
-- [x] **AC3 — Export Center:**
-  - **Given** Export Center view
+- [x] **AC3 — Export & Anki Center:**
+  - **Given** Export & Anki Center view
   - **When** user checks Anki status or clicks `.apkg` / `Markdown` / `PDF` / `AnkiConnect`
   - **Then** 1-click download triggers with selected deck filters.

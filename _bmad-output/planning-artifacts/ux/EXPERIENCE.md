@@ -108,14 +108,14 @@ stateDiagram-v2
 └──────────────────────────────────────┴───────────────────────────────────────┘
 ```
 
-### 3.4 1-Click Export Center & Anki Badging
+### 3.4 1-Click Export & Anki Center & Anki Badging
 
 ```text
-┌  Export Center ─────────────────────────────────────────────────────────────┐
+┌  Export & Anki Center ────────────────────────────────────────────────────────┐
 │  Filter Scope: [ All Decks ▾ ]  [ All Tags ▾ ]           [ 128 Cards Selected ]
 ├──────────────────────────────────────────────────────────────────────────────┤
 │  ⚡ Desktop Integration:                                                     │
-│  [ AnkiConnect Status: 🟢 Connected (v6) ]                                  │
+│  [ AnkiConnect Status: 🟢 Connected (Port 8765) ]                            │
 │  [ 🚀 Push 128 Cards to Anki Desktop ]                                       │
 │                                                                              │
 │  📦 File Downloads:                                                          │
@@ -133,7 +133,7 @@ stateDiagram-v2
 | **`/`** or **`Cmd/Ctrl + K`** | Focus global search bar | Anywhere in Web UI |
 | **`s`** or **`Cmd/Ctrl + Shift + S`** | Trigger sync on all active sources | Web UI & CLI |
 | **`g`** | Open AI Generation Studio | Web UI |
-| **`e`** | Open Export Center | Web UI |
+| **`e`** | Open Export & Anki Center | Web UI |
 | **`j` / `k`** | Next / Previous flashcard | Question Explorer |
 | **`Enter`** | Open card edit drawer | Question Explorer |
 | **`Esc`** | Close drawer / modal | Anywhere in Web UI |

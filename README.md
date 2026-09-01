@@ -133,7 +133,7 @@ npm run cli -- stats
   - **🌐 Data Sources Manager:** Add, configure, and synchronize sources with live spinner feedback.
   - **🗂️ Question Explorer:** Search bar, interactive filter chips (Decks, Difficulties, Tag clouds), and click-to-reveal flashcards with source grounding callouts.
   - **✏️ Slide-Over Card Editor:** Smooth slide-in drawer to edit questions, answers, difficulty, tags, and citations with instant optimistic updates.
-  - **🚀 1-Click Export Center:** Scoped deck/tag filters, direct browser file downloads, and real-time desktop AnkiConnect status badging with 1-click push sync.
+  - **🚀 1-Click Export & Anki Center:** Scoped deck/tag filters, direct browser file downloads (.apkg, Markdown, PDF, CSV, TSV), and real-time desktop AnkiConnect status badging with 1-click push sync.
 
 - **📦 Multi-Format Export & Local Sync:**
   - 📦 **Anki Package (`.apkg`):** Native SQLite collection with deck hierarchies, tags, and custom styling.
@@ -167,7 +167,7 @@ Open your browser at **`http://127.0.0.1:3000`** to access the dashboard.
 2. **🌐 Data Sources:** Click `+ Add Data Source` to register an RSS feed (e.g. `https://martinfowler.com/feed.atom`), a web article URL, or a local Markdown directory. Click `🔄 Sync` to ingest documents.
 3. **⚡ Generate Studio:** Pick your AI provider (`Ollama`, `Gemini`, `OpenAI`, `Anthropic`), select your cognitive persona (`Socratic Mentor`, `Strict Examiner`, `Analogy Builder`), customize the model name or use 2026 presets, choose your target data sources, and click `⚡ Start AI Generation` with live progress feedback and instant card previews!
 4. **🗂️ Question Explorer:** Search your knowledge base, filter with deck or tag chips, click `👁️ Reveal Answer` for self-testing, and click `✏️ Edit` on any card to open the slide-over editor.
-5. **🚀 Export Center:** Filter cards by Deck and Tag, download your `.apkg`, `.csv`, `.tsv`, `.md`, or `.html` file with 1-click, or click `🚀 Push to Anki` if Anki desktop is open with AnkiConnect!
+5. **🚀 Export & Anki:** Filter cards by Deck and Tag, download your `.apkg`, `.csv`, `.tsv`, `.md`, or `.html` file with 1-click, or click `🚀 Push to Anki` if Anki desktop is open with AnkiConnect!
 
 ---
 
@@ -261,7 +261,7 @@ Push cards directly into your open Anki desktop app with zero manual file handli
      ```
    * Click **OK** and restart Anki.
 2. **Push to Anki:**
-   * **In the Web UI (`http://127.0.0.1:3000`):** Navigate to the **`🚀 Export Center`** tab. The badge will show **`🟢 Connected (v6)`**. Select your target deck and click **`🚀 Push to Anki Desktop`**.
+   * **In the Web UI (`http://127.0.0.1:3000`):** Navigate to the **`🚀 Export & Anki`** tab. The badge will show **`🟢 Connected (Port 8765)`**. Select your target deck and click **`🚀 Push to Anki Desktop`**.
    * **In the CLI:** Run `flashcard-master export -f ankiconnect -d "Computer Science"`.
 
 ---
@@ -271,7 +271,7 @@ Push cards directly into your open Anki desktop app with zero manual file handli
 If you prefer offline files without installing add-ons:
 
 1. **Export the `.apkg` package:**
-   * **In the Web UI:** Click **`📦 Download Anki Package (.apkg)`** in the Export Center.
+   * **In the Web UI:** Click **`📦 Download Anki Package (.apkg)`** in the **`🚀 Export & Anki`** tab.
    * **In the CLI:** Run `flashcard-master export -f apkg -o ./my-cards.apkg`.
 2. **Import into Anki:**
    * Double-click the generated `.apkg` file, or click **`File`** $\rightarrow$ **`Import...`** in Anki.

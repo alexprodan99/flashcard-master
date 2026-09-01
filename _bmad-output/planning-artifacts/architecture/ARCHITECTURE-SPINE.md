@@ -218,9 +218,11 @@ flashcard-master/
 │   │   │   ├── commands/              # source, sync, export, cards, config
 │   │   │   └── wizard/                # Inquirer / Clack interactive wizard
 │   │   └── package.json
-│   └── web/                           # Driving adapter: Local Web UI
-│       ├── src/                       # React + Vite + Tailwind + Lucide
-│       ├── server/                    # Fastify lightweight local API
+│   └── web/                           # Driving adapter: Local Web UI & Node WebServer
+│       ├── client/                    # Svelte 5 Single-File Components + Vite
+│       │   ├── src/                   # App.svelte, components, views (Dashboard, Sources, Generate, Cards, Export & Anki)
+│       │   └── vite.config.ts
+│       ├── src/                       # Node.js WebServer (REST API + static asset delivery)
 │       └── package.json
 └── package.json                       # Turborepo / npm workspaces root
 ```
