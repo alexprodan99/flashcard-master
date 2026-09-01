@@ -88,5 +88,48 @@ export function createDatabaseClient(options: DatabaseClientOptions = {}): Datab
   // Execute schema creation
   db.exec(SCHEMA_SQL);
 
+  // Run automatic migrations on existing databases
+  runMigrations(db);
+
   return db;
+}
+
+export function runMigrations(db: Database.Database): void {
+  // Check if data_sources table exists and needs check constraint update for 'sitemap' and 'llms-txt'
+  const row = db
+    .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='data_sources'")
+    .get() as { sql?: string } | undefined;
+
+  if (row && row.sql && !row.sql.includes("'sitemap'")) {
+    db.pragma("foreign_keys = OFF");
+    db.transaction(() => {
+      // 1. Rename existing table
+      db.exec("ALTER TABLE data_sources RENAME TO _data_sources_old;");
+
+      // 2. Create updated table with new CHECK constraint
+      db.exec(`
+        CREATE TABLE data_sources (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            type TEXT NOT NULL CHECK(type IN ('rss', 'web', 'local', 'sitemap', 'llms-txt')),
+            uri TEXT NOT NULL,
+            target_deck TEXT NOT NULL DEFAULT 'Default',
+            tags TEXT NOT NULL DEFAULT '[]',
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+            updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+        );
+      `);
+
+      // 3. Copy existing rows
+      db.exec(`
+        INSERT INTO data_sources (id, name, type, uri, target_deck, tags, is_active, created_at, updated_at)
+        SELECT id, name, type, uri, target_deck, tags, is_active, created_at, updated_at FROM _data_sources_old;
+      `);
+
+      // 4. Drop temporary old table
+      db.exec("DROP TABLE _data_sources_old;");
+    })();
+    db.pragma("foreign_keys = ON");
+  }
 }
