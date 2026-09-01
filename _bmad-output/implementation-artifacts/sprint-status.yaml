@@ -77,10 +77,10 @@ development_status:
   5-3-navigation-hierarchy-alignment: done
   epic-5-retrospective: done
 
-  epic-6: in-progress
+  epic-6: done
   6-1-svelte-vite-build-pipeline-setup: done
   6-2-migrate-dashboard-and-sources-views-to-svelte: done
   6-3-migrate-generate-studio-question-explorer-and-export-center-to-svelte: done
-  6-4-web-server-static-asset-delivery-and-e2e-tests: ready-for-dev
-  epic-6-retrospective: optional
+  6-4-web-server-static-asset-delivery-and-e2e-tests: done
+  epic-6-retrospective: done
 
