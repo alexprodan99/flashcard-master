@@ -88,4 +88,43 @@ describe("SQLite Database Client", () => {
     expect(setting.value).toBe("dark");
     db2.close();
   });
+
+  it("automatically migrates legacy data_sources check constraint to support sitemap and llms-txt", () => {
+    // 1. Manually create legacy database with old check constraint
+    const legacyDb = new (require("better-sqlite3"))(tempDbPath);
+    legacyDb.exec(`
+      CREATE TABLE data_sources (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          type TEXT NOT NULL CHECK(type IN ('rss', 'web', 'local')),
+          uri TEXT NOT NULL,
+          target_deck TEXT NOT NULL DEFAULT 'Default',
+          tags TEXT NOT NULL DEFAULT '[]',
+          is_active INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+          updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+      );
+      INSERT INTO data_sources (id, name, type, uri) VALUES ('src-1', 'Legacy RSS', 'rss', 'https://example.com/rss');
+    `);
+    legacyDb.close();
+
+    // 2. Open with createDatabaseClient which triggers auto-migration
+    const migratedDb = createDatabaseClient({ dbPath: tempDbPath });
+
+    // 3. Verify existing data preserved
+    const row = migratedDb.prepare("SELECT * FROM data_sources WHERE id = 'src-1'").get() as any;
+    expect(row.name).toBe("Legacy RSS");
+
+    // 4. Verify inserting 'sitemap' and 'llms-txt' succeeds without CHECK constraint error
+    expect(() => {
+      migratedDb.prepare(`
+        INSERT INTO data_sources (id, name, type, uri) VALUES ('src-2', 'Sitemap Source', 'sitemap', 'https://example.com/sitemap.xml')
+      `).run();
+      migratedDb.prepare(`
+        INSERT INTO data_sources (id, name, type, uri) VALUES ('src-3', 'LLMs Source', 'llms-txt', 'https://example.com/llms-full.txt')
+      `).run();
+    }).not.toThrow();
+
+    migratedDb.close();
+  });
 });

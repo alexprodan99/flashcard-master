@@ -287,6 +287,36 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     const created = await res.json();
     expect(created.name).toBe("New Web Source");
 
+    // Test creating Sitemap Source
+    const sitemapRes = await fetch(`${serverUrl}/api/sources`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Engineering Sitemap",
+        type: "sitemap",
+        uri: "https://example.com/sitemap.xml",
+        targetDeck: "DotNet Architecture",
+      }),
+    });
+    expect(sitemapRes.status).toBe(201);
+    const sitemapCreated = await sitemapRes.json();
+    expect(sitemapCreated.type).toBe("sitemap");
+
+    // Test creating LLMs.txt Catalog Source
+    const llmsRes = await fetch(`${serverUrl}/api/sources`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Architecture LLMs Catalog",
+        type: "llms-txt",
+        uri: "https://example.com/llms-full.txt",
+        targetDeck: "DotNet Architecture",
+      }),
+    });
+    expect(llmsRes.status).toBe(201);
+    const llmsCreated = await llmsRes.json();
+    expect(llmsCreated.type).toBe("llms-txt");
+
     // Test PATCH
     const patchRes = await fetch(`${serverUrl}/api/sources/${created.id}`, {
       method: "PATCH",
@@ -326,7 +356,7 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     expect(results[0].newCount).toBe(1);
   });
 
-  it("serves HTML SPA with progressive 5-stage navigation order and AI Flashcard Generation Studio", async () => {
+  it("serves HTML SPA with progressive learning pipeline navigation order and AI Flashcard Generation Studio", async () => {
     const res = await fetch(`${serverUrl}/`);
     expect(res.status).toBe(200);
     const text = await res.text();
@@ -338,7 +368,7 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     expect(text).toContain("gen-sources-checkbox-list");
     expect(text).toContain("gen-source-count-badge");
 
-    // Verify 5-stage progressive learning pipeline navigation order
+    // Verify progressive learning pipeline navigation order (Dashboard -> 1. Sources -> 2. Generate -> 3. Cards -> 4. Export)
     const dashboardPos = text.indexOf('id="nav-dashboard"');
     const sourcesPos = text.indexOf('id="nav-sources"');
     const generatePos = text.indexOf('id="nav-generate"');

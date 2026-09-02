@@ -71,19 +71,27 @@
 
       <form onsubmit={handleSubmit} class="modal-form">
         <div class="form-group">
-          <label>Source Type</label>
-          <div class="type-selector">
+          <label for="src-type-group">Source Type</label>
+          <div id="src-type-group" class="type-selector">
             <label class="type-option" class:selected={type === 'rss'}>
               <input type="radio" name="sourceType" value="rss" bind:group={type} />
-              <span>📡 RSS Feed</span>
+              <span>📡 RSS</span>
             </label>
             <label class="type-option" class:selected={type === 'web'}>
               <input type="radio" name="sourceType" value="web" bind:group={type} />
-              <span>🌐 Web Article</span>
+              <span>🌐 Web</span>
             </label>
             <label class="type-option" class:selected={type === 'local'}>
               <input type="radio" name="sourceType" value="local" bind:group={type} />
-              <span>📁 Local Files</span>
+              <span>📁 Local</span>
+            </label>
+            <label class="type-option" class:selected={type === 'sitemap'}>
+              <input type="radio" name="sourceType" value="sitemap" bind:group={type} />
+              <span>🗺️ Sitemap</span>
+            </label>
+            <label class="type-option" class:selected={type === 'llms-txt'}>
+              <input type="radio" name="sourceType" value="llms-txt" bind:group={type} />
+              <span>📜 LLMs.txt</span>
             </label>
           </div>
         </div>
@@ -93,7 +101,7 @@
           <input
             id="src-name"
             type="text"
-            placeholder="e.g. Martin Fowler Architecture Blog"
+            placeholder="e.g. Engineering Architecture Blog"
             bind:value={name}
             required
           />
@@ -101,12 +109,28 @@
 
         <div class="form-group">
           <label for="src-uri">
-            {type === 'rss' ? 'RSS / Atom Feed URL' : type === 'web' ? 'Article Web URL' : 'Local Directory / Markdown File Path'}
+            {type === 'rss'
+              ? 'RSS / Atom Feed URL'
+              : type === 'web'
+              ? 'Article Web URL'
+              : type === 'sitemap'
+              ? 'XML Sitemap URL'
+              : type === 'llms-txt'
+              ? 'LLMs.txt Catalog URL'
+              : 'Local Directory / Markdown File Path'}
           </label>
           <input
             id="src-uri"
             type="text"
-            placeholder={type === 'rss' ? 'https://example.com/feed.xml' : type === 'web' ? 'https://example.com/post' : 'C:\\path\\to\\notes'}
+            placeholder={type === 'rss'
+              ? 'https://example.com/feed.xml'
+              : type === 'web'
+              ? 'https://example.com/post'
+              : type === 'sitemap'
+              ? 'https://example.com/sitemap.xml'
+              : type === 'llms-txt'
+              ? 'https://example.com/llms-full.txt'
+              : 'C:\\path\\to\\notes'}
             bind:value={uri}
             required
           />
@@ -236,7 +260,7 @@
 
   .type-selector {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
     gap: 8px;
   }
 

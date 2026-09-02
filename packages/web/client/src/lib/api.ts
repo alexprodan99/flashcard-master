@@ -48,15 +48,26 @@ export async function deleteSource(id: string): Promise<void> {
   if (!res.ok) throw new Error('Failed to delete source');
 }
 
-export async function syncSource(id: string): Promise<{ success: boolean; cardsCreated: number }> {
-  const res = await fetch('/api/sync', {
+export async function syncSource(id: string): Promise<{ success: boolean; sourceId: string; newCount: number; totalFetched: number; error?: string }> {
+  const res = await fetch(`/api/sync/${encodeURIComponent(id)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sourceId: id }),
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || 'Sync failed');
+  }
+  return res.json();
+}
+
+export async function syncAllSources(): Promise<Array<{ success: boolean; sourceId: string; newCount: number; totalFetched: number; error?: string }>> {
+  const res = await fetch('/api/sync', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Batch sync failed');
   }
   return res.json();
 }

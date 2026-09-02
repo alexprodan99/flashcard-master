@@ -79,6 +79,8 @@ journey
 | **FR-104** | **Local Document Strategy** | The system MUST ingest local files and directories (supporting `.md`, `.txt`, `.markdown`) matching configurable glob patterns. | High |
 | **FR-105** | **Incremental Delta Sync** | The system MUST track processed article GUIDs and file SHA-256 hashes in `sync_state` table to prevent re-processing identical content. | High |
 | **FR-106** | **Database Source Registry** | The system MUST store data sources in a local SQLite database with editable metadata (name, type, URI, target deck, default tags, sync status). | Critical |
+| **FR-107** | **XML Sitemap Ingestion Strategy** | The system MUST support XML sitemaps (both `<urlset>` and `<sitemapindex>`), discover nested URLs with optional path/glob filtering, and ingest clean reader-mode text in parallel. | High |
+| **FR-108** | **LLMs.txt / Markdown Catalog Strategy** | The system MUST parse machine-readable `/llms.txt` and `/llms-full.txt` catalogs, extracting canonical URLs, topic categories, and summaries. | High |
 
 ### 3.2 Grounded Q&A Generation Engine
 
@@ -108,7 +110,7 @@ journey
 | :--- | :--- | :--- | :--- |
 | **FR-401** | **Interactive CLI Setup Wizard** | The CLI MUST provide an interactive terminal wizard (`flashcard-master config init` / `source add -i`) with keyboard navigation. | High |
 | **FR-402** | **Scriptable CLI Subcommands** | The CLI MUST provide non-interactive subcommands (`source`, `sync`, `export`, `cards`, `config`) for headless scripting. | High |
-| **FR-403** | **Progressive 5-Stage Web UI Dashboard** | The system MUST serve a lightweight local web dashboard (`flashcard-master serve` on `localhost:3000`) structured chronologically: **1. Dashboard 📊 $\rightarrow$ 2. Data Sources 🌐 $\rightarrow$ 3. Generate Studio ⚡ $\rightarrow$ 4. Question Explorer 🗂️ $\rightarrow$ 5. Export & Anki 🚀**. | High |
+| **FR-403** | **Progressive 4-Step Web UI Pipeline** | The system MUST serve a lightweight local web dashboard (`flashcard-master serve` on `localhost:3000`) structured with a Central Dashboard Overview 📊 and a chronological 4-Step Learning Pipeline: **1. Ingest Sources 🌐 $\rightarrow$ 2. Generate Studio ⚡ $\rightarrow$ 3. Question Explorer 🗂️ $\rightarrow$ 4. Export & Anki 🚀**. | High |
 | **FR-404** | **UI Sources Management** | The Web UI MUST allow users to add, edit, toggle, and trigger manual sync on data sources with live progress feedback. | High |
 | **FR-405** | **UI Question Explorer & Editor** | The Web UI MUST provide a searchable card database with keyword search, filter chips, and inline card editing. | High |
 | **FR-406** | **UI 1-Click Export & Anki Center** | The Web UI MUST offer 1-click downloads for `.apkg`, Markdown, PDF, and 1-click Push to running AnkiConnect. | High |
@@ -117,6 +119,7 @@ journey
 | **FR-409** | **UI Secure API Key Input** | The Web UI MUST allow optional in-browser API key entry for cloud LLM providers with automatic fallback to server environment variables. | Medium |
 | **FR-410** | **UI Live Generation Feedback** | The Web UI MUST display real-time spinning state during generation, followed by metric reporting (cards created, duplicates skipped, ungrounded rejected) and card previews. | High |
 | **FR-411** | **Svelte 5 Reactive Client Architecture** | The Web UI MUST be architected with Svelte 5 single-file components and reactive runes ($state, $derived), compiled via Vite into static client assets served locally by the Node.js backend server with zero Virtual DOM overhead. | High |
+| **FR-412** | **UI & CLI Sitemap Source Configuration** | The Web UI (Add Source Modal, Sources View) and CLI (`source add`) MUST support registering and syncing `sitemap` and `llms-txt` source types with optional URL path filtering and batch progress feedback. | High |
 
 ---
 

@@ -87,13 +87,13 @@
     </div>
 
     <div class="quick-actions-section">
-      <h2 class="section-title">5-Stage Learning Pipeline</h2>
+      <h2 class="section-title">4-Step Learning Pipeline</h2>
       <div class="action-grid">
         <button type="button" class="action-card" onclick={() => onNavigate('sources')}>
           <div class="action-icon">🌐</div>
           <div class="action-info">
-            <h3>2. Ingest Sources</h3>
-            <p>Connect RSS feeds, web articles, and local Markdown repositories.</p>
+            <h3>1. Ingest Sources</h3>
+            <p>Connect RSS feeds, sitemaps, web articles, and local Markdown repositories.</p>
           </div>
           <span class="action-arrow">→</span>
         </button>
@@ -101,7 +101,7 @@
         <button type="button" class="action-card highlight" onclick={() => onNavigate('generate')}>
           <div class="action-icon">⚡</div>
           <div class="action-info">
-            <h3>3. Generate Studio</h3>
+            <h3>2. Generate Studio</h3>
             <p>Synthesize grounded flashcards with local Ollama or Cloud LLMs.</p>
           </div>
           <span class="action-arrow">→</span>
@@ -110,7 +110,7 @@
         <button type="button" class="action-card" onclick={() => onNavigate('cards')}>
           <div class="action-icon">🗂️</div>
           <div class="action-info">
-            <h3>4. Question Explorer</h3>
+            <h3>3. Question Explorer</h3>
             <p>Search, curate, and review cards with verbatim grounding quotes.</p>
           </div>
           <span class="action-arrow">→</span>
@@ -119,7 +119,7 @@
         <button type="button" class="action-card" onclick={() => onNavigate('export')}>
           <div class="action-icon">🚀</div>
           <div class="action-info">
-            <h3>5. Export Center & Anki</h3>
+            <h3>4. Export & Anki</h3>
             <p>1-click export to native Anki .apkg, live AnkiConnect, and Markdown.</p>
           </div>
           <span class="action-arrow">→</span>

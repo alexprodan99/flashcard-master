@@ -55,6 +55,39 @@ describe("CLI Application", () => {
     // List command
     await cli.parseAsync(["node", "flashcard-master", "sources", "list"]);
     expect(logs.some((l) => l.includes("Tech Blog"))).toBe(true);
+
+    // Add Sitemap Source
+    await cli.parseAsync([
+      "node",
+      "flashcard-master",
+      "sources",
+      "add",
+      "Tech Sitemap",
+      "sitemap",
+      "https://example.com/sitemap.xml",
+      "--deck",
+      "Architecture",
+    ]);
+    expect(logs.some((l) => l.includes("Tech Sitemap"))).toBe(true);
+
+    // Add LLMs.txt Catalog Source
+    await cli.parseAsync([
+      "node",
+      "flashcard-master",
+      "sources",
+      "add",
+      "Tech LLMs Catalog",
+      "llms-txt",
+      "https://example.com/llms-full.txt",
+      "--deck",
+      "DotNet",
+    ]);
+    expect(logs.some((l) => l.includes("Tech LLMs Catalog"))).toBe(true);
+
+    const allSources = context.sourceRepo.list();
+    expect(allSources.length).toBe(3);
+    expect(allSources.find((s) => s.type === "sitemap")?.name).toBe("Tech Sitemap");
+    expect(allSources.find((s) => s.type === "llms-txt")?.name).toBe("Tech LLMs Catalog");
   });
 
   it("removes data sources through CLI", async () => {

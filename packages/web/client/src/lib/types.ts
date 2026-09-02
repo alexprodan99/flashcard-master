@@ -1,4 +1,4 @@
-export type DataSourceType = 'rss' | 'web' | 'local';
+export type DataSourceType = 'rss' | 'web' | 'local' | 'sitemap' | 'llms-txt';
 export type DifficultyLevel = 'beginner' | 'intermediate' | 'expert';
 export type PersonaType = 'socratic-mentor' | 'strict-examiner' | 'analogy-builder';
 

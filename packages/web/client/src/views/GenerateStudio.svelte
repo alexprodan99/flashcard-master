@@ -694,6 +694,20 @@
     font-weight: 600;
   }
 
+  .type-badge {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+
+  .type-badge.rss { background: rgba(249, 115, 22, 0.15); color: #fb923c; border: 1px solid rgba(249, 115, 22, 0.3); }
+  .type-badge.web { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3); }
+  .type-badge.local { background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); }
+  .type-badge.sitemap { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+  .type-badge.llms-txt { background: rgba(236, 72, 153, 0.15); color: #f472b6; border: 1px solid rgba(236, 72, 153, 0.3); }
+
   .badge.difficulty.beginner { background: rgba(16, 185, 129, 0.15); color: #34d399; }
   .badge.difficulty.intermediate { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
   .badge.difficulty.expert { background: rgba(168, 85, 247, 0.15); color: #c084fc; }
