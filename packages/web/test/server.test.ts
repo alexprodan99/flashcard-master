@@ -440,6 +440,8 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     expect(data.newCards.length).toBe(1);
     expect(data.newCards[0].question).toBe("What is mock content?");
     expect(data.newCards[0].sourceQuote).toBe("Some text content");
+    expect(data.newCards[0].documentTitle).toBe("Mock Doc");
+    expect(data.newCards[0].sourceOriginUrl).toBe("https://example.com/rss");
   });
 
   it("supports target deck override in POST /api/generate", async () => {

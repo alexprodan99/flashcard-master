@@ -1738,12 +1738,14 @@ export class WebServer {
 
                   totalDuplicates += dedupResult.duplicates.length;
 
-                  for (const draft of dedupResult.unique) {
+                  for (const draft of dedupResult.unique as any[]) {
                     const card = this.options.cardRepo.create({
                       sourceId: s.id,
                       question: draft.question,
                       answer: draft.answer,
                       sourceQuote: draft.sourceQuote,
+                      sourceOriginUrl: draft.originUrl || (s.type === "web" || s.type === "rss" || s.type === "sitemap" || s.type === "llms-txt" ? s.uri : null),
+                      documentTitle: draft.documentTitle || s.name,
                       difficulty: draft.difficulty,
                       personaUsed: persona,
                       targetDeck,
