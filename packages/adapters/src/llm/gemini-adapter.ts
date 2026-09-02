@@ -32,7 +32,7 @@ export class GeminiAdapter implements LLMProviderPort {
     const count = options.targetCount ?? 5;
     const prompt = `${options.personaPrompt}
 Generate exactly ${count} atomic Front/Back flashcards from the provided document at a "${options.difficulty}" difficulty level.
-CRITICAL GROUNDING RULE: For each card, extract an exact verbatim "sourceQuote" sentence from the source text that proves the answer.
+CRITICAL GROUNDING RULE: For each card, copy and paste an EXACT, word-for-word sentence from the provided text into "sourceQuote". Do NOT paraphrase, edit, or summarize any words in "sourceQuote".
 Respond with a JSON array:
 [
   {

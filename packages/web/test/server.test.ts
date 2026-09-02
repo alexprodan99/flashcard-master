@@ -18,6 +18,7 @@ import {
   TsvExporter,
   MarkdownExporter,
   HtmlStudyGuideExporter,
+  PdfStudyGuideExporter,
   AnkiPackageExporter,
   AnkiConnectAdapter,
 } from "@flashcard-master/adapters";
@@ -86,6 +87,7 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     exporterRegistry.register(new TsvExporter());
     exporterRegistry.register(new MarkdownExporter());
     exporterRegistry.register(new HtmlStudyGuideExporter());
+    exporterRegistry.register(new PdfStudyGuideExporter());
     exporterRegistry.register(new AnkiPackageExporter());
     exportService = new ExportService(cardRepo, exporterRegistry);
 
@@ -189,6 +191,14 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     const mdText = await mdRes.text();
     expect(mdText).toContain("<details>");
     expect(mdText).toContain("What is Raft?");
+
+    // PDF Printable export
+    const pdfRes = await fetch(`${serverUrl}/api/export?format=pdf`);
+    expect(pdfRes.status).toBe(200);
+    expect(pdfRes.headers.get("content-type")).toContain("text/html");
+    const pdfText = await pdfRes.text();
+    expect(pdfText).toContain("Printable Study Guide");
+    expect(pdfText).toContain("What is Raft?");
   });
 
   it("returns AnkiConnect status and handles sync requests gracefully", async () => {
@@ -259,6 +269,31 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     // Confirm deletion
     const checkRes = await fetch(`${serverUrl}/api/cards/${cardId}`);
     expect(checkRes.status).toBe(404);
+  });
+
+  it("supports bulk card deletion via POST /api/cards/bulk-delete", async () => {
+    // Create 2 test cards
+    const getRes = await fetch(`${serverUrl}/api/cards`);
+    const existingCards = await getRes.json();
+    const idsToDelete = existingCards.map((c: any) => c.id);
+
+    expect(idsToDelete.length).toBeGreaterThan(0);
+
+    const bulkRes = await fetch(`${serverUrl}/api/cards/bulk-delete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: idsToDelete }),
+    });
+
+    expect(bulkRes.status).toBe(200);
+    const bulkJson = await bulkRes.json();
+    expect(bulkJson.success).toBe(true);
+    expect(bulkJson.deletedCount).toBe(idsToDelete.length);
+
+    // Verify all cards are gone
+    const checkRes = await fetch(`${serverUrl}/api/cards`);
+    const remainingCards = await checkRes.json();
+    expect(remainingCards.length).toBe(0);
   });
 
   it("returns distinct tags at /api/tags", async () => {

@@ -20,7 +20,7 @@ import {
 } from "@flashcard-master/core";
 import { createLLMAdapter } from "@flashcard-master/adapters";
 
-export type ExportFormat = "apkg" | "csv" | "tsv" | "markdown" | "html";
+export type ExportFormat = "apkg" | "csv" | "tsv" | "markdown" | "html" | "pdf";
 
 export interface AnkiConnectHealthCheck {
   isOnline: boolean;
@@ -1801,7 +1801,16 @@ export class WebServer {
             }
           }
 
-          // 8. Single Card Update (PATCH) / Delete (DELETE) / Get (GET): /api/cards/:id
+          // 8. Canonical Bulk Card Delete Endpoint: POST /api/cards/bulk-delete
+          if (pathname === "/api/cards/bulk-delete" && (method === "POST" || method === "DELETE")) {
+            const body = await this.parseBody(req);
+            const ids = Array.isArray(body.ids) ? body.ids : [];
+            const deletedCount = this.options.cardRepo.deleteMany(ids);
+            this.sendJson(res, 200, { success: true, deletedCount });
+            return;
+          }
+
+          // 8b. Single Card Update (PATCH) / Delete (DELETE) / Get (GET): /api/cards/:id
           if (pathname.startsWith("/api/cards/") && pathname !== "/api/cards") {
             const id = pathname.slice("/api/cards/".length);
 
@@ -1917,14 +1926,14 @@ export class WebServer {
 
             if (this.options.exportService) {
               const result = await this.options.exportService.export({ format, filter });
-              const filename = `flashcards.${format === "markdown" ? "md" : format}`;
+              const filename = `flashcards.${format === "markdown" ? "md" : format === "pdf" ? "html" : format}`;
 
               let contentType = "text/plain";
               if (format === "apkg") contentType = "application/octet-stream";
               else if (format === "csv") contentType = "text/csv; charset=utf-8";
               else if (format === "tsv") contentType = "text/tab-separated-values; charset=utf-8";
               else if (format === "markdown") contentType = "text/markdown; charset=utf-8";
-              else if (format === "html") contentType = "text/html; charset=utf-8";
+              else if (format === "html" || format === "pdf") contentType = "text/html; charset=utf-8";
 
               res.writeHead(200, {
                 "Content-Type": contentType,

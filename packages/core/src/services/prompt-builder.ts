@@ -36,6 +36,9 @@ MINIMUM INFORMATION PRINCIPLE RULES:
 1. ATOMICITY: Each card must test exactly ONE discrete fact or concept. Never create compound or multi-part questions.
 2. ACTIVE RECALL: The Front (question) must prompt the user to retrieve specific knowledge from memory, not merely guess.
 3. CONCISENESS: The Back (answer) must be short, clear, and direct (1-3 sentences or a concise list).
-4. GROUNDING / VERBATIM QUOTE: For every single card, you MUST provide an exact verbatim "sourceQuote" sentence from the source document that directly supports the answer.`;
+4. GROUNDING / VERBATIM QUOTE:
+   - CRITICAL: Copy and paste an EXACT, word-for-word sentence directly from the provided text into 'sourceQuote'.
+   - Do NOT paraphrase, edit, summarize, or alter any words or punctuation in 'sourceQuote'.
+   - The quote must appear verbatim in the text so it can be verified by automated citation guards.`;
   }
 }

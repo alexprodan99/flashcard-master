@@ -120,6 +120,11 @@ journey
 | **FR-410** | **UI Live Generation Feedback** | The Web UI MUST display real-time spinning state during generation, followed by metric reporting (cards created, duplicates skipped, ungrounded rejected) and card previews. | High |
 | **FR-411** | **Svelte 5 Reactive Client Architecture** | The Web UI MUST be architected with Svelte 5 single-file components and reactive runes ($state, $derived), compiled via Vite into static client assets served locally by the Node.js backend server with zero Virtual DOM overhead. | High |
 | **FR-412** | **UI & CLI Sitemap Source Configuration** | The Web UI (Add Source Modal, Sources View) and CLI (`source add`) MUST support registering and syncing `sitemap` and `llms-txt` source types with optional URL path filtering and batch progress feedback. | High |
+| **FR-205** | **Emphatic Verbatim Prompt Directives** | The system prompt MUST include strict, unambiguous copy-paste directives instructing the LLM to extract exact verbatim substring quotes without paraphrasing or alteration to maximize grounding accuracy on local models. | High |
+| **FR-206** | **Adaptive Generation Backfill Loop** | The card generation service MUST employ adaptive oversampling and retry backfilling to ensure the user-specified target count of valid flashcards is achieved per chunk even when ungrounded drafts are discarded. | High |
+| **FR-207** | **Document Provenance & Material Reference** | Generated flashcards MUST retain rich material references (Document Title, Origin URL, Section / Topic Tag) presented in the Explorer, Editor Drawer, and exported files. | Medium |
+| **FR-306** | **Printable PDF Export Support** | The export engine MUST support `pdf` format requests by routing to print-optimized HTML study sheets with `@media print` CSS for physical paper flashcards and browser "Save as PDF". | High |
+| **FR-413** | **Question Explorer Bulk Deletion** | The Question Explorer MUST provide multi-card selection checkboxes, a "Select All" toggle, a selected item counter badge, and bulk-delete API support (`DELETE /api/cards/bulk`) with user confirmation. | High |
 
 ---
 

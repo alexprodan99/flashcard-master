@@ -87,4 +87,60 @@ describe("CardGenerationService", () => {
       "[failing-llm] Network communication error: Request timed out"
     );
   });
+
+  it("adaptively backfills discarded ungrounded cards to fulfill target count", async () => {
+    let callCount = 0;
+    const flakeyQuoteProvider: LLMProviderPort = {
+      providerName: "flakey-llm",
+      async generateQAPairs(text: string, options: any): Promise<CardGenerationDraft[]> {
+        callCount++;
+        if (callCount === 1) {
+          // First call: returns 2 cards, 1 valid and 1 invalid quote
+          return [
+            {
+              question: "What is Raft?",
+              answer: "Consensus protocol.",
+              sourceQuote: "Raft is a distributed consensus algorithm designed to be easy to understand.",
+              difficulty: options.difficulty,
+            },
+            {
+              question: "Hallucinated question?",
+              answer: "Fake answer.",
+              sourceQuote: "This sentence does not exist anywhere in the text document.",
+              difficulty: options.difficulty,
+            },
+          ];
+        } else {
+          // Backfill call: returns valid replacement card
+          return [
+            {
+              question: "How does Raft elect leaders?",
+              answer: "Via randomized timers.",
+              sourceQuote: "Randomized timers ensure that split votes are rare and resolved quickly across leader elections.",
+              difficulty: options.difficulty,
+            },
+          ];
+        }
+      },
+    };
+
+    const service = new CardGenerationService(flakeyQuoteProvider);
+    const doc: CleanTextDocument = {
+      id: "doc-4",
+      sourceId: "source-4",
+      title: "Raft Consensus",
+      textContent:
+        "Raft is a distributed consensus algorithm designed to be easy to understand. It divides time into terms of arbitrary length. Randomized timers ensure that split votes are rare and resolved quickly across leader elections.",
+      contentHash: "hash-4",
+    };
+
+    const drafts = await service.generateFromDocument(doc, {
+      targetCountPerChunk: 2,
+    });
+
+    expect(callCount).toBe(2); // Initial call + backfill retry
+    expect(drafts.length).toBe(2);
+    expect(drafts[0].question).toBe("What is Raft?");
+    expect(drafts[1].question).toBe("How does Raft elect leaders?");
+  });
 });

@@ -44,9 +44,16 @@ export class HtmlStudyGuideExporter implements ExporterPort {
 
         let citationHtml = "";
         if (includeCitations && c.sourceQuote) {
+          let refHtml = "";
+          if (c.documentTitle || c.sourceOriginUrl) {
+            refHtml = c.sourceOriginUrl
+              ? `<div class="citation-ref" style="margin-top: 4px;">📖 <strong>Reference:</strong> <a href="${this.escapeHtml(c.sourceOriginUrl)}" target="_blank" style="color: var(--primary); text-decoration: underline;">${this.escapeHtml(c.documentTitle || c.sourceOriginUrl)}</a></div>`
+              : `<div class="citation-ref" style="margin-top: 4px;">📖 <strong>Reference:</strong> ${this.escapeHtml(c.documentTitle!)}</div>`;
+          }
           citationHtml = `
             <div class="citation">
-              <strong>Source Quote:</strong> "${this.escapeHtml(c.sourceQuote)}"
+              <div><strong>Source Quote:</strong> "${this.escapeHtml(c.sourceQuote)}"</div>
+              ${refHtml}
             </div>
           `;
         }
@@ -310,6 +317,23 @@ export class HtmlStudyGuideExporter implements ExporterPort {
       outputPath: options.outputPath,
       data: htmlContent,
       message: `Exported ${cards.length} cards to printable HTML study guide (${deckName}).`,
+    };
+  }
+}
+
+export class PdfStudyGuideExporter implements ExporterPort {
+  readonly format = "pdf" as const;
+  private readonly htmlExporter = new HtmlStudyGuideExporter();
+
+  async export(
+    cards: Flashcard[],
+    options: ExportOptions & HtmlStudyGuideExporterOptions = {}
+  ): Promise<ExportResult> {
+    const result = await this.htmlExporter.export(cards, options);
+    return {
+      ...result,
+      format: "pdf",
+      message: `Exported ${cards.length} cards to printable PDF study guide (${options.targetDeck || "Default"}).`,
     };
   }
 }
