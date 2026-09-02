@@ -197,4 +197,13 @@ export function runMigrations(db: Database.Database): void {
   if (cardCols && cardCols.length > 0 && !cardCols.some((c) => c.name === "document_title")) {
     db.exec("ALTER TABLE flashcards ADD COLUMN document_title TEXT;");
   }
+
+  // 5. Backfill source_origin_url and document_title from parent data source for legacy cards
+  db.exec(`
+    UPDATE flashcards
+    SET 
+      source_origin_url = COALESCE(source_origin_url, (SELECT uri FROM data_sources WHERE data_sources.id = flashcards.source_id)),
+      document_title = COALESCE(document_title, (SELECT name FROM data_sources WHERE data_sources.id = flashcards.source_id))
+    WHERE source_id IS NOT NULL AND (source_origin_url IS NULL OR document_title IS NULL);
+  `);
 }
