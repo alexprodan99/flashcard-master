@@ -7,6 +7,7 @@ import {
   type DataSourceRepository,
   type SyncStateRepository,
   type FlashcardRepository,
+  type DocumentRepository,
   type IngestionService,
   type ExportService,
   type StrategyRegistry,
@@ -35,6 +36,7 @@ export interface WebServerOptions {
   sourceRepo: DataSourceRepository;
   syncRepo: SyncStateRepository;
   cardRepo: FlashcardRepository;
+  documentRepo?: DocumentRepository;
   ingestionService?: IngestionService;
   exportService?: ExportService;
   strategyRegistry?: StrategyRegistry;
@@ -1697,35 +1699,23 @@ export class WebServer {
                 this.options.groundingGuard
               );
 
-              let sources: any[] = [];
-              if (Array.isArray(body.sourceIds) && body.sourceIds.length > 0) {
-                sources = body.sourceIds.map((id: string) => this.options.sourceRepo.getById(id)).filter(Boolean);
-              } else if (body.sourceId) {
-                const s = this.options.sourceRepo.getById(body.sourceId);
-                if (s) sources = [s];
-              } else {
-                sources = this.options.sourceRepo.list().filter((s) => s.isActive);
-              }
-
-              if (sources.length === 0) {
-                this.sendJson(res, 400, { error: "No active data sources found to generate cards from." });
-                return;
-              }
-
               const createdCards: any[] = [];
               let totalDrafts = 0;
               let totalDuplicates = 0;
 
-              for (const s of sources) {
-                if (!s) continue;
-                const strategy = this.options.strategyRegistry
-                  ? this.options.strategyRegistry.getStrategy(s.type)
-                  : undefined;
-
-                if (!strategy) continue;
-                const rawDocs = await strategy.fetch(s);
-                for (const raw of rawDocs) {
-                  const cleanDoc = strategy.extractCleanText(raw);
+              if (Array.isArray(body.documentIds) && body.documentIds.length > 0 && this.options.documentRepo) {
+                for (const docId of body.documentIds) {
+                  const doc = this.options.documentRepo.getById(docId);
+                  if (!doc) continue;
+                  const parentSource = this.options.sourceRepo.getById(doc.sourceId);
+                  const cleanDoc = {
+                    id: doc.id,
+                    sourceId: doc.sourceId,
+                    title: doc.title,
+                    textContent: doc.textContent,
+                    originUrl: doc.url || undefined,
+                    contentHash: doc.contentHash || "",
+                  };
                   const drafts = await genService.generateFromDocument(cleanDoc, {
                     difficulty,
                     persona,
@@ -1736,7 +1726,7 @@ export class WebServer {
                   });
                   totalDrafts += drafts.length;
 
-                  const targetDeck = targetDeckOverride || s.targetDeck || "Default";
+                  const targetDeck = targetDeckOverride || parentSource?.targetDeck || "Default";
                   const existingCards = this.options.cardRepo.list({ targetDeck });
                   const dedupResult = this.options.dedupService
                     ? this.options.dedupService.filterUnique(drafts, existingCards)
@@ -1746,18 +1736,77 @@ export class WebServer {
 
                   for (const draft of dedupResult.unique as any[]) {
                     const card = this.options.cardRepo.create({
-                      sourceId: s.id,
+                      sourceId: doc.sourceId,
                       question: draft.question,
                       answer: draft.answer,
                       sourceQuote: draft.sourceQuote,
-                      sourceOriginUrl: draft.originUrl || (s.type === "web" || s.type === "rss" || s.type === "sitemap" || s.type === "llms-txt" ? s.uri : null),
-                      documentTitle: draft.documentTitle || s.name,
+                      sourceOriginUrl: draft.originUrl || doc.url || (parentSource?.type === "web" || parentSource?.type === "rss" || parentSource?.type === "sitemap" || parentSource?.type === "llms-txt" ? parentSource.uri : null),
+                      documentTitle: draft.documentTitle || doc.title,
                       difficulty: draft.difficulty,
                       personaUsed: persona,
                       targetDeck,
-                      tags: s.tags || [],
+                      tags: parentSource?.tags || [],
                     });
                     createdCards.push(card);
+                  }
+                }
+              } else {
+                let sources: any[] = [];
+                if (Array.isArray(body.sourceIds) && body.sourceIds.length > 0) {
+                  sources = body.sourceIds.map((id: string) => this.options.sourceRepo.getById(id)).filter(Boolean);
+                } else if (body.sourceId) {
+                  const s = this.options.sourceRepo.getById(body.sourceId);
+                  if (s) sources = [s];
+                } else {
+                  sources = this.options.sourceRepo.list().filter((s) => s.isActive);
+                }
+
+                if (sources.length === 0) {
+                  this.sendJson(res, 400, { error: "No active data sources found to generate cards from." });
+                  return;
+                }
+
+                for (const s of sources) {
+                  if (!s) continue;
+                  const strategy = this.options.strategyRegistry
+                    ? this.options.strategyRegistry.getStrategy(s.type)
+                    : undefined;
+
+                  if (!strategy) continue;
+                  const rawDocs = await strategy.fetch(s);
+                  for (const raw of rawDocs) {
+                    const cleanDoc = strategy.extractCleanText(raw);
+                    const drafts = await genService.generateFromDocument(cleanDoc, {
+                      difficulty,
+                      persona,
+                      targetCountPerChunk: limit,
+                      enforceGrounding,
+                    });
+                    totalDrafts += drafts.length;
+
+                    const targetDeck = targetDeckOverride || s.targetDeck || "Default";
+                    const existingCards = this.options.cardRepo.list({ targetDeck });
+                    const dedupResult = this.options.dedupService
+                      ? this.options.dedupService.filterUnique(drafts, existingCards)
+                      : { unique: drafts, duplicates: [] };
+
+                    totalDuplicates += dedupResult.duplicates.length;
+
+                    for (const draft of dedupResult.unique as any[]) {
+                      const card = this.options.cardRepo.create({
+                        sourceId: s.id,
+                        question: draft.question,
+                        answer: draft.answer,
+                        sourceQuote: draft.sourceQuote,
+                        sourceOriginUrl: draft.originUrl || (s.type === "web" || s.type === "rss" || s.type === "sitemap" || s.type === "llms-txt" ? s.uri : null),
+                        documentTitle: draft.documentTitle || s.name,
+                        difficulty: draft.difficulty,
+                        personaUsed: persona,
+                        targetDeck,
+                        tags: s.tags || [],
+                      });
+                      createdCards.push(card);
+                    }
                   }
                 }
               }
@@ -1787,6 +1836,57 @@ export class WebServer {
               const body = await this.parseBody(req);
               const created = this.options.sourceRepo.create(body);
               this.sendJson(res, 201, created);
+              return;
+            }
+          }
+
+          // 6b. Discovered Documents Catalog for a Source: GET /api/sources/:id/documents
+          const sourceDocsMatch = pathname.match(/^\/api\/sources\/([^/]+)\/documents$/);
+          if (sourceDocsMatch && method === "GET") {
+            const sourceId = sourceDocsMatch[1];
+            const search = parsedUrl.query.search as string | undefined;
+            if (!this.options.documentRepo) {
+              this.sendJson(res, 200, { documents: [], total: 0 });
+              return;
+            }
+            const docs = this.options.documentRepo.listBySourceId(sourceId, { search });
+            const allSourceCards = this.options.cardRepo.list({ sourceId });
+            const enrichedDocs = docs.map((doc) => {
+              const cardCount = allSourceCards.filter(
+                (c) =>
+                  (c.documentTitle && c.documentTitle.toLowerCase() === doc.title.toLowerCase()) ||
+                  (c.sourceOriginUrl && doc.url && c.sourceOriginUrl === doc.url)
+              ).length;
+              return {
+                ...doc,
+                cardCount,
+              };
+            });
+            this.sendJson(res, 200, { documents: enrichedDocs, total: enrichedDocs.length });
+            return;
+          }
+
+          // 6c. Single Discovered Document: GET /api/documents/:id & DELETE /api/documents/:id
+          if (pathname.startsWith("/api/documents/")) {
+            const docId = pathname.slice("/api/documents/".length);
+            if (!this.options.documentRepo) {
+              this.sendJson(res, 404, { error: "Document not found" });
+              return;
+            }
+
+            if (method === "GET") {
+              const doc = this.options.documentRepo.getById(docId);
+              if (!doc) {
+                this.sendJson(res, 404, { error: `Document with ID ${docId} not found` });
+                return;
+              }
+              this.sendJson(res, 200, { document: doc });
+              return;
+            }
+
+            if (method === "DELETE") {
+              const deleted = this.options.documentRepo.deleteById(docId);
+              this.sendJson(res, deleted ? 200 : 404, { success: deleted });
               return;
             }
           }

@@ -1,6 +1,7 @@
 import type { DataSource, CleanTextDocument } from "../domain/models.js";
 import type { DataSourceRepository } from "../storage/source-repository.js";
 import type { SyncStateRepository } from "../storage/sync-state-repository.js";
+import type { DocumentRepository } from "../storage/document-repository.js";
 import type { StrategyRegistry } from "./strategy-registry.js";
 
 export interface SyncResult {
@@ -18,7 +19,8 @@ export class IngestionService {
   constructor(
     private readonly sourceRepo: DataSourceRepository,
     private readonly syncRepo: SyncStateRepository,
-    private readonly strategyRegistry: StrategyRegistry
+    private readonly strategyRegistry: StrategyRegistry,
+    private readonly docRepo?: DocumentRepository
   ) {}
 
   async syncSource(sourceId: string): Promise<SyncResult> {
@@ -79,6 +81,26 @@ export class IngestionService {
         // Track most recent item
         if (raw.guid) latestGuid = raw.guid;
         if (cleanDoc.contentHash) latestContentHash = cleanDoc.contentHash;
+      }
+
+      // Persist discovered documents into repository
+      if (this.docRepo && rawDocs.length > 0) {
+        const docsToPersist = rawDocs.map((raw) => {
+          const cleanDoc = strategy.extractCleanText(raw);
+          const wordCount = cleanDoc.textContent.trim()
+            ? cleanDoc.textContent.trim().split(/\s+/).length
+            : 0;
+          return {
+            id: cleanDoc.id,
+            sourceId: source.id,
+            title: cleanDoc.title || "Untitled Document",
+            url: cleanDoc.originUrl || raw.originUrl || (source.type === "web" || source.type === "rss" || source.type === "sitemap" || source.type === "llms-txt" ? source.uri : null),
+            textContent: cleanDoc.textContent,
+            contentHash: cleanDoc.contentHash || null,
+            wordCount,
+          };
+        });
+        this.docRepo.upsertBatch(docsToPersist);
       }
 
       // Update sync state cursor atomically

@@ -106,12 +106,12 @@ development_status:
   9-4-generate-studio-depth-and-scope-ui: done
   epic-9-retrospective: done
 
-  epic-10: in-progress
-  10-1-document-storage-and-sync-persistence: ready-for-dev
-  10-2-document-catalog-rest-apis: ready-for-dev
-  10-3-sources-dashboard-and-inspector-ui: ready-for-dev
-  10-4-document-text-preview-and-targeted-generation: ready-for-dev
-  10-5-cli-document-inspection-and-verification: ready-for-dev
-  epic-10-retrospective: optional
+  epic-10: done
+  10-1-document-storage-and-sync-persistence: done
+  10-2-document-catalog-rest-apis: done
+  10-3-sources-dashboard-and-inspector-ui: done
+  10-4-document-text-preview-and-targeted-generation: done
+  10-5-cli-document-inspection-and-verification: done
+  epic-10-retrospective: done
 
 

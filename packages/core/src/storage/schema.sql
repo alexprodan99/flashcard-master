@@ -20,6 +20,19 @@ CREATE TABLE IF NOT EXISTS sync_state (
     item_count INTEGER NOT NULL DEFAULT 0
 );
 
+-- Discovered Documents & Articles Catalog
+CREATE TABLE IF NOT EXISTS documents (
+    id TEXT PRIMARY KEY,
+    source_id TEXT NOT NULL REFERENCES data_sources(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    url TEXT,
+    text_content TEXT NOT NULL,
+    content_hash TEXT,
+    word_count INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
 -- Generated Flashcards Store
 CREATE TABLE IF NOT EXISTS flashcards (
     id TEXT PRIMARY KEY,
@@ -48,3 +61,4 @@ CREATE TABLE IF NOT EXISTS app_settings (
 CREATE INDEX IF NOT EXISTS idx_flashcards_source_id ON flashcards(source_id);
 CREATE INDEX IF NOT EXISTS idx_flashcards_target_deck ON flashcards(target_deck);
 CREATE INDEX IF NOT EXISTS idx_flashcards_difficulty ON flashcards(difficulty);
+CREATE INDEX IF NOT EXISTS idx_documents_source_id ON documents(source_id);

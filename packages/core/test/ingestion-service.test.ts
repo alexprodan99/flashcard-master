@@ -27,10 +27,13 @@ class MockFeedStrategy implements IngestionStrategy {
   }
 }
 
+import { DocumentRepository } from "../src/storage/document-repository.js";
+
 describe("IngestionService", () => {
   let db: any;
   let sourceRepo: DataSourceRepository;
   let syncRepo: SyncStateRepository;
+  let docRepo: DocumentRepository;
   let strategyRegistry: StrategyRegistry;
   let mockStrategy: MockFeedStrategy;
   let service: IngestionService;
@@ -39,18 +42,19 @@ describe("IngestionService", () => {
     db = createDatabaseClient({ inMemory: true });
     sourceRepo = new DataSourceRepository(db);
     syncRepo = new SyncStateRepository(db);
+    docRepo = new DocumentRepository(db);
     strategyRegistry = new StrategyRegistry();
     mockStrategy = new MockFeedStrategy();
     strategyRegistry.register(mockStrategy);
-    service = new IngestionService(sourceRepo, syncRepo, strategyRegistry);
+    service = new IngestionService(sourceRepo, syncRepo, strategyRegistry, docRepo);
   });
 
-  it("performs initial sync and stores sync_state", async () => {
+  it("performs initial sync, stores sync_state, and persists documents to DocumentRepository", async () => {
     const source = sourceRepo.create({ name: "Tech Blog", type: "rss", uri: "https://tech.blog" });
 
     mockStrategy.mockItems = [
-      { id: "1", sourceId: source.id, title: "Post 1", rawContent: "Content 1", guid: "guid-1" },
-      { id: "2", sourceId: source.id, title: "Post 2", rawContent: "Content 2", guid: "guid-2" },
+      { id: "1", sourceId: source.id, title: "Post 1", rawContent: "Content 1 with words", guid: "guid-1", originUrl: "https://tech.blog/post-1" },
+      { id: "2", sourceId: source.id, title: "Post 2", rawContent: "Content 2 with words", guid: "guid-2", originUrl: "https://tech.blog/post-2" },
     ];
 
     const result = await service.syncSource(source.id);
@@ -62,6 +66,13 @@ describe("IngestionService", () => {
     const syncState = syncRepo.get(source.id);
     expect(syncState).toBeDefined();
     expect(syncState?.lastGuid).toBe("guid-2");
+
+    // Check DocumentRepository persistence
+    const savedDocs = docRepo.listBySourceId(source.id);
+    expect(savedDocs.length).toBe(2);
+    expect(savedDocs[0].title).toBe("Post 1");
+    expect(savedDocs[0].url).toBe("https://tech.blog/post-1");
+    expect(savedDocs[0].wordCount).toBe(4);
   });
 
   it("filters previously seen documents in incremental delta sync", async () => {
