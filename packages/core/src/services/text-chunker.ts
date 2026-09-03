@@ -1,6 +1,8 @@
 export interface TextChunkerOptions {
   maxChunkSize?: number;
   overlapSize?: number;
+  chunkMultiplier?: number;
+  fullDocument?: boolean;
 }
 
 export class TextChunker {
@@ -17,9 +19,16 @@ export class TextChunker {
       return [];
     }
 
-    const maxSize = options.maxChunkSize ?? this.defaultMaxChunkSize;
-    const overlap = options.overlapSize ?? this.defaultOverlapSize;
     const cleanText = text.trim();
+
+    if (options.fullDocument || options.chunkMultiplier === 0) {
+      return [cleanText];
+    }
+
+    const multiplier = options.chunkMultiplier && options.chunkMultiplier > 0 ? options.chunkMultiplier : 1;
+    const baseSize = options.maxChunkSize ?? this.defaultMaxChunkSize;
+    const maxSize = Math.round(baseSize * multiplier);
+    const overlap = options.overlapSize ?? this.defaultOverlapSize;
 
     if (cleanText.length <= maxSize) {
       return [cleanText];

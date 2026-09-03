@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { fetchSources, generateCards } from '../lib/api';
-  import type { DataSource, Flashcard, GenerationResult, DifficultyLevel, PersonaType } from '../lib/types';
+  import type { DataSource, Flashcard, GenerationResult, DifficultyLevel, PersonaType, CardDepthMode } from '../lib/types';
 
   interface Props {
     onNavigate?: (tab: string) => void;
@@ -16,6 +16,8 @@
   let apiKey = $state('');
   let persona = $state<PersonaType>('socratic-mentor');
   let difficulty = $state<DifficultyLevel>('intermediate');
+  let depthMode = $state<CardDepthMode>('atomic');
+  let chunkMultiplier = $state<number>(1);
   let limit = $state(4);
   let targetDeck = $state('');
   let enforceGrounding = $state(true);
@@ -83,6 +85,8 @@
         apiKey: apiKey.trim() || undefined,
         persona,
         difficulty,
+        depthMode,
+        chunkMultiplier,
         limit,
         targetDeck: targetDeck.trim() || undefined,
         enforceGrounding,
@@ -241,6 +245,90 @@
               <input type="checkbox" bind:checked={enforceGrounding} />
               <span>🛡️ Enforce Verbatim Grounding Guard (Discard ungrounded hallucinated cards)</span>
             </label>
+          </div>
+        </div>
+
+        <!-- 4. Question Depth & Context Scope -->
+        <div class="form-section">
+          <span class="section-label">4. Question Depth & Context Scope</span>
+          
+          <div class="depth-mode-grid">
+            <button
+              type="button"
+              class="depth-card"
+              class:active={depthMode === 'atomic'}
+              onclick={() => (depthMode = 'atomic')}
+            >
+              <div class="depth-card-header">
+                <span class="depth-icon">⚡</span>
+                <span class="depth-title">Atomic Recall</span>
+              </div>
+              <p class="depth-desc">Rapid single-fact questions with punchy, direct answers for fast memory retrieval.</p>
+            </button>
+
+            <button
+              type="button"
+              class="depth-card"
+              class:active={depthMode === 'deep-dive'}
+              onclick={() => (depthMode = 'deep-dive')}
+            >
+              <div class="depth-card-header">
+                <span class="depth-icon">🔬</span>
+                <span class="depth-title">Deep Dive</span>
+              </div>
+              <p class="depth-desc">In-depth mechanisms, architectural tradeoffs, and comprehensive structural explanations.</p>
+            </button>
+
+            <button
+              type="button"
+              class="depth-card"
+              class:active={depthMode === 'scenario'}
+              onclick={() => (depthMode = 'scenario')}
+            >
+              <div class="depth-card-header">
+                <span class="depth-icon">🏗️</span>
+                <span class="depth-title">Applied Scenario</span>
+              </div>
+              <p class="depth-desc">Situational troubleshooting challenges and applied engineering case studies.</p>
+            </button>
+          </div>
+
+          <div class="scope-row">
+            <span class="scope-label">Document Context Scope:</span>
+            <div class="scope-chips">
+              <button
+                type="button"
+                class="scope-chip"
+                class:active={chunkMultiplier === 1}
+                onclick={() => (chunkMultiplier = 1)}
+              >
+                1x Standard (2k)
+              </button>
+              <button
+                type="button"
+                class="scope-chip"
+                class:active={chunkMultiplier === 2}
+                onclick={() => (chunkMultiplier = 2)}
+              >
+                2x Macro (4k)
+              </button>
+              <button
+                type="button"
+                class="scope-chip"
+                class:active={chunkMultiplier === 3}
+                onclick={() => (chunkMultiplier = 3)}
+              >
+                3x Deep (6k)
+              </button>
+              <button
+                type="button"
+                class="scope-chip"
+                class:active={chunkMultiplier === 0}
+                onclick={() => (chunkMultiplier = 0)}
+              >
+                📄 Full Article
+              </button>
+            </div>
           </div>
         </div>
 
@@ -739,5 +827,105 @@
     padding: 10px 14px;
     border-radius: 8px;
     font-size: 13px;
+  }
+
+  /* Depth Mode Grid */
+  .depth-mode-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    margin-top: 6px;
+  }
+
+  .depth-card {
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 12px;
+    text-align: left;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .depth-card:hover {
+    border-color: #475569;
+    background: #1e293b;
+  }
+
+  .depth-card.active {
+    border-color: #6366f1;
+    background: rgba(99, 102, 241, 0.1);
+  }
+
+  .depth-card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .depth-icon {
+    font-size: 16px;
+  }
+
+  .depth-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #f8fafc;
+  }
+
+  .depth-desc {
+    margin: 0;
+    font-size: 11px;
+    color: #94a3b8;
+    line-height: 1.4;
+  }
+
+  /* Document Context Scope */
+  .scope-row {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(51, 65, 85, 0.5);
+  }
+
+  .scope-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #cbd5e1;
+  }
+
+  .scope-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .scope-chip {
+    background: #0f172a;
+    border: 1px solid #334155;
+    color: #94a3b8;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .scope-chip:hover {
+    background: #1e293b;
+    color: #f1f5f9;
+  }
+
+  .scope-chip.active {
+    background: #6366f1;
+    color: white;
+    border-color: #6366f1;
+    font-weight: 600;
   }
 </style>

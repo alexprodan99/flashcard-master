@@ -1,4 +1,4 @@
-import type { CleanTextDocument, DifficultyLevel, PersonaType } from "../domain/models.js";
+import type { CleanTextDocument, DifficultyLevel, PersonaType, CardDepthMode } from "../domain/models.js";
 import type { LLMProviderPort, CardGenerationDraft } from "../ports/index.js";
 import { TextChunker, type TextChunkerOptions } from "./text-chunker.js";
 import { PromptBuilder } from "./prompt-builder.js";
@@ -7,6 +7,7 @@ import { GroundingGuard } from "./grounding-guard.js";
 export interface CardGenerationOptions {
   difficulty?: DifficultyLevel;
   persona?: PersonaType | string;
+  depthMode?: CardDepthMode;
   targetCountPerChunk?: number;
   chunkOptions?: TextChunkerOptions;
   enforceGrounding?: boolean;
@@ -44,17 +45,12 @@ export class CardGenerationService {
 
     const difficulty = options.difficulty ?? "intermediate";
     const persona = options.persona ?? "socratic-mentor";
+    const depthMode = options.depthMode ?? "atomic";
     const targetCount = options.targetCountPerChunk ?? 4;
     const enforceGrounding = options.enforceGrounding ?? true;
 
     const chunks = this.chunker.chunkText(doc.textContent, options.chunkOptions);
     const allDrafts: GeneratedCardDraft[] = [];
-
-    const personaPrompt = this.promptBuilder.buildGenerationInstructions({
-      difficulty,
-      persona,
-      targetCount,
-    });
 
     const chunkErrors: string[] = [];
 
@@ -65,6 +61,7 @@ export class CardGenerationService {
         const initialPrompt = this.promptBuilder.buildGenerationInstructions({
           difficulty,
           persona,
+          depthMode,
           targetCount: oversampledTarget,
         });
 
@@ -89,6 +86,7 @@ export class CardGenerationService {
             const retryPrompt = this.promptBuilder.buildGenerationInstructions({
               difficulty,
               persona,
+              depthMode,
               targetCount: deficit + 1,
             });
 

@@ -560,12 +560,55 @@ So that the interface naturally guides me from data ingestion to flashcard gener
 
 ### Story 8.5: Question Explorer Bulk Deletion & Multi-Selection
 **ID:** `8-5-explorer-bulk-delete-operations`
-**Description:** Add multi-card selection checkboxes, a "Select All" toggle, a live selected counter, and a bulk-delete endpoint (`DELETE /api/cards/bulk` and `deleteCards(ids)`) with confirmation dialog in `QuestionExplorer.svelte`.
+**Description:** Add multi-card selection checkboxes, a "Select All" toggle, a live selected counter, and a bulk-delete endpoint (`POST /api/cards/bulk-delete` and `deleteCardsBulk(ids)`) with confirmation dialog in `QuestionExplorer.svelte`.
 **Acceptance Criteria:**
 - **Given** the Question Explorer view
 - **When** user selects one or more cards using checkboxes or "Select All"
 - **Then** a floating/top action bar displays the count of selected cards and a "🗑️ Delete Selected (N)" button.
-- **And** clicking delete shows a confirmation modal, calls `DELETE /api/cards/bulk`, removes the cards from SQLite, and updates the UI instantly.
+- **And** clicking delete shows a confirmation modal, calls `POST /api/cards/bulk-delete`, removes the cards from SQLite, and updates the UI instantly.
+
+---
+
+## Epic 9: Configurable Question Depth, Granularity & Context Chunk Sizing
+
+**Goal:** Allow users to choose between atomic quick-recall flashcards, comprehensive deep-dive explanations, and scenario-based architectural case studies, while providing configurable document chunk sizing (up to full-article mode) for macro-level concept synthesis.
+
+### Story 9.1: Question Depth & Granularity Prompt Engine
+**ID:** `9-1-question-depth-and-granularity-prompts`
+**Description:** Extend `PromptBuilder` and domain models with selectable `depthMode` (`atomic`, `deep-dive`, `scenario`), dynamically adjusting active recall formatting, depth directives, and answer structure while strictly preserving verbatim quote grounding.
+**Acceptance Criteria:**
+- **Given** a generation request with `depthMode = 'deep-dive'`
+- **When** the generation prompt is built
+- **Then** the prompt instructs the LLM to formulate comprehensive multi-step explanations, trade-offs, and architectural mechanisms rather than 1-sentence definitions.
+- **And** `depthMode = 'scenario'` instructs the LLM to generate applied situation/troubleshooting problems.
+- **And** verbatim quote grounding rules remain strictly enforced across all depth modes.
+
+### Story 9.2: Configurable Document Context Chunk Sizing & Full Document Scope
+**ID:** `9-2-configurable-chunk-sizing-and-full-doc`
+**Description:** Enhance `TextChunker` and `CardGenerationService` to accept configurable chunk multipliers (`1x` 2,000 chars, `2x` 4,000 chars, `3x` 6,000 chars, `5x` 10,000 chars, or `full` unchunked document mode) allowing macro-level cross-section synthesis for long articles.
+**Acceptance Criteria:**
+- **Given** a document of 8,000 characters
+- **When** `chunkMultiplier` is set to `2x` or `full`
+- **Then** `TextChunker` creates fewer, larger macro-chunks (or a single whole-document chunk).
+- **And** `CardGenerationService` generates cohesive flashcards spanning cross-section concepts.
+
+### Story 9.3: Backend REST API & CLI Support for Depth & Chunk Multipliers
+**ID:** `9-3-api-and-cli-depth-controls`
+**Description:** Update `POST /api/generate` in `server.ts` and `flashcard-master generate` CLI command to accept `depthMode` and `chunkMultiplier` parameters with validation and default fallbacks.
+**Acceptance Criteria:**
+- **Given** `POST /api/generate` with `{ depthMode: "deep-dive", chunkMultiplier: 2 }`
+- **When** invoked
+- **Then** the server generates cards using the calibrated depth and chunk multiplier.
+- **And** `flashcard-master generate --depth deep-dive --chunk-multiplier 2` works from the terminal.
+
+### Story 9.4: Svelte 5 Generate Studio UI Controls & E2E Validation
+**ID:** `9-4-generate-studio-depth-and-scope-ui`
+**Description:** Add interactive "Question Depth & Granularity" radio cards and "Document Context Scope" buttons in `GenerateStudio.svelte`. Verify end-to-end generation across models and ensure full test suite passes.
+**Acceptance Criteria:**
+- **Given** the Generate Studio page in Web UI
+- **When** user selects "Deep Dive" or "Scenario" and adjusts context multiplier
+- **Then** generation synthesizes in-depth, multi-faceted flashcards with verbatim grounding.
+- **And** all unit, integration, and E2E tests across all workspaces pass 100% green.
 
 
 

@@ -462,6 +462,25 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     expect(data.newCards[0].targetDeck).toBe("Custom Generation Deck");
   });
 
+  it("supports depthMode and chunkMultiplier in POST /api/generate", async () => {
+    const res = await fetch(`${serverUrl}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: "ollama",
+        model: "phi4-mini",
+        depthMode: "deep-dive",
+        chunkMultiplier: 2,
+        limit: 3,
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.success).toBe(true);
+    expect(data.cardsCreated).toBe(1);
+  });
+
   it("serves static dashboard SPA on GET / and GET /index.html", async () => {
     const resRoot = await fetch(`${serverUrl}/`);
     expect(resRoot.status).toBe(200);

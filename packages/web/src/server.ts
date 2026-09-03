@@ -16,6 +16,7 @@ import {
   type CardFilter,
   type DifficultyLevel,
   type PersonaType,
+  type CardDepthMode,
   CardGenerationService,
 } from "@flashcard-master/core";
 import { createLLMAdapter } from "@flashcard-master/adapters";
@@ -1679,6 +1680,9 @@ export class WebServer {
             const baseUrl = body.endpoint || undefined;
             const persona = (body.persona as PersonaType) || "socratic-mentor";
             const difficulty = (body.difficulty as DifficultyLevel) || "intermediate";
+            const depthMode = (body.depthMode as CardDepthMode) || "atomic";
+            const chunkMultiplier = typeof body.chunkMultiplier === "number" ? body.chunkMultiplier : 1;
+            const fullDocument = body.fullDocument === true || chunkMultiplier === 0;
             const targetDeckOverride = body.targetDeck || undefined;
             const limit = typeof body.limit === "number" ? body.limit : 5;
             const enforceGrounding = body.enforceGrounding !== false;
@@ -1725,7 +1729,9 @@ export class WebServer {
                   const drafts = await genService.generateFromDocument(cleanDoc, {
                     difficulty,
                     persona,
+                    depthMode,
                     targetCountPerChunk: limit,
+                    chunkOptions: { chunkMultiplier, fullDocument },
                     enforceGrounding,
                   });
                   totalDrafts += drafts.length;
