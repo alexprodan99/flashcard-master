@@ -315,12 +315,19 @@ flashcard-master/
 Run the full automated test suite across all workspace packages:
 
 ```bash
-# Run all 23 test suites and 105 unit & integration tests
+# Run all automated unit & integration test suites
 npm test
 
 # Build all packages with strict TypeScript type-checking
 npm run build
 ```
+
+---
+
+## 📖 Architecture & Contribution
+
+* 🏛️ **[System Architecture & Design Invariants](docs/ARCHITECTURE.md)**: Detailed subsystem lifecycles, data flows, and database schemas.
+* 🤝 **[Contributor Guide & Extension Playbook](CONTRIBUTING.md)**: Setup instructions, coding conventions, and guides for adding custom ingestion strategies, LLMs, and exporters.
 
 ---
 
