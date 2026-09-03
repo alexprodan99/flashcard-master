@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS flashcards (
     answer TEXT NOT NULL,
     source_quote TEXT NOT NULL,
     source_origin_url TEXT,
+    document_title TEXT,
     difficulty TEXT NOT NULL CHECK(difficulty IN ('beginner', 'intermediate', 'expert')),
     persona_used TEXT NOT NULL DEFAULT 'socratic-mentor',
     target_deck TEXT NOT NULL DEFAULT 'Default',
@@ -190,4 +191,19 @@ export function runMigrations(db: Database.Database): void {
       db.exec("CREATE INDEX IF NOT EXISTS idx_flashcards_difficulty ON flashcards(difficulty);");
     })();
   }
+
+  // 4. Ensure document_title column exists in flashcards table
+  const cardCols = db.prepare("PRAGMA table_info(flashcards)").all() as Array<{ name: string }>;
+  if (cardCols && cardCols.length > 0 && !cardCols.some((c) => c.name === "document_title")) {
+    db.exec("ALTER TABLE flashcards ADD COLUMN document_title TEXT;");
+  }
+
+  // 5. Backfill source_origin_url and document_title from parent data source for legacy cards
+  db.exec(`
+    UPDATE flashcards
+    SET 
+      source_origin_url = COALESCE(source_origin_url, (SELECT uri FROM data_sources WHERE data_sources.id = flashcards.source_id)),
+      document_title = COALESCE(document_title, (SELECT name FROM data_sources WHERE data_sources.id = flashcards.source_id))
+    WHERE source_id IS NOT NULL AND (source_origin_url IS NULL OR document_title IS NULL);
+  `);
 }

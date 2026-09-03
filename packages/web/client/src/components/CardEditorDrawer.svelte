@@ -15,6 +15,8 @@
   let question = $state('');
   let answer = $state('');
   let sourceQuote = $state('');
+  let documentTitle = $state('');
+  let sourceOriginUrl = $state('');
   let targetDeck = $state('Default');
   let difficulty = $state<DifficultyLevel>('intermediate');
   let tagsInput = $state('');
@@ -28,6 +30,8 @@
       question = card.question;
       answer = card.answer;
       sourceQuote = card.sourceQuote || '';
+      documentTitle = card.documentTitle || '';
+      sourceOriginUrl = card.sourceOriginUrl || '';
       targetDeck = card.targetDeck || 'Default';
       difficulty = card.difficulty;
       tagsInput = (card.tags || []).join(', ');
@@ -56,6 +60,8 @@
         question: question.trim(),
         answer: answer.trim(),
         sourceQuote: sourceQuote.trim(),
+        documentTitle: documentTitle.trim() || null,
+        sourceOriginUrl: sourceOriginUrl.trim() || null,
         targetDeck: targetDeck.trim() || 'Default',
         difficulty,
         tags,
@@ -131,6 +137,28 @@
             bind:value={sourceQuote}
             placeholder="Verbatim sentence from original document..."
           ></textarea>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="edit-doc-title">Source Document Title</label>
+            <input
+              id="edit-doc-title"
+              type="text"
+              bind:value={documentTitle}
+              placeholder="e.g. Architecture Invariants Guide"
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="edit-origin-url">Source Origin URL</label>
+            <input
+              id="edit-origin-url"
+              type="url"
+              bind:value={sourceOriginUrl}
+              placeholder="https://example.com/article"
+            />
+          </div>
         </div>
 
         <div class="form-row">

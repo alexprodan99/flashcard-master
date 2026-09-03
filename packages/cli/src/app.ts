@@ -29,6 +29,7 @@ import {
   TsvExporter,
   MarkdownExporter,
   HtmlStudyGuideExporter,
+  PdfStudyGuideExporter,
 } from "@flashcard-master/adapters";
 import type Database from "better-sqlite3";
 
@@ -90,6 +91,7 @@ export function createAppContext(options: AppOptions = {}): AppContext {
   exporterRegistry.register(new TsvExporter());
   exporterRegistry.register(new MarkdownExporter());
   exporterRegistry.register(new HtmlStudyGuideExporter());
+  exporterRegistry.register(new PdfStudyGuideExporter());
 
   const exportService = new ExportService(cardRepo, exporterRegistry);
 

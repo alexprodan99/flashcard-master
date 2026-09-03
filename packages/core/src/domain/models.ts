@@ -47,6 +47,7 @@ export const FlashcardSchema = z.object({
   answer: z.string().min(1),
   sourceQuote: z.string().min(1),
   sourceOriginUrl: z.string().nullable().optional(),
+  documentTitle: z.string().nullable().optional(),
   difficulty: DifficultyLevelSchema.default("intermediate"),
   personaUsed: z.string().default("socratic-mentor"),
   targetDeck: z.string().default("Default"),

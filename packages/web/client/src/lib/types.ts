@@ -21,6 +21,7 @@ export interface Flashcard {
   answer: string;
   sourceQuote: string;
   sourceOriginUrl?: string;
+  documentTitle?: string;
   difficulty: DifficultyLevel;
   personaUsed: string;
   targetDeck: string;

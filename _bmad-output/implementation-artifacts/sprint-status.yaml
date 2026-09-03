@@ -89,5 +89,14 @@ development_status:
   7-2-llms-txt-ingestion-strategy: done
   7-3-cli-sitemap-support: done
   7-4-web-ui-sitemap-integration: done
-  epic-7-retrospective: optional
+  epic-7-retrospective: done
+
+  epic-8: done
+  8-1-prompt-tuning-and-verbatim-directives: done
+  8-2-adaptive-backfill-generation-loop: done
+  8-3-material-source-provenance-references: done
+  8-4-printable-pdf-export-support: done
+  8-5-explorer-bulk-delete-operations: done
+  epic-8-retrospective: done
+
 

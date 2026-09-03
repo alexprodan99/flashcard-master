@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { fetchCards } from '../lib/api';
+  import { fetchCards, deleteCardsBulk } from '../lib/api';
   import type { Flashcard, DifficultyLevel } from '../lib/types';
   import CardEditorDrawer from '../components/CardEditorDrawer.svelte';
 
@@ -16,6 +16,11 @@
   let isDrawerOpen = $state(false);
   let revealedAnswers = $state<Record<string, boolean>>({});
   let toastMessage = $state<string | null>(null);
+
+  // Bulk selection state
+  let selectedIds = $state<string[]>([]);
+  let isBulkDeleting = $state(false);
+  let showBulkDeleteConfirm = $state(false);
 
   // Derived filters
   let availableDecks = $derived(
@@ -41,6 +46,50 @@
       return true;
     })
   );
+
+  let allFilteredSelected = $derived(
+    filteredCards.length > 0 && filteredCards.every((c) => selectedIds.includes(c.id))
+  );
+
+  function toggleSelectCard(id: string) {
+    if (selectedIds.includes(id)) {
+      selectedIds = selectedIds.filter((x) => x !== id);
+    } else {
+      selectedIds = [...selectedIds, id];
+    }
+  }
+
+  function toggleSelectAllFiltered() {
+    if (allFilteredSelected) {
+      const filteredIdSet = new Set(filteredCards.map((c) => c.id));
+      selectedIds = selectedIds.filter((id) => !filteredIdSet.has(id));
+    } else {
+      const combined = new Set([...selectedIds, ...filteredCards.map((c) => c.id)]);
+      selectedIds = Array.from(combined);
+    }
+  }
+
+  function clearSelection() {
+    selectedIds = [];
+  }
+
+  async function handleBulkDelete() {
+    if (selectedIds.length === 0) return;
+    isBulkDeleting = true;
+    try {
+      const res = await deleteCardsBulk(selectedIds);
+      const deletedSet = new Set(selectedIds);
+      cards = cards.filter((c) => !deletedSet.has(c.id));
+      toastMessage = `🗑️ Successfully deleted ${res.deletedCount} flashcard${res.deletedCount === 1 ? '' : 's'}.`;
+      selectedIds = [];
+      showBulkDeleteConfirm = false;
+      setTimeout(() => (toastMessage = null), 4000);
+    } catch (err: any) {
+      toastMessage = `⚠️ Failed to delete cards: ${err.message}`;
+    } finally {
+      isBulkDeleting = false;
+    }
+  }
 
   async function loadCards() {
     loading = true;
@@ -71,6 +120,7 @@
 
   function handleCardDeleted(id: string) {
     cards = cards.filter((c) => c.id !== id);
+    selectedIds = selectedIds.filter((x) => x !== id);
     toastMessage = '🗑️ Flashcard deleted.';
     setTimeout(() => (toastMessage = null), 4000);
   }
@@ -91,6 +141,29 @@
 
   {#if toastMessage}
     <div class="toast-banner">{toastMessage}</div>
+  {/if}
+
+  <!-- Bulk Selection Action Bar -->
+  {#if selectedIds.length > 0}
+    <div class="bulk-action-bar">
+      <div class="bulk-info">
+        <span class="selection-pill">✓ {selectedIds.length} Selected</span>
+        <button type="button" class="btn-bulk-toggle" onclick={toggleSelectAllFiltered}>
+          {allFilteredSelected ? 'Deselect Filtered' : `Select All Filtered (${filteredCards.length})`}
+        </button>
+        <button type="button" class="btn-bulk-clear" onclick={clearSelection}>Clear</button>
+      </div>
+      <div class="bulk-actions">
+        <button
+          type="button"
+          class="btn-bulk-delete"
+          onclick={() => (showBulkDeleteConfirm = true)}
+          disabled={isBulkDeleting}
+        >
+          🗑️ Delete Selected ({selectedIds.length})
+        </button>
+      </div>
+    </div>
   {/if}
 
   <!-- Filter & Search Toolbar -->
@@ -192,10 +265,20 @@
   {:else}
     <div class="cards-grid">
       {#each filteredCards as card}
-        <div class="card-item">
+        <div class="card-item" class:selected={selectedIds.includes(card.id)}>
           <div class="card-top-bar">
-            <span class="difficulty-badge {card.difficulty}">{card.difficulty}</span>
-            <span class="deck-tag">📦 {card.targetDeck || 'Default'}</span>
+            <label class="card-checkbox-label" title="Select card for bulk actions">
+              <input
+                type="checkbox"
+                checked={selectedIds.includes(card.id)}
+                onchange={() => toggleSelectCard(card.id)}
+                class="card-checkbox"
+              />
+            </label>
+            <div class="card-badges">
+              <span class="difficulty-badge {card.difficulty}">{card.difficulty}</span>
+              <span class="deck-tag">📦 {card.targetDeck || 'Default'}</span>
+            </div>
           </div>
 
           <div class="card-question">
@@ -229,7 +312,20 @@
 
           {#if card.sourceQuote}
             <div class="grounding-quote">
-              <span class="quote-tag">🛡️ Verified Source Quote:</span>
+              <div class="quote-header">
+                <span class="quote-tag">🛡️ Verified Source Quote</span>
+                {#if card.documentTitle || card.sourceOriginUrl}
+                  <div class="quote-ref">
+                    {#if card.sourceOriginUrl}
+                      <a href={card.sourceOriginUrl} target="_blank" rel="noopener noreferrer" class="ref-link">
+                        📖 {card.documentTitle || 'Source Link'} ↗
+                      </a>
+                    {:else}
+                      <span class="ref-text">📖 {card.documentTitle}</span>
+                    {/if}
+                  </div>
+                {/if}
+              </div>
               <p>"{card.sourceQuote}"</p>
             </div>
           {/if}
@@ -267,6 +363,46 @@
   onCardUpdated={handleCardUpdated}
   onCardDeleted={handleCardDeleted}
 />
+
+{#if showBulkDeleteConfirm}
+  <div class="modal-backdrop" role="presentation" onclick={() => (showBulkDeleteConfirm = false)}>
+    <div
+      class="modal-card"
+      role="dialog"
+      aria-modal="true"
+      tabindex="-1"
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => { if (e.key === 'Escape') showBulkDeleteConfirm = false; }}
+    >
+      <div class="modal-header">
+        <h2>⚠️ Confirm Bulk Deletion</h2>
+        <button type="button" class="btn-close" onclick={() => (showBulkDeleteConfirm = false)}>✕</button>
+      </div>
+      <div class="modal-body">
+        <p>Are you sure you want to permanently delete <strong>{selectedIds.length}</strong> flashcard{selectedIds.length === 1 ? '' : 's'}?</p>
+        <p class="modal-subtext">This action will remove these cards from your SQLite database and cannot be undone.</p>
+      </div>
+      <div class="modal-actions">
+        <button
+          type="button"
+          class="btn-modal-cancel"
+          onclick={() => (showBulkDeleteConfirm = false)}
+          disabled={isBulkDeleting}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="btn-modal-delete"
+          onclick={handleBulkDelete}
+          disabled={isBulkDeleting}
+        >
+          {isBulkDeleting ? 'Deleting...' : `Confirm Delete (${selectedIds.length})`}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <style>
   .view-container {
@@ -544,12 +680,41 @@
     border-radius: 0 6px 6px 0;
   }
 
+  .quote-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+
   .quote-tag {
     font-size: 11px;
     font-weight: 600;
     color: #818cf8;
-    display: block;
-    margin-bottom: 4px;
+  }
+
+  .quote-ref {
+    font-size: 11px;
+    max-width: 50%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ref-link {
+    color: #38bdf8;
+    text-decoration: none;
+    font-weight: 500;
+  }
+
+  .ref-link:hover {
+    text-decoration: underline;
+    color: #7dd3fc;
+  }
+
+  .ref-text {
+    color: #94a3b8;
   }
 
   .grounding-quote p {
@@ -650,5 +815,201 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+  }
+
+  /* Bulk Action Bar */
+  .bulk-action-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(99, 102, 241, 0.12);
+    border: 1px solid rgba(99, 102, 241, 0.35);
+    border-radius: 10px;
+    padding: 12px 20px;
+    animation: fadeIn 0.2s ease-in-out;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .bulk-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .selection-pill {
+    background: #6366f1;
+    color: white;
+    font-weight: 700;
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 9999px;
+  }
+
+  .btn-bulk-toggle, .btn-bulk-clear {
+    background: transparent;
+    border: 1px solid #475569;
+    color: #cbd5e1;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-bulk-toggle:hover, .btn-bulk-clear:hover {
+    background: #334155;
+    color: white;
+  }
+
+  .btn-bulk-delete {
+    background: #ef4444;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .btn-bulk-delete:hover:not(:disabled) {
+    background: #dc2626;
+  }
+
+  .btn-bulk-delete:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  /* Card Checkbox & Selected State */
+  .card-item.selected {
+    border-color: #6366f1;
+    background: rgba(99, 102, 241, 0.06);
+  }
+
+  .card-checkbox-label {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+  }
+
+  .card-checkbox {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: #6366f1;
+  }
+
+  .card-badges {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* Confirmation Modal */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+
+  .modal-card {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 480px;
+    padding: 24px;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+  }
+
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+
+  .modal-header h2 {
+    font-size: 18px;
+    font-weight: 700;
+    color: #f8fafc;
+    margin: 0;
+  }
+
+  .btn-close {
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    font-size: 16px;
+    cursor: pointer;
+  }
+
+  .btn-close:hover {
+    color: white;
+  }
+
+  .modal-body {
+    margin-bottom: 24px;
+    color: #cbd5e1;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .modal-subtext {
+    font-size: 12px;
+    color: #94a3b8;
+    margin-top: 8px;
+  }
+
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+  }
+
+  .btn-modal-cancel {
+    background: #334155;
+    color: #f1f5f9;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .btn-modal-cancel:hover:not(:disabled) {
+    background: #475569;
+  }
+
+  .btn-modal-delete {
+    background: #ef4444;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .btn-modal-delete:hover:not(:disabled) {
+    background: #dc2626;
+  }
+
+  .btn-modal-delete:disabled, .btn-modal-cancel:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 </style>

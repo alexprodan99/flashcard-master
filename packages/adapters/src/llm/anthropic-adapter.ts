@@ -32,7 +32,7 @@ export class AnthropicAdapter implements LLMProviderPort {
     const count = options.targetCount ?? 5;
     const systemPrompt = `${options.personaPrompt}
 Generate exactly ${count} atomic Front/Back flashcards from the provided text at "${options.difficulty}" difficulty.
-CRITICAL GROUNDING RULE: For each card, extract an exact verbatim "sourceQuote" sentence from the source text that proves the answer.
+CRITICAL GROUNDING RULE: For each card, copy and paste an EXACT, word-for-word sentence from the provided text into "sourceQuote". Do NOT paraphrase, edit, or summarize any words in "sourceQuote".
 You MUST output ONLY a valid raw JSON array with no markdown code fences:
 [
   {

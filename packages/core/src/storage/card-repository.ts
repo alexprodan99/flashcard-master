@@ -21,6 +21,7 @@ export class FlashcardRepository {
       answer: row.answer,
       sourceQuote: row.source_quote,
       sourceOriginUrl: row.source_origin_url,
+      documentTitle: row.document_title,
       difficulty: row.difficulty,
       personaUsed: row.persona_used,
       targetDeck: row.target_deck,
@@ -36,9 +37,9 @@ export class FlashcardRepository {
 
     const stmt = this.db.prepare(`
       INSERT INTO flashcards (
-        id, source_id, question, answer, source_quote, source_origin_url,
+        id, source_id, question, answer, source_quote, source_origin_url, document_title,
         difficulty, persona_used, target_deck, tags
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -48,6 +49,7 @@ export class FlashcardRepository {
       card.answer,
       card.sourceQuote,
       card.sourceOriginUrl ?? null,
+      card.documentTitle ?? null,
       card.difficulty || "intermediate",
       card.personaUsed || "socratic-mentor",
       card.targetDeck || "Default",
@@ -64,9 +66,9 @@ export class FlashcardRepository {
 
     const stmt = this.db.prepare(`
       INSERT INTO flashcards (
-        id, source_id, question, answer, source_quote, source_origin_url,
+        id, source_id, question, answer, source_quote, source_origin_url, document_title,
         difficulty, persona_used, target_deck, tags
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const createdIds: string[] = [];
@@ -83,6 +85,7 @@ export class FlashcardRepository {
           card.answer,
           card.sourceQuote,
           card.sourceOriginUrl ?? null,
+          card.documentTitle ?? null,
           card.difficulty || "intermediate",
           card.personaUsed || "socratic-mentor",
           card.targetDeck || "Default",
@@ -167,6 +170,10 @@ export class FlashcardRepository {
       fields.push("source_origin_url = ?");
       params.push(updates.sourceOriginUrl);
     }
+    if (updates.documentTitle !== undefined) {
+      fields.push("document_title = ?");
+      params.push(updates.documentTitle);
+    }
     if (updates.difficulty !== undefined) {
       fields.push("difficulty = ?");
       params.push(updates.difficulty);
@@ -200,6 +207,16 @@ export class FlashcardRepository {
   delete(id: string): boolean {
     const result = this.db.prepare("DELETE FROM flashcards WHERE id = ?").run(id);
     return result.changes > 0;
+  }
+
+  deleteMany(ids: string[]): number {
+    if (!ids || ids.length === 0) {
+      return 0;
+    }
+    const placeholders = ids.map(() => "?").join(", ");
+    const stmt = this.db.prepare(`DELETE FROM flashcards WHERE id IN (${placeholders})`);
+    const result = stmt.run(...ids);
+    return result.changes;
   }
 
   deleteBySourceId(sourceId: string): number {

@@ -251,8 +251,10 @@ export function createCli(providedContext?: AppContext): Command {
             // Persist unique cards
             if (dedupResult.unique.length > 0) {
               const created = context.cardRepo.createBatch(
-                dedupResult.unique.map((u) => ({
+                dedupResult.unique.map((u: any) => ({
                   ...u,
+                  sourceOriginUrl: u.originUrl || (s.type === "web" || s.type === "rss" || s.type === "sitemap" || s.type === "llms-txt" ? s.uri : null),
+                  documentTitle: u.documentTitle || s.name,
                   personaUsed: options.persona || "socratic-mentor",
                   targetDeck,
                   tags: Array.from(new Set([...(s.tags || []), u.difficulty])),

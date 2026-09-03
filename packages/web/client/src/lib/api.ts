@@ -101,6 +101,19 @@ export async function deleteCard(id: string): Promise<void> {
   if (!res.ok) throw new Error('Failed to delete flashcard');
 }
 
+export async function deleteCardsBulk(ids: string[]): Promise<{ success: boolean; deletedCount: number }> {
+  const res = await fetch('/api/cards/bulk-delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to delete selected flashcards');
+  }
+  return res.json();
+}
+
 export async function generateCards(payload: {
   sourceIds: string[];
   provider: string;

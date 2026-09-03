@@ -58,5 +58,6 @@ describe("PersonaStudioService", () => {
     expect(prompt).toContain("DIFFICULTY LEVEL (EXPERT)");
     expect(prompt).toContain("Focus on subtle edge cases");
     expect(prompt).toContain("MINIMUM INFORMATION PRINCIPLE RULES");
+    expect(prompt).toContain("CRITICAL: Copy and paste an EXACT, word-for-word sentence");
   });
 });

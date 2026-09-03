@@ -77,11 +77,19 @@ ${this.formatBlockquote(card.answer)}
 `);
 
       if (includeCitations && card.sourceQuote) {
-        cardParts.push(`>
+        let citationBlock = `>
 > [!NOTE]
 > **Source Citation:**
-${this.formatBlockquote(`*"${card.sourceQuote}"*`)}
-`);
+${this.formatBlockquote(`*"${card.sourceQuote}"*`)}`;
+
+        if (card.documentTitle || card.sourceOriginUrl) {
+          const docRef = card.sourceOriginUrl
+            ? `[${card.documentTitle || "Source Document"}](${card.sourceOriginUrl})`
+            : card.documentTitle;
+          citationBlock += `\n>\n> 📖 **Reference:** ${docRef}`;
+        }
+
+        cardParts.push(citationBlock + "\n");
       }
 
       cardParts.push(`</details>\n\n---`);

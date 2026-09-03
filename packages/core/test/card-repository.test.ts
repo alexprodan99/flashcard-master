@@ -141,4 +141,29 @@ describe("FlashcardRepository", () => {
     cardRepo.deleteBySourceId(source2.id);
     expect(cardRepo.count({ sourceId: source2.id })).toBe(0);
   });
+
+  it("stores documentTitle and supports deleteMany bulk deletion", () => {
+    const card1 = cardRepo.create({
+      question: "Doc Title Q1",
+      answer: "Doc Title A1",
+      sourceQuote: "Verbatim quote 1",
+      documentTitle: "System Architecture Primer",
+      sourceOriginUrl: "https://example.com/primer",
+    });
+    const card2 = cardRepo.create({
+      question: "Doc Title Q2",
+      answer: "Doc Title A2",
+      sourceQuote: "Verbatim quote 2",
+      documentTitle: "Database Internals",
+    });
+
+    expect(card1.documentTitle).toBe("System Architecture Primer");
+    expect(card1.sourceOriginUrl).toBe("https://example.com/primer");
+    expect(card2.documentTitle).toBe("Database Internals");
+
+    const deletedCount = cardRepo.deleteMany([card1.id, card2.id]);
+    expect(deletedCount).toBe(2);
+    expect(cardRepo.getById(card1.id)).toBeNull();
+    expect(cardRepo.getById(card2.id)).toBeNull();
+  });
 });

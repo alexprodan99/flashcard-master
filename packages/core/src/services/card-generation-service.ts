@@ -60,18 +60,59 @@ export class CardGenerationService {
 
     for (const chunk of chunks) {
       try {
+        // Phase 1: Request oversampled count (+2) to absorb grounding rejects in 1 shot
+        const oversampledTarget = targetCount + 2;
+        const initialPrompt = this.promptBuilder.buildGenerationInstructions({
+          difficulty,
+          persona,
+          targetCount: oversampledTarget,
+        });
+
         const rawDrafts = await this.llmProvider.generateQAPairs(chunk, {
           difficulty,
-          personaPrompt,
-          targetCount,
+          personaPrompt: initialPrompt,
+          targetCount: oversampledTarget,
         });
 
         // Filter through GroundingGuard to guarantee factual verification
-        const validDrafts = enforceGrounding
+        let validDrafts = enforceGrounding
           ? this.groundingGuard.filterValidDrafts(rawDrafts, chunk)
           : rawDrafts;
 
-        for (const draft of validDrafts) {
+        // Phase 2: Adaptive Backfill Retry Loop (up to MAX_BACKFILL_ATTEMPTS = 5) if we have a deficit
+        const MAX_BACKFILL_ATTEMPTS = 5;
+        let attempt = 0;
+        while (validDrafts.length < targetCount && chunk.length > 200 && attempt < MAX_BACKFILL_ATTEMPTS) {
+          attempt++;
+          const deficit = targetCount - validDrafts.length;
+          try {
+            const retryPrompt = this.promptBuilder.buildGenerationInstructions({
+              difficulty,
+              persona,
+              targetCount: deficit + 1,
+            });
+
+            const retryDrafts = await this.llmProvider.generateQAPairs(chunk, {
+              difficulty,
+              personaPrompt: retryPrompt,
+              targetCount: deficit + 1,
+            });
+
+            const validRetry = enforceGrounding
+              ? this.groundingGuard.filterValidDrafts(retryDrafts, chunk)
+              : retryDrafts;
+
+            validDrafts = [...validDrafts, ...validRetry];
+          } catch (retryErr: any) {
+            console.warn(`[CardGenerationService] Adaptive backfill retry attempt ${attempt} skipped: ${retryErr.message}`);
+            break;
+          }
+        }
+
+        // Phase 3: Take up to targetCount cards
+        const finalChunkDrafts = validDrafts.slice(0, targetCount);
+
+        for (const draft of finalChunkDrafts) {
           allDrafts.push({
             question: draft.question,
             answer: draft.answer,

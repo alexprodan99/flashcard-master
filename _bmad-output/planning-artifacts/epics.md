@@ -517,6 +517,57 @@ So that the interface naturally guides me from data ingestion to flashcard gener
 - **And** newly created sources display `sitemap` / `llms-txt` badges and trigger live sync with progress feedback.
 - **And** all unit and integration tests across all workspaces pass with 100% success.
 
+---
+
+## Epic 8: LLM Prompt Tuning, Adaptive Backfilling, PDF Export & Explorer Bulk Operations
+
+**Goal:** Elevate generation reliability on local LLMs, guarantee card production targets per chunk, capture rich material provenance metadata, enable printable PDF downloads, and empower users with bulk curation actions in Question Explorer.
+
+### Story 8.1: Prompt Tuning & Emphatic Copy-Paste Verbatim Directives
+**ID:** `8-1-prompt-tuning-and-verbatim-directives`
+**Description:** Refine `PromptBuilder` generation instructions with strict copy-paste directives ("CRITICAL: Copy and paste an EXACT, word-for-word sentence directly from the provided text into 'sourceQuote'. Do NOT paraphrase, edit, or summarize any words in 'sourceQuote'") and concrete few-shot JSON formatting to minimize grounding rejections on local LLMs.
+**Acceptance Criteria:**
+- **Given** any LLM provider invocation (Ollama, Gemini, OpenAI, Claude)
+- **When** the system prompt is assembled
+- **Then** unambiguous copy-paste verbatim rules are injected with strict schema constraints.
+- **And** local models produce exact matching substrings without quote paraphrasing.
+
+### Story 8.2: Adaptive Generation Backfill Loop
+**ID:** `8-2-adaptive-backfill-generation-loop`
+**Description:** Enhance `CardGenerationService` with intelligent oversampling (requesting `targetCount + 2` candidate cards) and a retry backfill pass to guarantee that the configured target card count per chunk (e.g. 4 cards) is consistently met even if individual ungrounded drafts fail validation.
+**Acceptance Criteria:**
+- **Given** a generation request for `targetCountPerChunk = 4`
+- **When** 1 or 2 initial candidate drafts fail grounding verification
+- **Then** the service uses oversampled candidates or executes a targeted backfill prompt to fulfill the 4-card quota.
+- **And** the total returned valid cards reaches the requested target count whenever sufficient chunk content exists.
+
+### Story 8.3: Rich Document Provenance & Material Reference
+**ID:** `8-3-material-source-provenance-references`
+**Description:** Ensure full source provenance metadata (Document Title, Origin URL, Section Tag, Source Type) is captured on generated cards, displayed prominently in Question Explorer and Card Editor Drawer, and included in study exports.
+**Acceptance Criteria:**
+- **Given** generated flashcards in SQLite
+- **When** viewed in Question Explorer or the slide-over Editor Drawer
+- **Then** the source document title and origin link are rendered cleanly next to the verbatim quote.
+- **And** exports (Markdown, HTML study sheet, Anki) include material provenance callouts.
+
+### Story 8.4: Printable PDF Export Support & Alias Routing
+**ID:** `8-4-printable-pdf-export-support`
+**Description:** Register `pdf` format alias in `ExporterRegistry` routing to the print-optimized HTML study guide exporter (`HtmlStudyGuideExporter`) with `@media print` layout and proper `Content-Disposition` headers so requesting `/api/export?format=pdf` works seamlessly without errors.
+**Acceptance Criteria:**
+- **Given** user triggers export with `format=pdf` (via CLI `flashcard-master export -f pdf` or UI Export Center)
+- **When** the request is processed
+- **Then** the backend serves the printable study sheet with appropriate headers and print styling instead of returning an "Unsupported export format" error.
+
+### Story 8.5: Question Explorer Bulk Deletion & Multi-Selection
+**ID:** `8-5-explorer-bulk-delete-operations`
+**Description:** Add multi-card selection checkboxes, a "Select All" toggle, a live selected counter, and a bulk-delete endpoint (`DELETE /api/cards/bulk` and `deleteCards(ids)`) with confirmation dialog in `QuestionExplorer.svelte`.
+**Acceptance Criteria:**
+- **Given** the Question Explorer view
+- **When** user selects one or more cards using checkboxes or "Select All"
+- **Then** a floating/top action bar displays the count of selected cards and a "🗑️ Delete Selected (N)" button.
+- **And** clicking delete shows a confirmation modal, calls `DELETE /api/cards/bulk`, removes the cards from SQLite, and updates the UI instantly.
+
+
 
 
 
