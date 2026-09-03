@@ -40,6 +40,7 @@ export function createCli(providedContext?: AppContext): Command {
           sourceRepo: context.sourceRepo,
           syncRepo: context.syncRepo,
           cardRepo: context.cardRepo,
+          documentRepo: context.docRepo,
           ingestionService: context.ingestionService,
           exportService: context.exportService,
           ankiConnectAdapter: context.ankiConnectAdapter,
