@@ -124,7 +124,11 @@ journey
 | **FR-206** | **Adaptive Generation Backfill Loop** | The card generation service MUST employ adaptive oversampling and retry backfilling to ensure the user-specified target count of valid flashcards is achieved per chunk even when ungrounded drafts are discarded. | High |
 | **FR-207** | **Document Provenance & Material Reference** | Generated flashcards MUST retain rich material references (Document Title, Origin URL, Section / Topic Tag) presented in the Explorer, Editor Drawer, and exported files. | Medium |
 | **FR-306** | **Printable PDF Export Support** | The export engine MUST support `pdf` format requests by routing to print-optimized HTML study sheets with `@media print` CSS for physical paper flashcards and browser "Save as PDF". | High |
-| **FR-413** | **Question Explorer Bulk Deletion** | The Question Explorer MUST provide multi-card selection checkboxes, a "Select All" toggle, a selected item counter badge, and bulk-delete API support (`DELETE /api/cards/bulk`) with user confirmation. | High |
+| **FR-413** | **Question Explorer Bulk Deletion** | The Question Explorer MUST provide multi-card selection checkboxes, a "Select All" toggle, a selected item counter badge, and bulk-delete API support (`POST /api/cards/bulk-delete`) with user confirmation. | High |
+| **FR-208** | **Configurable Question Depth & Granularity** | The generation engine MUST support selectable card depth modes (`atomic`: rapid 1-fact recall, `deep-dive`: comprehensive multi-concept mechanisms, tradeoffs and structured explanations, `scenario`: applied architectural / troubleshooting case studies). | High |
+| **FR-209** | **Configurable Document Context Chunk Sizing** | The text chunking engine MUST support adjustable chunk size multipliers (`1x` 2,000 chars, `2x` 4,000 chars, `4x` 8,000 chars, or `full-document` mode) allowing macro-level cross-section synthesis for long articles. | High |
+| **FR-210** | **Card Depth Prompt Calibrations** | Prompt templates MUST dynamically adapt active-recall formatting and conciseness rules based on the selected depth mode while strictly enforcing verbatim quote grounding. | High |
+| **FR-414** | **UI Question Depth & Scope Controls** | The Generate Studio UI and CLI `generate` command MUST expose interactive options for selecting Card Depth and Document Context Multiplier with real-time descriptions. | High |
 
 ---
 

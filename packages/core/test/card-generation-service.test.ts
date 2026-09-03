@@ -143,4 +143,42 @@ describe("CardGenerationService", () => {
     expect(drafts[0].question).toBe("What is Raft?");
     expect(drafts[1].question).toBe("How does Raft elect leaders?");
   });
+
+  it("passes depthMode and chunkMultiplier through to PromptBuilder and TextChunker", async () => {
+    let capturedPrompt = "";
+    const mockProvider: LLMProviderPort = {
+      providerName: "test-llm",
+      async generateQAPairs(_text: string, options: any): Promise<CardGenerationDraft[]> {
+        capturedPrompt = options.personaPrompt;
+        return [
+          {
+            question: "How do Raft terms operate during network partitions?",
+            answer: "Terms act as logical clocks. Leaders in disconnected minor partitions cannot commit entries because they fail to acquire quorum votes.",
+            sourceQuote: "Terms act as logical clocks in Raft.",
+            difficulty: "expert",
+          },
+        ];
+      },
+    };
+
+    const service = new CardGenerationService(mockProvider);
+    const doc: CleanTextDocument = {
+      id: "doc-5",
+      sourceId: "source-5",
+      title: "Raft Partitions",
+      textContent: "Terms act as logical clocks in Raft. When a partition occurs, isolated leaders cannot commit logs.",
+      contentHash: "hash-5",
+    };
+
+    const drafts = await service.generateFromDocument(doc, {
+      depthMode: "deep-dive",
+      difficulty: "expert",
+      chunkOptions: { chunkMultiplier: 3 },
+      targetCountPerChunk: 1,
+    });
+
+    expect(drafts.length).toBe(1);
+    expect(capturedPrompt).toContain("TASK: Synthesize exactly 3 comprehensive DEEP-DIVE flashcards");
+    expect(capturedPrompt).toContain("DEEP-DIVE PEDAGOGICAL RULES");
+  });
 });

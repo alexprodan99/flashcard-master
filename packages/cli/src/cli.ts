@@ -8,6 +8,7 @@ import {
   type DataSourceType,
   type DifficultyLevel,
   type PersonaType,
+  type CardDepthMode,
   CardGenerationService,
 } from "@flashcard-master/core";
 import { createLLMAdapter } from "@flashcard-master/adapters";
@@ -190,6 +191,8 @@ export function createCli(providedContext?: AppContext): Command {
     .option("--endpoint <endpoint>", "Custom API endpoint (e.g. for Ollama / LocalAI)")
     .option("--difficulty <level>", "Difficulty level: beginner, intermediate, expert", "intermediate")
     .option("--persona <persona>", "Prompt persona: socratic-mentor, strict-examiner, executive-synthesizer", "socratic-mentor")
+    .option("-D, --depth <depth>", "Question depth & granularity: atomic, deep-dive, scenario", "atomic")
+    .option("-M, --chunk-multiplier <multiplier>", "Context chunk size multiplier (1, 2, 3, 5, or 0 for full document)", "1")
     .option("-d, --deck <deck>", "Override destination deck")
     .option("--enforce-grounding", "Enforce strict verbatim citation checks", true)
     .action(async (sourceId: string | undefined, options: any) => {
@@ -220,6 +223,8 @@ export function createCli(providedContext?: AppContext): Command {
         }
 
         let totalCardsCreated = 0;
+        const multiplier = parseFloat(options.chunkMultiplier) || 1;
+        const fullDocument = multiplier === 0;
 
         for (const s of sources) {
           if (!s) continue;
@@ -234,6 +239,8 @@ export function createCli(providedContext?: AppContext): Command {
             const drafts = await genService.generateFromDocument(cleanDoc, {
               difficulty: options.difficulty as DifficultyLevel,
               persona: options.persona as PersonaType,
+              depthMode: options.depth as CardDepthMode,
+              chunkOptions: { chunkMultiplier: multiplier, fullDocument },
               enforceGrounding: options.enforceGrounding,
             });
 

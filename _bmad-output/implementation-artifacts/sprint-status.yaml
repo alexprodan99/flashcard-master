@@ -99,4 +99,11 @@ development_status:
   8-5-explorer-bulk-delete-operations: done
   epic-8-retrospective: done
 
+  epic-9: done
+  9-1-question-depth-and-granularity-prompts: done
+  9-2-configurable-chunk-sizing-and-full-doc: done
+  9-3-api-and-cli-depth-controls: done
+  9-4-generate-studio-depth-and-scope-ui: done
+  epic-9-retrospective: done
+
 

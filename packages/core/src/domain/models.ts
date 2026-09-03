@@ -31,6 +31,9 @@ export type DifficultyLevel = z.infer<typeof DifficultyLevelSchema>;
 export const PersonaTypeSchema = z.enum(["socratic-mentor", "strict-examiner", "executive-synthesizer"]);
 export type PersonaType = z.infer<typeof PersonaTypeSchema>;
 
+export const CardDepthModeSchema = z.enum(["atomic", "deep-dive", "scenario"]);
+export type CardDepthMode = z.infer<typeof CardDepthModeSchema>;
+
 export const PersonaDefinitionSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),

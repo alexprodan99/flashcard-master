@@ -26,4 +26,31 @@ describe("TextChunker", () => {
     expect(chunks[0]).toContain(p1);
     expect(chunks[1]).toContain(p2);
   });
+
+  it("scales chunk size with chunkMultiplier", () => {
+    const p1 = "Paragraph 1 discusses leader election mechanics and heartbeat timers.";
+    const p2 = "Paragraph 2 discusses log replication and index consistency.";
+    const text = `${p1}\n\n${p2}`;
+
+    // Base size 80 splits into 2 chunks
+    const baseChunks = chunker.chunkText(text, { maxChunkSize: 80 });
+    expect(baseChunks.length).toBe(2);
+
+    // Multiplier 2x (size 160) fits both paragraphs in 1 chunk
+    const scaledChunks = chunker.chunkText(text, { maxChunkSize: 80, chunkMultiplier: 2 });
+    expect(scaledChunks.length).toBe(1);
+    expect(scaledChunks[0]).toContain(p1);
+    expect(scaledChunks[0]).toContain(p2);
+  });
+
+  it("returns entire text as single chunk when fullDocument is true or chunkMultiplier is 0", () => {
+    const text = "A".repeat(5000);
+    const fullDocChunks = chunker.chunkText(text, { maxChunkSize: 100, fullDocument: true });
+    expect(fullDocChunks.length).toBe(1);
+    expect(fullDocChunks[0].length).toBe(5000);
+
+    const zeroMultiplierChunks = chunker.chunkText(text, { maxChunkSize: 100, chunkMultiplier: 0 });
+    expect(zeroMultiplierChunks.length).toBe(1);
+    expect(zeroMultiplierChunks[0].length).toBe(5000);
+  });
 });

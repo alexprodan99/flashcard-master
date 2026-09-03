@@ -121,6 +121,8 @@ export async function generateCards(payload: {
   apiKey?: string;
   persona?: string;
   difficulty?: string;
+  depthMode?: string;
+  chunkMultiplier?: number;
   limit?: number;
   targetDeck?: string;
   enforceGrounding?: boolean;
