@@ -62,6 +62,7 @@ You MUST respond ONLY with a JSON array matching this exact schema:
             { role: "user", content: text },
           ],
           response_format: { type: "json_object" },
+          max_tokens: 4096,
           temperature: 0.2,
         }),
       });

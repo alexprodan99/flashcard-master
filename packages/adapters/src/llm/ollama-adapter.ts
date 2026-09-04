@@ -55,6 +55,10 @@ Respond with a JSON object containing a "cards" array:
             { role: "user", content: text },
           ],
           format: "json",
+          options: {
+            num_predict: 4096,
+            temperature: 0.2,
+          },
           stream: false,
         }),
       });
