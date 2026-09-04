@@ -74,9 +74,15 @@ describe("AnkiConnectAdapter", () => {
       if (body.action === "createDeck") {
         return { ok: true, json: async () => ({ result: 123456789, error: null }) };
       }
+      if (body.action === "canAddNotes") {
+        // Return 1 addable (true), 1 existing (false)
+        return { ok: true, json: async () => ({ result: [true, false], error: null }) };
+      }
+      if (body.action === "addNote") {
+        return { ok: true, json: async () => ({ result: 100001, error: null }) };
+      }
       if (body.action === "addNotes") {
-        // Return 1 added card ID, 1 null (duplicate)
-        return { ok: true, json: async () => ({ result: [100001, null], error: null }) };
+        return { ok: true, json: async () => ({ result: [100001], error: null }) };
       }
       if (body.action === "findNotes") {
         return { ok: true, json: async () => ({ result: [100002], error: null }) };

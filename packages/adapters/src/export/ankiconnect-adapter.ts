@@ -124,22 +124,19 @@ export class AnkiConnectAdapter implements ExporterPort {
       };
     }
 
-    const deckName = options.targetDeck || cards[0].targetDeck || "Default";
     const includeCitation = options.includeCitationFootnotes ?? true;
 
     try {
-      // 1. Ensure deck exists in Anki
-      await this.createDeck(deckName);
-
-      // 2. Format notes array
+      // 1. Format notes array with per-card or override deck
       const notes = cards.map((c) => {
+        const cardDeck = options.targetDeck || c.targetDeck || "Default";
         let backHtml = this.escapeHtml(c.answer);
         if (includeCitation && c.sourceQuote) {
           backHtml += `<div class="citation"><strong>Source Citation:</strong> "${this.escapeHtml(c.sourceQuote)}"</div>`;
         }
 
         return {
-          deckName,
+          deckName: cardDeck,
           modelName: "Basic",
           fields: {
             Front: this.escapeHtml(c.question),
@@ -153,33 +150,58 @@ export class AnkiConnectAdapter implements ExporterPort {
         };
       });
 
-      // 3. Send batch addNotes request
-      const results = await this.invoke<Array<number | null>>("addNotes", { notes });
+      // 2. Ensure all distinct target decks exist in Anki
+      const distinctDecks = Array.from(new Set(notes.map((n) => n.deckName)));
+      for (const d of distinctDecks) {
+        await this.createDeck(d);
+      }
 
+      // 3. Query canAddNotes to safely distinguish new cards from existing cards
+      let canAddFlags: boolean[] = [];
+      try {
+        canAddFlags = await this.invoke<boolean[]>("canAddNotes", { notes });
+      } catch {
+        canAddFlags = new Array(notes.length).fill(true);
+      }
+
+      const results: Array<number | null> = new Array(cards.length).fill(null);
       let addedCards = 0;
       let updatedCards = 0;
       let duplicateOrFailedCards = 0;
 
-      for (let i = 0; i < results.length; i++) {
-        const resId = results[i];
-        if (resId !== null) {
-          addedCards++;
-        } else {
-          // If note was rejected because it exists in Anki, update existing note's fields
+      for (let i = 0; i < cards.length; i++) {
+        const card = cards[i];
+        const note = notes[i];
+        const canAdd = canAddFlags[i] ?? true;
+
+        if (canAdd) {
           try {
-            const card = cards[i];
+            const noteId = await this.invoke<number>("addNote", { note });
+            results[i] = noteId;
+            addedCards++;
+          } catch {
+            duplicateOrFailedCards++;
+          }
+        } else {
+          // Existing note in Anki: look up existing note ID and update fields
+          try {
             const escapedQuestion = card.question.replace(/["\\]/g, "\\$&");
-            const escapedDeck = deckName.replace(/["\\]/g, "\\$&");
-            const existingIds = await this.invoke<number[]>("findNotes", {
-              query: `"deck:${escapedDeck}" "Front:${escapedQuestion}"`,
+            const escapedDeck = note.deckName.replace(/["\\]/g, "\\$&");
+            let existingIds = await this.invoke<number[]>("findNotes", {
+              query: `deck:"${escapedDeck}" "Front:${escapedQuestion}"`,
             });
+            if (!existingIds || existingIds.length === 0) {
+              existingIds = await this.invoke<number[]>("findNotes", {
+                query: `deck:"${escapedDeck}" "${escapedQuestion}"`,
+              });
+            }
 
             if (existingIds && existingIds.length > 0) {
               const noteId = existingIds[0];
               await this.invoke("updateNoteFields", {
                 note: {
                   id: noteId,
-                  fields: notes[i].fields,
+                  fields: note.fields,
                 },
               });
               if (card.tags && card.tags.length > 0) {

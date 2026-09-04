@@ -191,9 +191,13 @@ export async function pushToAnki(targetDeck?: string): Promise<{ success: boolea
     throw new Error(data.error || 'Failed to push to AnkiConnect');
   }
   const data = await res.json();
+  const added = data.addedCards ?? 0;
+  const updated = data.updatedCards ?? 0;
+  const skipped = data.duplicateOrFailedCards ?? 0;
+  const totalSuccess = added + updated;
   return {
     success: true,
-    cardsPushed: data.addedCards ?? data.totalCards ?? 0,
-    message: `Added ${data.addedCards ?? 0} cards (${data.duplicateOrFailedCards ?? 0} skipped).`,
+    cardsPushed: totalSuccess,
+    message: `Synced ${totalSuccess} cards (${added} added, ${updated} updated${skipped > 0 ? `, ${skipped} skipped` : ''}).`,
   };
 }
