@@ -113,4 +113,25 @@ describe("IngestionService", () => {
     expect(results[0].sourceId).toBe(s1.id);
     expect(results[0].newCount).toBe(1);
   });
+
+  it("does not create duplicate documents in DocumentRepository on repeated syncs of the same items", async () => {
+    const source = sourceRepo.create({ name: "Duplicate Test Blog", type: "rss", uri: "https://dup.blog" });
+
+    mockStrategy.mockItems = [
+      { id: "1", sourceId: source.id, title: "Article A", rawContent: "Content A", guid: "guid-A", originUrl: "https://dup.blog/a" },
+      { id: "2", sourceId: source.id, title: "Article B", rawContent: "Content B", guid: "guid-B", originUrl: "https://dup.blog/b" },
+    ];
+
+    // First sync
+    await service.syncSource(source.id);
+    expect(docRepo.listBySourceId(source.id).length).toBe(2);
+
+    // Second sync of exact same items
+    await service.syncSource(source.id);
+    expect(docRepo.listBySourceId(source.id).length).toBe(2);
+
+    // Third sync
+    await service.syncSource(source.id);
+    expect(docRepo.listBySourceId(source.id).length).toBe(2);
+  });
 });

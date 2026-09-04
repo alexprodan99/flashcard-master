@@ -95,7 +95,7 @@
   }
 
   async function handleSynthesizeSingle() {
-    if (!configDoc || !source) return;
+    if (!configDoc || !source || isGenerating) return;
     isGenerating = true;
     successNotice = null;
 
@@ -569,7 +569,7 @@
     color: white;
   }
 
-  .btn-primary:hover {
+  .btn-primary:hover:not(:disabled) {
     background: #4f46e5;
   }
 
@@ -579,8 +579,15 @@
     border-color: #334155;
   }
 
-  .btn-secondary:hover {
+  .btn-secondary:hover:not(:disabled) {
     background: rgba(255, 255, 255, 0.15);
+  }
+
+  .btn:disabled,
+  .btn[disabled] {
+    opacity: 0.5 !important;
+    cursor: not-allowed !important;
+    pointer-events: none !important;
   }
 
   .type-badge {

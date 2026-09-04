@@ -26,7 +26,13 @@ export class DocumentRepository {
   }
 
   upsert(rawDoc: Partial<DiscoveredDocument> & { sourceId: string; title: string; textContent: string }): DiscoveredDocument {
-    const id = rawDoc.id || crypto.randomUUID();
+    const id =
+      rawDoc.id ||
+      crypto
+        .createHash("sha256")
+        .update(`${rawDoc.sourceId}:${rawDoc.url || rawDoc.title}`)
+        .digest("hex")
+        .slice(0, 32);
     const wordCount =
       rawDoc.wordCount !== undefined
         ? rawDoc.wordCount
@@ -80,7 +86,13 @@ export class DocumentRepository {
 
     const transaction = this.db.transaction((items) => {
       for (const rawDoc of items) {
-        const id = rawDoc.id || crypto.randomUUID();
+        const id =
+          rawDoc.id ||
+          crypto
+            .createHash("sha256")
+            .update(`${rawDoc.sourceId}:${rawDoc.url || rawDoc.title}`)
+            .digest("hex")
+            .slice(0, 32);
         const wordCount =
           rawDoc.wordCount !== undefined
             ? rawDoc.wordCount

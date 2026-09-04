@@ -70,9 +70,10 @@ export class WebReaderStrategy implements IngestionStrategy {
       }
 
       const publishedAt = safeIsoDate(article?.publishedTime) || new Date().toISOString();
+      const docId = crypto.createHash("sha256").update(`${sourceId}:${originUrl}`).digest("hex").slice(0, 32);
 
       return {
-        id: crypto.randomUUID(),
+        id: docId,
         sourceId,
         title: title || "Untitled Document",
         rawContent,

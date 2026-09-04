@@ -15,6 +15,7 @@ export interface AnkiConnectHealth {
 export interface AnkiConnectSyncResult {
   totalCards: number;
   addedCards: number;
+  updatedCards: number;
   duplicateOrFailedCards: number;
   noteIds: Array<number | null>;
   error?: string;
@@ -105,6 +106,7 @@ export class AnkiConnectAdapter implements ExporterPort {
       return {
         totalCards: 0,
         addedCards: 0,
+        updatedCards: 0,
         duplicateOrFailedCards: 0,
         noteIds: [],
       };
@@ -115,6 +117,7 @@ export class AnkiConnectAdapter implements ExporterPort {
       return {
         totalCards: cards.length,
         addedCards: 0,
+        updatedCards: 0,
         duplicateOrFailedCards: cards.length,
         noteIds: [],
         error: `AnkiConnect is offline or unreachable: ${health.error}`,
@@ -153,12 +156,57 @@ export class AnkiConnectAdapter implements ExporterPort {
       // 3. Send batch addNotes request
       const results = await this.invoke<Array<number | null>>("addNotes", { notes });
 
-      const addedCards = results.filter((id) => id !== null).length;
-      const duplicateOrFailedCards = results.filter((id) => id === null).length;
+      let addedCards = 0;
+      let updatedCards = 0;
+      let duplicateOrFailedCards = 0;
+
+      for (let i = 0; i < results.length; i++) {
+        const resId = results[i];
+        if (resId !== null) {
+          addedCards++;
+        } else {
+          // If note was rejected because it exists in Anki, update existing note's fields
+          try {
+            const card = cards[i];
+            const escapedQuestion = card.question.replace(/["\\]/g, "\\$&");
+            const escapedDeck = deckName.replace(/["\\]/g, "\\$&");
+            const existingIds = await this.invoke<number[]>("findNotes", {
+              query: `"deck:${escapedDeck}" "Front:${escapedQuestion}"`,
+            });
+
+            if (existingIds && existingIds.length > 0) {
+              const noteId = existingIds[0];
+              await this.invoke("updateNoteFields", {
+                note: {
+                  id: noteId,
+                  fields: notes[i].fields,
+                },
+              });
+              if (card.tags && card.tags.length > 0) {
+                try {
+                  await this.invoke("setNoteTags", {
+                    note: noteId,
+                    tags: card.tags.join(" "),
+                  });
+                } catch {
+                  // Ignore tag errors if unsupported
+                }
+              }
+              results[i] = noteId;
+              updatedCards++;
+            } else {
+              duplicateOrFailedCards++;
+            }
+          } catch {
+            duplicateOrFailedCards++;
+          }
+        }
+      }
 
       return {
         totalCards: cards.length,
         addedCards,
+        updatedCards,
         duplicateOrFailedCards,
         noteIds: results,
       };
@@ -166,6 +214,7 @@ export class AnkiConnectAdapter implements ExporterPort {
       return {
         totalCards: cards.length,
         addedCards: 0,
+        updatedCards: 0,
         duplicateOrFailedCards: cards.length,
         noteIds: [],
         error: err.message,
@@ -176,18 +225,25 @@ export class AnkiConnectAdapter implements ExporterPort {
   async export(cards: Flashcard[], options: ExportOptions = {}): Promise<ExportResult> {
     const result = await this.syncCards(cards, options);
 
+    const totalSuccessful = result.addedCards + result.updatedCards;
+
     if (result.error) {
       return {
         format: "ankiconnect",
-        successCount: result.addedCards,
+        successCount: totalSuccessful,
         message: `AnkiConnect live sync failed: ${result.error}`,
       };
     }
 
+    const details: string[] = [];
+    if (result.addedCards > 0) details.push(`${result.addedCards} added`);
+    if (result.updatedCards > 0) details.push(`${result.updatedCards} updated`);
+    if (result.duplicateOrFailedCards > 0) details.push(`${result.duplicateOrFailedCards} skipped`);
+
     return {
       format: "ankiconnect",
-      successCount: result.addedCards,
-      message: `Successfully synced ${result.addedCards} cards to Anki (${result.duplicateOrFailedCards} duplicates/skipped).`,
+      successCount: totalSuccessful,
+      message: `Successfully synced ${totalSuccessful} cards to Anki (${details.join(", ") || "up to date"}).`,
     };
   }
 }

@@ -219,6 +219,7 @@
 
   async function handleGenerate(e: Event) {
     e.preventDefault();
+    if (isGenerating) return;
     const targetedDocIds = Object.keys(selectedDocIds).filter((id) => selectedDocIds[id]);
 
     if (targetedDocIds.length === 0 && selectedSourceIds.length === 0) {
@@ -826,9 +827,12 @@
     margin-top: 10px;
   }
 
+  .btn:disabled,
+  .btn[disabled],
   .btn-generate:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+    opacity: 0.5 !important;
+    cursor: not-allowed !important;
+    pointer-events: none !important;
   }
 
   .spinner-inline {

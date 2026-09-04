@@ -55,9 +55,10 @@ export class LocalFileStrategy implements IngestionStrategy {
       const content = fs.readFileSync(filePath, "utf8");
       const title = this.extractTitle(content, filePath);
       const normalizedPath = filePath.replace(/\\/g, "/");
+      const docId = crypto.createHash("sha256").update(`${sourceId}:${normalizedPath}`).digest("hex").slice(0, 32);
 
       return {
-        id: crypto.randomUUID(),
+        id: docId,
         sourceId,
         title,
         rawContent: content,

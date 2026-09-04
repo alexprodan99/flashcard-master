@@ -220,7 +220,7 @@ export function runMigrations(db: Database.Database): void {
     WHERE source_id IS NOT NULL AND (source_origin_url IS NULL OR document_title IS NULL);
   `);
 
-  // 6. Ensure documents table and index exist
+  // 6. Ensure documents table, deduplication, and indices exist
   db.exec(`
     CREATE TABLE IF NOT EXISTS documents (
         id TEXT PRIMARY KEY,
@@ -233,6 +233,13 @@ export function runMigrations(db: Database.Database): void {
         created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
         updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
+    DELETE FROM documents
+    WHERE rowid NOT IN (
+      SELECT min(rowid)
+      FROM documents
+      GROUP BY source_id, COALESCE(url, title)
+    );
     CREATE INDEX IF NOT EXISTS idx_documents_source_id ON documents(source_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_source_url ON documents(source_id, url) WHERE url IS NOT NULL;
   `);
 }
