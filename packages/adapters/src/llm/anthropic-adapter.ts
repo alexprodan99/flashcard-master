@@ -1,5 +1,5 @@
 import type { LLMProviderPort, CardGenerationDraft, DifficultyLevel } from "@flashcard-master/core";
-import { LLMAuthenticationError, LLMRateLimitError, LLMResponseParsingError, LLMNetworkError, CardDraftArraySchema, cleanJsonString, type LLMConfig } from "./types.js";
+import { LLMAuthenticationError, LLMRateLimitError, LLMResponseParsingError, LLMNetworkError, parseCardDraftsFromJson, type LLMConfig } from "./types.js";
 
 export class AnthropicAdapter implements LLMProviderPort {
   readonly providerName = "anthropic";
@@ -33,6 +33,7 @@ export class AnthropicAdapter implements LLMProviderPort {
     const systemPrompt = `${options.personaPrompt}
 Generate exactly ${count} atomic Front/Back flashcards from the provided text at "${options.difficulty}" difficulty.
 CRITICAL GROUNDING RULE: For each card, copy and paste an EXACT, word-for-word sentence from the provided text into "sourceQuote". Do NOT paraphrase, edit, or summarize any words in "sourceQuote".
+CRITICAL JSON FORMATTING: Ensure all inner quotes inside strings (such as code snippets, filenames, or CLI flags) are strictly escaped with backslashes (\\").
 You MUST output ONLY a valid raw JSON array with no markdown code fences:
 [
   {
@@ -57,7 +58,7 @@ You MUST output ONLY a valid raw JSON array with no markdown code fences:
         },
         body: JSON.stringify({
           model: this.model,
-          max_tokens: 2000,
+          max_tokens: 4096,
           system: systemPrompt,
           messages: [{ role: "user", content: text }],
           temperature: 0.2,
@@ -81,17 +82,7 @@ You MUST output ONLY a valid raw JSON array with no markdown code fences:
         throw new LLMResponseParsingError(this.providerName, "Empty message response from Anthropic.");
       }
 
-      const cleanJson = cleanJsonString(rawText);
-      const parsedJson = JSON.parse(cleanJson);
-      const rawArray = Array.isArray(parsedJson) ? parsedJson : (parsedJson.cards || Object.values(parsedJson)[0]);
-
-      const validated = CardDraftArraySchema.parse(rawArray);
-      return validated.map((c) => ({
-        question: c.question,
-        answer: c.answer,
-        sourceQuote: c.sourceQuote,
-        difficulty: c.difficulty as DifficultyLevel,
-      }));
+      return parseCardDraftsFromJson(rawText, this.providerName);
     } catch (err: any) {
       if (
         err instanceof LLMAuthenticationError ||

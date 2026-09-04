@@ -1,5 +1,5 @@
 import type { LLMProviderPort, CardGenerationDraft, DifficultyLevel } from "@flashcard-master/core";
-import { LLMResponseParsingError, LLMNetworkError, CardDraftArraySchema, cleanJsonString, type LLMConfig } from "./types.js";
+import { LLMResponseParsingError, LLMNetworkError, parseCardDraftsFromJson, type LLMConfig } from "./types.js";
 
 export class OllamaAdapter implements LLMProviderPort {
   readonly providerName = "ollama";
@@ -27,6 +27,7 @@ export class OllamaAdapter implements LLMProviderPort {
     const systemPrompt = `${options.personaPrompt}
 Generate exactly ${count} atomic Front/Back flashcards from the provided document at "${options.difficulty}" difficulty.
 CRITICAL GROUNDING RULE: For each card, copy and paste an EXACT, word-for-word sentence from the provided text into "sourceQuote". Do NOT paraphrase, edit, or summarize any words in "sourceQuote".
+CRITICAL JSON FORMATTING: Ensure all inner quotes inside strings (such as code snippets, filenames, or CLI flags) are strictly escaped with backslashes (\\").
 Respond with a JSON object containing a "cards" array:
 {
   "cards": [
@@ -69,17 +70,7 @@ Respond with a JSON object containing a "cards" array:
         throw new LLMResponseParsingError(this.providerName, "Empty message response from Ollama.");
       }
 
-      const cleanJson = cleanJsonString(content);
-      const parsedJson = JSON.parse(cleanJson);
-      const rawArray = Array.isArray(parsedJson) ? parsedJson : (parsedJson.cards || Object.values(parsedJson)[0]);
-
-      const validated = CardDraftArraySchema.parse(rawArray);
-      return validated.map((c) => ({
-        question: c.question,
-        answer: c.answer,
-        sourceQuote: c.sourceQuote,
-        difficulty: c.difficulty as DifficultyLevel,
-      }));
+      return parseCardDraftsFromJson(content, this.providerName);
     } catch (err: any) {
       if (err instanceof LLMNetworkError || err instanceof LLMResponseParsingError) {
         throw err;
