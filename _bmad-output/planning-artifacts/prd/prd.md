@@ -134,6 +134,11 @@ journey
 | **FR-209** | **Configurable Document Context Chunk Sizing** | The text chunking engine MUST support adjustable chunk size multipliers (`1x` 2,000 chars, `2x` 4,000 chars, `4x` 8,000 chars, or `full-document` mode) allowing macro-level cross-section synthesis for long articles. | High |
 | **FR-210** | **Card Depth Prompt Calibrations** | Prompt templates MUST dynamically adapt active-recall formatting and conciseness rules based on the selected depth mode while strictly enforcing verbatim quote grounding. | High |
 | **FR-414** | **UI Question Depth & Scope Controls** | The Generate Studio UI and CLI `generate` command MUST expose interactive options for selecting Card Depth and Document Context Multiplier with real-time descriptions. | High |
+| **FR-417** | **Hierarchical Multi-Level Scope Tree** | The Generate Studio MUST provide an interactive hierarchical scope tree allowing users to toggle whole data sources OR expand sources to individually select/deselect specific discovered documents with tri-state checkbox logic and live document selection counters. | High |
+| **FR-418** | **Lazy Accordion Document Catalog & Search Filter** | The Generate Studio MUST lazy-load discovered documents when a data source accordion is expanded and provide an in-accordion search input to filter documents by title/keyword. | High |
+| **FR-419** | **Document Text Preview in Generate Studio** | The Generate Studio MUST allow users to preview clean extracted text for any document directly within the scope selector via an inline `👁️ Preview` action without navigating away. | High |
+| **FR-420** | **Document-Level In-Context Full Configuration Modal** | The Data Sources Document Inspector MUST provide a "⚡ Configure & Generate" action opening a comprehensive configuration modal with full access to AI engine, model, persona, difficulty, depth mode, chunk multiplier, and target deck. | High |
+| **FR-421** | **Deep-Link Scope Pre-selection via URL Parameters** | The Generate Studio MUST support deep-linking via query parameters (e.g., `?docId=<id>` or `?sourceId=<id>`) to automatically expand the target source, pre-select the document, and highlight it on mount. | Medium |
 
 ---
 

@@ -114,4 +114,12 @@ development_status:
   10-5-cli-document-inspection-and-verification: done
   epic-10-retrospective: done
 
+  epic-11: done
+  11-1-shared-generation-config-and-preview-components: done
+  11-2-document-inspector-configure-and-generate-modal: done
+  11-3-hierarchical-scope-selector-with-lazy-loading-and-preview: done
+  11-4-deep-link-url-parameters-and-bi-directional-flow: done
+  11-5-e2e-verification-and-regression-tests: done
+  epic-11-retrospective: done
+
 
