@@ -1,4 +1,4 @@
-import type { DashboardStats, DataSource, Flashcard, GenerationResult } from './types';
+import type { DashboardStats, DataSource, Flashcard, GenerationResult, DiscoveredDocument } from './types';
 
 export async function fetchStats(): Promise<DashboardStats> {
   const res = await fetch('/api/stats');
@@ -115,7 +115,8 @@ export async function deleteCardsBulk(ids: string[]): Promise<{ success: boolean
 }
 
 export async function generateCards(payload: {
-  sourceIds: string[];
+  sourceIds?: string[];
+  documentIds?: string[];
   provider: string;
   model?: string;
   apiKey?: string;
@@ -137,6 +138,35 @@ export async function generateCards(payload: {
     throw new Error(data.error || 'Generation failed');
   }
   return res.json();
+}
+
+export async function fetchSourceDocuments(sourceId: string, search?: string): Promise<{ documents: DiscoveredDocument[]; total: number }> {
+  const query = search ? `?search=${encodeURIComponent(search)}` : '';
+  const res = await fetch(`/api/sources/${sourceId}/documents${query}`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to fetch source documents');
+  }
+  return res.json();
+}
+
+export async function fetchDocumentDetails(documentId: string): Promise<{ document: DiscoveredDocument }> {
+  const res = await fetch(`/api/documents/${documentId}`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to fetch document details');
+  }
+  return res.json();
+}
+
+export async function deleteDocument(documentId: string): Promise<boolean> {
+  const res = await fetch(`/api/documents/${documentId}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to delete document');
+  }
+  const data = await res.json();
+  return !!data.success;
 }
 
 export async function checkAnkiStatus(): Promise<{ connected: boolean; version?: number }> {

@@ -139,4 +139,45 @@ describe("CLI Application", () => {
 
     expect(errors.some((e) => e.includes("Invalid source type"))).toBe(true);
   });
+
+  it("lists discovered documents for a source via sources docs CLI command", async () => {
+    const source = context.sourceRepo.create({
+      name: "Distributed Systems Blog",
+      type: "rss",
+      uri: "https://example.com/dist.xml",
+    });
+
+    context.docRepo.upsert({
+      sourceId: source.id,
+      title: "Paxos vs Raft Comparison",
+      url: "https://example.com/paxos-raft",
+      textContent: "Detailed comparison of Paxos and Raft consensus algorithms.",
+    });
+
+    context.cardRepo.create({
+      sourceId: source.id,
+      question: "How does Raft simplify Paxos?",
+      answer: "By enforcing strong leader invariants.",
+      sourceQuote: "Raft simplifies Paxos.",
+      documentTitle: "Paxos vs Raft Comparison",
+      targetDeck: "Default",
+      personaUsed: "socratic-mentor",
+      difficulty: "intermediate",
+      tags: [],
+    });
+
+    const cli = createCli(context);
+    cli.exitOverride();
+
+    await cli.parseAsync(["node", "flashcard-master", "sources", "docs", source.id]);
+
+    expect(logs.some((l) => l.includes("Discovered Documents for \"Distributed Systems Blog\""))).toBe(true);
+    expect(logs.some((l) => l.includes("Paxos vs Raft Comparison"))).toBe(true);
+    expect(logs.some((l) => l.includes("Generated Cards: 1"))).toBe(true);
+
+    // Test JSON mode
+    logs = [];
+    await cli.parseAsync(["node", "flashcard-master", "sources", "docs", source.id, "--json"]);
+    expect(logs.some((l) => l.includes('"title": "Paxos vs Raft Comparison"'))).toBe(true);
+  });
 });

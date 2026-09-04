@@ -610,6 +610,56 @@ So that the interface naturally guides me from data ingestion to flashcard gener
 - **Then** generation synthesizes in-depth, multi-faceted flashcards with verbatim grounding.
 - **And** all unit, integration, and E2E tests across all workspaces pass 100% green.
 
+---
+
+## Epic 9: Data Sources Dashboard & Document Catalog Inspector
+
+**Goal:** Transform the Sources Manager into a full-featured Data Sources Dashboard and Document Catalog Inspector, allowing users to drill into any source, inspect all ingested articles/documents, view word counts, preview extracted text, and selectively generate flashcards from specific documents.
+
+### Story 9.1: Persistent Discovered Document Storage & Repository
+**ID:** `9-1-document-storage-and-sync-persistence`
+**Description:** Create a dedicated `documents` table in SQLite schema migrations and implement `DocumentRepository` in `@flashcard-master/core`. Update `IngestionService.syncSource()` to automatically upsert discovered articles/documents with title, URL, clean text, word count, and content hash during sync cycles.
+**Acceptance Criteria:**
+- **Given** an ingestion source being synced (RSS, Sitemap, Web, LLMs.txt, Local)
+- **When** `IngestionService.syncSource(sourceId)` executes
+- **Then** each extracted clean document is persisted into the `documents` SQLite table.
+- **And** `DocumentRepository` provides `listBySourceId(sourceId)`, `getById(id)`, `search(query)`, and `getDocumentCount(sourceId)`.
+
+### Story 9.2: Document Catalog REST APIs & Clean Text Preview
+**ID:** `9-2-document-catalog-rest-apis`
+**Description:** Implement backend REST endpoints in `packages/web/src/server.ts` to inspect documents (`GET /api/sources/:id/documents`, `GET /api/documents/:id`), fetch document counts, and support document-scoped card generation (`POST /api/generate` with `documentIds?: string[]`).
+**Acceptance Criteria:**
+- **Given** a client querying source documents
+- **When** `GET /api/sources/:id/documents` is requested
+- **Then** the server returns the array of discovered documents with metadata (title, URL, word count, discovery timestamp, generated card count).
+- **And** `GET /api/documents/:id` returns the full clean text content for inspection.
+
+### Story 9.3: Svelte 5 Data Sources Dashboard & Document Inspector Panel
+**ID:** `9-3-sources-dashboard-and-inspector-ui`
+**Description:** Enhance `SourcesView.svelte` and create `SourceDocumentInspector.svelte` (or interactive slide-over drawer) displaying real-time metrics per data source (total documents discovered, total cards produced, last sync timestamp) and an interactive searchable document table.
+**Acceptance Criteria:**
+- **Given** the Sources Manager view in Web UI
+- **When** the user clicks "Inspect Documents 📖" on any data source card
+- **Then** a document inspector modal/drawer opens displaying all discovered articles, search filter, word counts, and direct links to original source URLs.
+
+### Story 9.4: Document Clean Text Preview Drawer & Targeted Single-Article Card Generation
+**ID:** `9-4-document-text-preview-and-targeted-generation`
+**Description:** Add a clean text preview modal in the Document Inspector allowing users to inspect extracted article text, and add a "⚡ Generate Cards from this Article" action button that routes to Generate Studio or triggers targeted generation for the selected document.
+**Acceptance Criteria:**
+- **Given** an article in the Document Inspector
+- **When** the user clicks "Preview Text"
+- **Then** a formatted reader drawer shows the extracted clean text and word count.
+- **And** clicking "Synthesize Flashcards" triggers targeted card generation exclusively for that document.
+
+### Story 9.5: CLI Document Inspection Subcommand & Test Suite Verification
+**ID:** `9-5-cli-document-inspection-and-verification`
+**Description:** Add CLI subcommand `flashcard-master source docs <source-id>` to list all cached articles from the terminal, and write comprehensive automated test suites for repository, API, and CLI inspection.
+**Acceptance Criteria:**
+- **Given** terminal user running `flashcard-master source docs <source-id>`
+- **When** the command executes
+- **Then** a formatted table of discovered articles, URLs, word counts, and sync timestamps is printed.
+- **And** all unit, integration, and UI tests pass with 100% success.
+
 
 
 

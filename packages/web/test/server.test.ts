@@ -4,6 +4,7 @@ import {
   DataSourceRepository,
   SyncStateRepository,
   FlashcardRepository,
+  DocumentRepository,
   IngestionService,
   StrategyRegistry,
   ExporterRegistry,
@@ -66,6 +67,7 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
   let sourceRepo: DataSourceRepository;
   let syncRepo: SyncStateRepository;
   let cardRepo: FlashcardRepository;
+  let docRepo: DocumentRepository;
   let ingestionService: IngestionService;
   let exportService: ExportService;
   let ankiConnectAdapter: AnkiConnectAdapter;
@@ -77,10 +79,11 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     sourceRepo = new DataSourceRepository(db);
     syncRepo = new SyncStateRepository(db);
     cardRepo = new FlashcardRepository(db);
+    docRepo = new DocumentRepository(db);
 
     const stratRegistry = new StrategyRegistry();
     stratRegistry.register(new MockStrategy());
-    ingestionService = new IngestionService(sourceRepo, syncRepo, stratRegistry);
+    ingestionService = new IngestionService(sourceRepo, syncRepo, stratRegistry, docRepo);
 
     const exporterRegistry = new ExporterRegistry();
     exporterRegistry.register(new CsvExporter());
@@ -126,6 +129,7 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       sourceRepo,
       syncRepo,
       cardRepo,
+      documentRepo: docRepo,
       ingestionService,
       exportService,
       ankiConnectAdapter,
@@ -497,5 +501,67 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     const res = await fetch(`${serverUrl}/sources`);
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("text/html");
+  });
+
+  it("lists discovered documents with generated card counts via GET /api/sources/:id/documents", async () => {
+    const sources = sourceRepo.list();
+    const source = sources[0];
+
+    // Ingest documents
+    await ingestionService.syncSource(source.id);
+
+    const res = await fetch(`${serverUrl}/api/sources/${source.id}/documents`);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.documents).toBeDefined();
+    expect(data.documents.length).toBe(1);
+    expect(data.documents[0].title).toBe("Mock Doc");
+    expect(data.documents[0].cardCount).toBeDefined();
+  });
+
+  it("retrieves full document content via GET /api/documents/:id", async () => {
+    const sources = sourceRepo.list();
+    const source = sources[0];
+    const doc = docRepo.upsert({
+      sourceId: source.id,
+      title: "Detailed Article",
+      url: "https://example.com/details",
+      textContent: "Comprehensive breakdown of event-driven architectures.",
+    });
+
+    const res = await fetch(`${serverUrl}/api/documents/${doc.id}`);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.document).toBeDefined();
+    expect(data.document.title).toBe("Detailed Article");
+    expect(data.document.textContent).toContain("event-driven");
+  });
+
+  it("supports targeted per-document card generation in POST /api/generate", async () => {
+    const sources = sourceRepo.list();
+    const source = sources[0];
+    const doc = docRepo.upsert({
+      sourceId: source.id,
+      title: "Targeted Article",
+      url: "https://example.com/targeted",
+      textContent: "Some text content for generation testing.",
+    });
+
+    const res = await fetch(`${serverUrl}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: "ollama",
+        model: "phi4-mini",
+        documentIds: [doc.id],
+        limit: 1,
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.success).toBe(true);
+    expect(data.cardsCreated).toBe(1);
+    expect(data.newCards[0].documentTitle).toBe("Targeted Article");
   });
 });

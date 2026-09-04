@@ -15,6 +15,19 @@ export interface DataSource {
   updatedAt: string;
 }
 
+export interface DiscoveredDocument {
+  id: string;
+  sourceId: string;
+  title: string;
+  url?: string | null;
+  textContent: string;
+  contentHash?: string | null;
+  wordCount: number;
+  cardCount?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Flashcard {
   id: string;
   sourceId: string;

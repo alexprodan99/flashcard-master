@@ -24,6 +24,18 @@ CREATE TABLE IF NOT EXISTS sync_state (
     item_count INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS documents (
+    id TEXT PRIMARY KEY,
+    source_id TEXT NOT NULL REFERENCES data_sources(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    url TEXT,
+    text_content TEXT NOT NULL,
+    content_hash TEXT,
+    word_count INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
 CREATE TABLE IF NOT EXISTS flashcards (
     id TEXT PRIMARY KEY,
     source_id TEXT REFERENCES data_sources(id) ON DELETE SET NULL,
@@ -49,6 +61,7 @@ CREATE TABLE IF NOT EXISTS app_settings (
 CREATE INDEX IF NOT EXISTS idx_flashcards_source_id ON flashcards(source_id);
 CREATE INDEX IF NOT EXISTS idx_flashcards_target_deck ON flashcards(target_deck);
 CREATE INDEX IF NOT EXISTS idx_flashcards_difficulty ON flashcards(difficulty);
+CREATE INDEX IF NOT EXISTS idx_documents_source_id ON documents(source_id);
 `;
 
 export interface DatabaseClientOptions {
@@ -205,5 +218,21 @@ export function runMigrations(db: Database.Database): void {
       source_origin_url = COALESCE(source_origin_url, (SELECT uri FROM data_sources WHERE data_sources.id = flashcards.source_id)),
       document_title = COALESCE(document_title, (SELECT name FROM data_sources WHERE data_sources.id = flashcards.source_id))
     WHERE source_id IS NOT NULL AND (source_origin_url IS NULL OR document_title IS NULL);
+  `);
+
+  // 6. Ensure documents table and index exist
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS documents (
+        id TEXT PRIMARY KEY,
+        source_id TEXT NOT NULL REFERENCES data_sources(id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        url TEXT,
+        text_content TEXT NOT NULL,
+        content_hash TEXT,
+        word_count INTEGER DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_documents_source_id ON documents(source_id);
   `);
 }

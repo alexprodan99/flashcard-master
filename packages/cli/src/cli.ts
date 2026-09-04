@@ -40,6 +40,7 @@ export function createCli(providedContext?: AppContext): Command {
           sourceRepo: context.sourceRepo,
           syncRepo: context.syncRepo,
           cardRepo: context.cardRepo,
+          documentRepo: context.docRepo,
           ingestionService: context.ingestionService,
           exportService: context.exportService,
           ankiConnectAdapter: context.ankiConnectAdapter,
@@ -146,6 +147,60 @@ export function createCli(providedContext?: AppContext): Command {
         }
       } catch (err: any) {
         console.error(`Error removing source: ${err.message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  sourcesCmd
+    .command("docs <sourceId>")
+    .description("List all discovered documents and articles for a data source")
+    .option("-s, --search <query>", "Filter documents by title or URL")
+    .option("--json", "Output in JSON format")
+    .action((sourceId: string, options: { search?: string; json?: boolean }) => {
+      try {
+        const source = context.sourceRepo.getById(sourceId);
+        if (!source) {
+          console.error(`Error: Data source "${sourceId}" not found.`);
+          process.exitCode = 1;
+          return;
+        }
+
+        const docs = context.docRepo.listBySourceId(source.id, { search: options.search });
+        const allSourceCards = context.cardRepo.list({ sourceId: source.id });
+
+        const enrichedDocs = docs.map((doc) => {
+          const cardCount = allSourceCards.filter(
+            (c) =>
+              (c.documentTitle && c.documentTitle.toLowerCase() === doc.title.toLowerCase()) ||
+              (c.sourceOriginUrl && doc.url && c.sourceOriginUrl === doc.url)
+          ).length;
+          return {
+            ...doc,
+            cardCount,
+          };
+        });
+
+        if (options.json) {
+          console.log(JSON.stringify(enrichedDocs, null, 2));
+          return;
+        }
+
+        if (enrichedDocs.length === 0) {
+          console.log(`No discovered documents found for "${source.name}". Run 'flashcard-master sync ${source.id}' first.`);
+          return;
+        }
+
+        console.log(`\nDiscovered Documents for "${source.name}" (${enrichedDocs.length} total):`);
+        console.log("--------------------------------------------------------------------------------");
+        for (const doc of enrichedDocs) {
+          console.log(`• ${doc.title}`);
+          console.log(`  ID:    ${doc.id}`);
+          if (doc.url) console.log(`  URL:   ${doc.url}`);
+          console.log(`  Words: ${doc.wordCount.toLocaleString()} | Generated Cards: ${doc.cardCount}`);
+          console.log("--------------------------------------------------------------------------------");
+        }
+      } catch (err: any) {
+        console.error(`Error listing source documents: ${err.message}`);
         process.exitCode = 1;
       }
     });

@@ -81,6 +81,11 @@ journey
 | **FR-106** | **Database Source Registry** | The system MUST store data sources in a local SQLite database with editable metadata (name, type, URI, target deck, default tags, sync status). | Critical |
 | **FR-107** | **XML Sitemap Ingestion Strategy** | The system MUST support XML sitemaps (both `<urlset>` and `<sitemapindex>`), discover nested URLs with optional path/glob filtering, and ingest clean reader-mode text in parallel. | High |
 | **FR-108** | **LLMs.txt / Markdown Catalog Strategy** | The system MUST parse machine-readable `/llms.txt` and `/llms-full.txt` catalogs, extracting canonical URLs, topic categories, and summaries. | High |
+| **FR-109** | **Persistent Discovered Documents Catalog** | The system MUST persist all discovered documents/articles per data source in a dedicated `documents` table (`id`, `source_id`, `title`, `url`, `text_content`, `content_hash`, `word_count`, `created_at`, `updated_at`). | Critical |
+| **FR-110** | **Document Word Count & Freshness Tracking** | The system MUST compute word counts and track last updated timestamps for all discovered documents during sync cycles. | High |
+| **FR-414** | **Data Sources Dashboard & Document Catalog Inspector** | The Web UI MUST provide an interactive document catalog inspector per data source, displaying total discovered document count, search/filter, word counts, and card generation stats. | High |
+| **FR-415** | **Document Clean Text Preview & Selective Generation** | The Web UI MUST allow users to view extracted clean text for any discovered document and selectively trigger flashcard generation for specific chosen documents. | High |
+| **FR-416** | **CLI Discovered Document Inspection** | The CLI MUST provide `flashcard-master source docs <source-id>` to list all discovered articles with titles, URLs, and word counts from the terminal. | Medium |
 
 ### 3.2 Grounded Q&A Generation Engine
 

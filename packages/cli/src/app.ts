@@ -6,6 +6,7 @@ import {
   DataSourceRepository,
   SyncStateRepository,
   FlashcardRepository,
+  DocumentRepository,
   StrategyRegistry,
   IngestionService,
   PersonaStudioService,
@@ -38,6 +39,7 @@ export interface AppContext {
   sourceRepo: DataSourceRepository;
   syncRepo: SyncStateRepository;
   cardRepo: FlashcardRepository;
+  docRepo: DocumentRepository;
   strategyRegistry: StrategyRegistry;
   ingestionService: IngestionService;
   exporterRegistry: ExporterRegistry;
@@ -71,6 +73,7 @@ export function createAppContext(options: AppOptions = {}): AppContext {
   const sourceRepo = new DataSourceRepository(db);
   const syncRepo = new SyncStateRepository(db);
   const cardRepo = new FlashcardRepository(db);
+  const docRepo = new DocumentRepository(db);
 
   // Ingestion strategies
   const strategyRegistry = new StrategyRegistry();
@@ -80,7 +83,7 @@ export function createAppContext(options: AppOptions = {}): AppContext {
   strategyRegistry.register(new SitemapIngestionStrategy());
   strategyRegistry.register(new LlmsTxtIngestionStrategy());
 
-  const ingestionService = new IngestionService(sourceRepo, syncRepo, strategyRegistry);
+  const ingestionService = new IngestionService(sourceRepo, syncRepo, strategyRegistry, docRepo);
 
   // Exporters
   const ankiConnectAdapter = new AnkiConnectAdapter();
@@ -106,6 +109,7 @@ export function createAppContext(options: AppOptions = {}): AppContext {
     sourceRepo,
     syncRepo,
     cardRepo,
+    docRepo,
     strategyRegistry,
     ingestionService,
     exporterRegistry,

@@ -78,3 +78,16 @@ export interface CleanTextDocument {
   originUrl?: string;
   contentHash: string;
 }
+
+export const DiscoveredDocumentSchema = z.object({
+  id: z.string(),
+  sourceId: z.string(),
+  title: z.string().min(1),
+  url: z.string().nullable().optional(),
+  textContent: z.string(),
+  contentHash: z.string().nullable().optional(),
+  wordCount: z.number().int().nonnegative().default(0),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+export type DiscoveredDocument = z.infer<typeof DiscoveredDocumentSchema>;

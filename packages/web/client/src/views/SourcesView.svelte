@@ -3,11 +3,14 @@
   import { fetchSources, toggleSourceActive, deleteSource, syncSource, syncAllSources } from '../lib/api';
   import type { DataSource } from '../lib/types';
   import AddSourceModal from '../components/AddSourceModal.svelte';
+  import SourceDocumentInspector from '../components/SourceDocumentInspector.svelte';
 
   let sources = $state<DataSource[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let isAddModalOpen = $state(false);
+  let inspectingSource = $state<DataSource | null>(null);
+  let isInspectorOpen = $state(false);
   let syncingId = $state<string | null>(null);
   let toastMessage = $state<string | null>(null);
 
@@ -185,6 +188,16 @@
               <td>
                 <div class="actions-cell">
                   <button
+                    class="action-btn inspect-btn"
+                    onclick={() => {
+                      inspectingSource = s;
+                      isInspectorOpen = true;
+                    }}
+                    title="Inspect Discovered Documents & Articles"
+                  >
+                    📖 Documents
+                  </button>
+                  <button
                     class="action-btn sync-btn"
                     disabled={syncingId === s.id}
                     onclick={() => handleSync(s)}
@@ -217,6 +230,12 @@
   isOpen={isAddModalOpen}
   onClose={() => (isAddModalOpen = false)}
   onSourceCreated={handleSourceCreated}
+/>
+
+<SourceDocumentInspector
+  isOpen={isInspectorOpen}
+  source={inspectingSource}
+  onClose={() => (isInspectorOpen = false)}
 />
 
 <style>
@@ -394,6 +413,17 @@
     cursor: pointer;
     border: 1px solid transparent;
     transition: all 0.15s;
+  }
+
+  .inspect-btn {
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+    border-color: rgba(16, 185, 129, 0.3);
+  }
+
+  .inspect-btn:hover {
+    background: #10b981;
+    color: white;
   }
 
   .sync-btn {
