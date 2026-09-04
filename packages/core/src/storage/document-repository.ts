@@ -26,13 +26,29 @@ export class DocumentRepository {
   }
 
   upsert(rawDoc: Partial<DiscoveredDocument> & { sourceId: string; title: string; textContent: string }): DiscoveredDocument {
+    const cleanUrl = rawDoc.url && rawDoc.url.trim().length > 0 ? rawDoc.url.trim() : null;
+
+    let existingId = rawDoc.id;
+    if (cleanUrl) {
+      const row = this.db.prepare("SELECT id FROM documents WHERE source_id = ? AND url = ?").get(rawDoc.sourceId, cleanUrl) as { id: string } | undefined;
+      if (row) {
+        existingId = row.id;
+      }
+    } else if (!existingId) {
+      const row = this.db.prepare("SELECT id FROM documents WHERE source_id = ? AND url IS NULL AND title = ?").get(rawDoc.sourceId, rawDoc.title) as { id: string } | undefined;
+      if (row) {
+        existingId = row.id;
+      }
+    }
+
     const id =
-      rawDoc.id ||
+      existingId ||
       crypto
         .createHash("sha256")
-        .update(`${rawDoc.sourceId}:${rawDoc.url || rawDoc.title}`)
+        .update(`${rawDoc.sourceId}:${cleanUrl || rawDoc.title}`)
         .digest("hex")
         .slice(0, 32);
+
     const wordCount =
       rawDoc.wordCount !== undefined
         ? rawDoc.wordCount
@@ -56,7 +72,7 @@ export class DocumentRepository {
       id,
       rawDoc.sourceId,
       rawDoc.title,
-      rawDoc.url || null,
+      cleanUrl,
       rawDoc.textContent,
       rawDoc.contentHash || null,
       wordCount
@@ -72,6 +88,18 @@ export class DocumentRepository {
   upsertBatch(docs: Array<Partial<DiscoveredDocument> & { sourceId: string; title: string; textContent: string }>): void {
     if (!docs || docs.length === 0) return;
 
+    // 1. In-memory deduplication of the batch by (sourceId, url || title)
+    const dedupedMap = new Map<string, Partial<DiscoveredDocument> & { sourceId: string; title: string; textContent: string }>();
+    for (const doc of docs) {
+      const cleanUrl = doc.url && doc.url.trim().length > 0 ? doc.url.trim() : null;
+      const key = cleanUrl ? `url:${doc.sourceId}:${cleanUrl}` : `title:${doc.sourceId}:${doc.title.trim()}`;
+      dedupedMap.set(key, { ...doc, url: cleanUrl });
+    }
+    const dedupedDocs = Array.from(dedupedMap.values());
+
+    const findByUrlStmt = this.db.prepare("SELECT id FROM documents WHERE source_id = ? AND url = ?");
+    const findByTitleStmt = this.db.prepare("SELECT id FROM documents WHERE source_id = ? AND url IS NULL AND title = ?");
+
     const stmt = this.db.prepare(`
       INSERT INTO documents (id, source_id, title, url, text_content, content_hash, word_count)
       VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -84,15 +112,31 @@ export class DocumentRepository {
         updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
     `);
 
-    const transaction = this.db.transaction((items) => {
+    const transaction = this.db.transaction((items: typeof dedupedDocs) => {
       for (const rawDoc of items) {
+        const cleanUrl = rawDoc.url && rawDoc.url.trim().length > 0 ? rawDoc.url.trim() : null;
+        let existingId = rawDoc.id;
+
+        if (cleanUrl) {
+          const row = findByUrlStmt.get(rawDoc.sourceId, cleanUrl) as { id: string } | undefined;
+          if (row) {
+            existingId = row.id;
+          }
+        } else if (!existingId) {
+          const row = findByTitleStmt.get(rawDoc.sourceId, rawDoc.title) as { id: string } | undefined;
+          if (row) {
+            existingId = row.id;
+          }
+        }
+
         const id =
-          rawDoc.id ||
+          existingId ||
           crypto
             .createHash("sha256")
-            .update(`${rawDoc.sourceId}:${rawDoc.url || rawDoc.title}`)
+            .update(`${rawDoc.sourceId}:${cleanUrl || rawDoc.title}`)
             .digest("hex")
             .slice(0, 32);
+
         const wordCount =
           rawDoc.wordCount !== undefined
             ? rawDoc.wordCount
@@ -104,7 +148,7 @@ export class DocumentRepository {
           id,
           rawDoc.sourceId,
           rawDoc.title,
-          rawDoc.url || null,
+          cleanUrl,
           rawDoc.textContent,
           rawDoc.contentHash || null,
           wordCount
@@ -112,7 +156,7 @@ export class DocumentRepository {
       }
     });
 
-    transaction(docs);
+    transaction(dedupedDocs);
   }
 
   getById(id: string): DiscoveredDocument | null {

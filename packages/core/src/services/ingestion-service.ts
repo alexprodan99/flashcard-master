@@ -91,9 +91,7 @@ export class IngestionService {
           const docUrl =
             cleanDoc.originUrl ||
             raw.originUrl ||
-            (source.type === "web" || source.type === "rss" || source.type === "sitemap" || source.type === "llms-txt"
-              ? source.uri
-              : null);
+            (source.type === "web" ? source.uri : null);
           const uniqueKey = docUrl || raw.guid || cleanDoc.title;
           const deterministicId = crypto
             .createHash("sha256")
