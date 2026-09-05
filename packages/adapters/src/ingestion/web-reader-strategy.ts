@@ -7,43 +7,137 @@ import { safeIsoDate } from "../utils/date.js";
 export interface WebReaderStrategyOptions {
   timeoutMs?: number;
   customFetch?: typeof fetch;
+  concurrency?: number;
+}
+
+export function parseSourceUrls(uri: string): string[] {
+  if (!uri || typeof uri !== "string") {
+    return [];
+  }
+  const trimmed = uri.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  let rawTokens: string[] = [];
+
+  // 1. Try parsing JSON array
+  if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        rawTokens = parsed.map((u) => (typeof u === "string" ? u.trim() : ""));
+      }
+    } catch {
+      const stripped = trimmed.replace(/^\[|\]$/g, "").trim();
+      rawTokens = [stripped];
+    }
+  } else {
+    rawTokens = [trimmed];
+  }
+
+  // 2. Tokenize by newlines and URL boundary delimiters
+  const candidates: string[] = [];
+  for (const token of rawTokens) {
+    if (!token) continue;
+    const lines = token.split(/[\r\n]+/);
+    for (const line of lines) {
+      const l = line.trim();
+      if (!l) continue;
+      // Split on comma or whitespace only if followed by http:// or https://
+      const splitByUrls = l.split(/[\s,]+(?=https?:\/\/)/i);
+      for (const piece of splitByUrls) {
+        const p = piece.trim().replace(/^[<"']|[>"']$/g, "");
+        if (p) candidates.push(p);
+      }
+    }
+  }
+
+  // Filter valid HTTP/HTTPS URLs and deduplicate
+  const validUrls: string[] = [];
+  const seen = new Set<string>();
+
+  for (const item of candidates) {
+    if (!item) continue;
+    try {
+      const parsed = new URL(item);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+        const normalized = parsed.href;
+        if (!seen.has(normalized)) {
+          seen.add(normalized);
+          validUrls.push(item);
+        }
+      }
+    } catch {
+      // Skip invalid URL syntax
+    }
+  }
+
+  return validUrls;
 }
 
 export class WebReaderStrategy implements IngestionStrategy {
   readonly type = "web" as const;
   private readonly timeoutMs: number;
   private readonly fetchFn: typeof fetch;
+  private readonly concurrency: number;
 
   constructor(options: WebReaderStrategyOptions = {}) {
     this.timeoutMs = options.timeoutMs ?? 10000;
     this.fetchFn = options.customFetch ?? globalThis.fetch;
+    this.concurrency =
+      typeof options.concurrency === "number" && Number.isFinite(options.concurrency)
+        ? Math.max(1, Math.min(Math.floor(options.concurrency), 10))
+        : 3;
   }
 
   async fetch(source: DataSource, lastSync?: SyncState): Promise<RawDocument[]> {
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const urls = parseSourceUrls(source.uri);
+    if (urls.length === 0) {
+      return [];
+    }
 
-      const response = await this.fetchFn(source.uri, {
+    const results: (RawDocument | null)[] = new Array(urls.length);
+    let currentIndex = 0;
+
+    const workerCount = Math.min(this.concurrency, urls.length);
+    const workers = Array.from({ length: workerCount }, async () => {
+      while (currentIndex < urls.length) {
+        const idx = currentIndex++;
+        const targetUrl = urls[idx];
+        results[idx] = await this.fetchSingleUrl(targetUrl, source.id);
+      }
+    });
+
+    await Promise.allSettled(workers);
+
+    return results.filter((doc): doc is RawDocument => doc !== null);
+  }
+
+  async fetchSingleUrl(url: string, sourceId: string): Promise<RawDocument | null> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      const response = await this.fetchFn(url, {
         signal: controller.signal,
         headers: {
           "User-Agent": "flashcard-master/1.0 (Mozilla/5.0 Compatible; +https://github.com/aprodan/flashcard-master)",
           Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         },
       });
-      clearTimeout(timer);
 
       if (!response.ok) {
-        console.warn(`[WebReaderStrategy] HTTP error ${response.status} fetching ${source.uri}`);
-        return [];
+        console.warn(`[WebReaderStrategy] HTTP error ${response.status} fetching ${url}`);
+        return null;
       }
 
       const html = await response.text();
-      const doc = this.parseHtml(html, source.id, source.uri);
-      return doc ? [doc] : [];
+      return this.parseHtml(html, sourceId, url);
     } catch (err: any) {
-      console.warn(`[WebReaderStrategy] Network or parse failure for ${source.uri}:`, err.message);
-      return [];
+      console.warn(`[WebReaderStrategy] Network or parse failure for ${url}:`, err.message);
+      return null;
+    } finally {
+      clearTimeout(timer);
     }
   }
 

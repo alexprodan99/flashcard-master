@@ -1,8 +1,8 @@
 ---
 title: "Product Requirements Document: flashcard-master"
-status: "final"
+status: "draft"
 created: "2026-08-30"
-updated: "2026-08-30"
+updated: "2026-09-05"
 ---
 
 # Product Requirements Document (PRD): flashcard-master
@@ -17,6 +17,7 @@ Every generated flashcard is strictly tethered to the source text via mandatory 
 - **Onboarding & Source Setup Velocity:** A user can configure a new data source via the interactive CLI wizard or Web UI in **< 60 seconds**.
 - **Zero-Touch Card Quality:** The LLM engine produces **10 high-quality, atomic cards with exact verbatim citations in 1 click**, with a target of $\ge 90\%$ card acceptance without manual edits.
 - **Export Latency:** AnkiConnect push or `.apkg` generation completes in **< 2 seconds** for batches up to 500 cards.
+- **Document Export Performance:** Compiling and generating a 50-document merged Markdown/HTML file or ZIP archive completes in **< 1.5 seconds**.
 
 ---
 
@@ -31,16 +32,18 @@ journey
     section 1. Overview
       Views database KPIs & recent cards: 5: Alex
     section 2. Ingestion (Data Sources)
-      Registers RSS feeds, web URLs, & local notes: 5: Alex
+      Registers RSS feeds, multi-web URLs, & local notes: 5: Alex
       Syncs documents & tracks content hashes: 5: flashcard-master
+      Prunes noisy/empty documents: 5: Alex
     section 3. Synthesis (Generate Studio)
       Selects AI provider, model, persona, & sources: 5: Alex
       Synthesizes grounded Q&A with verbatim citations: 5: flashcard-master
     section 4. Curation & Study (Question Explorer)
       Searches knowledge base & inspects source quotes: 5: Alex
       Performs active-recall testing & inline edits: 5: Alex
-    section 5. Deliverables (Export & Anki Center)
+    section 5. Deliverables (Export & Knowledge Base)
       Pushes to Anki desktop or downloads .apkg / markdown: 5: Alex
+      Exports clean merged/split documents with TOC & citations: 5: Alex
 ```
 
 ### Core User Journeys (UJ)
@@ -49,12 +52,12 @@ journey
 1. Alex launches Flashcard Master and views the Dashboard overview displaying database statistics, deck breakdowns, and recent cards.
 
 #### UJ-2: Data Sources Ingestion & Content Tracking
-1. Alex navigates to **🌐 Data Sources** (the second menu stage) to register subscribed RSS feeds, web article URLs, or local Markdown directories.
+1. Alex navigates to **🌐 Data Sources** (the second menu stage) to register subscribed RSS feeds, multi-URL web article collections, or local Markdown directories.
 2. Alex clicks "Sync" to ingest clean, reader-mode documents into local storage while tracking delta hashes to prevent duplication.
 
 #### UJ-3: In-Browser AI Card Generation Studio
 1. Alex navigates to **⚡ Generate Studio** (the third menu stage) to synthesize flashcards from the ingested materials.
-2. Alex selects the AI Provider (Ollama, Gemini, OpenAI, Anthropic), configures the model (with smart 2026 presets or custom text overrides), chooses a cognitive persona (`socratic-mentor`, `strict-examiner`, `analogy-builder`), and checks the target data sources.
+2. Alex selects the AI Provider (Ollama, Gemini, OpenAI, Anthropic), configures the model (with smart 2026 presets or custom text overrides), chooses a cognitive persona (`socratic-mentor`, `strict-examiner`, `analogy-builder`), and checks the target data sources or specific documents.
 3. Alex clicks "Start AI Generation", watching real-time spinner feedback as cards are synthesized, verified against verbatim grounding citations, and deduplicated into SQLite.
 
 #### UJ-4: Visual Exploration, Search & Active-Recall Practice
@@ -64,6 +67,16 @@ journey
 #### UJ-5: Multi-Target Export & Spaced Repetition Study
 1. Alex navigates to **🚀 Export & Anki** (the final menu stage) to deliver flashcards to external study environments.
 2. Alex 1-clicks "Push to Anki Desktop" via live AnkiConnect, or downloads `.apkg`, active-recall Markdown (`<details>` blocks), CSV, or printable two-column HTML study sheets.
+
+#### UJ-6: Multi-URL Web Curation & Document Management
+1. Alex creates a curated Web Source (e.g. "Distributed Systems Deep Dives") and pastes a list of 5 URLs into the interactive URL Manager.
+2. Alex reviews the individual URL badges, removes a duplicate URL, and clicks "Save & Sync".
+3. Alex opens the **Document Inspector**, selects 2 empty or outdated articles using row checkboxes, and clicks "Delete Selected (2)" to clean up the source without affecting any previously generated flashcards.
+
+#### UJ-7: Document Knowledge Base Export with Table of Contents
+1. Alex wants to export all cleaned articles from a technical documentation source to read offline on an e-reader or Obsidian.
+2. Alex opens the Document Inspector, clicks **"📤 Export Documents"**, chooses **Markdown** format and **Merged (Single File)** mode.
+3. Alex downloads a formatted master `.md` file complete with an auto-generated Table of Contents, divider sections, word counts, and origin URL citations. Alternatively, Alex selects **Split (ZIP Archive)** to download individual slugified markdown files.
 
 ---
 
@@ -83,9 +96,11 @@ journey
 | **FR-108** | **LLMs.txt / Markdown Catalog Strategy** | The system MUST parse machine-readable `/llms.txt` and `/llms-full.txt` catalogs, extracting canonical URLs, topic categories, and summaries. | High |
 | **FR-109** | **Persistent Discovered Documents Catalog** | The system MUST persist all discovered documents/articles per data source in a dedicated `documents` table (`id`, `source_id`, `title`, `url`, `text_content`, `content_hash`, `word_count`, `created_at`, `updated_at`). | Critical |
 | **FR-110** | **Document Word Count & Freshness Tracking** | The system MUST compute word counts and track last updated timestamps for all discovered documents during sync cycles. | High |
-| **FR-414** | **Data Sources Dashboard & Document Catalog Inspector** | The Web UI MUST provide an interactive document catalog inspector per data source, displaying total discovered document count, search/filter, word counts, and card generation stats. | High |
-| **FR-415** | **Document Clean Text Preview & Selective Generation** | The Web UI MUST allow users to view extracted clean text for any discovered document and selectively trigger flashcard generation for specific chosen documents. | High |
-| **FR-416** | **CLI Discovered Document Inspection** | The CLI MUST provide `flashcard-master source docs <source-id>` to list all discovered articles with titles, URLs, and word counts from the terminal. | Medium |
+| **FR-111** | **Multi-URL Web Source Storage & Ingestion** | The system MUST support storing multiple target URLs per `web` data source in `data_sources.uri` (as a JSON array string `["https://url1", "https://url2"]` or backward-compatible single string) allowing users to curate batches of articles under a single logical source. | Critical |
+| **FR-112** | **Smart URL Bulk-Paste & Deduplication Parser** | The system MUST parse multiline, comma-separated, or space-separated URLs, validating HTTP/HTTPS protocols, stripping trailing slashes, and deduplicating inputs upon ingestion setup. | High |
+| **FR-113** | **Concurrent Multi-URL Reader Ingestion** | `WebReaderStrategy` MUST ingest all configured URLs in parallel (concurrency limit = 3–5) with isolated error handling per URL, creating or updating a `Document` record per unique URL under that source. | High |
+| **FR-114** | **Single & Batch Document Deletion API** | The backend MUST expose `DELETE /api/documents/:id` and `POST /api/documents/bulk-delete` (`{ documentIds: string[] }`) to permanently prune unwanted document records from the `documents` table. | High |
+| **FR-115** | **Non-Destructive Flashcard & Study Preservation** | Deleting documents MUST NOT delete or corrupt associated flashcards; flashcards MUST retain their `documentTitle`, `sourceOriginUrl`, `sourceQuote`, and `targetDeck` references so study decks and Anki notes remain 100% operational. | Critical |
 
 ### 3.2 Grounded Q&A Generation Engine
 
@@ -97,8 +112,12 @@ journey
 | **FR-204** | **Selectable Prompt Personas** | The system MUST support selectable generation personas (`socratic-mentor`, `strict-examiner`, `executive-synthesizer`) and allow custom persona prompts. | Medium |
 | **FR-205** | **Auto-Commit to Database** | Generated flashcards MUST be automatically committed directly to the database with source foreign key, difficulty, tags, and timestamps. | Critical |
 | **FR-206** | **Question Deduplication** | `[ASSUMPTION]` The system SHOULD calculate text similarity or concept overlap to filter out duplicate questions generated from adjacent sources. | Low |
+| **FR-207** | **Document Provenance & Material Reference** | Generated flashcards MUST retain rich material references (Document Title, Origin URL, Section / Topic Tag) presented in the Explorer, Editor Drawer, and exported files. | Medium |
+| **FR-208** | **Configurable Question Depth & Granularity** | The generation engine MUST support selectable card depth modes (`atomic`: rapid 1-fact recall, `deep-dive`: comprehensive multi-concept mechanisms, tradeoffs and structured explanations, `scenario`: applied architectural / troubleshooting case studies). | High |
+| **FR-209** | **Configurable Document Context Chunk Sizing** | The text chunking engine MUST support adjustable chunk size multipliers (`1x` 2,000 chars, `2x` 4,000 chars, `4x` 8,000 chars, or `full-document` mode) allowing macro-level cross-section synthesis for long articles. | High |
+| **FR-210** | **Card Depth Prompt Calibrations** | Prompt templates MUST dynamically adapt active-recall formatting and conciseness rules based on the selected depth mode while strictly enforcing verbatim quote grounding. | High |
 
-### 3.3 Multi-Target Exporter Pipeline
+### 3.3 Multi-Target & Knowledge Base Exporter Pipeline
 
 | Requirement ID | Title | Description | Priority |
 | :--- | :--- | :--- | :--- |
@@ -108,6 +127,9 @@ journey
 | **FR-304** | **Active-Recall Markdown** | The system MUST export cards as Markdown files utilizing collapsible HTML `<details><summary>Question</summary>Answer & Quote</details>` tags. | High |
 | **FR-305** | **PDF Study Guide** | The system MUST export cards into a structured, printable 2-column Q&A PDF study sheet with citation callouts. | Medium |
 | **FR-306** | **Scoped Export Filtering** | The system MUST allow filtering exports by specific data source, tag, difficulty level, or creation date range. | High |
+| **FR-307** | **Document Clean Text Exporters (MD, HTML, TXT, JSON)** | The export engine (`DocumentExportService`) MUST support exporting clean document texts to Markdown (`.md`), HTML (`.html`), Plain Text (`.txt`), and JSON (`.json`). | Critical |
+| **FR-308** | **Merged Single-File Compilation with Table of Contents & Citations** | The system MUST support compiling multiple documents into a single master file featuring a clickable Table of Contents, header dividers, word count badges, and origin URL citation links. | High |
+| **FR-309** | **Split ZIP Archive Bundling** | `[ASSUMPTION]` The system MUST support packaging individual exported documents into a downloadable `.zip` archive named with clean slugified filenames (e.g. `01-getting-started.md`) using `jszip`. | High |
 
 ### 3.4 Dual User Interface (CLI & Web UI)
 
@@ -125,20 +147,21 @@ journey
 | **FR-410** | **UI Live Generation Feedback** | The Web UI MUST display real-time spinning state during generation, followed by metric reporting (cards created, duplicates skipped, ungrounded rejected) and card previews. | High |
 | **FR-411** | **Svelte 5 Reactive Client Architecture** | The Web UI MUST be architected with Svelte 5 single-file components and reactive runes ($state, $derived), compiled via Vite into static client assets served locally by the Node.js backend server with zero Virtual DOM overhead. | High |
 | **FR-412** | **UI & CLI Sitemap Source Configuration** | The Web UI (Add Source Modal, Sources View) and CLI (`source add`) MUST support registering and syncing `sitemap` and `llms-txt` source types with optional URL path filtering and batch progress feedback. | High |
-| **FR-205** | **Emphatic Verbatim Prompt Directives** | The system prompt MUST include strict, unambiguous copy-paste directives instructing the LLM to extract exact verbatim substring quotes without paraphrasing or alteration to maximize grounding accuracy on local models. | High |
-| **FR-206** | **Adaptive Generation Backfill Loop** | The card generation service MUST employ adaptive oversampling and retry backfilling to ensure the user-specified target count of valid flashcards is achieved per chunk even when ungrounded drafts are discarded. | High |
-| **FR-207** | **Document Provenance & Material Reference** | Generated flashcards MUST retain rich material references (Document Title, Origin URL, Section / Topic Tag) presented in the Explorer, Editor Drawer, and exported files. | Medium |
-| **FR-306** | **Printable PDF Export Support** | The export engine MUST support `pdf` format requests by routing to print-optimized HTML study sheets with `@media print` CSS for physical paper flashcards and browser "Save as PDF". | High |
 | **FR-413** | **Question Explorer Bulk Deletion** | The Question Explorer MUST provide multi-card selection checkboxes, a "Select All" toggle, a selected item counter badge, and bulk-delete API support (`POST /api/cards/bulk-delete`) with user confirmation. | High |
-| **FR-208** | **Configurable Question Depth & Granularity** | The generation engine MUST support selectable card depth modes (`atomic`: rapid 1-fact recall, `deep-dive`: comprehensive multi-concept mechanisms, tradeoffs and structured explanations, `scenario`: applied architectural / troubleshooting case studies). | High |
-| **FR-209** | **Configurable Document Context Chunk Sizing** | The text chunking engine MUST support adjustable chunk size multipliers (`1x` 2,000 chars, `2x` 4,000 chars, `4x` 8,000 chars, or `full-document` mode) allowing macro-level cross-section synthesis for long articles. | High |
-| **FR-210** | **Card Depth Prompt Calibrations** | Prompt templates MUST dynamically adapt active-recall formatting and conciseness rules based on the selected depth mode while strictly enforcing verbatim quote grounding. | High |
-| **FR-414** | **UI Question Depth & Scope Controls** | The Generate Studio UI and CLI `generate` command MUST expose interactive options for selecting Card Depth and Document Context Multiplier with real-time descriptions. | High |
+| **FR-414** | **Data Sources Dashboard & Document Catalog Inspector** | The Web UI MUST provide an interactive document catalog inspector per data source, displaying total discovered document count, search/filter, word counts, and card generation stats. | High |
+| **FR-415** | **Document Clean Text Preview & Selective Generation** | The Web UI MUST allow users to view extracted clean text for any discovered document and selectively trigger flashcard generation for specific chosen documents. | High |
+| **FR-416** | **CLI Discovered Document Inspection** | The CLI MUST provide `flashcard-master source docs <source-id>` to list all discovered articles with titles, URLs, and word counts from the terminal. | Medium |
 | **FR-417** | **Hierarchical Multi-Level Scope Tree** | The Generate Studio MUST provide an interactive hierarchical scope tree allowing users to toggle whole data sources OR expand sources to individually select/deselect specific discovered documents with tri-state checkbox logic and live document selection counters. | High |
 | **FR-418** | **Lazy Accordion Document Catalog & Search Filter** | The Generate Studio MUST lazy-load discovered documents when a data source accordion is expanded and provide an in-accordion search input to filter documents by title/keyword. | High |
 | **FR-419** | **Document Text Preview in Generate Studio** | The Generate Studio MUST allow users to preview clean extracted text for any document directly within the scope selector via an inline `👁️ Preview` action without navigating away. | High |
 | **FR-420** | **Document-Level In-Context Full Configuration Modal** | The Data Sources Document Inspector MUST provide a "⚡ Configure & Generate" action opening a comprehensive configuration modal with full access to AI engine, model, persona, difficulty, depth mode, chunk multiplier, and target deck. | High |
 | **FR-421** | **Deep-Link Scope Pre-selection via URL Parameters** | The Generate Studio MUST support deep-linking via query parameters (e.g., `?docId=<id>` or `?sourceId=<id>`) to automatically expand the target source, pre-select the document, and highlight it on mount. | Medium |
+| **FR-422** | **Interactive URL List Manager in UI & Modals** | The Web UI (`AddSourceModal` and Source Edit view) MUST provide an interactive URL manager with single-item add (`Enter` or button), smart bulk-paste breakdown, per-item deletion (`✕`), duplicate warnings, and live URL counter badge. | High |
+| **FR-423** | **Incremental Web Source Synchronization** | When a user adds new URLs to an existing web source, syncing MUST fetch only newly added/modified URLs without re-scraping unchanged existing documents. | High |
+| **FR-424** | **Document Catalog Bulk Selection & Deletion Controls** | `SourceDocumentInspector` MUST provide row-level checkboxes, a "Select All" toggle, a selected counter badge, a single-item delete action (`🗑️`), and a "Delete Selected" bulk button with a confirmation modal. | High |
+| **FR-425** | **Document Inspector Quick Filter Selectors** | The Document Inspector MUST provide quick selection filters (e.g. "Select All", "Select Unused (0 cards)", "Invert Selection") to quickly clean up noisy or empty scraped pages. | Medium |
+| **FR-426** | **Document Export Modal & Scope Controls** | `SourceDocumentInspector` and Document Preview Modal MUST provide an "📤 Export Documents" action allowing users to select format (MD/HTML/TXT/JSON), packaging mode (Merged Master File vs. Split ZIP), and scope (All Documents, Selected Documents, or Current Document). | High |
+| **FR-427** | **Streaming Download & File Handlers** | The backend MUST stream exported document files or ZIP archives with appropriate `Content-Disposition` and `Content-Type` headers for direct browser downloads. | High |
 
 ---
 

@@ -28,31 +28,60 @@ This document provides the complete epic and story breakdown for `flashcard-mast
 - **FR-104**: Local Document Strategy (Ingest local files and directories matching `.md`, `.txt`, `.markdown` globs).
 - **FR-105**: Incremental Delta Sync (Track processed article GUIDs and file SHA-256 hashes in `sync_state` to prevent duplicate processing).
 - **FR-106**: Database-Backed Source Registry (Store data sources in local SQLite database with editable metadata, tags, and target deck).
+- **FR-107**: XML Sitemap Strategy (Discover and parallel-ingest nested URLs from sitemaps).
+- **FR-108**: LLMs.txt Catalog Strategy (Parse structured llms.txt markdown catalogs and summaries).
+- **FR-109**: Persistent Discovered Documents Catalog (Store all discovered articles per source in `documents` table with word counts).
+- **FR-110**: Document Word Count & Freshness Tracking (Compute word counts and timestamps during sync cycles).
+- **FR-111**: Multi-URL Web Source Storage & Ingestion (Store multiple URLs per `web` source in `data_sources.uri` as a JSON array string).
+- **FR-112**: Smart URL Bulk-Paste & Deduplication Parser (Parse multiline/comma-separated URLs, validate HTTP/HTTPS, and deduplicate).
+- **FR-113**: Concurrent Multi-URL Reader Ingestion (Fetch all configured URLs in parallel with bounded pool and error isolation).
+- **FR-114**: Single & Batch Document Deletion API (`DELETE /api/documents/:id` and `POST /api/documents/bulk-delete`).
+- **FR-115**: Non-Destructive Flashcard & Study Preservation (Deleting documents prunes raw text while keeping 100% of flashcards intact).
 - **FR-201**: Atomic Front/Back Cards (Generate concise, atomic Front/Back Q&A flashcards following the Minimum Information Principle).
 - **FR-202**: Mandatory Verbatim Citation Guard (Every card must include the exact source sentence/quote; reject ungrounded cards).
 - **FR-203**: Configurable Difficulty Levels (Support `beginner`, `intermediate`, `expert` cognitive depth scaling).
 - **FR-204**: Selectable Prompt Personas (Support `socratic-mentor`, `strict-examiner`, `executive-synthesizer` and custom prompts).
 - **FR-205**: Auto-Commit to Database (Automatically persist generated flashcards directly to SQLite database with metadata).
 - **FR-206**: Question Deduplication (Calculate text similarity / hash matching to filter out duplicate questions).
+- **FR-207**: Document Provenance & Material Reference (Retain Document Title, Origin URL, and Section in cards).
+- **FR-208**: Configurable Question Depth (Support `atomic`, `deep-dive`, and `scenario` depth modes).
+- **FR-209**: Configurable Context Chunk Sizing (Support `1x`, `2x`, `4x`, and `full-document` context multipliers).
+- **FR-210**: Card Depth Prompt Calibrations (Dynamic active-recall prompt formatting).
 - **FR-301**: Native Anki Package (`.apkg`) (Generate valid `.apkg` packages with front/back templates, CSS styling, tags, and origin metadata).
 - **FR-302**: AnkiConnect Live Sync (Push cards directly to running desktop Anki via HTTP API `http://localhost:8765`).
 - **FR-303**: Delimited File Export (Export flashcards to standard Anki-compatible CSV and TSV formats).
 - **FR-304**: Active-Recall Markdown (Export cards as Markdown files utilizing collapsible `<details><summary>Q</summary>A & Quote</details>`).
 - **FR-305**: PDF Study Guide (Export cards into a structured, printable 2-column Q&A PDF study sheet with citation callouts).
 - **FR-306**: Scoped Export Filtering (Filter exports by data source, tag, difficulty level, or creation date range).
+- **FR-307**: Document Clean Text Exporters (Export raw/clean document texts to Markdown, HTML, Plain Text, and JSON).
+- **FR-308**: Merged Single-File Master Compilation (Compile documents into single file with clickable Table of Contents and Citations).
+- **FR-309**: Split ZIP Archive Bundling (Package individual slugified document files into a `.zip` archive via `jszip`).
 - **FR-401**: Interactive CLI Setup Wizard (`flashcard-master config init` / `source add -i` with keyboard arrow navigation).
 - **FR-402**: Scriptable CLI Subcommands (`source`, `sync`, `export`, `cards`, `config` for automated workflows).
 - **FR-403**: Local Web UI Dashboard (`flashcard-master ui` serving web app on `localhost:3000`).
 - **FR-404**: UI Sources Management (Add, edit, toggle, and trigger manual sync on data sources with live progress feedback).
 - **FR-405**: UI Question Explorer & Editor (Searchable card database with keyword search, filter chips, and inline card editor drawer).
 - **FR-406**: UI 1-Click Export & Anki Center (1-click downloads for `.apkg`, Markdown, PDF, and 1-click Push to running AnkiConnect).
+- **FR-414**: Data Sources Dashboard & Document Catalog Inspector (Browse discovered articles with word counts and card stats).
+- **FR-415**: Document Clean Text Preview & Selective Generation (Preview clean text and synthesize cards for specific docs).
+- **FR-417**: Hierarchical Scope Tree (Select whole sources or individual documents with tri-state selection logic).
+- **FR-418**: Lazy Accordion Catalog & Search (Lazy-load discovered articles on accordion expansion with keyword search).
+- **FR-419**: Document Text Preview in Generate Studio (Inline preview modal in generation scope selector).
+- **FR-420**: Document-Level In-Context Full Configuration Modal (Configure AI parameters directly from Document Inspector).
+- **FR-421**: Deep-Link Scope Pre-selection via URL Parameters (`?docId=<id>` and `?sourceId=<id>`).
+- **FR-422**: Interactive URL List Manager UI (Dynamic chip list, smart bulk-paste, per-item delete, duplicate warning in Add Source modal).
+- **FR-423**: Incremental Web Source Synchronization (Fetch newly added URLs without re-scraping existing documents).
+- **FR-424**: Document Catalog Bulk Selection & Deletion Controls (Row checkboxes, "Select All", selected counter, bulk delete modal).
+- **FR-425**: Document Inspector Quick Filter Selectors ("Select All", "Select Unused (0 cards)", "Invert Selection").
+- **FR-426**: Document Export Modal & Scope Controls (Export modal supporting format selection, merged vs. split, and document scope).
+- **FR-427**: Streaming Download & File Handlers (Direct browser download with Content-Disposition headers).
 
 ### Non-Functional Requirements
 
-- **NFR-101**: Performance & Latency (Reader-mode extraction < 3s for < 3,000 words; generation of 10 cards < 15s; database queries < 100ms).
+- **NFR-101**: Performance & Latency (Reader-mode extraction < 3s for < 3,000 words; generation of 10 cards < 15s; database queries < 100ms; document export < 1.5s).
 - **NFR-201**: Privacy & Local-First Invariant (All configurations, source URLs, content caches, and generated cards reside exclusively in local SQLite).
 - **NFR-202**: Zero Telemetry (No telemetry, tracking, or content transmitted externally except direct user-configured LLM API calls).
-- **NFR-301**: Reliability & Fault Isolation (Network/parsing failures on an individual source do not crash the overall sync batch).
+- **NFR-301**: Reliability & Fault Isolation (Network/parsing failures on an individual source or URL do not crash the overall sync batch).
 - **NFR-302**: Transactional Integrity (Database writes are atomic with SQLite WAL mode).
 - **NFR-401**: Cross-Platform Compatibility (CLI and local Web UI operate consistently across Windows, macOS, and Linux).
 
@@ -60,10 +89,10 @@ This document provides the complete epic and story breakdown for `flashcard-mast
 
 - **ARCH-1**: Monorepo Scaffolding (Turborepo / npm workspaces with `packages/core`, `packages/adapters`, `packages/cli`, `packages/web`).
 - **ARCH-2**: Ports & Adapters Isolation (Core domain imports zero external drivers or vendor SDKs; all I/O via ports).
-- **ARCH-3**: Strategy Pattern Registry (`StrategyRegistry` managing `RssStrategy`, `WebReaderStrategy`, `LocalFileStrategy`).
+- **ARCH-3**: Strategy Pattern Registry (`StrategyRegistry` managing `RssStrategy`, `WebReaderStrategy`, `LocalFileStrategy`, `SitemapStrategy`, `LlmsTxtStrategy`).
 - **ARCH-4**: Embedded SQLite Database Client (better-sqlite3 / sqlite3 with WAL mode and foreign key constraints).
 - **ARCH-5**: Vendor-Neutral LLM Provider Adapters (OpenAI, Anthropic, Gemini, Ollama adapters implementing `LLMProviderPort`).
-- **ARCH-6**: Multi-Target Exporter Adapters (`ApkgExporter`, `AnkiConnectAdapter`, `MarkdownExporter`, `PdfExporter`).
+- **ARCH-6**: Multi-Target Exporter Adapters (`ApkgExporter`, `AnkiConnectAdapter`, `MarkdownExporter`, `PdfExporter`, `DocumentExportService`).
 
 ### UX Design Requirements (from DESIGN.md & EXPERIENCE.md)
 
@@ -86,24 +115,53 @@ This document provides the complete epic and story breakdown for `flashcard-mast
 - **FR-104**: Epic 1 - Local Document Ingestion Strategy
 - **FR-105**: Epic 1 - Incremental Delta Synchronization
 - **FR-106**: Epic 1 - Database-Backed Source Registry
+- **FR-107**: Epic 9 - XML Sitemap Ingestion Strategy
+- **FR-108**: Epic 9 - LLMs.txt Catalog Ingestion Strategy
+- **FR-109**: Epic 10 - Persistent Discovered Documents Catalog
+- **FR-110**: Epic 10 - Document Word Count & Freshness Tracking
+- **FR-111**: Epic 12 - Multi-URL Web Source Storage & Ingestion
+- **FR-112**: Epic 12 - Smart URL Bulk-Paste & Deduplication Parser
+- **FR-113**: Epic 12 - Concurrent Multi-URL Reader Ingestion
+- **FR-114**: Epic 12 - Single & Batch Document Deletion API
+- **FR-115**: Epic 12 - Non-Destructive Flashcard & Study Preservation
 - **FR-201**: Epic 2 - Atomic Front/Back Flashcard Generation
 - **FR-202**: Epic 2 - Mandatory Verbatim Citation Guard
 - **FR-203**: Epic 2 - Configurable Difficulty Levels
 - **FR-204**: Epic 2 - Selectable & Customizable Prompt Personas
 - **FR-205**: Epic 2 - Auto-Commit to Database
 - **FR-206**: Epic 2 - Question Deduplication
+- **FR-207**: Epic 7 - Document Provenance & Material Reference
+- **FR-208**: Epic 8 - Configurable Question Depth & Granularity
+- **FR-209**: Epic 8 - Configurable Document Context Chunk Sizing
+- **FR-210**: Epic 8 - Card Depth Prompt Calibrations
 - **FR-301**: Epic 3 - Native Anki Package (.apkg) Exporter
 - **FR-302**: Epic 3 - Live Desktop AnkiConnect Integration
 - **FR-303**: Epic 3 - Delimited File Export (CSV/TSV)
 - **FR-304**: Epic 3 - Active-Recall Markdown Exporter
 - **FR-305**: Epic 3 - Printable PDF Study Guide Exporter
 - **FR-306**: Epic 3 - Scoped & Filtered Exporting
+- **FR-307**: Epic 12 - Document Clean Text Exporters (MD, HTML, TXT, JSON)
+- **FR-308**: Epic 12 - Merged Single-File Compilation with Table of Contents & Citations
+- **FR-309**: Epic 12 - Split ZIP Archive Bundling
 - **FR-401**: Epic 4 - Interactive CLI Setup Wizard
 - **FR-402**: Epic 4 - Scriptable CLI Subcommands
 - **FR-403**: Epic 4 - Local Web UI Dashboard Server
 - **FR-404**: Epic 4 - UI Sources Management
 - **FR-405**: Epic 4 - UI Question Database Explorer & Inline Editor
 - **FR-406**: Epic 4 - UI 1-Click Export & Anki Center
+- **FR-414**: Epic 10 - Data Sources Dashboard & Document Catalog Inspector
+- **FR-415**: Epic 10 - Document Clean Text Preview & Selective Generation
+- **FR-417**: Epic 11 - Hierarchical Multi-Level Scope Tree
+- **FR-418**: Epic 11 - Lazy Accordion Document Catalog & Search Filter
+- **FR-419**: Epic 11 - Document Text Preview in Generate Studio
+- **FR-420**: Epic 11 - Document-Level In-Context Full Configuration Modal
+- **FR-421**: Epic 11 - Deep-Link Scope Pre-selection via URL Parameters
+- **FR-422**: Epic 12 - Interactive URL List Manager in UI & Modals
+- **FR-423**: Epic 12 - Incremental Web Source Synchronization
+- **FR-424**: Epic 12 - Document Catalog Bulk Selection & Deletion Controls
+- **FR-425**: Epic 12 - Document Inspector Quick Filter Selectors
+- **FR-426**: Epic 12 - Document Export Modal & Scope Controls
+- **FR-427**: Epic 12 - Streaming Download & File Handlers
 
 ## Epic 1: Project Foundation & Core Ingestion Pipeline
 
@@ -710,6 +768,79 @@ So that the interface naturally guides me from data ingestion to flashcard gener
 - **Given** the full Flashcard Master test suite
 - **When** `npm test` and `npm run build` are executed
 - **Then** 100% of test suites across `core`, `adapters`, `cli`, and `web` pass with zero failures.
+
+---
+
+## Epic 12: Multi-URL Web Ingestion, Document Pruning & Knowledge Base Exporter
+
+**Goal:** Empower users to ingest batches of web URLs under curated web sources via an interactive URL manager with bulk paste, prune unwanted/noisy documents with guaranteed flashcard preservation, and export compiled clean document knowledge bases to Markdown, HTML, Plain Text, and JSON in Merged (with clickable Table of Contents and Citations) or Split ZIP formats.
+
+### Story 12.1: Multi-URL Storage & Concurrent WebReader Ingestion Engine
+**ID:** `12-1-multi-url-storage-and-concurrent-web-reader-engine`
+**Description:** Update `WebReaderStrategy` and domain models to support `data_sources.uri` containing a JSON array of URLs (with single-URL backward compatibility). Implement bounded concurrent fetching (pool of 3–5) with isolated error handling and delta hashing per URL.
+**Acceptance Criteria:**
+- **Given** a `web` data source with multiple URLs in `uri` (JSON array or single string)
+- **When** `WebReaderStrategy.fetch(source)` is executed
+- **Then** all valid URLs are ingested in parallel (concurrency limit 3–5) and extracted into clean text documents.
+- **And** network or HTTP errors on one URL do not abort other URLs in the batch.
+- **And** unit tests verify single and multi-URL decoding, concurrency limits, and error isolation.
+
+### Story 12.2: Interactive Dynamic URL List Manager in UI (Add & Edit Source)
+**ID:** `12-2-interactive-url-list-manager-ui`
+**Description:** Build `<UrlListManager.svelte>` component and integrate it into `AddSourceModal.svelte` and Source Edit view. Support single-URL entry (`Enter` / button), smart multiline/comma-separated bulk paste parsing, per-item delete (`✕`), duplicate warnings, and URL count badge.
+**Acceptance Criteria:**
+- **Given** the Add Source Modal with source type "web"
+- **When** the user types or pastes multiple URLs (e.g. 5 lines of URLs)
+- **Then** the URLs are automatically parsed, validated (`http`/`https`), and displayed as interactive badge/chips.
+- **And** user can remove individual URLs or clear the list before saving.
+- **And** existing web sources can be edited to add or remove URLs.
+
+### Story 12.3: Document Repository Deletion & Safe Flashcard Preservation
+**ID:** `12-3-document-deletion-and-safe-flashcard-preservation`
+**Description:** Add `delete(id)` and `deleteBulk(ids)` methods in `DocumentRepository`, along with server routes `DELETE /api/documents/:id` and `POST /api/documents/bulk-delete`. Ensure foreign key handling and queries safely preserve all associated flashcards without cascading card deletions.
+**Acceptance Criteria:**
+- **Given** a document with 10 generated flashcards
+- **When** `DELETE /api/documents/:id` or `POST /api/documents/bulk-delete` is called
+- **Then** the document record is permanently removed from the `documents` table.
+- **And** all 10 flashcards remain intact in `flashcards` table with their original `question`, `answer`, `source_quote`, `document_title`, and `target_deck`.
+- **And** unit tests verify repository delete, bulk delete, and flashcard retention.
+
+### Story 12.4: Document Inspector Bulk Selection & Management UI
+**ID:** `12-4-document-inspector-bulk-selection-and-deletion-ui`
+**Description:** Upgrade `SourceDocumentInspector.svelte` with row-level selection checkboxes, master "Select All" / "Invert Selection" / "Select Unused (0 cards)" controls, selected counter badge, single-row delete (`🗑️`), and a "Delete Selected" bulk button with confirmation modal.
+**Acceptance Criteria:**
+- **Given** the Document Inspector open for a source
+- **When** user checks one or multiple documents
+- **Then** a bulk action bar appears displaying `Selected: N documents` and `[ 🗑️ Delete Selected ]`.
+- **And** clicking "Delete Selected" shows a confirmation prompt and removes the selected documents from the table upon confirmation.
+- **And** card count metrics and document lists refresh immediately without page reload.
+
+### Story 12.5: Document Knowledge Base Export Engine (`DocumentExportService`)
+**ID:** `12-5-document-knowledge-base-export-engine`
+**Description:** Implement `DocumentExportService` in `@flashcard-master/core` supporting Markdown, HTML, Plain Text, and JSON exports in both **Merged Single-File** mode (featuring an auto-generated clickable Table of Contents, header dividers, word counts, and origin citations) and **Split ZIP Archive** mode (using `jszip` with slugified filenames).
+**Acceptance Criteria:**
+- **Given** a list of clean documents and export options
+- **When** `DocumentExportService.export(docs, { format, mode })` is invoked
+- **Then** Merged Markdown/HTML outputs include a generated clickable Table of Contents and formatted document sections with source links.
+- **And** Split mode returns a valid `.zip` buffer containing individual slugified document files.
+- **And** unit tests verify all 4 formats in both merged and split modes.
+
+### Story 12.6: Document Export UI Modal & Streaming Download Endpoints
+**ID:** `12-6-document-export-ui-modal-and-streaming-endpoints`
+**Description:** Add REST endpoints `POST /api/documents/export` (streaming file or zip downloads) and create `<DocumentExportModal.svelte>` in the web UI. Add "📤 Export Documents" buttons in `SourceDocumentInspector.svelte` (supporting All vs. Selected documents) and `DocumentPreviewModal.svelte` (single doc export).
+**Acceptance Criteria:**
+- **Given** user in Document Inspector or Document Preview Modal
+- **When** user clicks "📤 Export Documents"
+- **Then** a modal opens allowing selection of format (Markdown, HTML, Plain Text, JSON), packaging mode (Merged Master File vs. Split ZIP), and scope.
+- **And** clicking "Download Export" streams the file or `.zip` archive directly to the browser with correct `Content-Disposition` and MIME headers.
+
+### Story 12.7: Monorepo Verification & Automated Test Suites
+**ID:** `12-7-monorepo-verification-and-automated-test-suites`
+**Description:** Implement automated test suites covering multi-URL strategy fetching, document deletion routes, `DocumentExportService` formatting, and web client export interactions. Verify full build and test pass across all workspaces.
+**Acceptance Criteria:**
+- **Given** the complete monorepo
+- **When** `npm test` and `npm run build` are run
+- **Then** 100% of tests pass across `core`, `adapters`, `cli`, and `web`.
 
 
 
