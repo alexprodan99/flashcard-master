@@ -7,9 +7,11 @@
     onClose: () => void;
     onSynthesize?: (doc: DiscoveredDocument) => void;
     onOpenInStudio?: (doc: DiscoveredDocument) => void;
+    onDelete?: (doc: DiscoveredDocument) => void;
+    isDeleting?: boolean;
   }
 
-  let { isOpen, document, onClose, onSynthesize, onOpenInStudio }: Props = $props();
+  let { isOpen, document, onClose, onSynthesize, onOpenInStudio, onDelete, isDeleting = false }: Props = $props();
 </script>
 
 {#if isOpen && document}
@@ -47,29 +49,46 @@
       </div>
 
       <div class="preview-footer">
-        <button type="button" class="btn btn-secondary" onclick={onClose}>Close</button>
-        {#if onOpenInStudio}
-          <button
-            type="button"
-            class="btn btn-secondary"
-            onclick={() => {
-              if (document) onOpenInStudio(document);
-            }}
-          >
-            ⚡ Open in Studio ↗
-          </button>
+        {#if onDelete}
+          <div class="footer-left">
+            <button
+              type="button"
+              class="btn btn-danger"
+              disabled={isDeleting}
+              aria-label="Delete document"
+              onclick={() => {
+                if (document) onDelete(document);
+              }}
+            >
+              <span aria-hidden="true">🗑️</span> {isDeleting ? 'Deleting...' : 'Delete Document'}
+            </button>
+          </div>
         {/if}
-        {#if onSynthesize}
-          <button
-            type="button"
-            class="btn btn-primary"
-            onclick={() => {
-              if (document) onSynthesize(document);
-            }}
-          >
-            ⚡ Configure & Synthesize
-          </button>
-        {/if}
+        <div class="footer-right">
+          <button type="button" class="btn btn-secondary" onclick={onClose}>Close</button>
+          {#if onOpenInStudio}
+            <button
+              type="button"
+              class="btn btn-secondary"
+              onclick={() => {
+                if (document) onOpenInStudio(document);
+              }}
+            >
+              ⚡ Open in Studio ↗
+            </button>
+          {/if}
+          {#if onSynthesize}
+            <button
+              type="button"
+              class="btn btn-primary"
+              onclick={() => {
+                if (document) onSynthesize(document);
+              }}
+            >
+              ⚡ Configure & Synthesize
+            </button>
+          {/if}
+        </div>
       </div>
     </div>
   </div>
@@ -197,7 +216,20 @@
     padding: 14px 20px;
     border-top: 1px solid #1e293b;
     display: flex;
-    justify-content: flex-end;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .footer-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .footer-right {
+    display: flex;
+    align-items: center;
     gap: 10px;
   }
 
@@ -230,8 +262,19 @@
     background: rgba(255, 255, 255, 0.15);
   }
 
-  .btn:disabled,
-  .btn[disabled] {
+  .btn-danger {
+    background: rgba(239, 68, 68, 0.15);
+    color: #fca5a5;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+  }
+
+  .btn-danger:hover:not(:disabled) {
+    background: rgba(239, 68, 68, 0.25);
+    border-color: rgba(239, 68, 68, 0.5);
+    color: #fee2e2;
+  }
+
+  .btn:disabled {
     opacity: 0.5 !important;
     cursor: not-allowed !important;
     pointer-events: none !important;
