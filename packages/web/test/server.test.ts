@@ -662,4 +662,150 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     const putUpdated = await putRes.json();
     expect(putUpdated.targetDeck).toBe("AdvancedWeb");
   });
+
+  it("deletes single and bulk documents via REST API while preserving all flashcards intact", async () => {
+    // 1. Create a source and documents
+    const source = sourceRepo.create({
+      name: "Distributed Systems Course",
+      type: "web",
+      uri: "https://example.com/systems",
+      targetDeck: "Systems",
+      tags: ["distributed"],
+    });
+
+    const doc1 = docRepo.upsert({
+      sourceId: source.id,
+      title: "Chandy-Lamport Snapshots",
+      url: "https://example.com/systems/chandy-lamport",
+      textContent: "Chandy-Lamport algorithm determines a consistent global state in a distributed system.",
+    });
+
+    const doc2 = docRepo.upsert({
+      sourceId: source.id,
+      title: "Vector Clocks",
+      url: "https://example.com/systems/vector-clocks",
+      textContent: "Vector clocks determine causal ordering of events across nodes.",
+    });
+
+    const doc3 = docRepo.upsert({
+      sourceId: source.id,
+      title: "Byzantine Fault Tolerance",
+      url: "https://example.com/systems/bft",
+      textContent: "BFT protocols tolerate arbitrary and malicious node failures.",
+    });
+
+    // 2. Create flashcards referencing these documents
+    const card1 = cardRepo.create({
+      sourceId: source.id,
+      documentTitle: doc1.title,
+      sourceOriginUrl: doc1.url,
+      question: "What is Chandy-Lamport used for?",
+      answer: "Determining a consistent global state in distributed systems.",
+      sourceQuote: "consistent global state in a distributed system",
+      difficulty: "expert",
+      personaUsed: "socratic-mentor",
+      targetDeck: "Systems",
+      tags: ["distributed"],
+    });
+
+    const card2 = cardRepo.create({
+      sourceId: source.id,
+      documentTitle: doc2.title,
+      sourceOriginUrl: doc2.url,
+      question: "What do vector clocks determine?",
+      answer: "Causal ordering of events across nodes.",
+      sourceQuote: "causal ordering of events",
+      difficulty: "intermediate",
+      personaUsed: "socratic-mentor",
+      targetDeck: "Systems",
+      tags: ["distributed"],
+    });
+
+    // 3. Delete single document via DELETE /api/documents/:id
+    const singleDelRes = await fetch(`${serverUrl}/api/documents/${doc1.id}`, {
+      method: "DELETE",
+    });
+    expect(singleDelRes.status).toBe(200);
+    const singleDelData = await singleDelRes.json();
+    expect(singleDelData.success).toBe(true);
+
+    // Confirm doc1 is gone but doc2 & doc3 remain
+    expect(docRepo.getById(doc1.id)).toBeNull();
+    expect(docRepo.getById(doc2.id)).not.toBeNull();
+    expect(docRepo.getById(doc3.id)).not.toBeNull();
+
+    // 4. Delete non-existent document returns 404
+    const notFoundDelRes = await fetch(`${serverUrl}/api/documents/${doc1.id}`, {
+      method: "DELETE",
+    });
+    expect(notFoundDelRes.status).toBe(404);
+
+    // 5. Bulk delete documents via POST /api/documents/bulk-delete
+    const bulkDelRes = await fetch(`${serverUrl}/api/documents/bulk-delete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [doc2.id, doc3.id, "non-existent-doc-id"] }),
+    });
+    expect(bulkDelRes.status).toBe(200);
+    const bulkDelData = await bulkDelRes.json();
+    expect(bulkDelData.success).toBe(true);
+    expect(bulkDelData.deletedCount).toBe(2);
+
+    expect(docRepo.getById(doc2.id)).toBeNull();
+    expect(docRepo.getById(doc3.id)).toBeNull();
+
+    // 6. Bulk delete with empty array returns deletedCount: 0
+    const emptyBulkRes = await fetch(`${serverUrl}/api/documents/bulk-delete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [] }),
+    });
+    expect(emptyBulkRes.status).toBe(200);
+    const emptyBulkData = await emptyBulkRes.json();
+    expect(emptyBulkData.success).toBe(true);
+    expect(emptyBulkData.deletedCount).toBe(0);
+
+    // 6b. Test DELETE HTTP method on /api/documents/bulk-delete and malformed payloads
+    const extraDoc = docRepo.upsert({
+      sourceId: source.id,
+      title: "Temporary Test Doc",
+      textContent: "Delete via DELETE method.",
+    });
+
+    const httpDelRes = await fetch(`${serverUrl}/api/documents/bulk-delete`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [extraDoc.id] }),
+    });
+    expect(httpDelRes.status).toBe(200);
+    expect((await httpDelRes.json()).deletedCount).toBe(1);
+
+    // Malformed body where ids is not an array or object is empty
+    const malformedRes = await fetch(`${serverUrl}/api/documents/bulk-delete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: "not-an-array" }),
+    });
+    expect(malformedRes.status).toBe(200);
+    expect((await malformedRes.json()).deletedCount).toBe(0);
+
+    // 7. CRITICAL: Verify flashcards remain 100% intact with all metadata
+    const fetchedCard1 = cardRepo.getById(card1.id);
+    expect(fetchedCard1).not.toBeNull();
+    expect(fetchedCard1?.question).toBe("What is Chandy-Lamport used for?");
+    expect(fetchedCard1?.documentTitle).toBe("Chandy-Lamport Snapshots");
+    expect(fetchedCard1?.sourceOriginUrl).toBe("https://example.com/systems/chandy-lamport");
+
+    const fetchedCard2 = cardRepo.getById(card2.id);
+    expect(fetchedCard2).not.toBeNull();
+    expect(fetchedCard2?.question).toBe("What do vector clocks determine?");
+    expect(fetchedCard2?.documentTitle).toBe("Vector Clocks");
+    expect(fetchedCard2?.sourceOriginUrl).toBe("https://example.com/systems/vector-clocks");
+
+    // Also verify /api/cards endpoint returns the preserved cards
+    const cardsApiRes = await fetch(`${serverUrl}/api/cards?deck=Systems`);
+    expect(cardsApiRes.status).toBe(200);
+    const cardsList = await cardsApiRes.json();
+    expect(cardsList.length).toBe(2);
+  });
 });

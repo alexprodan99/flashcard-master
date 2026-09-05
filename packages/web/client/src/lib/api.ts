@@ -173,7 +173,7 @@ export async function fetchSourceDocuments(sourceId: string, search?: string): P
 }
 
 export async function fetchDocumentDetails(documentId: string): Promise<{ document: DiscoveredDocument }> {
-  const res = await fetch(`/api/documents/${documentId}`);
+  const res = await fetch(`/api/documents/${encodeURIComponent(documentId)}`);
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || 'Failed to fetch document details');
@@ -182,13 +182,26 @@ export async function fetchDocumentDetails(documentId: string): Promise<{ docume
 }
 
 export async function deleteDocument(documentId: string): Promise<boolean> {
-  const res = await fetch(`/api/documents/${documentId}`, { method: 'DELETE' });
+  const res = await fetch(`/api/documents/${encodeURIComponent(documentId)}`, { method: 'DELETE' });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || 'Failed to delete document');
   }
   const data = await res.json();
   return !!data.success;
+}
+
+export async function deleteDocumentsBulk(documentIds: string[]): Promise<{ success: boolean; deletedCount: number }> {
+  const res = await fetch('/api/documents/bulk-delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids: documentIds }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to delete selected documents');
+  }
+  return res.json();
 }
 
 export async function checkAnkiStatus(): Promise<{ connected: boolean; version?: number }> {

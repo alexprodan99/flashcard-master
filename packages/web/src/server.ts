@@ -1866,9 +1866,25 @@ export class WebServer {
             return;
           }
 
-          // 6c. Single Discovered Document: GET /api/documents/:id & DELETE /api/documents/:id
+          // 6c. Bulk Discovered Documents Delete: POST /api/documents/bulk-delete
+          if (pathname === "/api/documents/bulk-delete" && (method === "POST" || method === "DELETE")) {
+            if (!this.options.documentRepo) {
+              this.sendJson(res, 200, { success: true, deletedCount: 0 });
+              return;
+            }
+            const body = await this.parseBody(req);
+            const ids = Array.isArray(body?.ids) ? body.ids : [];
+            const deletedCount = this.options.documentRepo.deleteMany(ids);
+            this.sendJson(res, 200, { success: true, deletedCount });
+            return;
+          }
+
+          // 6d. Single Discovered Document: GET /api/documents/:id & DELETE /api/documents/:id
           if (pathname.startsWith("/api/documents/")) {
-            const docId = pathname.slice("/api/documents/".length);
+            let docId = pathname.slice("/api/documents/".length);
+            try {
+              docId = decodeURIComponent(docId);
+            } catch {}
             if (!this.options.documentRepo) {
               this.sendJson(res, 404, { error: "Document not found" });
               return;

@@ -202,8 +202,42 @@ export class DocumentRepository {
   }
 
   deleteById(id: string): boolean {
-    const res = this.db.prepare("DELETE FROM documents WHERE id = ?").run(id);
+    if (!id || typeof id !== "string" || id.trim().length === 0) return false;
+    const res = this.db.prepare("DELETE FROM documents WHERE id = ?").run(id.trim());
     return res.changes > 0;
+  }
+
+  deleteMany(ids: string[]): number {
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return 0;
+    }
+    const validIds = Array.from(
+      new Set(
+        ids
+          .filter((id) => typeof id === "string")
+          .map((id) => id.trim())
+          .filter((id) => id.length > 0)
+      )
+    );
+    if (validIds.length === 0) {
+      return 0;
+    }
+
+    const stmt = this.db.prepare("DELETE FROM documents WHERE id = ?");
+    const transaction = this.db.transaction((idList: string[]) => {
+      let count = 0;
+      for (const docId of idList) {
+        const res = stmt.run(docId);
+        count += res.changes;
+      }
+      return count;
+    });
+
+    return transaction(validIds);
+  }
+
+  deleteBulk(ids: string[]): number {
+    return this.deleteMany(ids);
   }
 
   deleteBySourceId(sourceId: string): number {

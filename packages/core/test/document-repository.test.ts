@@ -2,17 +2,20 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { createDatabaseClient } from "../src/storage/db.js";
 import { DataSourceRepository } from "../src/storage/source-repository.js";
 import { DocumentRepository } from "../src/storage/document-repository.js";
+import { FlashcardRepository } from "../src/storage/card-repository.js";
 
 describe("DocumentRepository", () => {
   let db: any;
   let sourceRepo: DataSourceRepository;
   let docRepo: DocumentRepository;
+  let cardRepo: FlashcardRepository;
   let testSourceId: string;
 
   beforeEach(() => {
     db = createDatabaseClient({ inMemory: true });
     sourceRepo = new DataSourceRepository(db);
     docRepo = new DocumentRepository(db);
+    cardRepo = new FlashcardRepository(db);
 
     const source = sourceRepo.create({
       name: "Engineering Blog",
@@ -174,5 +177,163 @@ describe("DocumentRepository", () => {
     expect(list.length).toBe(1);
     expect(list[0].title).toBe("Duplicate Article v2");
     expect(list[0].textContent).toBe("Version 2");
+  });
+
+  it("deletes a single document via deleteById and returns boolean success status", () => {
+    const doc = docRepo.upsert({
+      id: "doc-del-1",
+      sourceId: testSourceId,
+      title: "To Be Deleted",
+      textContent: "Delete me please.",
+    });
+
+    expect(docRepo.getById("doc-del-1")).not.toBeNull();
+    const result = docRepo.deleteById("doc-del-1");
+    expect(result).toBe(true);
+    expect(docRepo.getById("doc-del-1")).toBeNull();
+
+    // Deleting again or non-existing ID returns false
+    expect(docRepo.deleteById("doc-del-1")).toBe(false);
+    expect(docRepo.deleteById("non-existing-id")).toBe(false);
+  });
+
+  it("deletes multiple documents in bulk transaction via deleteMany / deleteBulk", () => {
+    docRepo.upsertBatch([
+      { id: "bulk-1", sourceId: testSourceId, title: "Doc 1", textContent: "Body 1" },
+      { id: "bulk-2", sourceId: testSourceId, title: "Doc 2", textContent: "Body 2" },
+      { id: "bulk-3", sourceId: testSourceId, title: "Doc 3", textContent: "Body 3" },
+      { id: "bulk-4", sourceId: testSourceId, title: "Doc 4", textContent: "Body 4" },
+    ]);
+
+    expect(docRepo.getDocumentCount(testSourceId)).toBe(4);
+
+    // Delete 2 valid docs and 1 non-existing doc
+    const deletedCount = docRepo.deleteMany(["bulk-1", "bulk-3", "bulk-999"]);
+    expect(deletedCount).toBe(2);
+
+    expect(docRepo.getById("bulk-1")).toBeNull();
+    expect(docRepo.getById("bulk-2")).not.toBeNull();
+    expect(docRepo.getById("bulk-3")).toBeNull();
+    expect(docRepo.getById("bulk-4")).not.toBeNull();
+    expect(docRepo.getDocumentCount(testSourceId)).toBe(2);
+
+    // Test deleteBulk alias
+    const bulk2Count = docRepo.deleteBulk(["bulk-2"]);
+    expect(bulk2Count).toBe(1);
+    expect(docRepo.getById("bulk-2")).toBeNull();
+
+    // Test empty/invalid inputs
+    expect(docRepo.deleteMany([])).toBe(0);
+    expect(docRepo.deleteMany(["   ", ""])).toBe(0);
+    expect(docRepo.deleteMany(null as any)).toBe(0);
+    expect(docRepo.deleteMany(undefined as any)).toBe(0);
+    expect(docRepo.deleteMany("not-an-array" as any)).toBe(0);
+    expect(docRepo.deleteMany([null, undefined, 123, "   "] as any)).toBe(0);
+  });
+
+  it("handles duplicate IDs and whitespace-padded IDs in deleteMany cleanly", () => {
+    docRepo.upsert({ id: "dup-1", sourceId: testSourceId, title: "Doc 1", textContent: "Body 1" });
+    docRepo.upsert({ id: "dup-2", sourceId: testSourceId, title: "Doc 2", textContent: "Body 2" });
+
+    // Pass duplicated and padded IDs
+    const count = docRepo.deleteMany(["  dup-1  ", "dup-1", "dup-2", "dup-2", "non-existent-id"]);
+    expect(count).toBe(2);
+    expect(docRepo.getById("dup-1")).toBeNull();
+    expect(docRepo.getById("dup-2")).toBeNull();
+  });
+
+  it("strictly preserves generated flashcards across all document deletion vectors", () => {
+    const doc = docRepo.upsert({
+      id: "doc-grounding-source",
+      sourceId: testSourceId,
+      title: "Crucial Architecture Doc",
+      url: "https://example.com/architecture",
+      textContent: "Microservices communicate via event streaming brokers.",
+    });
+
+    const doc2 = docRepo.upsert({
+      id: "doc-grounding-source-2",
+      sourceId: testSourceId,
+      title: "Database Sharding Guide",
+      url: "https://example.com/sharding",
+      textContent: "Consistent hashing distributes keys across database shards.",
+    });
+
+    // Create flashcards derived from both documents
+    const card1 = cardRepo.create({
+      sourceId: testSourceId,
+      documentTitle: doc.title,
+      sourceOriginUrl: doc.url,
+      question: "How do microservices communicate?",
+      answer: "Via event streaming brokers.",
+      sourceQuote: "Microservices communicate via event streaming brokers.",
+      difficulty: "intermediate",
+      personaUsed: "socratic-mentor",
+      targetDeck: "Architecture",
+      tags: ["distributed-systems"],
+    });
+
+    const card2 = cardRepo.create({
+      sourceId: testSourceId,
+      documentTitle: doc.title,
+      sourceOriginUrl: doc.url,
+      question: "What is the primary message broker pattern?",
+      answer: "Event streaming.",
+      sourceQuote: "event streaming brokers",
+      difficulty: "expert",
+      personaUsed: "socratic-mentor",
+      targetDeck: "Architecture",
+      tags: ["distributed-systems"],
+    });
+
+    const card3 = cardRepo.create({
+      sourceId: testSourceId,
+      documentTitle: doc2.title,
+      sourceOriginUrl: doc2.url,
+      question: "How are keys distributed across shards?",
+      answer: "Via consistent hashing.",
+      sourceQuote: "Consistent hashing distributes keys across database shards.",
+      difficulty: "intermediate",
+      personaUsed: "socratic-mentor",
+      targetDeck: "Databases",
+      tags: ["db-scaling"],
+    });
+
+    expect(cardRepo.getById(card1.id)).not.toBeNull();
+    expect(cardRepo.getById(card2.id)).not.toBeNull();
+    expect(cardRepo.getById(card3.id)).not.toBeNull();
+
+    // 1. Delete single document via deleteById
+    const deleted1 = docRepo.deleteById("doc-grounding-source");
+    expect(deleted1).toBe(true);
+    expect(docRepo.getById("doc-grounding-source")).toBeNull();
+
+    // Verify card1 & card2 are 100% preserved
+    const preserved1 = cardRepo.getById(card1.id);
+    expect(preserved1).not.toBeNull();
+    expect(preserved1?.question).toBe("How do microservices communicate?");
+    expect(preserved1?.answer).toBe("Via event streaming brokers.");
+    expect(preserved1?.sourceQuote).toBe("Microservices communicate via event streaming brokers.");
+    expect(preserved1?.documentTitle).toBe("Crucial Architecture Doc");
+    expect(preserved1?.sourceOriginUrl).toBe("https://example.com/architecture");
+    expect(preserved1?.targetDeck).toBe("Architecture");
+
+    // 2. Delete document via deleteMany / deleteBulk
+    const deletedBatchCount = docRepo.deleteMany(["doc-grounding-source-2"]);
+    expect(deletedBatchCount).toBe(1);
+    expect(docRepo.getById("doc-grounding-source-2")).toBeNull();
+
+    // Verify card3 is 100% preserved
+    const preserved3 = cardRepo.getById(card3.id);
+    expect(preserved3).not.toBeNull();
+    expect(preserved3?.question).toBe("How are keys distributed across shards?");
+    expect(preserved3?.documentTitle).toBe("Database Sharding Guide");
+    expect(preserved3?.sourceOriginUrl).toBe("https://example.com/sharding");
+
+    // 3. Delete by source ID when source documents are purged
+    docRepo.deleteBySourceId(testSourceId);
+    expect(cardRepo.getById(card1.id)).not.toBeNull();
+    expect(cardRepo.getById(card2.id)).not.toBeNull();
+    expect(cardRepo.getById(card3.id)).not.toBeNull();
   });
 });
