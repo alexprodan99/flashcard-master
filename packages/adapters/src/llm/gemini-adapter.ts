@@ -1,5 +1,5 @@
 import type { LLMProviderPort, CardGenerationDraft, DifficultyLevel } from "@flashcard-master/core";
-import { LLMAuthenticationError, LLMRateLimitError, LLMResponseParsingError, LLMNetworkError, CardDraftArraySchema, cleanJsonString, type LLMConfig } from "./types.js";
+import { LLMAuthenticationError, LLMRateLimitError, LLMResponseParsingError, LLMNetworkError, parseCardDraftsFromJson, type LLMConfig } from "./types.js";
 
 export class GeminiAdapter implements LLMProviderPort {
   readonly providerName = "gemini";
@@ -33,6 +33,7 @@ export class GeminiAdapter implements LLMProviderPort {
     const prompt = `${options.personaPrompt}
 Generate exactly ${count} atomic Front/Back flashcards from the provided document at a "${options.difficulty}" difficulty level.
 CRITICAL GROUNDING RULE: For each card, copy and paste an EXACT, word-for-word sentence from the provided text into "sourceQuote". Do NOT paraphrase, edit, or summarize any words in "sourceQuote".
+CRITICAL JSON FORMATTING: Ensure all inner quotes inside strings (such as code snippets, filenames, or CLI flags) are strictly escaped with backslashes (\\").
 Respond with a JSON array:
 [
   {
@@ -59,6 +60,7 @@ ${text}`;
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
             responseMimeType: "application/json",
+            maxOutputTokens: 4096,
             temperature: 0.2,
           },
         }),
@@ -81,17 +83,7 @@ ${text}`;
         throw new LLMResponseParsingError(this.providerName, "Empty content response from Gemini.");
       }
 
-      const cleanJson = cleanJsonString(rawText);
-      const parsedJson = JSON.parse(cleanJson);
-      const rawArray = Array.isArray(parsedJson) ? parsedJson : (parsedJson.cards || Object.values(parsedJson)[0]);
-      
-      const validated = CardDraftArraySchema.parse(rawArray);
-      return validated.map((c) => ({
-        question: c.question,
-        answer: c.answer,
-        sourceQuote: c.sourceQuote,
-        difficulty: c.difficulty as DifficultyLevel,
-      }));
+      return parseCardDraftsFromJson(rawText, this.providerName);
     } catch (err: any) {
       if (
         err instanceof LLMAuthenticationError ||

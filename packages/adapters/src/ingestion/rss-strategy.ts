@@ -88,9 +88,10 @@ export class RssIngestionStrategy implements IngestionStrategy {
             typeof item.guid === "object"
               ? item.guid["#text"] || JSON.stringify(item.guid)
               : item.guid || item.link || title;
+          const docId = crypto.createHash("sha256").update(`${sourceId}:${guid}`).digest("hex").slice(0, 32);
 
           docs.push({
-            id: crypto.randomUUID(),
+            id: docId,
             sourceId,
             title,
             rawContent: String(rawContent),
@@ -133,9 +134,10 @@ export class RssIngestionStrategy implements IngestionStrategy {
 
           const publishedAt = safeIsoDate(entry.published || entry.updated);
           const guid = entry.id ? String(entry.id) : (originUrl || String(title));
+          const docId = crypto.createHash("sha256").update(`${sourceId}:${guid}`).digest("hex").slice(0, 32);
 
           docs.push({
-            id: crypto.randomUUID(),
+            id: docId,
             sourceId,
             title: String(title),
             rawContent: String(rawContent),

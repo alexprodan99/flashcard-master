@@ -29,11 +29,12 @@ import type { IngestionStrategyPort, RawDocument, CleanTextDocument, DataSource 
 
 class MockLLM implements LLMProviderPort {
   async generateQAPairs(text: string, options: any): Promise<any[]> {
+    const quote = text.slice(0, 17);
     return [
       {
-        question: "What is mock content?",
-        answer: "Mock answer.",
-        sourceQuote: "Some text content",
+        question: `What is ${quote}?`,
+        answer: `Mock answer for ${quote}.`,
+        sourceQuote: quote,
         difficulty: options?.difficulty || "intermediate",
       },
     ];
@@ -442,7 +443,7 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     expect(data.success).toBe(true);
     expect(data.cardsCreated).toBe(1);
     expect(data.newCards.length).toBe(1);
-    expect(data.newCards[0].question).toBe("What is mock content?");
+    expect(data.newCards[0].question).toContain("What is");
     expect(data.newCards[0].sourceQuote).toBe("Some text content");
     expect(data.newCards[0].documentTitle).toBe("Mock Doc");
     expect(data.newCards[0].sourceOriginUrl).toBe("https://example.com/rss");
@@ -563,5 +564,57 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     expect(data.success).toBe(true);
     expect(data.cardsCreated).toBe(1);
     expect(data.newCards[0].documentTitle).toBe("Targeted Article");
+  });
+
+  it("filters documents by search query in GET /api/sources/:id/documents", async () => {
+    const sources = sourceRepo.list();
+    const source = sources[0];
+    docRepo.upsert({
+      sourceId: source.id,
+      title: "Alpha Architecture Notes",
+      textContent: "Alpha content.",
+    });
+    docRepo.upsert({
+      sourceId: source.id,
+      title: "Beta Microservices Guide",
+      textContent: "Beta content.",
+    });
+
+    const res = await fetch(`${serverUrl}/api/sources/${source.id}/documents?search=Microservices`);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.documents.length).toBe(1);
+    expect(data.documents[0].title).toBe("Beta Microservices Guide");
+  });
+
+  it("generates cards across multiple targeted document IDs simultaneously", async () => {
+    const sources = sourceRepo.list();
+    const source = sources[0];
+    const docA = docRepo.upsert({
+      sourceId: source.id,
+      title: "Distributed Consensus",
+      textContent: "Consensus protocols in distributed computing.",
+    });
+    const docB = docRepo.upsert({
+      sourceId: source.id,
+      title: "Vector Embeddings",
+      textContent: "Vector embeddings in semantic retrieval.",
+    });
+
+    const res = await fetch(`${serverUrl}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: "ollama",
+        model: "phi4-mini",
+        documentIds: [docA.id, docB.id],
+        limit: 1,
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.success).toBe(true);
+    expect(data.cardsCreated).toBe(2);
   });
 });

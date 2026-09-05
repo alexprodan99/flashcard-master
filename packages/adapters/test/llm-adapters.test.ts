@@ -196,4 +196,111 @@ describe("LLM Provider Adapters", () => {
       expect(ollama.providerName).toBe("ollama");
     });
   });
+
+  describe("parseCardDraftsFromJson (Resilience & Auto-Repair)", () => {
+    it("parses valid JSON array directly", async () => {
+      const { parseCardDraftsFromJson } = await import("../src/llm/types.js");
+      const drafts = parseCardDraftsFromJson(SAMPLE_DRAFT_RESPONSE, "test");
+      expect(drafts.length).toBe(1);
+      expect(drafts[0].question).toBe("What does WAL stand for in SQLite?");
+    });
+
+    it("recovers completed cards from truncated unterminated JSON when token limit is hit", async () => {
+      const { parseCardDraftsFromJson } = await import("../src/llm/types.js");
+      const truncated = `[
+        {
+          "question": "What is Raft?",
+          "answer": "Consensus algorithm",
+          "sourceQuote": "Raft is a consensus protocol",
+          "difficulty": "intermediate"
+        },
+        {
+          "question": "What is Paxos?",
+          "answer": "Classic consensus",
+          "sourceQuote": "Paxos is a consensus protocol that is cut off...`;
+
+      const drafts = parseCardDraftsFromJson(truncated, "anthropic");
+      expect(drafts.length).toBe(1);
+      expect(drafts[0].question).toBe("What is Raft?");
+      expect(drafts[0].answer).toBe("Consensus algorithm");
+    });
+
+    it("extracts cards with unescaped internal double quotes inside source quotes or code snippets", async () => {
+      const { parseCardDraftsFromJson } = await import("../src/llm/types.js");
+      const dirtyJson = `[
+        {
+          "question": "How to run the CLI?",
+          "answer": "Use the model flag",
+          "sourceQuote": "Execute agy --model="claude-3-5" to start.",
+          "difficulty": "expert"
+        }
+      ]`;
+
+      const drafts = parseCardDraftsFromJson(dirtyJson, "anthropic");
+      expect(drafts.length).toBe(1);
+      expect(drafts[0].question).toBe("How to run the CLI?");
+      expect(drafts[0].sourceQuote).toContain('agy --model="claude-3-5"');
+      expect(drafts[0].difficulty).toBe("expert");
+    });
+
+    it("extracts cards formatted as Claude XML tags", async () => {
+      const { parseCardDraftsFromJson } = await import("../src/llm/types.js");
+      const xml = `<flashcards>
+        <card>
+          <question>What is bmad-help?</question>
+          <answer>It is a built-in skill.</answer>
+          <sourceQuote>The bmad-help skill is available directly in your AI session.</sourceQuote>
+          <difficulty>intermediate</difficulty>
+        </card>
+      </flashcards>`;
+
+      const drafts = parseCardDraftsFromJson(xml, "anthropic");
+      expect(drafts.length).toBe(1);
+      expect(drafts[0].question).toBe("What is bmad-help?");
+      expect(drafts[0].answer).toBe("It is a built-in skill.");
+    });
+
+    it("extracts cards formatted as markdown bulleted Q&A pairs", async () => {
+      const { parseCardDraftsFromJson } = await import("../src/llm/types.js");
+      const md = `- Question: What is bmad-help?
+- Answer: It is a skill.
+- Source Quote: The bmad-help skill is available directly.
+- Difficulty: intermediate
+
+- Question: What does it inspect?
+- Answer: It inspects your project.
+- Source Quote: it inspects your project, sees what you’ve completed.
+- Difficulty: intermediate`;
+
+      const drafts = parseCardDraftsFromJson(md, "anthropic");
+      expect(drafts.length).toBe(2);
+      expect(drafts[0].question).toBe("What is bmad-help?");
+      expect(drafts[1].question).toBe("What does it inspect?");
+    });
+
+    it("strips thinking blocks and parses embedded JSON array", async () => {
+      const { parseCardDraftsFromJson } = await import("../src/llm/types.js");
+      const thinkingJson = `<thinking>I should analyze the document carefully.</thinking>
+[
+  {
+    "question": "What is bmad-help?",
+    "answer": "It is a skill.",
+    "sourceQuote": "The bmad-help skill is available directly.",
+    "difficulty": "intermediate"
+  }
+]`;
+
+      const drafts = parseCardDraftsFromJson(thinkingJson, "anthropic");
+      expect(drafts.length).toBe(1);
+      expect(drafts[0].question).toBe("What is bmad-help?");
+    });
+
+    it("throws LLMResponseParsingError when no valid cards can be extracted from empty or garbage response", async () => {
+      const { parseCardDraftsFromJson, LLMResponseParsingError } = await import("../src/llm/types.js");
+      expect(() => parseCardDraftsFromJson("I cannot fulfill this request.", "anthropic")).toThrow(
+        LLMResponseParsingError
+      );
+      expect(() => parseCardDraftsFromJson("", "anthropic")).toThrow(LLMResponseParsingError);
+    });
+  });
 });

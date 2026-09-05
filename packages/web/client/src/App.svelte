@@ -9,8 +9,13 @@
 
   let activeTab = $state('dashboard');
 
-  function handleSelectTab(tab: string) {
+  function handleSelectTab(tab: string, queryParams?: Record<string, string>) {
     activeTab = tab;
+    if (queryParams && typeof window !== 'undefined') {
+      const searchParams = new URLSearchParams(queryParams);
+      searchParams.set('tab', tab);
+      window.history.pushState(null, '', `?${searchParams.toString()}`);
+    }
   }
 
   function handleKeyDown(e: KeyboardEvent) {
@@ -28,6 +33,14 @@
   }
 
   onMount(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tabParam = params.get('tab');
+    if (tabParam && ['dashboard', 'sources', 'generate', 'cards', 'export'].includes(tabParam)) {
+      activeTab = tabParam;
+    } else if (params.get('docId') || params.get('sourceId')) {
+      activeTab = 'generate';
+    }
+
     window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
@@ -42,7 +55,7 @@
     {#if activeTab === 'dashboard'}
       <DashboardView onNavigate={handleSelectTab} />
     {:else if activeTab === 'sources'}
-      <SourcesView />
+      <SourcesView onNavigate={handleSelectTab} />
     {:else if activeTab === 'generate'}
       <GenerateStudio onNavigate={handleSelectTab} />
     {:else if activeTab === 'cards'}

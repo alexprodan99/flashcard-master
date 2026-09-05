@@ -3,6 +3,7 @@ import type { DataSourceRepository } from "../storage/source-repository.js";
 import type { SyncStateRepository } from "../storage/sync-state-repository.js";
 import type { DocumentRepository } from "../storage/document-repository.js";
 import type { StrategyRegistry } from "./strategy-registry.js";
+import crypto from "node:crypto";
 
 export interface SyncResult {
   sourceId: string;
@@ -87,14 +88,25 @@ export class IngestionService {
       if (this.docRepo && rawDocs.length > 0) {
         const docsToPersist = rawDocs.map((raw) => {
           const cleanDoc = strategy.extractCleanText(raw);
+          const docUrl =
+            cleanDoc.originUrl ||
+            raw.originUrl ||
+            (source.type === "web" ? source.uri : null);
+          const uniqueKey = docUrl || raw.guid || cleanDoc.title;
+          const deterministicId = crypto
+            .createHash("sha256")
+            .update(`${source.id}:${uniqueKey}`)
+            .digest("hex")
+            .slice(0, 32);
+
           const wordCount = cleanDoc.textContent.trim()
             ? cleanDoc.textContent.trim().split(/\s+/).length
             : 0;
           return {
-            id: cleanDoc.id,
+            id: deterministicId,
             sourceId: source.id,
             title: cleanDoc.title || "Untitled Document",
-            url: cleanDoc.originUrl || raw.originUrl || (source.type === "web" || source.type === "rss" || source.type === "sitemap" || source.type === "llms-txt" ? source.uri : null),
+            url: docUrl,
             textContent: cleanDoc.textContent,
             contentHash: cleanDoc.contentHash || null,
             wordCount,

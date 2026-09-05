@@ -1,5 +1,5 @@
 import type { LLMProviderPort, CardGenerationDraft, DifficultyLevel } from "@flashcard-master/core";
-import { LLMAuthenticationError, LLMRateLimitError, LLMResponseParsingError, LLMNetworkError, CardDraftArraySchema, cleanJsonString, type LLMConfig } from "./types.js";
+import { LLMAuthenticationError, LLMRateLimitError, LLMResponseParsingError, LLMNetworkError, parseCardDraftsFromJson, type LLMConfig } from "./types.js";
 
 export class OpenAIAdapter implements LLMProviderPort {
   readonly providerName = "openai";
@@ -33,6 +33,7 @@ export class OpenAIAdapter implements LLMProviderPort {
     const systemPrompt = `${options.personaPrompt}
 Generate exactly ${count} atomic Front/Back flashcards from the provided document at a "${options.difficulty}" difficulty level.
 CRITICAL GROUNDING RULE: For each card, copy and paste an EXACT, word-for-word sentence from the provided text into "sourceQuote". Do NOT paraphrase, edit, or summarize any words in "sourceQuote".
+CRITICAL JSON FORMATTING: Ensure all inner quotes inside strings (such as code snippets, filenames, or CLI flags) are strictly escaped with backslashes (\\").
 You MUST respond ONLY with a JSON array matching this exact schema:
 [
   {
@@ -61,6 +62,7 @@ You MUST respond ONLY with a JSON array matching this exact schema:
             { role: "user", content: text },
           ],
           response_format: { type: "json_object" },
+          max_tokens: 4096,
           temperature: 0.2,
         }),
       });
@@ -82,17 +84,7 @@ You MUST respond ONLY with a JSON array matching this exact schema:
         throw new LLMResponseParsingError(this.providerName, "Empty message content received from OpenAI.");
       }
 
-      const cleanJson = cleanJsonString(content);
-      const parsedJson = JSON.parse(cleanJson);
-      const rawArray = Array.isArray(parsedJson) ? parsedJson : (parsedJson.cards || parsedJson.flashcards || Object.values(parsedJson)[0]);
-      
-      const validated = CardDraftArraySchema.parse(rawArray);
-      return validated.map((c) => ({
-        question: c.question,
-        answer: c.answer,
-        sourceQuote: c.sourceQuote,
-        difficulty: c.difficulty as DifficultyLevel,
-      }));
+      return parseCardDraftsFromJson(content, this.providerName);
     } catch (err: any) {
       if (
         err instanceof LLMAuthenticationError ||

@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { fetchSources, generateCards } from '../lib/api';
-  import type { DataSource, Flashcard, GenerationResult, DifficultyLevel, PersonaType, CardDepthMode } from '../lib/types';
+  import { fetchSources, fetchSourceDocuments, fetchDocumentDetails, syncSource, generateCards } from '../lib/api';
+  import type { DataSource, DiscoveredDocument, Flashcard, GenerationResult, DifficultyLevel, PersonaType, CardDepthMode } from '../lib/types';
+  import GenerationConfigFields from '../components/GenerationConfigFields.svelte';
+  import DocumentPreviewModal from '../components/DocumentPreviewModal.svelte';
 
   interface Props {
     onNavigate?: (tab: string) => void;
@@ -9,8 +11,21 @@
 
   let { onNavigate }: Props = $props();
 
+  // Sources & Documents State
   let sources = $state<DataSource[]>([]);
+  let sourceDocuments = $state<Record<string, DiscoveredDocument[]>>({});
+  let loadingDocs = $state<Record<string, boolean>>({});
+  let syncingSources = $state<Record<string, boolean>>({});
+  let expandedSources = $state<Record<string, boolean>>({});
+  let selectedDocIds = $state<Record<string, boolean>>({});
   let selectedSourceIds = $state<string[]>([]);
+  let sourceFilterQuery = $state<Record<string, string>>({});
+
+  // Preview Modal State
+  let previewDoc = $state<DiscoveredDocument | null>(null);
+  let isPreviewOpen = $state(false);
+
+  // Generation Settings State (passed to GenerationConfigFields)
   let provider = $state('ollama');
   let model = $state('phi4-mini');
   let apiKey = $state('');
@@ -22,54 +37,193 @@
   let targetDeck = $state('');
   let enforceGrounding = $state(true);
 
+  // Execution State
   let isGenerating = $state(false);
   let errorMessage = $state<string | null>(null);
   let generationResult = $state<GenerationResult | null>(null);
 
-  const providerDefaults: Record<string, { model: string; showApiKey: boolean }> = {
-    ollama: { model: 'phi4-mini', showApiKey: false },
-    gemini: { model: 'gemini-2.0-flash', showApiKey: true },
-    openai: { model: 'gpt-4o-mini', showApiKey: true },
-    anthropic: { model: 'claude-haiku-4-5-20251001', showApiKey: true },
-  };
+  // Computed Scope Metrics
+  let selectedDocCount = $derived(
+    Object.keys(selectedDocIds).filter((id) => selectedDocIds[id]).length
+  );
 
-  function handleProviderChange(newProvider: string) {
-    provider = newProvider;
-    if (providerDefaults[newProvider]) {
-      model = providerDefaults[newProvider].model;
-    }
-  }
-
-  function toggleAllSources() {
-    if (selectedSourceIds.length === sources.length) {
-      selectedSourceIds = [];
-    } else {
-      selectedSourceIds = sources.map((s) => s.id);
-    }
-  }
-
-  function toggleSource(id: string) {
-    if (selectedSourceIds.includes(id)) {
-      selectedSourceIds = selectedSourceIds.filter((sId) => sId !== id);
-    } else {
-      selectedSourceIds = [...selectedSourceIds, id];
-    }
-  }
+  let selectedTotalWords = $derived(
+    Object.values(sourceDocuments)
+      .flat()
+      .filter((doc) => selectedDocIds[doc.id])
+      .reduce((sum, doc) => sum + (doc.wordCount || 0), 0)
+  );
 
   async function loadSources() {
     try {
       const all = await fetchSources();
       sources = all.filter((s) => s.isActive);
-      selectedSourceIds = sources.map((s) => s.id);
+      
+      // Check for deep-link query params (?docId=... or ?sourceId=...)
+      const params = new URLSearchParams(window.location.search);
+      const deepDocId = params.get('docId');
+      const deepSourceId = params.get('sourceId');
+
+      if (deepDocId) {
+        try {
+          const docData = await fetchDocumentDetails(deepDocId);
+          if (docData.document) {
+            const doc = docData.document;
+            expandedSources[doc.sourceId] = true;
+            await loadDocumentsForSource(doc.sourceId);
+            selectedDocIds[doc.id] = true;
+            if (!selectedSourceIds.includes(doc.sourceId)) {
+              selectedSourceIds = [...selectedSourceIds, doc.sourceId];
+            }
+          }
+        } catch {
+          // If deep-link fails, fallback to selecting all sources
+          selectedSourceIds = sources.map((s) => s.id);
+        }
+      } else if (deepSourceId) {
+        expandedSources[deepSourceId] = true;
+        await loadDocumentsForSource(deepSourceId);
+        selectedSourceIds = [deepSourceId];
+        selectAllDocsForSource(deepSourceId);
+      } else {
+        // Default: select all sources
+        selectedSourceIds = sources.map((s) => s.id);
+      }
     } catch (err: any) {
       errorMessage = 'Failed to load active data sources: ' + err.message;
     }
   }
 
+  async function loadDocumentsForSource(sourceId: string) {
+    loadingDocs[sourceId] = true;
+    try {
+      const data = await fetchSourceDocuments(sourceId);
+      sourceDocuments[sourceId] = data.documents;
+    } catch (err: any) {
+      console.error(`Failed to load docs for source ${sourceId}:`, err);
+    } finally {
+      loadingDocs[sourceId] = false;
+    }
+  }
+
+  async function handleToggleExpand(sourceId: string) {
+    expandedSources[sourceId] = !expandedSources[sourceId];
+    if (expandedSources[sourceId] && !sourceDocuments[sourceId]) {
+      await loadDocumentsForSource(sourceId);
+      // If source was selected, auto-select all loaded documents
+      if (selectedSourceIds.includes(sourceId) && sourceDocuments[sourceId]) {
+        sourceDocuments[sourceId].forEach((doc) => {
+          selectedDocIds[doc.id] = true;
+        });
+      }
+    }
+  }
+
+  async function handleQuickSyncSource(sourceId: string) {
+    syncingSources[sourceId] = true;
+    try {
+      await syncSource(sourceId);
+      await loadDocumentsForSource(sourceId);
+      selectAllDocsForSource(sourceId);
+    } catch (err: any) {
+      alert('Sync failed: ' + err.message);
+    } finally {
+      syncingSources[sourceId] = false;
+    }
+  }
+
+  function selectAllDocsForSource(sourceId: string) {
+    const docs = sourceDocuments[sourceId] || [];
+    docs.forEach((doc) => {
+      selectedDocIds[doc.id] = true;
+    });
+  }
+
+  function deselectAllDocsForSource(sourceId: string) {
+    const docs = sourceDocuments[sourceId] || [];
+    docs.forEach((doc) => {
+      selectedDocIds[doc.id] = false;
+    });
+  }
+
+  function isSourceFullyChecked(source: DataSource): boolean {
+    const docs = sourceDocuments[source.id];
+    if (!docs || docs.length === 0) {
+      return selectedSourceIds.includes(source.id);
+    }
+    return docs.every((doc) => selectedDocIds[doc.id]);
+  }
+
+  function isSourceIndeterminate(source: DataSource): boolean {
+    const docs = sourceDocuments[source.id];
+    if (!docs || docs.length === 0) return false;
+    const someChecked = docs.some((doc) => selectedDocIds[doc.id]);
+    const allChecked = docs.every((doc) => selectedDocIds[doc.id]);
+    return someChecked && !allChecked;
+  }
+
+  async function toggleSourceCheck(source: DataSource) {
+    const fullyChecked = isSourceFullyChecked(source);
+    if (!sourceDocuments[source.id]) {
+      await loadDocumentsForSource(source.id);
+    }
+
+    if (fullyChecked) {
+      selectedSourceIds = selectedSourceIds.filter((id) => id !== source.id);
+      deselectAllDocsForSource(source.id);
+    } else {
+      if (!selectedSourceIds.includes(source.id)) {
+        selectedSourceIds = [...selectedSourceIds, source.id];
+      }
+      selectAllDocsForSource(source.id);
+    }
+  }
+
+  function toggleDocCheck(doc: DiscoveredDocument, sourceId: string) {
+    selectedDocIds[doc.id] = !selectedDocIds[doc.id];
+    // Keep selectedSourceIds in sync
+    const docs = sourceDocuments[sourceId] || [];
+    const anyChecked = docs.some((d) => selectedDocIds[d.id]);
+    if (anyChecked && !selectedSourceIds.includes(sourceId)) {
+      selectedSourceIds = [...selectedSourceIds, sourceId];
+    } else if (!anyChecked) {
+      selectedSourceIds = selectedSourceIds.filter((id) => id !== sourceId);
+    }
+  }
+
+  async function toggleSelectAllGlobal() {
+    const allSourcesSelected = sources.every((s) => isSourceFullyChecked(s));
+    if (allSourcesSelected) {
+      selectedSourceIds = [];
+      Object.keys(selectedDocIds).forEach((k) => (selectedDocIds[k] = false));
+    } else {
+      selectedSourceIds = sources.map((s) => s.id);
+      for (const s of sources) {
+        if (!sourceDocuments[s.id]) {
+          await loadDocumentsForSource(s.id);
+        }
+        selectAllDocsForSource(s.id);
+      }
+    }
+  }
+
+  async function handleOpenPreview(doc: DiscoveredDocument) {
+    try {
+      const details = await fetchDocumentDetails(doc.id);
+      previewDoc = details.document;
+      isPreviewOpen = true;
+    } catch (err: any) {
+      alert('Failed to load document preview: ' + err.message);
+    }
+  }
+
   async function handleGenerate(e: Event) {
     e.preventDefault();
-    if (selectedSourceIds.length === 0) {
-      errorMessage = 'Please select at least one data source to synthesize cards from.';
+    if (isGenerating) return;
+    const targetedDocIds = Object.keys(selectedDocIds).filter((id) => selectedDocIds[id]);
+
+    if (targetedDocIds.length === 0 && selectedSourceIds.length === 0) {
+      errorMessage = 'Please select at least one document or data source to synthesize cards from.';
       return;
     }
 
@@ -78,8 +232,7 @@
     generationResult = null;
 
     try {
-      const result = await generateCards({
-        sourceIds: selectedSourceIds,
+      const payload: any = {
         provider,
         model: model.trim() || undefined,
         apiKey: apiKey.trim() || undefined,
@@ -90,8 +243,15 @@
         limit,
         targetDeck: targetDeck.trim() || undefined,
         enforceGrounding,
-      });
+      };
 
+      if (targetedDocIds.length > 0) {
+        payload.documentIds = targetedDocIds;
+      } else {
+        payload.sourceIds = selectedSourceIds;
+      }
+
+      const result = await generateCards(payload);
       generationResult = result;
     } catch (err: any) {
       errorMessage = err.message || 'Generation failed';
@@ -109,22 +269,26 @@
   <div class="view-header">
     <div>
       <h1 class="view-title">⚡ AI Card Generation Studio</h1>
-      <p class="view-subtitle">Synthesize atomic, factually grounded Q&A flashcards from ingested sources.</p>
+      <p class="view-subtitle">Synthesize atomic, factually grounded Q&A flashcards from ingested sources & documents.</p>
     </div>
   </div>
 
   <div class="studio-layout">
     <div class="card form-panel">
       <form onsubmit={handleGenerate} class="studio-form">
-        <!-- 1. Source Scope Selection -->
+        <!-- 1. Hierarchical Source & Document Scope Selection -->
         <div class="form-section">
           <div class="section-header">
-            <label class="section-label">1. Target Data Sources Scope</label>
+            <span class="section-label">1. Target Scope (Sources & Documents)</span>
             <div class="header-actions">
               <span class="selection-badge">
-                {selectedSourceIds.length} / {sources.length} Selected
+                {#if selectedDocCount > 0}
+                  🎯 {selectedDocCount} docs selected (~{selectedTotalWords.toLocaleString()} words)
+                {:else}
+                  📁 {selectedSourceIds.length} / {sources.length} sources
+                {/if}
               </span>
-              <button type="button" class="btn btn-xs btn-secondary" onclick={toggleAllSources}>
+              <button type="button" class="btn btn-xs btn-secondary" onclick={toggleSelectAllGlobal}>
                 {selectedSourceIds.length === sources.length ? 'Deselect All' : 'Select All'}
               </button>
             </div>
@@ -135,202 +299,115 @@
               <span>⚠️ No active data sources found. Please add or enable a data source first.</span>
             </div>
           {:else}
-            <div class="sources-checkbox-grid">
-              {#each sources as s}
-                <label class="source-checkbox-item" class:checked={selectedSourceIds.includes(s.id)}>
-                  <input
-                    type="checkbox"
-                    checked={selectedSourceIds.includes(s.id)}
-                    onchange={() => toggleSource(s.id)}
-                  />
-                  <span class="type-badge {s.type}">{s.type}</span>
-                  <span class="source-item-name">{s.name}</span>
-                </label>
+            <div class="scope-tree-container">
+              {#each sources as s (s.id)}
+                <div class="source-node" class:expanded={expandedSources[s.id]}>
+                  <div class="source-node-header">
+                    <label class="checkbox-container">
+                      <input
+                        type="checkbox"
+                        checked={isSourceFullyChecked(s)}
+                        indeterminate={isSourceIndeterminate(s)}
+                        onchange={() => toggleSourceCheck(s)}
+                      />
+                    </label>
+
+                    <button
+                      type="button"
+                      class="accordion-toggle"
+                      onclick={() => handleToggleExpand(s.id)}
+                    >
+                      <span class="toggle-icon">{expandedSources[s.id] ? '▼' : '▶'}</span>
+                      <span class="type-badge {s.type}">{s.type}</span>
+                      <span class="source-title">{s.name}</span>
+                      {#if sourceDocuments[s.id]}
+                        <span class="doc-count-pill">{sourceDocuments[s.id].length} docs</span>
+                      {/if}
+                    </button>
+                  </div>
+
+                  <!-- Expanded Document List -->
+                  {#if expandedSources[s.id]}
+                    <div class="source-documents-tray">
+                      {#if loadingDocs[s.id]}
+                        <div class="tray-loading">
+                          <span class="spinner-inline"></span>
+                          <span>Loading discovered documents...</span>
+                        </div>
+                      {:else if !sourceDocuments[s.id] || sourceDocuments[s.id].length === 0}
+                        <div class="tray-empty">
+                          <span>No documents discovered yet.</span>
+                          <button
+                            type="button"
+                            class="btn btn-xs btn-primary"
+                            disabled={syncingSources[s.id]}
+                            onclick={() => handleQuickSyncSource(s.id)}
+                          >
+                            {#if syncingSources[s.id]}
+                              <span class="spinner-inline"></span> Syncing...
+                            {:else}
+                              ⚡ Sync Now
+                            {/if}
+                          </button>
+                        </div>
+                      {:else}
+                        <div class="tray-filter-row">
+                          <input
+                            type="text"
+                            placeholder="🔍 Filter articles in this source..."
+                            bind:value={sourceFilterQuery[s.id]}
+                            class="tray-filter-input"
+                          />
+                        </div>
+
+                        <div class="tray-doc-list">
+                          {#each sourceDocuments[s.id].filter((d) => !sourceFilterQuery[s.id] || d.title.toLowerCase().includes(sourceFilterQuery[s.id].toLowerCase())) as doc (doc.id)}
+                            <div class="tray-doc-row" class:selected={selectedDocIds[doc.id]}>
+                              <label class="tray-doc-label">
+                                <input
+                                  type="checkbox"
+                                  checked={!!selectedDocIds[doc.id]}
+                                  onchange={() => toggleDocCheck(doc, s.id)}
+                                />
+                                <span class="tray-doc-title" title={doc.title}>{doc.title}</span>
+                              </label>
+
+                              <div class="tray-doc-actions">
+                                <span class="word-badge">{doc.wordCount.toLocaleString()}w</span>
+                                <button
+                                  type="button"
+                                  class="btn-preview-mini"
+                                  onclick={() => handleOpenPreview(doc)}
+                                  title="Preview Document Text"
+                                >
+                                  👁️ Preview
+                                </button>
+                              </div>
+                            </div>
+                          {/each}
+                        </div>
+                      {/if}
+                    </div>
+                  {/if}
+                </div>
               {/each}
             </div>
           {/if}
         </div>
 
-        <!-- 2. AI Provider & Model -->
-        <div class="form-section">
-          <label class="section-label">2. AI Engine & Model</label>
-          <div class="form-row">
-            <div class="form-group">
-              <label for="provider-select">Provider</label>
-              <select
-                id="provider-select"
-                value={provider}
-                onchange={(e) => handleProviderChange((e.target as HTMLSelectElement).value)}
-              >
-                <option value="ollama">🦙 Ollama (100% Local & Free)</option>
-                <option value="gemini">🔵 Google Gemini</option>
-                <option value="openai">🟢 OpenAI</option>
-                <option value="anthropic">🟣 Anthropic Claude</option>
-              </select>
-            </div>
-
-            <div class="form-group">
-              <label for="model-input">Model Preset / Override</label>
-              <input
-                id="model-input"
-                type="text"
-                bind:value={model}
-                placeholder="e.g. phi4-mini, gpt-4o-mini, claude-haiku-4-5-20251001"
-                required
-              />
-            </div>
-          </div>
-
-          {#if providerDefaults[provider]?.showApiKey}
-            <div class="form-group">
-              <label for="api-key-input">API Key (Optional if configured in environment)</label>
-              <input
-                id="api-key-input"
-                type="password"
-                bind:value={apiKey}
-                placeholder="sk-..."
-              />
-            </div>
-          {/if}
-        </div>
-
-        <!-- 3. Learning Persona & Cognitive Difficulty -->
-        <div class="form-section">
-          <label class="section-label">3. Pedagogy & Cognitive Calibration</label>
-          <div class="form-row">
-            <div class="form-group">
-              <label for="persona-select">Learning Persona</label>
-              <select id="persona-select" bind:value={persona}>
-                <option value="socratic-mentor">Socratic Mentor (Deep First-Principles)</option>
-                <option value="strict-examiner">Strict Examiner (Precise Definitions & Edge Cases)</option>
-                <option value="analogy-builder">Analogy Builder (Intuitive Real-World Metaphors)</option>
-              </select>
-            </div>
-
-            <div class="form-group">
-              <label for="difficulty-select">Target Difficulty</label>
-              <select id="difficulty-select" bind:value={difficulty}>
-                <option value="beginner">Beginner (Foundational Concepts)</option>
-                <option value="intermediate">Intermediate (Standard Engineering & Architecture)</option>
-                <option value="expert">Expert (Advanced Invariants, Protocols, Trade-offs)</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="form-row">
-            <div class="form-group">
-              <label for="limit-input">Cards per Document Chunk</label>
-              <input
-                id="limit-input"
-                type="number"
-                min="1"
-                max="10"
-                bind:value={limit}
-              />
-            </div>
-
-            <div class="form-group">
-              <label for="target-deck-input">Target Deck Override (Optional)</label>
-              <input
-                id="target-deck-input"
-                type="text"
-                placeholder="e.g. Systems Design"
-                bind:value={targetDeck}
-              />
-            </div>
-          </div>
-
-          <div class="form-checkbox-row">
-            <label class="checkbox-label">
-              <input type="checkbox" bind:checked={enforceGrounding} />
-              <span>🛡️ Enforce Verbatim Grounding Guard (Discard ungrounded hallucinated cards)</span>
-            </label>
-          </div>
-        </div>
-
-        <!-- 4. Question Depth & Context Scope -->
-        <div class="form-section">
-          <span class="section-label">4. Question Depth & Context Scope</span>
-          
-          <div class="depth-mode-grid">
-            <button
-              type="button"
-              class="depth-card"
-              class:active={depthMode === 'atomic'}
-              onclick={() => (depthMode = 'atomic')}
-            >
-              <div class="depth-card-header">
-                <span class="depth-icon">⚡</span>
-                <span class="depth-title">Atomic Recall</span>
-              </div>
-              <p class="depth-desc">Rapid single-fact questions with punchy, direct answers for fast memory retrieval.</p>
-            </button>
-
-            <button
-              type="button"
-              class="depth-card"
-              class:active={depthMode === 'deep-dive'}
-              onclick={() => (depthMode = 'deep-dive')}
-            >
-              <div class="depth-card-header">
-                <span class="depth-icon">🔬</span>
-                <span class="depth-title">Deep Dive</span>
-              </div>
-              <p class="depth-desc">In-depth mechanisms, architectural tradeoffs, and comprehensive structural explanations.</p>
-            </button>
-
-            <button
-              type="button"
-              class="depth-card"
-              class:active={depthMode === 'scenario'}
-              onclick={() => (depthMode = 'scenario')}
-            >
-              <div class="depth-card-header">
-                <span class="depth-icon">🏗️</span>
-                <span class="depth-title">Applied Scenario</span>
-              </div>
-              <p class="depth-desc">Situational troubleshooting challenges and applied engineering case studies.</p>
-            </button>
-          </div>
-
-          <div class="scope-row">
-            <span class="scope-label">Document Context Scope:</span>
-            <div class="scope-chips">
-              <button
-                type="button"
-                class="scope-chip"
-                class:active={chunkMultiplier === 1}
-                onclick={() => (chunkMultiplier = 1)}
-              >
-                1x Standard (2k)
-              </button>
-              <button
-                type="button"
-                class="scope-chip"
-                class:active={chunkMultiplier === 2}
-                onclick={() => (chunkMultiplier = 2)}
-              >
-                2x Macro (4k)
-              </button>
-              <button
-                type="button"
-                class="scope-chip"
-                class:active={chunkMultiplier === 3}
-                onclick={() => (chunkMultiplier = 3)}
-              >
-                3x Deep (6k)
-              </button>
-              <button
-                type="button"
-                class="scope-chip"
-                class:active={chunkMultiplier === 0}
-                onclick={() => (chunkMultiplier = 0)}
-              >
-                📄 Full Article
-              </button>
-            </div>
-          </div>
-        </div>
+        <!-- 2-5. AI Engine, Pedagogy, Depth & Deck Configuration (Story 11.1) -->
+        <GenerationConfigFields
+          bind:provider
+          bind:model
+          bind:apiKey
+          bind:persona
+          bind:difficulty
+          bind:depthMode
+          bind:chunkMultiplier
+          bind:limit
+          bind:targetDeck
+          bind:enforceGrounding
+        />
 
         {#if errorMessage}
           <div class="error-banner">⚠️ {errorMessage}</div>
@@ -399,12 +476,19 @@
         <div class="idle-results-placeholder">
           <div class="placeholder-icon">⚡</div>
           <h3>AI Generation Studio Ready</h3>
-          <p>Configure your sources, model, and persona on the left, then click <strong>Start AI Generation</strong> to synthesize flashcards.</p>
+          <p>Select your target sources or specific documents on the left, then click <strong>Start AI Generation</strong>.</p>
         </div>
       {/if}
     </div>
   </div>
 </div>
+
+<!-- Reusable Document Preview Modal in Generate Studio -->
+<DocumentPreviewModal
+  isOpen={isPreviewOpen}
+  document={previewDoc}
+  onClose={() => (isPreviewOpen = false)}
+/>
 
 <style>
   .view-container {
@@ -450,11 +534,11 @@
     }
   }
 
-  .card {
-    background: #1e293b;
-    border: 1px solid #334155;
-    border-radius: 14px;
+  .form-panel {
     padding: 24px;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 12px;
   }
 
   .studio-form {
@@ -467,13 +551,8 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
-    border-bottom: 1px solid #334155;
     padding-bottom: 16px;
-  }
-
-  .form-section:last-of-type {
-    border-bottom: none;
-    padding-bottom: 0;
+    border-bottom: 1px solid #1e293b;
   }
 
   .section-header {
@@ -485,7 +564,7 @@
   .section-label {
     font-size: 13px;
     font-weight: 700;
-    color: #818cf8;
+    color: #f8fafc;
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
@@ -498,152 +577,200 @@
 
   .selection-badge {
     font-size: 11px;
-    font-weight: 600;
-    color: #cbd5e1;
-    background: #0f172a;
+    background: rgba(99, 102, 241, 0.15);
+    color: #818cf8;
+    border: 1px solid rgba(99, 102, 241, 0.3);
     padding: 2px 8px;
-    border-radius: 4px;
-    border: 1px solid #334155;
+    border-radius: 12px;
+    font-weight: 600;
   }
 
-  .sources-checkbox-grid {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 8px;
-    max-height: 180px;
-    overflow-y: auto;
-    background: #0f172a;
-    padding: 10px;
-    border-radius: 8px;
-    border: 1px solid #334155;
-  }
-
-  .source-checkbox-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 6px 10px;
-    border-radius: 6px;
-    cursor: pointer;
-    background: rgba(255, 255, 255, 0.02);
-    transition: background 0.15s;
-  }
-
-  .source-checkbox-item:hover {
-    background: rgba(255, 255, 255, 0.05);
-  }
-
-  .source-checkbox-item.checked {
-    background: rgba(99, 102, 241, 0.1);
-  }
-
-  .source-item-name {
-    font-size: 13px;
-    color: #f1f5f9;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .form-row {
-    display: flex;
-    gap: 12px;
-  }
-
-  .form-group {
+  /* Scope Tree */
+  .scope-tree-container {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    flex: 1;
+    gap: 8px;
+    max-height: 380px;
+    overflow-y: auto;
+    padding-right: 4px;
   }
 
-  label {
-    font-size: 12px;
-    font-weight: 500;
-    color: #cbd5e1;
-  }
-
-  input[type="text"],
-  input[type="password"],
-  input[type="number"],
-  select {
-    background: #0f172a;
+  .source-node {
+    background: #1e293b;
     border: 1px solid #334155;
     border-radius: 8px;
-    padding: 10px 12px;
-    color: #f8fafc;
-    font-size: 13px;
-    outline: none;
+    overflow: hidden;
     transition: border-color 0.15s;
-    width: 100%;
   }
 
-  input:focus, select:focus {
-    border-color: #6366f1;
+  .source-node:hover {
+    border-color: #475569;
   }
 
-  .form-checkbox-row {
-    margin-top: 4px;
+  .source-node-header {
+    display: flex;
+    align-items: center;
+    padding: 10px 12px;
+    gap: 10px;
   }
 
-  .checkbox-label {
+  .checkbox-container {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+  }
+
+  .accordion-toggle {
+    flex: 1;
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 12px;
-    color: #cbd5e1;
-    cursor: pointer;
-  }
-
-  .btn {
-    padding: 10px 18px;
-    border-radius: 8px;
-    font-size: 14px;
+    background: transparent;
+    border: none;
+    color: #f8fafc;
+    font-size: 13px;
     font-weight: 600;
     cursor: pointer;
-    border: 1px solid transparent;
-    transition: all 0.15s;
+    text-align: left;
+    padding: 0;
   }
 
-  .btn-xs {
-    padding: 2px 8px;
+  .toggle-icon {
+    font-size: 10px;
+    color: #94a3b8;
+    width: 14px;
+  }
+
+  .source-title {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .doc-count-pill {
     font-size: 11px;
+    background: rgba(255, 255, 255, 0.06);
+    color: #94a3b8;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 500;
   }
 
-  .btn-secondary {
-    background: #334155;
-    color: #cbd5e1;
+  /* Tray */
+  .source-documents-tray {
+    border-top: 1px solid #334155;
+    background: #0b0f19;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }
 
-  .btn-secondary:hover {
-    background: #475569;
-  }
-
-  .btn-primary {
-    background: #6366f1;
-    color: #ffffff;
-  }
-
-  .btn-primary:hover {
-    background: #4f46e5;
-  }
-
-  .btn-generate {
-    width: 100%;
-    padding: 14px;
-    font-size: 15px;
+  .tray-loading, .tray-empty {
+    padding: 12px;
+    text-align: center;
+    font-size: 12px;
+    color: #94a3b8;
     display: flex;
     align-items: center;
     justify-content: center;
+    gap: 8px;
+  }
+
+  .tray-filter-row {
+    margin-bottom: 4px;
+  }
+
+  .tray-filter-input {
+    width: 100%;
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: #f8fafc;
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+  }
+
+  .tray-filter-input:focus {
+    outline: none;
+    border-color: #6366f1;
+  }
+
+  .tray-doc-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .tray-doc-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 8px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
     gap: 10px;
-    margin-top: 8px;
   }
 
-  .btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
+  .tray-doc-row:hover {
+    background: rgba(255, 255, 255, 0.05);
   }
 
+  .tray-doc-row.selected {
+    background: rgba(99, 102, 241, 0.08);
+    border-color: rgba(99, 102, 241, 0.3);
+  }
+
+  .tray-doc-label {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    min-width: 0;
+  }
+
+  .tray-doc-title {
+    font-size: 12px;
+    color: #e2e8f0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .tray-doc-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .word-badge {
+    font-size: 10px;
+    color: #94a3b8;
+  }
+
+  .btn-preview-mini {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid #334155;
+    color: #cbd5e1;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  .btn-preview-mini:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: white;
+  }
+
+  /* Badges */
   .type-badge {
     font-size: 10px;
     font-weight: 700;
@@ -652,60 +779,66 @@
     border-radius: 4px;
   }
 
-  .type-badge.rss {
-    background: rgba(249, 115, 22, 0.15);
-    color: #fb923c;
+  .type-badge.rss { background: rgba(249, 115, 22, 0.15); color: #fb923c; }
+  .type-badge.web { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+  .type-badge.local { background: rgba(168, 85, 247, 0.15); color: #c084fc; }
+  .type-badge.sitemap { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+  .type-badge.llms-txt { background: rgba(236, 72, 153, 0.15); color: #f472b6; }
+
+  .btn {
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.15s;
   }
 
-  .type-badge.web {
-    background: rgba(59, 130, 246, 0.15);
-    color: #60a5fa;
+  .btn-xs {
+    padding: 3px 8px;
+    font-size: 11px;
   }
 
-  .type-badge.local {
-    background: rgba(168, 85, 247, 0.15);
-    color: #c084fc;
+  .btn-primary {
+    background: #6366f1;
+    color: white;
   }
 
-  .results-panel {
-    background: #1e293b;
-    border: 1px solid #334155;
-    border-radius: 14px;
-    padding: 24px;
-    min-height: 480px;
-    display: flex;
-    flex-direction: column;
+  .btn-primary:hover:not(:disabled) {
+    background: #4f46e5;
   }
 
-  .idle-results-placeholder, .generating-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    flex: 1;
-    text-align: center;
-    color: #94a3b8;
-    padding: 40px;
+  .btn-secondary {
+    background: rgba(255, 255, 255, 0.08);
+    color: #e2e8f0;
+    border-color: #334155;
   }
 
-  .placeholder-icon {
-    font-size: 44px;
-    margin-bottom: 12px;
+  .btn-secondary:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.15);
   }
 
-  .pulse-spinner {
-    width: 48px;
-    height: 48px;
-    border: 4px solid rgba(99, 102, 241, 0.2);
-    border-top-color: #6366f1;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-    margin-bottom: 16px;
+  .btn-generate {
+    padding: 12px 20px;
+    font-size: 15px;
+    font-weight: 700;
+    width: 100%;
+    margin-top: 10px;
+  }
+
+  .btn:disabled,
+  .btn[disabled],
+  .btn-generate:disabled {
+    opacity: 0.5 !important;
+    cursor: not-allowed !important;
+    pointer-events: none !important;
   }
 
   .spinner-inline {
-    width: 16px;
-    height: 16px;
+    display: inline-block;
+    width: 12px;
+    height: 12px;
     border: 2px solid rgba(255, 255, 255, 0.3);
     border-top-color: white;
     border-radius: 50%;
@@ -716,17 +849,77 @@
     to { transform: rotate(360deg); }
   }
 
+  .error-banner {
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #fca5a5;
+    padding: 10px;
+    border-radius: 6px;
+    font-size: 12px;
+  }
+
+  .no-sources-warning {
+    padding: 16px;
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.2);
+    border-radius: 6px;
+    font-size: 13px;
+    color: #fbbf24;
+    text-align: center;
+  }
+
+  /* Results Panel */
+  .results-panel {
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 24px;
+    min-height: 480px;
+  }
+
+  .generating-state, .idle-results-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 60px 20px;
+    color: #94a3b8;
+  }
+
+  .pulse-spinner {
+    width: 48px;
+    height: 48px;
+    border: 4px solid rgba(99, 102, 241, 0.2);
+    border-top-color: #6366f1;
+    border-radius: 50%;
+    animation: spin 1s cubic-bezier(0.68, -0.55, 0.27, 1.55) infinite;
+    margin-bottom: 16px;
+  }
+
+  .placeholder-icon {
+    font-size: 40px;
+    margin-bottom: 12px;
+  }
+
+  .result-card {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
   .result-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 16px;
+    border-bottom: 1px solid #1e293b;
+    padding-bottom: 12px;
   }
 
   .result-header h3 {
     margin: 0;
-    color: #f8fafc;
     font-size: 18px;
+    color: #f8fafc;
   }
 
   .result-metrics {
@@ -735,21 +928,14 @@
   }
 
   .metric-pill {
+    padding: 4px 10px;
+    border-radius: 12px;
     font-size: 12px;
     font-weight: 600;
-    padding: 4px 10px;
-    border-radius: 6px;
   }
 
-  .metric-pill.success {
-    background: rgba(16, 185, 129, 0.15);
-    color: #34d399;
-  }
-
-  .metric-pill.warning {
-    background: rgba(245, 158, 11, 0.15);
-    color: #fbbf24;
-  }
+  .metric-pill.success { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+  .metric-pill.warning { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
 
   .cards-preview-list {
     display: flex;
@@ -757,11 +943,16 @@
     gap: 12px;
     max-height: 520px;
     overflow-y: auto;
-    padding-right: 4px;
+  }
+
+  .cards-preview-list h4 {
+    margin: 0;
+    font-size: 14px;
+    color: #cbd5e1;
   }
 
   .preview-card-item {
-    background: #0f172a;
+    background: #1e293b;
     border: 1px solid #334155;
     border-radius: 8px;
     padding: 14px;
@@ -772,17 +963,10 @@
 
   .preview-card-top {
     display: flex;
-    justify-content: space-between;
+    gap: 6px;
   }
 
-  .badge {
-    font-size: 11px;
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-weight: 600;
-  }
-
-  .type-badge {
+  .badge.difficulty {
     font-size: 10px;
     font-weight: 700;
     text-transform: uppercase;
@@ -790,142 +974,52 @@
     border-radius: 4px;
   }
 
-  .type-badge.rss { background: rgba(249, 115, 22, 0.15); color: #fb923c; border: 1px solid rgba(249, 115, 22, 0.3); }
-  .type-badge.web { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3); }
-  .type-badge.local { background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); }
-  .type-badge.sitemap { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
-  .type-badge.llms-txt { background: rgba(236, 72, 153, 0.15); color: #f472b6; border: 1px solid rgba(236, 72, 153, 0.3); }
-
   .badge.difficulty.beginner { background: rgba(16, 185, 129, 0.15); color: #34d399; }
   .badge.difficulty.intermediate { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
   .badge.difficulty.expert { background: rgba(168, 85, 247, 0.15); color: #c084fc; }
-  .badge.deck { background: rgba(255, 255, 255, 0.05); color: #94a3b8; }
+
+  .badge.deck {
+    font-size: 11px;
+    color: #cbd5e1;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
 
   .preview-question {
-    color: #f8fafc;
-    font-size: 13px;
-  }
-
-  .preview-answer {
-    color: #cbd5e1;
-    font-size: 13px;
-  }
-
-  .preview-quote {
-    font-size: 12px;
-    color: #94a3b8;
-    background: rgba(99, 102, 241, 0.05);
-    border-left: 2px solid #6366f1;
-    padding: 6px 10px;
-    border-radius: 0 4px 4px 0;
-  }
-
-  .error-banner {
-    background: rgba(239, 68, 68, 0.15);
-    border: 1px solid rgba(239, 68, 68, 0.3);
-    color: #fca5a5;
-    padding: 10px 14px;
-    border-radius: 8px;
-    font-size: 13px;
-  }
-
-  /* Depth Mode Grid */
-  .depth-mode-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: 12px;
-    margin-top: 6px;
-  }
-
-  .depth-card {
-    background: #0f172a;
-    border: 1px solid #334155;
-    border-radius: 8px;
-    padding: 12px;
-    text-align: left;
-    cursor: pointer;
-    transition: all 0.15s;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .depth-card:hover {
-    border-color: #475569;
-    background: #1e293b;
-  }
-
-  .depth-card.active {
-    border-color: #6366f1;
-    background: rgba(99, 102, 241, 0.1);
-  }
-
-  .depth-card-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .depth-icon {
-    font-size: 16px;
-  }
-
-  .depth-title {
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 600;
     color: #f8fafc;
-  }
-
-  .depth-desc {
-    margin: 0;
-    font-size: 11px;
-    color: #94a3b8;
     line-height: 1.4;
   }
 
-  /* Document Context Scope */
-  .scope-row {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin-top: 10px;
-    padding-top: 10px;
-    border-top: 1px solid rgba(51, 65, 85, 0.5);
-  }
-
-  .scope-label {
-    font-size: 12px;
-    font-weight: 600;
+  .preview-answer {
+    font-size: 13px;
     color: #cbd5e1;
+    line-height: 1.4;
   }
 
-  .scope-chips {
+  .preview-quote {
     display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  .scope-chip {
-    background: #0f172a;
-    border: 1px solid #334155;
-    color: #94a3b8;
-    border-radius: 6px;
-    padding: 6px 12px;
+    gap: 6px;
     font-size: 12px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.15s;
+    color: #94a3b8;
+    background: rgba(0, 0, 0, 0.25);
+    padding: 6px 10px;
+    border-left: 3px solid #6366f1;
+    border-radius: 0 4px 4px 0;
+    font-style: italic;
   }
 
-  .scope-chip:hover {
-    background: #1e293b;
-    color: #f1f5f9;
+  .quote-icon {
+    font-weight: 700;
+    color: #6366f1;
   }
 
-  .scope-chip.active {
-    background: #6366f1;
-    color: white;
-    border-color: #6366f1;
-    font-weight: 600;
+  .no-cards-notice {
+    padding: 24px;
+    text-align: center;
+    color: #94a3b8;
+    font-size: 13px;
   }
 </style>

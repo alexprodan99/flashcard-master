@@ -63,7 +63,8 @@ describe("AnkiConnectAdapter", () => {
     expect(result.message).toContain("offline or unreachable");
   });
 
-  it("creates deck and syncs notes in batch, reporting added and duplicate counts", async () => {
+  it("creates deck, syncs notes, and updates existing notes if duplicate front question exists", async () => {
+    let updateFieldsCalled = false;
     global.fetch = vi.fn().mockImplementation(async (_url, options) => {
       const body = JSON.parse(options.body);
 
@@ -73,9 +74,25 @@ describe("AnkiConnectAdapter", () => {
       if (body.action === "createDeck") {
         return { ok: true, json: async () => ({ result: 123456789, error: null }) };
       }
+      if (body.action === "canAddNotes") {
+        // Return 1 addable (true), 1 existing (false)
+        return { ok: true, json: async () => ({ result: [true, false], error: null }) };
+      }
+      if (body.action === "addNote") {
+        return { ok: true, json: async () => ({ result: 100001, error: null }) };
+      }
       if (body.action === "addNotes") {
-        // Return 1 added card ID, 1 null (duplicate)
-        return { ok: true, json: async () => ({ result: [100001, null], error: null }) };
+        return { ok: true, json: async () => ({ result: [100001], error: null }) };
+      }
+      if (body.action === "findNotes") {
+        return { ok: true, json: async () => ({ result: [100002], error: null }) };
+      }
+      if (body.action === "updateNoteFields") {
+        updateFieldsCalled = true;
+        return { ok: true, json: async () => ({ result: null, error: null }) };
+      }
+      if (body.action === "setNoteTags") {
+        return { ok: true, json: async () => ({ result: null, error: null }) };
       }
 
       return { ok: false, status: 400, statusText: "Bad Request" };
@@ -88,14 +105,17 @@ describe("AnkiConnectAdapter", () => {
 
     expect(syncResult.totalCards).toBe(2);
     expect(syncResult.addedCards).toBe(1);
-    expect(syncResult.duplicateOrFailedCards).toBe(1);
-    expect(syncResult.noteIds).toEqual([100001, null]);
+    expect(syncResult.updatedCards).toBe(1);
+    expect(syncResult.duplicateOrFailedCards).toBe(0);
+    expect(syncResult.noteIds).toEqual([100001, 100002]);
+    expect(updateFieldsCalled).toBe(true);
 
     const exportResult = await adapter.export(mockCards, {
       targetDeck: "Distributed Systems",
     });
     expect(exportResult.format).toBe("ankiconnect");
-    expect(exportResult.successCount).toBe(1);
+    expect(exportResult.successCount).toBe(2);
+    expect(exportResult.message).toContain("1 added, 1 updated");
   });
 
   it("handles empty card array with zero network calls", async () => {

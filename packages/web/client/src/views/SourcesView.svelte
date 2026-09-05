@@ -5,6 +5,12 @@
   import AddSourceModal from '../components/AddSourceModal.svelte';
   import SourceDocumentInspector from '../components/SourceDocumentInspector.svelte';
 
+  interface Props {
+    onNavigate?: (tab: string, queryParams?: Record<string, string>) => void;
+  }
+
+  let { onNavigate }: Props = $props();
+
   let sources = $state<DataSource[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
@@ -236,6 +242,10 @@
   isOpen={isInspectorOpen}
   source={inspectingSource}
   onClose={() => (isInspectorOpen = false)}
+  onOpenInStudio={(doc) => {
+    isInspectorOpen = false;
+    onNavigate?.('generate', { docId: doc.id });
+  }}
 />
 
 <style>

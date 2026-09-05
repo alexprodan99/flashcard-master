@@ -1,27 +1,45 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { fetchSourceDocuments, fetchDocumentDetails, generateCards } from '../lib/api';
-  import type { DataSource, DiscoveredDocument } from '../lib/types';
+  import type { DataSource, DiscoveredDocument, PersonaType, DifficultyLevel, CardDepthMode } from '../lib/types';
+  import GenerationConfigFields from './GenerationConfigFields.svelte';
+  import DocumentPreviewModal from './DocumentPreviewModal.svelte';
 
   interface Props {
     isOpen: boolean;
     source: DataSource | null;
     onClose: () => void;
+    onOpenInStudio?: (doc: DiscoveredDocument) => void;
   }
 
-  let { isOpen, source, onClose }: Props = $props();
+  let { isOpen, source, onClose, onOpenInStudio }: Props = $props();
 
   let documents = $state<DiscoveredDocument[]>([]);
   let isLoading = $state(false);
   let searchQuery = $state('');
   let errorMessage = $state<string | null>(null);
 
-  // Text Preview Modal State (Story 9.4)
+  // Preview Modal State
   let previewDoc = $state<DiscoveredDocument | null>(null);
   let isPreviewOpen = $state(false);
-  let isGeneratingSingle = $state(false);
-  let generatingDocId = $state<string | null>(null);
+
+  // Configuration & Synthesis Modal State (Story 11.2)
+  let configDoc = $state<DiscoveredDocument | null>(null);
+  let isConfigModalOpen = $state(false);
+  let isGenerating = $state(false);
   let successNotice = $state<string | null>(null);
+
+  // Generation parameters
+  let provider = $state('ollama');
+  let model = $state('phi4-mini');
+  let apiKey = $state('');
+  let persona = $state<PersonaType>('socratic-mentor');
+  let difficulty = $state<DifficultyLevel>('intermediate');
+  let depthMode = $state<CardDepthMode>('atomic');
+  let chunkMultiplier = $state<number>(1);
+  let limit = $state(4);
+  let targetDeck = $state('');
+  let enforceGrounding = $state(true);
 
   async function loadDocuments() {
     if (!source) return;
@@ -63,42 +81,61 @@
     }
   }
 
-  function handleClosePreview() {
-    isPreviewOpen = false;
-    previewDoc = null;
+  function handleOpenConfigModal(doc: DiscoveredDocument) {
+    configDoc = doc;
+    if (source?.targetDeck && !targetDeck) {
+      targetDeck = source.targetDeck;
+    }
+    isConfigModalOpen = true;
   }
 
-  async function handleQuickGenerate(doc: DiscoveredDocument) {
-    if (!source) return;
-    generatingDocId = doc.id;
-    isGeneratingSingle = true;
+  function handleCloseConfigModal() {
+    isConfigModalOpen = false;
+    configDoc = null;
+  }
+
+  async function handleSynthesizeSingle() {
+    if (!configDoc || !source || isGenerating) return;
+    isGenerating = true;
     successNotice = null;
 
     try {
       const result = await generateCards({
-        documentIds: [doc.id],
-        provider: 'ollama',
-        model: 'phi4-mini',
-        persona: 'socratic-mentor',
-        difficulty: 'intermediate',
-        limit: 3,
-        enforceGrounding: true,
+        documentIds: [configDoc.id],
+        provider,
+        model: model.trim() || undefined,
+        apiKey: apiKey.trim() || undefined,
+        persona,
+        difficulty,
+        depthMode,
+        chunkMultiplier,
+        limit,
+        targetDeck: targetDeck.trim() || source.targetDeck || undefined,
+        enforceGrounding,
       });
 
-      successNotice = `🎉 Generated ${result.cardsCreated} grounded flashcards from "${doc.title}"!`;
+      successNotice = `🎉 Generated ${result.cardsCreated} grounded flashcards from "${configDoc.title}"!`;
+      isConfigModalOpen = false;
+      configDoc = null;
       await loadDocuments(); // Refresh card counts
     } catch (err: any) {
       alert('Generation failed: ' + err.message);
     } finally {
-      isGeneratingSingle = false;
-      generatingDocId = null;
+      isGenerating = false;
     }
   }
 </script>
 
 {#if isOpen && source}
   <div class="drawer-backdrop" role="presentation" onclick={onClose}>
-    <div class="drawer-panel" role="dialog" aria-modal="true" onclick={(e) => e.stopPropagation()}>
+    <div
+      class="drawer-panel"
+      role="dialog"
+      aria-modal="true"
+      tabindex="-1"
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => e.key === 'Escape' && onClose()}
+    >
       <div class="drawer-header">
         <div class="header-titles">
           <div class="source-badge-row">
@@ -191,20 +228,15 @@
                     class="btn btn-secondary btn-sm"
                     onclick={() => handleOpenPreview(doc)}
                   >
-                    👁️ Preview Text
+                    👁️ Preview
                   </button>
 
                   <button
                     type="button"
                     class="btn btn-primary btn-sm"
-                    disabled={isGeneratingSingle && generatingDocId === doc.id}
-                    onclick={() => handleQuickGenerate(doc)}
+                    onclick={() => handleOpenConfigModal(doc)}
                   >
-                    {#if isGeneratingSingle && generatingDocId === doc.id}
-                      <span class="spinner-inline"></span> Synthesizing...
-                    {:else}
-                      ⚡ Generate Cards
-                    {/if}
+                    ⚡ Generate Cards
                   </button>
                 </div>
               </div>
@@ -216,37 +248,71 @@
   </div>
 {/if}
 
-<!-- Article Clean Text Reader Modal (Story 9.4) -->
-{#if isPreviewOpen && previewDoc}
-  <div class="preview-backdrop" role="presentation" onclick={handleClosePreview}>
-    <div class="preview-modal" role="dialog" aria-modal="true" onclick={(e) => e.stopPropagation()}>
-      <div class="preview-header">
+<!-- Reusable Article Clean Text Reader Modal -->
+<DocumentPreviewModal
+  isOpen={isPreviewOpen}
+  document={previewDoc}
+  onClose={() => (isPreviewOpen = false)}
+  onSynthesize={(doc) => {
+    isPreviewOpen = false;
+    handleOpenConfigModal(doc);
+  }}
+  onOpenInStudio={(doc) => {
+    isPreviewOpen = false;
+    if (onOpenInStudio) onOpenInStudio(doc);
+  }}
+/>
+
+<!-- In-Context "Synthesize Flashcards" Configuration Modal (Story 11.2) -->
+{#if isConfigModalOpen && configDoc}
+  <div class="config-modal-backdrop" role="presentation" onclick={handleCloseConfigModal}>
+    <div
+      class="config-modal"
+      role="dialog"
+      aria-modal="true"
+      tabindex="-1"
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => e.key === 'Escape' && handleCloseConfigModal()}
+    >
+      <div class="config-modal-header">
         <div>
-          <h3>{previewDoc.title}</h3>
-          <span class="preview-meta">
-            📝 {previewDoc.wordCount.toLocaleString()} words &nbsp;|&nbsp; 
-            {#if previewDoc.url}
-              <a href={previewDoc.url} target="_blank" rel="noopener noreferrer">{previewDoc.url}</a>
-            {:else}
-              Local Document
-            {/if}
+          <h3>⚡ Synthesize Flashcards: {configDoc.title}</h3>
+          <span class="doc-meta-subtitle">
+            📝 {configDoc.wordCount.toLocaleString()} words &nbsp;|&nbsp; 📁 {source?.name}
           </span>
         </div>
-        <button class="btn-close" onclick={handleClosePreview}>✕</button>
+        <button class="btn-close" onclick={handleCloseConfigModal} aria-label="Close Modal">✕</button>
       </div>
-      <div class="preview-content">
-        <pre>{previewDoc.textContent}</pre>
+
+      <div class="config-modal-body">
+        <GenerationConfigFields
+          compact={true}
+          bind:provider
+          bind:model
+          bind:apiKey
+          bind:persona
+          bind:difficulty
+          bind:depthMode
+          bind:chunkMultiplier
+          bind:limit
+          bind:targetDeck
+          bind:enforceGrounding
+        />
       </div>
-      <div class="preview-footer">
-        <button class="btn btn-secondary" onclick={handleClosePreview}>Close</button>
+
+      <div class="config-modal-footer">
+        <button type="button" class="btn btn-secondary" onclick={handleCloseConfigModal}>Cancel</button>
         <button
+          type="button"
           class="btn btn-primary"
-          onclick={() => {
-            if (previewDoc) handleQuickGenerate(previewDoc);
-            handleClosePreview();
-          }}
+          disabled={isGenerating}
+          onclick={handleSynthesizeSingle}
         >
-          ⚡ Synthesize Flashcards from this Document
+          {#if isGenerating}
+            <span class="spinner-inline"></span> Synthesizing Flashcards...
+          {:else}
+            ⚡ Start Generation
+          {/if}
         </button>
       </div>
     </div>
@@ -488,7 +554,7 @@
     font-size: 12px;
     font-weight: 600;
     cursor: pointer;
-    border: none;
+    border: 1px solid transparent;
     transition: all 0.15s;
     text-align: center;
   }
@@ -503,18 +569,25 @@
     color: white;
   }
 
-  .btn-primary:hover {
+  .btn-primary:hover:not(:disabled) {
     background: #4f46e5;
   }
 
   .btn-secondary {
     background: rgba(255, 255, 255, 0.08);
     color: #e2e8f0;
-    border: 1px solid #334155;
+    border-color: #334155;
   }
 
-  .btn-secondary:hover {
+  .btn-secondary:hover:not(:disabled) {
     background: rgba(255, 255, 255, 0.15);
+  }
+
+  .btn:disabled,
+  .btn[disabled] {
+    opacity: 0.5 !important;
+    cursor: not-allowed !important;
+    pointer-events: none !important;
   }
 
   .type-badge {
@@ -594,11 +667,12 @@
     margin-bottom: 8px;
   }
 
-  /* Preview Modal */
-  .preview-backdrop {
+  /* Configuration Modal (Story 11.2) */
+  .config-modal-backdrop {
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(4px);
     z-index: 1100;
     display: flex;
     align-items: center;
@@ -606,19 +680,20 @@
     padding: 20px;
   }
 
-  .preview-modal {
+  .config-modal {
     background: #0f172a;
     border: 1px solid #334155;
     border-radius: 12px;
-    width: 800px;
+    width: 720px;
     max-width: 95vw;
-    max-height: 85vh;
+    max-height: 90vh;
     display: flex;
     flex-direction: column;
     box-shadow: 0 16px 40px rgba(0, 0, 0, 0.8);
+    animation: fadeIn 0.15s ease-out;
   }
 
-  .preview-header {
+  .config-modal-header {
     padding: 16px 20px;
     border-bottom: 1px solid #1e293b;
     display: flex;
@@ -626,35 +701,24 @@
     align-items: flex-start;
   }
 
-  .preview-header h3 {
-    margin: 0;
+  .config-modal-header h3 {
+    margin: 0 0 4px 0;
     font-size: 16px;
     color: #f8fafc;
   }
 
-  .preview-meta {
+  .doc-meta-subtitle {
     font-size: 12px;
     color: #94a3b8;
   }
 
-  .preview-content {
+  .config-modal-body {
     flex: 1;
     overflow-y: auto;
     padding: 20px;
-    background: #0b0f19;
   }
 
-  .preview-content pre {
-    margin: 0;
-    white-space: pre-wrap;
-    word-break: break-word;
-    font-family: inherit;
-    font-size: 13px;
-    color: #cbd5e1;
-    line-height: 1.6;
-  }
-
-  .preview-footer {
+  .config-modal-footer {
     padding: 14px 20px;
     border-top: 1px solid #1e293b;
     display: flex;

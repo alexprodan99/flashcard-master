@@ -113,4 +113,66 @@ describe("DocumentRepository", () => {
     expect(docRepo.getDocumentCount(testSourceId)).toBe(0);
     expect(docRepo.getById("doc-to-cascade")).toBeNull();
   });
+
+  it("handles legacy IDs gracefully without throwing UNIQUE constraint failed on (source_id, url)", () => {
+    // 1. Manually insert a document with a legacy random UUID
+    db.prepare(`
+      INSERT INTO documents (id, source_id, title, url, text_content)
+      VALUES (?, ?, ?, ?, ?)
+    `).run("legacy-random-uuid-999", testSourceId, "Initial Title", "https://example.com/unique-post", "Old content");
+
+    // 2. Now perform upsert without providing an ID or with a newly calculated deterministic ID
+    expect(() => {
+      const updated = docRepo.upsert({
+        sourceId: testSourceId,
+        title: "Updated Title",
+        url: "https://example.com/unique-post",
+        textContent: "New fresh content",
+      });
+      expect(updated.id).toBe("legacy-random-uuid-999");
+      expect(updated.title).toBe("Updated Title");
+      expect(updated.textContent).toBe("New fresh content");
+    }).not.toThrow();
+
+    // 3. Perform batch upsert with the same URL
+    expect(() => {
+      docRepo.upsertBatch([
+        {
+          sourceId: testSourceId,
+          title: "Batch Updated Title",
+          url: "https://example.com/unique-post",
+          textContent: "Batch updated content",
+        },
+      ]);
+    }).not.toThrow();
+
+    const fetched = docRepo.listBySourceId(testSourceId);
+    expect(fetched.length).toBe(1);
+    expect(fetched[0].id).toBe("legacy-random-uuid-999");
+    expect(fetched[0].title).toBe("Batch Updated Title");
+  });
+
+  it("deduplicates multiple items with identical URLs in the same batch without crashing", () => {
+    expect(() => {
+      docRepo.upsertBatch([
+        {
+          sourceId: testSourceId,
+          title: "Duplicate Article v1",
+          url: "https://example.com/duplicate-in-batch",
+          textContent: "Version 1",
+        },
+        {
+          sourceId: testSourceId,
+          title: "Duplicate Article v2",
+          url: "https://example.com/duplicate-in-batch",
+          textContent: "Version 2",
+        },
+      ]);
+    }).not.toThrow();
+
+    const list = docRepo.listBySourceId(testSourceId);
+    expect(list.length).toBe(1);
+    expect(list[0].title).toBe("Duplicate Article v2");
+    expect(list[0].textContent).toBe("Version 2");
+  });
 });
