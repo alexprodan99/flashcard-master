@@ -1901,7 +1901,7 @@ export class WebServer {
               return;
             }
 
-            if (method === "PATCH") {
+            if (method === "PATCH" || method === "PUT") {
               const body = await this.parseBody(req);
               const updated = this.options.sourceRepo.update(id, body);
               this.sendJson(res, updated ? 200 : 404, updated || { error: "Source not found" });

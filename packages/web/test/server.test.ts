@@ -617,4 +617,49 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     expect(data.success).toBe(true);
     expect(data.cardsCreated).toBe(2);
   });
+
+  it("creates and updates data source with multi-URL JSON array via PATCH and PUT", async () => {
+    // 1. Create source with multi-URL array
+    const createRes = await fetch(`${serverUrl}/api/sources`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Multi-Web Tech Docs",
+        type: "web",
+        uri: JSON.stringify(["https://example.com/doc1", "https://example.com/doc2"]),
+        targetDeck: "WebDev",
+        tags: ["docs", "web"],
+      }),
+    });
+    expect(createRes.status).toBe(201);
+    const created = await createRes.json();
+    expect(created.name).toBe("Multi-Web Tech Docs");
+    expect(created.uri).toBe(JSON.stringify(["https://example.com/doc1", "https://example.com/doc2"]));
+
+    // 2. Update source via PATCH
+    const patchRes = await fetch(`${serverUrl}/api/sources/${created.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Updated Tech Docs",
+        uri: JSON.stringify(["https://example.com/doc1", "https://example.com/doc2", "https://example.com/doc3"]),
+      }),
+    });
+    expect(patchRes.status).toBe(200);
+    const patched = await patchRes.json();
+    expect(patched.name).toBe("Updated Tech Docs");
+    expect(patched.uri).toContain("https://example.com/doc3");
+
+    // 3. Update source via PUT
+    const putRes = await fetch(`${serverUrl}/api/sources/${created.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        targetDeck: "AdvancedWeb",
+      }),
+    });
+    expect(putRes.status).toBe(200);
+    const putUpdated = await putRes.json();
+    expect(putUpdated.targetDeck).toBe("AdvancedWeb");
+  });
 });

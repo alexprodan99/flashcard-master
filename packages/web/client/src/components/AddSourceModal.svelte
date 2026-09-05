@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createSource } from '../lib/api';
   import type { DataSource, DataSourceType } from '../lib/types';
+  import UrlListManager from './UrlListManager.svelte';
 
   interface Props {
     isOpen: boolean;
@@ -13,6 +14,7 @@
   let name = $state('');
   let type = $state<DataSourceType>('rss');
   let uri = $state('');
+  let webUrls = $state<string[]>([]);
   let targetDeck = $state('Default');
   let tagsInput = $state('');
   let isSubmitting = $state(false);
@@ -20,7 +22,21 @@
 
   async function handleSubmit(e: Event) {
     e.preventDefault();
-    if (!name.trim() || !uri.trim()) {
+    if (isSubmitting) return;
+
+    let finalUri = '';
+    if (type === 'web') {
+      const cleanUrls = webUrls.map((u) => u.trim()).filter(Boolean);
+      if (cleanUrls.length === 0) {
+        errorMessage = 'Please add at least one valid web URL.';
+        return;
+      }
+      finalUri = cleanUrls.length === 1 ? cleanUrls[0] : JSON.stringify(cleanUrls);
+    } else {
+      finalUri = uri.trim();
+    }
+
+    if (!name.trim() || !finalUri) {
       errorMessage = 'Please provide a source name and target URI / path.';
       return;
     }
@@ -29,15 +45,19 @@
     errorMessage = null;
 
     try {
-      const tags = tagsInput
-        .split(',')
-        .map((t) => t.trim())
-        .filter((t) => t.length > 0);
+      const tags = Array.from(
+        new Set(
+          tagsInput
+            .split(',')
+            .map((t) => t.trim())
+            .filter((t) => t.length > 0)
+        )
+      );
 
       const source = await createSource({
         name: name.trim(),
         type,
-        uri: uri.trim(),
+        uri: finalUri,
         targetDeck: targetDeck.trim() || 'Default',
         tags,
       });
@@ -45,6 +65,7 @@
       // Reset form
       name = '';
       uri = '';
+      webUrls = [];
       targetDeck = 'Default';
       tagsInput = '';
       onSourceCreated(source);
@@ -107,34 +128,40 @@
           />
         </div>
 
-        <div class="form-group">
-          <label for="src-uri">
-            {type === 'rss'
-              ? 'RSS / Atom Feed URL'
-              : type === 'web'
-              ? 'Article Web URL'
-              : type === 'sitemap'
-              ? 'XML Sitemap URL'
-              : type === 'llms-txt'
-              ? 'LLMs.txt Catalog URL'
-              : 'Local Directory / Markdown File Path'}
-          </label>
-          <input
-            id="src-uri"
-            type="text"
-            placeholder={type === 'rss'
-              ? 'https://example.com/feed.xml'
-              : type === 'web'
-              ? 'https://example.com/post'
-              : type === 'sitemap'
-              ? 'https://example.com/sitemap.xml'
-              : type === 'llms-txt'
-              ? 'https://example.com/llms-full.txt'
-              : 'C:\\path\\to\\notes'}
-            bind:value={uri}
-            required
-          />
-        </div>
+        {#if type === 'web'}
+          <div class="form-group">
+            <UrlListManager
+              urls={webUrls}
+              onUrlsChange={(next) => (webUrls = next)}
+              disabled={isSubmitting}
+            />
+          </div>
+        {:else}
+          <div class="form-group">
+            <label for="src-uri">
+              {type === 'rss'
+                ? 'RSS / Atom Feed URL'
+                : type === 'sitemap'
+                ? 'XML Sitemap URL'
+                : type === 'llms-txt'
+                ? 'LLMs.txt Catalog URL'
+                : 'Local Directory / Markdown File Path'}
+            </label>
+            <input
+              id="src-uri"
+              type="text"
+              placeholder={type === 'rss'
+                ? 'https://example.com/feed.xml'
+                : type === 'sitemap'
+                ? 'https://example.com/sitemap.xml'
+                : type === 'llms-txt'
+                ? 'https://example.com/llms-full.txt'
+                : 'C:\\path\\to\\notes'}
+              bind:value={uri}
+              required
+            />
+          </div>
+        {/if}
 
         <div class="form-row">
           <div class="form-group">

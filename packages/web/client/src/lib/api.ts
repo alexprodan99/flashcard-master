@@ -41,6 +41,28 @@ export async function toggleSourceActive(id: string, isActive: boolean): Promise
   return res.json();
 }
 
+export async function updateSource(
+  id: string,
+  payload: Partial<{
+    name: string;
+    uri: string;
+    targetDeck: string;
+    tags: string[];
+    isActive: boolean;
+  }>
+): Promise<DataSource> {
+  const res = await fetch(`/api/sources/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to update data source');
+  }
+  return res.json();
+}
+
 export async function deleteSource(id: string): Promise<void> {
   const res = await fetch(`/api/sources/${encodeURIComponent(id)}`, {
     method: 'DELETE',
