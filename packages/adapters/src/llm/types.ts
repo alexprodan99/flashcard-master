@@ -33,7 +33,9 @@ export function cleanJsonString(raw: string): string {
   if (!raw || typeof raw !== "string") {
     return "";
   }
-  let s = raw.replace(/```json\s*|\s*```/gi, "").trim();
+  let s = raw.replace(/<thinking>[\s\S]*?<\/thinking>/gi, "");
+  s = s.replace(/<antThinking>[\s\S]*?<\/antThinking>/gi, "");
+  s = s.replace(/```json\s*|\s*```/gi, "").trim();
   const firstBracket = s.indexOf("[");
   const firstBrace = s.indexOf("{");
   let startIdx = 0;
@@ -209,23 +211,60 @@ export function extractCardsWithRegex(raw: string): CardGenerationDraft[] {
   return cards;
 }
 
+export function parseXmlCards(text: string): CardGenerationDraft[] {
+  const cards: CardGenerationDraft[] = [];
+  const cardBlockRegex = /<(?:card|flashcard|item|qa|entry)[\s\S]*?>([\s\S]*?)<\/(?:card|flashcard|item|qa|entry)>/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = cardBlockRegex.exec(text)) !== null) {
+    const block = match[1];
+    const qMatch = block.match(/<(?:question|front|prompt|q)>([\s\S]*?)<\/(?:question|front|prompt|q)>/i);
+    const aMatch = block.match(/<(?:answer|back|response|a)>([\s\S]*?)<\/(?:answer|back|response|a)>/i);
+    const sqMatch = block.match(/<(?:source_quote|sourcequote|quote|citation|source|verbatim)>([\s\S]*?)<\/(?:source_quote|sourcequote|quote|citation|source|verbatim)>/i);
+    const diffMatch = block.match(/<(?:difficulty|level)>([\s\S]*?)<\/(?:difficulty|level)>/i);
+
+    if (qMatch && aMatch) {
+      const q = qMatch[1].trim();
+      const a = aMatch[1].trim();
+      const sq = sqMatch ? sqMatch[1].trim() : a;
+      const diffStr = diffMatch ? diffMatch[1].toLowerCase().trim() : "intermediate";
+      const diff: DifficultyLevel = diffStr === "beginner" || diffStr === "expert" ? diffStr : "intermediate";
+
+      if (q && a) {
+        cards.push({
+          question: q,
+          answer: a,
+          sourceQuote: sq || a,
+          difficulty: diff,
+        });
+      }
+    }
+  }
+
+  return cards;
+}
+
 export function parseMarkdownQAPairs(text: string): CardGenerationDraft[] {
   const cards: CardGenerationDraft[] = [];
-  const sections = text.split(/(?:\n\s*(?:#{1,4}\s*)?(?:Card\s*\d+|\d+\.|\*{2}Card\s*\d+\*{2}|---)\s*\n?)/i);
+  const sections = text.split(/(?:\n\s*\n|\r?\n)(?=(?:[-*]\s*)?(?:#{1,4}\s*)?(?:\*{1,2})?(?:Card\s*\d+|\d+\.|\bQuestion\b|\bFront\b|\bQ:))/i);
 
   for (const section of sections) {
     if (!section.trim()) continue;
 
-    const qMatch = section.match(
-      /(?:(?:\*{1,2}|#+)?\s*(?:Question|Front|Q)\s*(?:\*{1,2}|:)\s*)([^\n]+(?:\n(?!\s*(?:\*{1,2}|#+)?\s*(?:Answer|Back|A|Quote|Source|Difficulty))[^\n]+)*)/i
-    );
+    const qMatch =
+      section.match(
+        /(?:(?:[-*]\s*)?(?:\*{1,2}|#+)?\s*(?:Question|Front|Q)\s*(?:\*{1,2}|:)\s*)([^\n]+(?:\n(?!\s*(?:[-*]\s*)?(?:\*{1,2}|#+)?\s*(?:Answer|Back|A|Quote|Source|Difficulty))[^\n]+)*)/i
+      ) || section.match(/(?:(?:\*{1,2}|#+)\s*Card\s*\d+:\s*)([^\n]+)/i);
+
     const aMatch = section.match(
-      /(?:(?:\*{1,2}|#+)?\s*(?:Answer|Back|A)\s*(?:\*{1,2}|:)\s*)([^\n]+(?:\n(?!\s*(?:\*{1,2}|#+)?\s*(?:Question|Front|Q|Quote|Source|Difficulty))[^\n]+)*)/i
+      /(?:(?:[-*]\s*)?(?:\*{1,2}|#+)?\s*(?:Answer|Back|A)\s*(?:\*{1,2}|:)\s*)([^\n]+(?:\n(?!\s*(?:[-*]\s*)?(?:\*{1,2}|#+)?\s*(?:Question|Front|Q|Quote|Source|Difficulty))[^\n]+)*)/i
     );
+
     const sqMatch = section.match(
-      /(?:(?:\*{1,2}|#+)?\s*(?:Source\s*Quote|Quote|Citation|Source|Verbatim)\s*(?:\*{1,2}|:)\s*)([^\n]+(?:\n(?!\s*(?:\*{1,2}|#+)?\s*(?:Question|Front|Q|Answer|Back|Difficulty))[^\n]+)*)/i
+      /(?:(?:[-*]\s*)?(?:\*{1,2}|#+)?\s*(?:Source\s*Quote|Quote|Citation|Source|Verbatim)\s*(?:\*{1,2}|:)\s*)([^\n]+(?:\n(?!\s*(?:[-*]\s*)?(?:\*{1,2}|#+)?\s*(?:Question|Front|Q|Answer|Back|Difficulty))[^\n]+)*)/i
     );
-    const diffMatch = section.match(/(?:(?:\*{1,2}|#+)?\s*(?:Difficulty|Level)\s*(?:\*{1,2}|:)\s*)([^\n]+)/i);
+
+    const diffMatch = section.match(/(?:(?:[-*]\s*)?(?:\*{1,2}|#+)?\s*(?:Difficulty|Level)\s*(?:\*{1,2}|:)\s*)([^\n]+)/i);
 
     if (qMatch && aMatch) {
       const q = qMatch[1].replace(/^[\s*:"'-]+|[\s*:"'-]+$/g, "").trim();
@@ -283,7 +322,13 @@ export function parseCardDraftsFromJson(rawText: string, providerName = "llm"): 
     return extracted;
   }
 
-  // Stage 4: Markdown bullet / Q&A text fallback
+  // Stage 4: XML tag parser fallback
+  const xmlCards = parseXmlCards(rawText);
+  if (xmlCards.length > 0) {
+    return xmlCards;
+  }
+
+  // Stage 5: Markdown bullet / Q&A text fallback
   const mdCards = parseMarkdownQAPairs(rawText);
   if (mdCards.length > 0) {
     return mdCards;

@@ -60,7 +60,10 @@ You MUST output ONLY a valid raw JSON array with no markdown code fences:
           model: this.model,
           max_tokens: 4096,
           system: systemPrompt,
-          messages: [{ role: "user", content: text }],
+          messages: [
+            { role: "user", content: text },
+            { role: "assistant", content: "[" },
+          ],
           temperature: 0.2,
         }),
       });
@@ -77,11 +80,12 @@ You MUST output ONLY a valid raw JSON array with no markdown code fences:
       }
 
       const json = await response.json();
-      const rawText = json.content?.[0]?.text;
-      if (!rawText) {
+      const responseText = json.content?.[0]?.text;
+      if (!responseText) {
         throw new LLMResponseParsingError(this.providerName, "Empty message response from Anthropic.");
       }
 
+      const rawText = responseText.trim().startsWith("[") ? responseText : `[${responseText}`;
       return parseCardDraftsFromJson(rawText, this.providerName);
     } catch (err: any) {
       if (
