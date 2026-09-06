@@ -1867,7 +1867,34 @@ export class WebServer {
             return;
           }
 
-          // 6c. Bulk Discovered Documents Delete: POST /api/documents/bulk-delete
+          // 6c. All Discovered Documents Catalog: GET /api/documents
+          if (pathname === "/api/documents" && method === "GET") {
+            const search = parsedUrl.query.search as string | undefined;
+            const sourceId = parsedUrl.query.sourceId as string | undefined;
+            if (!this.options.documentRepo) {
+              this.sendJson(res, 200, { documents: [], total: 0 });
+              return;
+            }
+            const docs = sourceId
+              ? this.options.documentRepo.listBySourceId(sourceId, { search })
+              : this.options.documentRepo.listAll({ search });
+            const allCards = this.options.cardRepo.list(sourceId ? { sourceId } : undefined);
+            const enrichedDocs = docs.map((doc) => {
+              const cardCount = allCards.filter(
+                (c) =>
+                  (c.documentTitle && c.documentTitle.toLowerCase() === doc.title.toLowerCase()) ||
+                  (c.sourceOriginUrl && doc.url && c.sourceOriginUrl === doc.url)
+              ).length;
+              return {
+                ...doc,
+                cardCount,
+              };
+            });
+            this.sendJson(res, 200, { documents: enrichedDocs, total: enrichedDocs.length });
+            return;
+          }
+
+          // 6d. Bulk Discovered Documents Delete: POST /api/documents/bulk-delete
           if (pathname === "/api/documents/bulk-delete" && (method === "POST" || method === "DELETE")) {
             if (!this.options.documentRepo) {
               this.sendJson(res, 200, { success: true, deletedCount: 0 });
@@ -1880,22 +1907,39 @@ export class WebServer {
             return;
           }
 
-          // 6d. Discovered Documents Knowledge Base Export: POST /api/documents/export
-          if (pathname === "/api/documents/export" && method === "POST") {
+          // 6d. Discovered Documents Knowledge Base Export: POST or GET /api/documents/export
+          if (pathname === "/api/documents/export" && (method === "POST" || method === "GET")) {
             if (!this.options.documentRepo) {
               this.sendJson(res, 400, { error: "Document repository is not configured on this server." });
               return;
             }
 
-            const body = await this.parseBody(req);
-            const {
-              sourceId,
-              ids,
-              format = "markdown",
-              mode = "merged",
-              includeTableOfContents,
-              includeCitations,
-            } = body || {};
+            let sourceId: string | undefined;
+            let ids: string[] | undefined;
+            let format = "markdown";
+            let mode = "merged";
+            let includeTableOfContents = true;
+            let includeCitations = true;
+
+            if (method === "POST") {
+              const body = await this.parseBody(req);
+              sourceId = body?.sourceId;
+              ids = Array.isArray(body?.ids) ? body.ids : undefined;
+              if (body?.format) format = body.format;
+              if (body?.mode) mode = body.mode;
+              if (body?.includeTableOfContents !== undefined) includeTableOfContents = body.includeTableOfContents;
+              if (body?.includeCitations !== undefined) includeCitations = body.includeCitations;
+            } else {
+              const query = parsedUrl.query;
+              sourceId = (query.sourceId as string) || (query.source as string) || undefined;
+              if (query.ids) {
+                ids = typeof query.ids === "string" ? query.ids.split(",") : Array.isArray(query.ids) ? query.ids : undefined;
+              }
+              if (query.format) format = query.format as string;
+              if (query.mode) mode = query.mode as string;
+              if (query.toc !== undefined) includeTableOfContents = query.toc !== "false" && query.toc !== "0";
+              if (query.citations !== undefined) includeCitations = query.citations !== "false" && query.citations !== "0";
+            }
 
             let targetDocs: DiscoveredDocument[] = [];
             let sourceName = "Knowledge Base";
@@ -1918,14 +1962,17 @@ export class WebServer {
             }
 
             if (targetDocs.length === 0) {
-              this.sendJson(res, 404, { error: "No documents found to export." });
+              const msg = sourceId
+                ? `No documents found to export for source "${sourceName}". Please sync the data source first to ingest articles.`
+                : "No documents found to export in the knowledge base.";
+              this.sendJson(res, 404, { error: msg });
               return;
             }
 
             const docExporter = new DocumentExportService();
             const exportResult = await docExporter.export(targetDocs, {
-              format,
-              mode,
+              format: format as any,
+              mode: mode as any,
               sourceName,
               includeTableOfContents: includeTableOfContents !== false,
               includeCitations: includeCitations !== false,
@@ -1945,7 +1992,11 @@ export class WebServer {
           }
 
           // 6e. Single Discovered Document: GET /api/documents/:id & DELETE /api/documents/:id
-          if (pathname.startsWith("/api/documents/")) {
+          if (
+            pathname.startsWith("/api/documents/") &&
+            pathname !== "/api/documents/export" &&
+            pathname !== "/api/documents/bulk-delete"
+          ) {
             let docId = pathname.slice("/api/documents/".length);
             try {
               docId = decodeURIComponent(docId);

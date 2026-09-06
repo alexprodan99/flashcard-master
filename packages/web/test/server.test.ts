@@ -941,7 +941,49 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
 
       expect(res.status).toBe(404);
       const data = await res.json();
-      expect(data.error).toBe("No documents found to export.");
+      expect(data.error).toContain("No documents found to export");
+    });
+
+    it("supports GET /api/documents/export with query parameters", async () => {
+      const source = sourceRepo.create({
+        name: "GET Export Source",
+        type: "web",
+        uri: "https://example.com/get-export",
+        targetDeck: "Test",
+      });
+      const doc = docRepo.upsert({
+        sourceId: source.id,
+        title: "GET Export Doc",
+        url: "https://example.com/get-export",
+        textContent: "Testing GET document export functionality.",
+      });
+
+      const res = await fetch(`${serverUrl}/api/documents/export?ids=${doc.id}&format=markdown&mode=merged`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("text/markdown");
+      const text = await res.text();
+      expect(text).toContain("GET Export Doc");
+    });
+
+    it("supports GET /api/documents to list all documents across sources", async () => {
+      const source = sourceRepo.create({
+        name: "List All Docs Source",
+        type: "web",
+        uri: "https://example.com/list-all",
+        targetDeck: "Test",
+      });
+      docRepo.upsert({
+        sourceId: source.id,
+        title: "List All Doc 1",
+        url: "https://example.com/list-all/1",
+        textContent: "Sample content 1",
+      });
+
+      const res = await fetch(`${serverUrl}/api/documents`);
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(Array.isArray(data.documents)).toBe(true);
+      expect(data.total).toBeGreaterThan(0);
     });
   });
 });

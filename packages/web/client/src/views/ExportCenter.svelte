@@ -1,15 +1,31 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { checkAnkiStatus, pushToAnki, fetchCards } from '../lib/api';
+  import { checkAnkiStatus, pushToAnki, fetchCards, fetchSources, fetchDocuments, exportDocuments } from '../lib/api';
+  import type { DataSource, DiscoveredDocument } from '../lib/types';
+  import DocumentExportModal from '../components/DocumentExportModal.svelte';
 
   let isAnkiConnected = $state(false);
   let isCheckingAnki = $state(true);
   let isPushing = $state(false);
   let pushMessage = $state<string | null>(null);
 
+  // Flashcards state
   let selectedDeck = $state('all');
   let availableDecks = $state<string[]>([]);
   let totalCardsCount = $state(0);
+
+  // Knowledge Base Documents state
+  let sources = $state<DataSource[]>([]);
+  let selectedSourceId = $state('all');
+  let totalDocsCount = $state(0);
+  let isKnowledgeExporting = $state(false);
+  let knowledgeNotice = $state<string | null>(null);
+
+  // Advanced Export Modal state
+  let isExportModalOpen = $state(false);
+  let modalDocuments = $state<DiscoveredDocument[]>([]);
+  let modalSourceName = $state('Knowledge Base');
+  let modalSourceId = $state<string | undefined>(undefined);
 
   async function checkAnki() {
     isCheckingAnki = true;
@@ -45,11 +61,73 @@
     window.location.href = url;
   }
 
+  async function downloadKnowledgeBase(format: 'markdown' | 'html' | 'txt' | 'json', mode: 'merged' | 'split' = 'merged') {
+    isKnowledgeExporting = true;
+    knowledgeNotice = null;
+
+    try {
+      // Pre-flight check
+      const docRes = await fetchDocuments(selectedSourceId !== 'all' ? selectedSourceId : undefined);
+      if (!docRes.documents || docRes.documents.length === 0) {
+        const selectedSrc = sources.find((s) => s.id === selectedSourceId);
+        const name = selectedSrc ? selectedSrc.name : 'knowledge base';
+        knowledgeNotice = `⚠️ No documents found in "${name}". Please sync the data source first before exporting.`;
+        return;
+      }
+
+      const result = await exportDocuments({
+        sourceId: selectedSourceId !== 'all' ? selectedSourceId : undefined,
+        format,
+        mode,
+        includeTableOfContents: true,
+        includeCitations: true,
+      });
+
+      knowledgeNotice = `✅ Downloaded ${result.filename}!`;
+      setTimeout(() => (knowledgeNotice = null), 5000);
+    } catch (err: any) {
+      knowledgeNotice = `⚠️ Export failed: ${err.message}`;
+    } finally {
+      isKnowledgeExporting = false;
+    }
+  }
+
+  async function openAdvancedExportModal() {
+    isKnowledgeExporting = true;
+    knowledgeNotice = null;
+    try {
+      const docRes = await fetchDocuments(selectedSourceId !== 'all' ? selectedSourceId : undefined);
+      if (!docRes.documents || docRes.documents.length === 0) {
+        const selectedSrc = sources.find((s) => s.id === selectedSourceId);
+        const name = selectedSrc ? selectedSrc.name : 'knowledge base';
+        knowledgeNotice = `⚠️ No documents found in "${name}". Please sync the data source first before exporting.`;
+        return;
+      }
+
+      const selectedSrc = sources.find((s) => s.id === selectedSourceId);
+      modalSourceName = selectedSrc ? selectedSrc.name : 'All Knowledge Base';
+      modalSourceId = selectedSourceId !== 'all' ? selectedSourceId : undefined;
+      modalDocuments = docRes.documents;
+      isExportModalOpen = true;
+    } catch (err: any) {
+      knowledgeNotice = `⚠️ Could not prepare export: ${err.message}`;
+    } finally {
+      isKnowledgeExporting = false;
+    }
+  }
+
   async function loadInitialData() {
     try {
-      const cards = await fetchCards();
+      const [cards, srcList, allDocs] = await Promise.all([
+        fetchCards().catch(() => []),
+        fetchSources().catch(() => []),
+        fetchDocuments().catch(() => ({ documents: [], total: 0 })),
+      ]);
+
       totalCardsCount = cards.length;
       availableDecks = Array.from(new Set(cards.map((c) => c.targetDeck || 'Default'))).sort();
+      sources = srcList;
+      totalDocsCount = allDocs.total || allDocs.documents.length;
     } catch {
       // Ignore
     }
@@ -65,7 +143,7 @@
   <div class="view-header">
     <div>
       <h1 class="view-title">🚀 Export & Anki Center</h1>
-      <p class="view-subtitle">Export curated flashcards to Anki Desktop, printable PDFs, and Markdown notes.</p>
+      <p class="view-subtitle">Export curated flashcards and knowledge base documents to Anki Desktop, printable PDFs, HTML, and Markdown notes.</p>
     </div>
     <div class="deck-filter-wrapper">
       <label for="export-deck-select">Filter Deck Scope:</label>
@@ -197,7 +275,155 @@
       </div>
     </div>
   </div>
+
+  <!-- 3. Knowledge Base Documents Exporter -->
+  <div class="formats-section">
+    <div class="section-header-row">
+      <div>
+        <h2 class="section-title">📚 Source Knowledge Base Exporter</h2>
+        <p class="section-desc">Export ingested articles, documentation, and raw knowledge base documents into consolidated or split files.</p>
+      </div>
+      <div class="source-filter-wrapper">
+        <label for="kb-source-select">Filter Source Scope:</label>
+        <select id="kb-source-select" bind:value={selectedSourceId}>
+          <option value="all">All Sources ({totalDocsCount} docs)</option>
+          {#each sources as src}
+            <option value={src.id}>{src.name} ({src.type.toUpperCase()})</option>
+          {/each}
+        </select>
+      </div>
+    </div>
+
+    {#if knowledgeNotice}
+      <div class="toast-banner" class:error={knowledgeNotice.startsWith('⚠️')}>
+        {knowledgeNotice}
+      </div>
+    {/if}
+
+    <div class="formats-grid">
+      <!-- Merged Markdown -->
+      <div class="format-card">
+        <div class="format-header">
+          <span class="format-icon">📝</span>
+          <span class="format-ext">.MD</span>
+        </div>
+        <h3>Consolidated Markdown</h3>
+        <p>Merged Markdown document containing all ingested articles, table of contents, and origin citation footnotes.</p>
+        <button
+          type="button"
+          class="btn btn-primary btn-full"
+          disabled={isKnowledgeExporting}
+          onclick={() => downloadKnowledgeBase('markdown', 'merged')}
+        >
+          ⬇️ Download Merged .md
+        </button>
+      </div>
+
+      <!-- Standalone HTML -->
+      <div class="format-card">
+        <div class="format-header">
+          <span class="format-icon">🌐</span>
+          <span class="format-ext">.HTML</span>
+        </div>
+        <h3>Standalone HTML Guide</h3>
+        <p>Clean, beautifully formatted HTML study document with interactive anchor navigation and dark-mode styling.</p>
+        <button
+          type="button"
+          class="btn btn-secondary btn-full"
+          disabled={isKnowledgeExporting}
+          onclick={() => downloadKnowledgeBase('html', 'merged')}
+        >
+          ⬇️ Download .html
+        </button>
+      </div>
+
+      <!-- Plain Text -->
+      <div class="format-card">
+        <div class="format-header">
+          <span class="format-icon">📄</span>
+          <span class="format-ext">.TXT</span>
+        </div>
+        <h3>Plain Text Corpus</h3>
+        <p>Clean raw text format stripped of markup for offline local indexing, scripts, or LLM fine-tuning datasets.</p>
+        <button
+          type="button"
+          class="btn btn-secondary btn-full"
+          disabled={isKnowledgeExporting}
+          onclick={() => downloadKnowledgeBase('txt', 'merged')}
+        >
+          ⬇️ Download .txt
+        </button>
+      </div>
+
+      <!-- JSON Corpus -->
+      <div class="format-card">
+        <div class="format-header">
+          <span class="format-icon">🗄️</span>
+          <span class="format-ext">.JSON</span>
+        </div>
+        <h3>Structured JSON Corpus</h3>
+        <p>Complete JSON document objects with titles, URLs, word counts, content hashes, and extracted text.</p>
+        <button
+          type="button"
+          class="btn btn-secondary btn-full"
+          disabled={isKnowledgeExporting}
+          onclick={() => downloadKnowledgeBase('json', 'merged')}
+        >
+          ⬇️ Download .json
+        </button>
+      </div>
+
+      <!-- Split ZIP Archive -->
+      <div class="format-card">
+        <div class="format-header">
+          <span class="format-icon">📦</span>
+          <span class="format-ext">.ZIP</span>
+        </div>
+        <h3>Split Multi-file ZIP</h3>
+        <p>Archive containing each article or web page as a distinct file, named by title or URL slug.</p>
+        <button
+          type="button"
+          class="btn btn-secondary btn-full"
+          disabled={isKnowledgeExporting}
+          onclick={() => downloadKnowledgeBase('markdown', 'split')}
+        >
+          ⬇️ Download Split .zip
+        </button>
+      </div>
+
+      <!-- Advanced / Custom Modal -->
+      <div class="format-card advanced-card">
+        <div class="format-header">
+          <span class="format-icon">⚙️</span>
+          <span class="format-ext">CUSTOM</span>
+        </div>
+        <h3>Advanced Export Options</h3>
+        <p>Configure fine-grained options: table of contents, citation links, merged vs. split zip archive, and custom formats.</p>
+        <button
+          type="button"
+          class="btn btn-primary btn-full"
+          disabled={isKnowledgeExporting}
+          onclick={openAdvancedExportModal}
+        >
+          ⚙️ Open Advanced Exporter
+        </button>
+      </div>
+    </div>
+  </div>
 </div>
+
+<!-- Document Export Modal -->
+<DocumentExportModal
+  isOpen={isExportModalOpen}
+  documents={modalDocuments}
+  sourceName={modalSourceName}
+  sourceId={modalSourceId}
+  onClose={() => (isExportModalOpen = false)}
+  onExportSuccess={(filename) => {
+    knowledgeNotice = `✅ Downloaded ${filename}!`;
+    setTimeout(() => (knowledgeNotice = null), 5000);
+  }}
+/>
 
 <style>
   .view-container {
@@ -319,7 +545,43 @@
     font-size: 18px;
     font-weight: 600;
     color: #f1f5f9;
-    margin: 0 0 16px 0;
+    margin: 0;
+  }
+
+  .section-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  .section-desc {
+    font-size: 13px;
+    color: #94a3b8;
+    margin: 4px 0 0 0;
+  }
+
+  .source-filter-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .source-filter-wrapper label {
+    font-size: 13px;
+    color: #cbd5e1;
+    font-weight: 500;
+  }
+
+  .advanced-card {
+    border: 1px dashed #6366f1;
+    background: linear-gradient(135deg, #1e293b 0%, #1e1b4b 100%);
+  }
+
+  .advanced-card:hover {
+    border-color: #818cf8;
   }
 
   .formats-grid {

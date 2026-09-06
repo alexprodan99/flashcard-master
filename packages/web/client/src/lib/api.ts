@@ -162,6 +162,19 @@ export async function generateCards(payload: {
   return res.json();
 }
 
+export async function fetchDocuments(sourceId?: string, search?: string): Promise<{ documents: DiscoveredDocument[]; total: number }> {
+  const params = new URLSearchParams();
+  if (sourceId && sourceId !== 'all') params.set('sourceId', sourceId);
+  if (search) params.set('search', search);
+  const queryString = params.toString() ? `?${params.toString()}` : '';
+  const res = await fetch(`/api/documents${queryString}`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to fetch documents');
+  }
+  return res.json();
+}
+
 export async function fetchSourceDocuments(sourceId: string, search?: string): Promise<{ documents: DiscoveredDocument[]; total: number }> {
   const query = search ? `?search=${encodeURIComponent(search)}` : '';
   const res = await fetch(`/api/sources/${sourceId}/documents${query}`);

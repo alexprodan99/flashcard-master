@@ -72,7 +72,39 @@ describe("WebReaderStrategy", () => {
 
     expect(clean.id).toBe("doc-web-1");
     expect(clean.textContent).toBe("Memory latency is critical for database throughput.");
+    expect(clean.rawContent).toBe(raw.rawContent);
     expect(clean.contentHash).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it("preserves paragraph breaks, headings, lists, and code blocks from HTML article content", () => {
+    const rawHtml = `
+      <article>
+        <h1>Database Indexes</h1>
+        <p>B-Trees provide O(log n) lookup, insertion, and deletion guarantees.</p>
+        <h2>LSM Trees</h2>
+        <p>Log-Structured Merge-trees optimize for high write throughput by appending to an in-memory memtable.</p>
+        <pre><code>CREATE INDEX idx_user_email ON users(email);</code></pre>
+        <ul>
+          <li>Clustered indexes determine physical table order.</li>
+          <li>Secondary indexes contain index keys and row pointers.</li>
+        </ul>
+      </article>
+    `;
+
+    const raw: RawDocument = {
+      id: "doc-web-2",
+      sourceId: "source-web-2",
+      title: "Database Indexes",
+      rawContent: rawHtml,
+    };
+
+    const clean = strategy.extractCleanText(raw);
+
+    expect(clean.rawContent).toBe(rawHtml);
+    expect(clean.textContent).toContain("# Database Indexes\n\nB-Trees provide O(log n) lookup, insertion, and deletion guarantees.");
+    expect(clean.textContent).toContain("## LSM Trees\n\nLog-Structured Merge-trees optimize for high write throughput");
+    expect(clean.textContent).toContain("```\nCREATE INDEX idx_user_email ON users(email);\n```");
+    expect(clean.textContent).toContain("- Clustered indexes determine physical table order.\n- Secondary indexes contain index keys and row pointers.");
   });
 
   it("handles HTTP errors and network timeouts gracefully", async () => {

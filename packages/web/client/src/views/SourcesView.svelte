@@ -1,10 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { fetchSources, toggleSourceActive, deleteSource, syncSource, syncAllSources } from '../lib/api';
-  import type { DataSource } from '../lib/types';
+  import { fetchSources, fetchSourceDocuments, toggleSourceActive, deleteSource, syncSource, syncAllSources } from '../lib/api';
+  import type { DataSource, DiscoveredDocument } from '../lib/types';
   import AddSourceModal from '../components/AddSourceModal.svelte';
   import EditSourceModal from '../components/EditSourceModal.svelte';
   import SourceDocumentInspector from '../components/SourceDocumentInspector.svelte';
+  import DocumentExportModal from '../components/DocumentExportModal.svelte';
 
   interface Props {
     onNavigate?: (tab: string, queryParams?: Record<string, string>) => void;
@@ -20,10 +21,29 @@
   let isEditModalOpen = $state(false);
   let inspectingSource = $state<DataSource | null>(null);
   let isInspectorOpen = $state(false);
+  let exportingSource = $state<DataSource | null>(null);
+  let isExportModalOpen = $state(false);
+  let sourceDocsForExport = $state<DiscoveredDocument[]>([]);
   let syncingId = $state<string | null>(null);
   let toastMessage = $state<string | null>(null);
 
   let isSyncingAll = $state(false);
+
+  async function handleOpenExport(source: DataSource) {
+    try {
+      const data = await fetchSourceDocuments(source.id);
+      if (!data.documents || data.documents.length === 0) {
+        alert(`No discovered documents found for "${source.name}". Click "Sync" first to fetch and extract articles from this source.`);
+        return;
+      }
+      exportingSource = source;
+      sourceDocsForExport = data.documents;
+      isExportModalOpen = true;
+    } catch (err: any) {
+      alert('Failed to load documents for export: ' + err.message);
+    }
+  }
+
 
   async function loadSources() {
     loading = true;
@@ -247,6 +267,13 @@
                     📖 Documents
                   </button>
                   <button
+                    class="action-btn export-btn"
+                    onclick={() => handleOpenExport(s)}
+                    title="Export Clean Document Knowledge Base"
+                  >
+                    📤 Export
+                  </button>
+                  <button
                     class="action-btn sync-btn"
                     disabled={syncingId === s.id}
                     onclick={() => handleSync(s)}
@@ -297,6 +324,19 @@
     onNavigate?.('generate', { docId: doc.id });
   }}
 />
+
+<DocumentExportModal
+  isOpen={isExportModalOpen}
+  documents={sourceDocsForExport}
+  sourceName={exportingSource?.name || 'Knowledge Base'}
+  sourceId={exportingSource?.id}
+  onClose={() => (isExportModalOpen = false)}
+  onExportSuccess={(fn) => {
+    toastMessage = `✅ Exported ${fn}`;
+    setTimeout(() => (toastMessage = null), 4000);
+  }}
+/>
+
 
 <style>
   .view-container {

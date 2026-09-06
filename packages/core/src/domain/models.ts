@@ -75,6 +75,7 @@ export interface CleanTextDocument {
   sourceId: string;
   title: string;
   textContent: string;
+  rawContent?: string;
   originUrl?: string;
   contentHash: string;
 }
@@ -85,6 +86,7 @@ export const DiscoveredDocumentSchema = z.object({
   title: z.string().min(1),
   url: z.string().nullable().optional(),
   textContent: z.string(),
+  rawContent: z.string().nullable().optional(),
   contentHash: z.string().nullable().optional(),
   wordCount: z.number().int().nonnegative().default(0),
   createdAt: z.string().datetime().optional(),

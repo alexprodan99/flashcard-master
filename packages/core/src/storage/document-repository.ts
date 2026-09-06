@@ -18,6 +18,7 @@ export class DocumentRepository {
       title: row.title,
       url: row.url || null,
       textContent: row.text_content,
+      rawContent: row.raw_content !== undefined && row.raw_content !== null ? row.raw_content : null,
       contentHash: row.content_hash || null,
       wordCount: typeof row.word_count === "number" ? row.word_count : 0,
       createdAt: row.created_at,
@@ -57,12 +58,13 @@ export class DocumentRepository {
         : 0;
 
     const stmt = this.db.prepare(`
-      INSERT INTO documents (id, source_id, title, url, text_content, content_hash, word_count)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO documents (id, source_id, title, url, text_content, raw_content, content_hash, word_count)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         title = excluded.title,
         url = excluded.url,
         text_content = excluded.text_content,
+        raw_content = excluded.raw_content,
         content_hash = excluded.content_hash,
         word_count = excluded.word_count,
         updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
@@ -74,6 +76,7 @@ export class DocumentRepository {
       rawDoc.title,
       cleanUrl,
       rawDoc.textContent,
+      rawDoc.rawContent || null,
       rawDoc.contentHash || null,
       wordCount
     );
@@ -101,12 +104,13 @@ export class DocumentRepository {
     const findByTitleStmt = this.db.prepare("SELECT id FROM documents WHERE source_id = ? AND url IS NULL AND title = ?");
 
     const stmt = this.db.prepare(`
-      INSERT INTO documents (id, source_id, title, url, text_content, content_hash, word_count)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO documents (id, source_id, title, url, text_content, raw_content, content_hash, word_count)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         title = excluded.title,
         url = excluded.url,
         text_content = excluded.text_content,
+        raw_content = excluded.raw_content,
         content_hash = excluded.content_hash,
         word_count = excluded.word_count,
         updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
@@ -150,6 +154,7 @@ export class DocumentRepository {
           rawDoc.title,
           cleanUrl,
           rawDoc.textContent,
+          rawDoc.rawContent || null,
           rawDoc.contentHash || null,
           wordCount
         );

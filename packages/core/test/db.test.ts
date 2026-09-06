@@ -127,4 +127,56 @@ describe("SQLite Database Client", () => {
 
     migratedDb.close();
   });
+
+  it("automatically migrates legacy documents table to add raw_content column idempotently", () => {
+    // 1. Manually create legacy database with old documents schema (no raw_content column)
+    const legacyDb = new (require("better-sqlite3"))(tempDbPath);
+    legacyDb.exec(`
+      CREATE TABLE data_sources (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          type TEXT NOT NULL CHECK(type IN ('rss', 'web', 'local', 'sitemap', 'llms-txt')),
+          uri TEXT NOT NULL,
+          target_deck TEXT NOT NULL DEFAULT 'Default',
+          tags TEXT NOT NULL DEFAULT '[]',
+          is_active INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+          updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+      );
+      CREATE TABLE documents (
+          id TEXT PRIMARY KEY,
+          source_id TEXT NOT NULL,
+          title TEXT NOT NULL,
+          url TEXT,
+          text_content TEXT NOT NULL,
+          content_hash TEXT,
+          word_count INTEGER DEFAULT 0,
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+          updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+      );
+      INSERT INTO data_sources (id, name, type, uri) VALUES ('src-1', 'Test Source', 'rss', 'https://example.com/rss');
+      INSERT INTO documents (id, source_id, title, url, text_content) VALUES ('doc-1', 'src-1', 'Old Doc', 'https://example.com/doc1', 'Old text content');
+    `);
+    legacyDb.close();
+
+    // 2. Open with createDatabaseClient which triggers auto-migration
+    const migratedDb = createDatabaseClient({ dbPath: tempDbPath });
+
+    // 3. Verify columns include raw_content
+    const cols = migratedDb.prepare("PRAGMA table_info(documents)").all() as Array<{ name: string }>;
+    expect(cols.some((c) => c.name === "raw_content")).toBe(true);
+
+    // 4. Verify existing doc is preserved with null raw_content
+    const doc = migratedDb.prepare("SELECT * FROM documents WHERE id = 'doc-1'").get() as any;
+    expect(doc.title).toBe("Old Doc");
+    expect(doc.text_content).toBe("Old text content");
+    expect(doc.raw_content).toBeNull();
+
+    // 5. Update raw_content and verify persistence
+    migratedDb.prepare("UPDATE documents SET raw_content = ? WHERE id = ?").run("<p>Old text content</p>", "doc-1");
+    const updated = migratedDb.prepare("SELECT * FROM documents WHERE id = 'doc-1'").get() as any;
+    expect(updated.raw_content).toBe("<p>Old text content</p>");
+
+    migratedDb.close();
+  });
 });

@@ -377,5 +377,66 @@ describe("DocumentRepository", () => {
     expect(filtered.length).toBe(1);
     expect(filtered[0].title).toBe("Alpha Article");
   });
+
+  it("persists and retrieves rawContent on single upsert and batch upsert", () => {
+    const rawHtml = "<html><body><h1>Paxos</h1><p>Classic consensus protocol.</p></body></html>";
+    const doc = docRepo.upsert({
+      sourceId: testSourceId,
+      title: "Paxos Consensus",
+      url: "https://example.com/paxos",
+      textContent: "# Paxos\n\nClassic consensus protocol.",
+      rawContent: rawHtml,
+      contentHash: "paxos-hash-1",
+    });
+
+    expect(doc.rawContent).toBe(rawHtml);
+
+    const fetched = docRepo.getById(doc.id);
+    expect(fetched?.rawContent).toBe(rawHtml);
+    expect(fetched?.textContent).toBe("# Paxos\n\nClassic consensus protocol.");
+
+    // Batch upsert with rawContent
+    const batchRaw1 = "# Batch Note 1\n\nContent 1";
+    const batchRaw2 = "<div><p>Batch HTML 2</p></div>";
+    docRepo.upsertBatch([
+      {
+        id: "batch-raw-1",
+        sourceId: testSourceId,
+        title: "Batch Note 1",
+        url: "https://example.com/batch-1",
+        textContent: "# Batch Note 1\n\nContent 1",
+        rawContent: batchRaw1,
+      },
+      {
+        id: "batch-raw-2",
+        sourceId: testSourceId,
+        title: "Batch Note 2",
+        url: "https://example.com/batch-2",
+        textContent: "Batch HTML 2",
+        rawContent: batchRaw2,
+      },
+    ]);
+
+    const doc1 = docRepo.getById("batch-raw-1");
+    expect(doc1?.rawContent).toBe(batchRaw1);
+
+    const doc2 = docRepo.getById("batch-raw-2");
+    expect(doc2?.rawContent).toBe(batchRaw2);
+
+    // Update existing document with new rawContent
+    const updatedRaw = "<html><body><h1>Paxos 2.0</h1></body></html>";
+    const updated = docRepo.upsert({
+      id: doc.id,
+      sourceId: testSourceId,
+      title: "Paxos Consensus Updated",
+      url: "https://example.com/paxos",
+      textContent: "# Paxos 2.0",
+      rawContent: updatedRaw,
+    });
+
+    expect(updated.rawContent).toBe(updatedRaw);
+    const fetchedUpdated = docRepo.getById(doc.id);
+    expect(fetchedUpdated?.rawContent).toBe(updatedRaw);
+  });
 });
 

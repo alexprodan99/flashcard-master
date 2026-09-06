@@ -4,6 +4,7 @@ import { Readability } from "@mozilla/readability";
 import { JSDOM } from "jsdom";
 import crypto from "node:crypto";
 import { safeIsoDate } from "../utils/date.js";
+import { htmlToCleanText } from "../utils/html-cleaner.js";
 
 export interface SitemapStrategyOptions {
   timeoutMs?: number;
@@ -228,24 +229,9 @@ export class SitemapIngestionStrategy implements IngestionStrategy {
   }
 
   extractCleanText(raw: RawDocument): CleanTextDocument {
-    let clean = raw.rawContent || "";
+    const clean = htmlToCleanText(raw.rawContent || "");
 
-    // 1. Strip HTML tags
-    clean = clean.replace(/<[^>]+>/g, " ");
-
-    // 2. Decode standard HTML entities
-    clean = clean
-      .replace(/&amp;/g, "&")
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .replace(/&nbsp;/g, " ");
-
-    // 3. Normalize multiple whitespace and clean up spaces before punctuation
-    clean = clean.replace(/\s+/g, " ").replace(/\s+([.,;:!?])/g, "$1").trim();
-
-    // 4. Calculate SHA-256 hash
+    // Calculate SHA-256 hash
     const contentHash = crypto.createHash("sha256").update(clean, "utf8").digest("hex");
 
     return {
@@ -253,6 +239,7 @@ export class SitemapIngestionStrategy implements IngestionStrategy {
       sourceId: raw.sourceId,
       title: raw.title,
       textContent: clean,
+      rawContent: raw.rawContent,
       originUrl: raw.originUrl,
       contentHash,
     };
