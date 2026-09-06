@@ -110,6 +110,8 @@ describe("CLI Application", () => {
       question: "What is Raft?",
       answer: "Consensus protocol.",
       sourceQuote: "Raft is a consensus protocol.",
+      sourceOriginUrl: "https://raft.github.io/raft.pdf",
+      documentTitle: "Raft Paper",
       targetDeck: "Distributed",
       personaUsed: "socratic-mentor",
       difficulty: "intermediate",
@@ -121,6 +123,16 @@ describe("CLI Application", () => {
 
     await cli.parseAsync(["node", "flashcard-master", "export", "csv", "--deck", "Distributed"]);
     expect(logs.some((l) => l.includes("Exported 1 cards to CSV format"))).toBe(true);
+
+    // Markdown export with flags
+    logs = [];
+    await cli.parseAsync(["node", "flashcard-master", "export", "markdown", "--deck", "Distributed", "--no-toc", "--no-citations"]);
+    expect(logs.some((l) => l.includes("Exported 1 cards to Markdown study guide"))).toBe(true);
+
+    // HTML export with flags
+    logs = [];
+    await cli.parseAsync(["node", "flashcard-master", "export", "html", "--deck", "Distributed"]);
+    expect(logs.some((l) => l.includes("Exported 1 cards to printable HTML study guide"))).toBe(true);
   });
 
   it("handles unknown source type validation gracefully", async () => {

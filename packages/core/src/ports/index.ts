@@ -29,6 +29,10 @@ export interface ExportOptions {
   outputPath?: string;
   targetDeck?: string;
   includeCitationFootnotes?: boolean;
+  includeCitations?: boolean;
+  includeToc?: boolean;
+  includeFoldGuide?: boolean;
+  includeBadges?: boolean;
   tags?: string[];
 }
 

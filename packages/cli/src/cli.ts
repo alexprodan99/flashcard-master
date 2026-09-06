@@ -340,12 +340,15 @@ export function createCli(providedContext?: AppContext): Command {
   // ==========================================
   program
     .command("export <format>")
-    .description("Export flashcards (apkg, ankiconnect, csv, tsv, markdown, html)")
+    .description("Export flashcards (apkg, ankiconnect, csv, tsv, markdown, html, pdf)")
     .option("-d, --deck <deck>", "Filter by target deck name")
     .option("-t, --tag <tag>", "Filter by tag")
     .option("--difficulty <diff>", "Filter by difficulty (beginner, intermediate, expert)")
     .option("-o, --out <path>", "Output file destination path")
     .option("--all-decks <dir>", "Export all distinct decks into separate files inside directory")
+    .option("--no-toc", "Omit Table of Contents in study guides")
+    .option("--no-citations", "Omit source citation quotes and references in study guides")
+    .option("--no-fold-guide", "Omit fold guide markers in printable HTML study guide")
     .action(async (format: string, options: any) => {
       try {
         if (options.allDecks) {
@@ -353,6 +356,11 @@ export function createCli(providedContext?: AppContext): Command {
           const results = await context.exportService.exportAllDecks({
             format,
             outputDir: options.allDecks,
+            options: {
+              includeToc: options.toc,
+              includeCitations: options.citations,
+              includeFoldGuide: options.foldGuide,
+            },
           });
 
           for (const r of results) {
@@ -371,6 +379,9 @@ export function createCli(providedContext?: AppContext): Command {
           options: {
             outputPath: options.out,
             targetDeck: options.deck,
+            includeToc: options.toc,
+            includeCitations: options.citations,
+            includeFoldGuide: options.foldGuide,
           },
         });
 
