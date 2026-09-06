@@ -122,9 +122,13 @@ development_status:
   11-5-e2e-verification-and-regression-tests: done
   epic-11-retrospective: done
 
-  epic-12: in-progress
+  epic-12: done
   12-1-multi-url-storage-and-concurrent-web-reader-engine: done
   12-2-interactive-url-list-manager-ui: done
   12-3-document-deletion-and-safe-flashcard-preservation: done
   12-4-document-inspector-bulk-selection-and-management-ui: done
-  12-5-study-guide-exporter-with-toc-and-citations: done
+  12-5-document-knowledge-base-export-engine: done
+  12-6-document-export-ui-modal-and-streaming-endpoints: done
+  12-7-monorepo-verification-and-automated-test-suites: done
+  epic-12-retrospective: optional
+
