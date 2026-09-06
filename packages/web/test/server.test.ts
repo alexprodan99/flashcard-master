@@ -1,4 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
+import JSZip from "jszip";
 import {
   createDatabaseClient,
   DataSourceRepository,
@@ -12,6 +16,7 @@ import {
   PromptBuilder,
   GroundingGuard,
   CardDeduplicationService,
+  MediaService,
   type LLMProviderPort,
 } from "@flashcard-master/core";
 import {
@@ -74,8 +79,13 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
   let ankiConnectAdapter: AnkiConnectAdapter;
   let server: WebServer;
   let serverUrl: string;
+  let tempMediaDir: string;
+  let mediaService: MediaService;
 
   beforeEach(async () => {
+    tempMediaDir = fs.mkdtempSync(path.join(os.tmpdir(), "fc-web-srv-media-"));
+    mediaService = new MediaService({ mediaDir: tempMediaDir });
+
     db = createDatabaseClient({ inMemory: true });
     sourceRepo = new DataSourceRepository(db);
     syncRepo = new SyncStateRepository(db);
@@ -138,6 +148,7 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       promptBuilder: new PromptBuilder(),
       groundingGuard: new GroundingGuard(),
       dedupService: new CardDeduplicationService(),
+      mediaService,
       createLLMAdapterFn: () => new MockLLM(),
     });
 
@@ -148,6 +159,9 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
   afterEach(async () => {
     await server.close();
     db.close();
+    if (fs.existsSync(tempMediaDir)) {
+      fs.rmSync(tempMediaDir, { recursive: true, force: true });
+    }
   });
 
   it("serves HTML Single Page Application dashboard at / with Export Center", async () => {
@@ -984,6 +998,118 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       const data = await res.json();
       expect(Array.isArray(data.documents)).toBe(true);
       expect(data.total).toBeGreaterThan(0);
+    });
+  });
+
+  describe("Local Media Serving & Content-Addressed Pipeline", () => {
+    it("serves local media file with correct MIME type and immutable cache headers", async () => {
+      const pngPayload = Buffer.from("fake-png-data-stream-bytes-12345");
+      const asset = await mediaService.saveMedia(pngPayload, "image/png");
+
+      const res = await fetch(`${serverUrl}/api/media/${asset.filename}`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toBe("image/png");
+      expect(res.headers.get("cache-control")).toContain("public");
+      expect(res.headers.get("cache-control")).toContain("max-age=31536000");
+      expect(res.headers.get("cache-control")).toContain("immutable");
+
+      const arrayBuf = await res.arrayBuffer();
+      expect(Buffer.from(arrayBuf)).toEqual(pngPayload);
+    });
+
+    it("returns 404 when requested media file does not exist", async () => {
+      const res = await fetch(`${serverUrl}/api/media/nonexistent-hash.png`);
+      expect(res.status).toBe(404);
+      const data = await res.json();
+      expect(data.error).toContain("Media file not found");
+    });
+
+    it("rejects path traversal attempts with 400 Bad Request", async () => {
+      const res = await fetch(`${serverUrl}/api/media/%2e%2e%2f%2e%2e%2fetc%2fpasswd`);
+      expect(res.status).toBe(400);
+      const data = await res.json();
+      expect(data.error).toContain("path traversal");
+    });
+
+    it("inlines Base64 media data when exporting standalone HTML through /api/documents/export", async () => {
+      const imageBytes = Buffer.from("inline-html-pixel-bytes");
+      const asset = await mediaService.saveMedia(imageBytes, "image/webp");
+
+      const source = sourceRepo.create({
+        name: "Media Export Source",
+        type: "web",
+        uri: "https://example.com/media-export",
+        targetDeck: "Test",
+      });
+
+      const doc = docRepo.upsert({
+        sourceId: source.id,
+        title: "Diagram Article",
+        url: "https://example.com/diagram-article",
+        textContent: `Overview diagram:\n\n![Cloud Architecture](/api/media/${asset.filename})`,
+      });
+
+      const res = await fetch(`${serverUrl}/api/documents/export`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ids: [doc.id],
+          format: "html",
+          mode: "merged",
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("text/html");
+
+      const html = await res.text();
+      expect(html).toContain("data:image/webp;base64,");
+      expect(html).toContain('<figure class="doc-figure">');
+      expect(html).toContain('<figcaption>Cloud Architecture</figcaption>');
+      expect(html).not.toContain(`/api/media/${asset.filename}`);
+    });
+
+    it("bundles media files into media/ directory and rewrites relative paths in Split ZIP export", async () => {
+      const imageBytes = Buffer.from("split-zip-image-content");
+      const asset = await mediaService.saveMedia(imageBytes, "image/png");
+
+      const source = sourceRepo.create({
+        name: "Split ZIP Media Source",
+        type: "web",
+        uri: "https://example.com/split-zip-media",
+        targetDeck: "Test",
+      });
+
+      const doc = docRepo.upsert({
+        sourceId: source.id,
+        title: "Split ZIP Article",
+        url: "https://example.com/split-zip-article",
+        textContent: `Diagram reference:\n\n![Network Layout](/api/media/${asset.filename})`,
+      });
+
+      const res = await fetch(`${serverUrl}/api/documents/export`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ids: [doc.id],
+          format: "markdown",
+          mode: "split",
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("application/zip");
+
+      const zipBuf = Buffer.from(await res.arrayBuffer());
+      const zip = await JSZip.loadAsync(zipBuf);
+
+      expect(zip.file(`media/${asset.filename}`)).not.toBeNull();
+      const bundledImage = await zip.file(`media/${asset.filename}`)!.async("nodebuffer");
+      expect(bundledImage).toEqual(imageBytes);
+
+      const docContent = await zip.file("01-split-zip-article.md")!.async("string");
+      expect(docContent).toContain(`![Network Layout](./media/${asset.filename})`);
+      expect(docContent).not.toContain(`/api/media/${asset.filename}`);
     });
   });
 });

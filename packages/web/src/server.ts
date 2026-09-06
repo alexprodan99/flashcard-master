@@ -19,6 +19,7 @@ import {
   type PersonaType,
   type CardDepthMode,
   type DiscoveredDocument,
+  MediaService,
   CardGenerationService,
 } from "@flashcard-master/core";
 import { createLLMAdapter, DocumentExportService } from "@flashcard-master/adapters";
@@ -44,6 +45,7 @@ export interface WebServerOptions {
   promptBuilder?: PromptBuilder;
   groundingGuard?: GroundingGuard;
   dedupService?: CardDeduplicationService;
+  mediaService?: MediaService;
   createLLMAdapterFn?: (config: any) => any;
   ankiConnectAdapter?: {
     checkHealth(): Promise<AnkiConnectHealthCheck>;
@@ -55,10 +57,12 @@ export class WebServer {
   private server: http.Server | null = null;
   private readonly port: number;
   private readonly host: string;
+  private readonly mediaService: MediaService;
 
   constructor(private readonly options: WebServerOptions) {
     this.port = options.port !== undefined ? options.port : 3000;
     this.host = options.host || "127.0.0.1";
+    this.mediaService = options.mediaService || new MediaService();
   }
 
   private getHtmlSpa(): string {
@@ -1634,6 +1638,62 @@ export class WebServer {
             return;
           }
 
+          // 2b. Local Media Static Streaming Endpoint: GET /api/media/:filename
+          if (pathname.startsWith("/api/media/") && method === "GET") {
+            const rawFilename = pathname.slice("/api/media/".length);
+            let filename = "";
+            try {
+              filename = decodeURIComponent(rawFilename);
+            } catch {
+              filename = rawFilename;
+            }
+
+            // Path traversal security checks
+            if (
+              !filename ||
+              filename.includes("..") ||
+              filename.includes("/") ||
+              filename.includes("\\") ||
+              filename.includes("\0")
+            ) {
+              this.sendJson(res, 400, { error: "Invalid media filename or path traversal detected" });
+              return;
+            }
+
+            const sanitized = this.mediaService.sanitizeFilename(filename);
+            let mediaPath = "";
+            try {
+              mediaPath = this.mediaService.getMediaPath(sanitized);
+            } catch {
+              this.sendJson(res, 400, { error: "Invalid media path" });
+              return;
+            }
+
+            if (!fs.existsSync(mediaPath) || !fs.statSync(mediaPath).isFile()) {
+              this.sendJson(res, 404, { error: "Media file not found" });
+              return;
+            }
+
+            const stat = fs.statSync(mediaPath);
+            const contentType = this.mediaService.detectMimeType(sanitized);
+
+            res.writeHead(200, {
+              "Content-Type": contentType,
+              "Content-Length": stat.size,
+              "Cache-Control": "public, max-age=31536000, immutable",
+              "Access-Control-Allow-Origin": "*",
+            });
+
+            const stream = fs.createReadStream(mediaPath);
+            stream.on("error", () => {
+              if (!res.headersSent) {
+                this.sendJson(res, 500, { error: "Failed to stream media file" });
+              }
+            });
+            stream.pipe(res);
+            return;
+          }
+
           // 3. Stats Endpoint
           if (pathname === "/api/stats" && method === "GET") {
             const sources = this.options.sourceRepo.list();
@@ -1969,7 +2029,7 @@ export class WebServer {
               return;
             }
 
-            const docExporter = new DocumentExportService();
+            const docExporter = new DocumentExportService(this.mediaService);
             const exportResult = await docExporter.export(targetDocs, {
               format: format as any,
               mode: mode as any,

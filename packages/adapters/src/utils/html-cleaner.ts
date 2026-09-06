@@ -39,7 +39,7 @@ export function normalizeCleanText(text: string): string {
   return result.trim();
 }
 
-function walkDom(node: Node): string {
+function walkDom(node: Node, baseUrl?: string): string {
   if (node.nodeType === 3) {
     // Node.TEXT_NODE: ignore whitespace-only text nodes inside list/table containers
     const parentTag = (node as any).parentElement?.tagName?.toLowerCase();
@@ -81,7 +81,7 @@ function walkDom(node: Node): string {
   const walkChildren = (): string => {
     let result = "";
     for (const child of Array.from(el.childNodes)) {
-      result += walkDom(child);
+      result += walkDom(child, baseUrl);
     }
     return result;
   };
@@ -104,6 +104,22 @@ function walkDom(node: Node): string {
         return walkChildren();
       }
       return `\n\n${walkChildren().trim()}\n\n`;
+    case "img": {
+      let src = (el.getAttribute("src") || el.getAttribute("data-src") || "").trim();
+      const alt = (el.getAttribute("alt") || el.getAttribute("title") || "").trim();
+      if (!src) return "";
+
+      // If src is a localized media path (e.g. /api/media/... or https://host/api/media/...), normalize to /api/media/...
+      const mediaMatch = src.match(/(?:^|https?:\/\/[^/]+)(\/api\/media\/[a-zA-Z0-9_.-]+)/i);
+      if (mediaMatch) {
+        src = mediaMatch[1];
+      } else if (baseUrl && !src.startsWith("data:")) {
+        try {
+          src = new URL(src, baseUrl).href;
+        } catch {}
+      }
+      return `\n\n![${alt}](${src})\n\n`;
+    }
     case "pre": {
       const codeEl = el.querySelector("code");
       const content = codeEl ? codeEl.textContent : el.textContent;
@@ -146,7 +162,7 @@ function walkDom(node: Node): string {
   }
 }
 
-export function htmlToCleanText(html: string): string {
+export function htmlToCleanText(html: string, baseUrl?: string): string {
   if (!html || typeof html !== "string") {
     return "";
   }
@@ -162,9 +178,11 @@ export function htmlToCleanText(html: string): string {
   }
 
   try {
-    const dom = new JSDOM(`<!DOCTYPE html><html><body>${trimmed}</body></html>`);
+    const dom = new JSDOM(`<!DOCTYPE html><html><body>${trimmed}</body></html>`, {
+      url: baseUrl || "https://local.document",
+    });
     const body = dom.window.document.body;
-    const rawMarkdown = walkDom(body);
+    const rawMarkdown = walkDom(body, baseUrl);
     return normalizeCleanText(rawMarkdown);
   } catch {
     // Fallback if DOM parsing fails

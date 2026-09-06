@@ -7,9 +7,12 @@ import type {
   DocumentExportMode,
   DocumentExportOptions,
   DocumentExportResult,
+  MediaService,
 } from "@flashcard-master/core";
 
 export class DocumentExportService {
+  constructor(private readonly mediaService?: MediaService) {}
+
   private slugify(text: string): string {
     return (
       text
@@ -47,8 +50,13 @@ export class DocumentExportService {
     // Italic: *text* or _text_
     escaped = escaped.replace(/\*([^*]+)\*/g, "<em>$1</em>");
     escaped = escaped.replace(/_([^_]+)_/g, "<em>$1</em>");
+    // Markdown image: ![alt](url)
+    escaped = escaped.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_match, alt, src) => {
+      const figcaption = alt ? `<figcaption>${alt}</figcaption>` : "";
+      return `<figure class="doc-figure"><img src="${src}" alt="${alt}" loading="lazy" referrerpolicy="no-referrer" />${figcaption}</figure>`;
+    });
     // Markdown link: [label](url)
-    escaped = escaped.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1 ↗</a>');
+    escaped = escaped.replace(/(?<!\!)\[([^\]]+)\]\((https?:\/\/[^\s)]+|\/[^\s)]+|\.\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1 ↗</a>');
     return escaped;
   }
 
@@ -88,6 +96,18 @@ export class DocumentExportService {
       // Check for horizontal rule (--- or ***)
       if (/^(\-{3,}|\*{3,}|_{3,})$/.test(block)) {
         htmlBlocks.push("<hr />");
+        continue;
+      }
+
+      // Check for block image: ![alt](url)
+      const imgMatch = block.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
+      if (imgMatch) {
+        const alt = imgMatch[1].trim();
+        const src = imgMatch[2].trim();
+        const figcaption = alt ? `<figcaption>${this.escapeHtml(alt)}</figcaption>` : "";
+        htmlBlocks.push(
+          `<figure class="doc-figure"><img src="${this.escapeHtml(src)}" alt="${this.escapeHtml(alt)}" loading="lazy" referrerpolicy="no-referrer" />${figcaption}</figure>`
+        );
         continue;
       }
 
@@ -153,6 +173,35 @@ export class DocumentExportService {
     }, 0);
   }
 
+  private async inlineMediaAsBase64(htmlContent: string): Promise<string> {
+    if (!this.mediaService || !htmlContent) {
+      return htmlContent;
+    }
+
+    const mediaRegex = /(?:(?:\/api\/media\/)|(?:api\/media\/))([a-zA-Z0-9_.-]+)/g;
+    const matches = Array.from(htmlContent.matchAll(mediaRegex));
+    if (matches.length === 0) {
+      return htmlContent;
+    }
+
+    let result = htmlContent;
+    const uniqueFilenames = Array.from(new Set(matches.map((m) => m[1])));
+
+    for (const filename of uniqueFilenames) {
+      try {
+        const base64Data = await this.mediaService.readMediaAsBase64(filename);
+        if (base64Data) {
+          const targetPattern = new RegExp(`(?:/api/media/|api/media/)${filename.replace(/\./g, "\\.")}`, "g");
+          result = result.replace(targetPattern, base64Data.dataUrl);
+        }
+      } catch {
+        // Keep URL as-is if reading media fails
+      }
+    }
+
+    return result;
+  }
+
   private normalizeFormat(format: string): "markdown" | "html" | "txt" | "json" {
     const f = (format || "").toLowerCase().trim();
     if (f === "md" || f === "markdown") return "markdown";
@@ -184,7 +233,7 @@ export class DocumentExportService {
         includeCitations,
       });
     } else {
-      result = this.exportMerged(documents, {
+      result = await this.exportMerged(documents, {
         format,
         sourceName,
         sourceSlug,
@@ -206,7 +255,7 @@ export class DocumentExportService {
     return result;
   }
 
-  private exportMerged(
+  private async exportMerged(
     docs: DiscoveredDocument[],
     opts: {
       format: "markdown" | "html" | "txt" | "json";
@@ -215,7 +264,7 @@ export class DocumentExportService {
       includeToc: boolean;
       includeCitations: boolean;
     }
-  ): DocumentExportResult {
+  ): Promise<DocumentExportResult> {
     const totalWords = this.calculateTotalWords(docs);
     const now = new Date();
     const dateStr = now.toISOString().split("T")[0];
@@ -277,7 +326,10 @@ export class DocumentExportService {
       }
 
       case "html": {
-        const html = this.generateMergedHtml(docs, opts, totalWords, dateStr);
+        let html = this.generateMergedHtml(docs, opts, totalWords, dateStr);
+        if (this.mediaService) {
+          html = await this.inlineMediaAsBase64(html);
+        }
         return {
           filename: `${opts.sourceSlug}-knowledge-base.html`,
           mimeType: "text/html",
@@ -661,6 +713,25 @@ export class DocumentExportService {
     .doc-body a:hover {
       text-decoration: underline;
     }
+    .doc-figure {
+      margin: 1.75rem 0;
+      text-align: center;
+    }
+    .doc-figure img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      display: block;
+      margin: 0 auto;
+    }
+    .doc-figure figcaption {
+      margin-top: 0.6rem;
+      font-size: 0.875rem;
+      color: var(--text-muted);
+      font-style: italic;
+    }
     .doc-footer {
       margin-top: 1.5rem;
       padding-top: 1rem;
@@ -721,6 +792,37 @@ export class DocumentExportService {
     const totalWords = this.calculateTotalWords(docs);
     const dateStr = new Date().toISOString().split("T")[0];
 
+    // Scan documents for referenced local media files
+    const mediaRegex = /(?:(?:\/api\/media\/)|(?:api\/media\/))([a-zA-Z0-9_.-]+)/g;
+    const referencedMedia = new Set<string>();
+
+    docs.forEach((doc) => {
+      const text = doc.textContent || "";
+      const matches = Array.from(text.matchAll(mediaRegex));
+      for (const m of matches) {
+        referencedMedia.add(m[1]);
+      }
+    });
+
+    // Bundle media files into zip inside media/ folder
+    if (this.mediaService && referencedMedia.size > 0) {
+      for (const filename of referencedMedia) {
+        try {
+          const mediaBuffer = await this.mediaService.readMedia(filename);
+          if (mediaBuffer) {
+            zip.file(`media/${filename}`, mediaBuffer);
+          }
+        } catch {
+          // Omit missing media from ZIP
+        }
+      }
+    }
+
+    // Helper to rewrite /api/media/<filename> to ./media/<filename>
+    const rewriteMediaPaths = (content: string): string => {
+      return content.replace(/(?:\/api\/media\/|api\/media\/)([a-zA-Z0-9_.-]+)/g, "./media/$1");
+    };
+
     // 1. Add README index manifest
     const manifestLines: string[] = [
       `# ${opts.sourceName} - Knowledge Base Archive`,
@@ -745,30 +847,35 @@ export class DocumentExportService {
         manifestLines.push(`   - Source: <${doc.url}>`);
       }
 
+      const localizedDoc = {
+        ...doc,
+        textContent: rewriteMediaPaths(doc.textContent || ""),
+      };
+
       // Generate individual document file
       let fileContent = "";
       switch (opts.format) {
         case "markdown": {
           const docLines: string[] = [];
-          docLines.push(`# ${doc.title}\n`);
+          docLines.push(`# ${localizedDoc.title}\n`);
           const meta: string[] = [`📊 **Word Count:** ${words.toLocaleString()} words`];
-          if (opts.includeCitations && doc.url) {
-            meta.push(`🔗 **Source:** <${doc.url}>`);
+          if (opts.includeCitations && localizedDoc.url) {
+            meta.push(`🔗 **Source:** <${localizedDoc.url}>`);
           }
           docLines.push(`*${meta.join(" | ")}*\n`);
           docLines.push(`---\n`);
-          docLines.push(doc.textContent ? doc.textContent.trim() : "*(No content)*");
+          docLines.push(localizedDoc.textContent ? localizedDoc.textContent.trim() : "*(No content)*");
           docLines.push("");
           fileContent = docLines.join("\n");
           break;
         }
         case "html": {
-          const escapedTitle = this.escapeHtml(doc.title);
-          const sanitizedUrl = this.sanitizeUrl(doc.url);
-          const bodyHtml = this.formatHtmlParagraphs(doc.textContent || "");
+          const escapedTitle = this.escapeHtml(localizedDoc.title);
+          const sanitizedUrl = this.sanitizeUrl(localizedDoc.url);
+          const bodyHtml = this.formatHtmlParagraphs(localizedDoc.textContent || "");
           let citationHtml = "";
           if (opts.includeCitations && sanitizedUrl) {
-            citationHtml = `<p><strong>Source:</strong> <a href="${sanitizedUrl}" target="_blank" rel="noopener noreferrer">${this.escapeHtml(doc.url || "")} ↗</a></p>`;
+            citationHtml = `<p><strong>Source:</strong> <a href="${sanitizedUrl}" target="_blank" rel="noopener noreferrer">${this.escapeHtml(localizedDoc.url || "")} ↗</a></p>`;
           }
           fileContent = `<!DOCTYPE html>
 <html lang="en">
@@ -792,6 +899,9 @@ export class DocumentExportService {
     hr { border: none; border-top: 1px solid #e2e8f0; margin: 2rem 0; }
     a { color: #0284c7; text-decoration: none; }
     a:hover { text-decoration: underline; }
+    .doc-figure { margin: 1.75rem 0; text-align: center; }
+    .doc-figure img { max-width: 100%; height: auto; border-radius: 8px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); display: block; margin: 0 auto; }
+    .doc-figure figcaption { margin-top: 0.6rem; font-size: 0.875rem; color: #64748b; font-style: italic; }
   </style>
 </head>
 <body>
@@ -809,13 +919,13 @@ export class DocumentExportService {
         }
         case "txt": {
           const docLines: string[] = [];
-          docLines.push(`TITLE: ${doc.title}`);
-          if (opts.includeCitations && doc.url) {
-            docLines.push(`SOURCE: ${doc.url}`);
+          docLines.push(`TITLE: ${localizedDoc.title}`);
+          if (opts.includeCitations && localizedDoc.url) {
+            docLines.push(`SOURCE: ${localizedDoc.url}`);
           }
           docLines.push(`WORD COUNT: ${words.toLocaleString()} words`);
           docLines.push("-".repeat(80));
-          docLines.push(doc.textContent ? doc.textContent.trim() : "(No content)");
+          docLines.push(localizedDoc.textContent ? localizedDoc.textContent.trim() : "(No content)");
           docLines.push("");
           fileContent = docLines.join("\n");
           break;
@@ -823,13 +933,13 @@ export class DocumentExportService {
         case "json": {
           fileContent = JSON.stringify(
             {
-              id: doc.id,
-              sourceId: doc.sourceId,
-              title: doc.title,
-              url: doc.url || null,
+              id: localizedDoc.id,
+              sourceId: localizedDoc.sourceId,
+              title: localizedDoc.title,
+              url: localizedDoc.url || null,
               wordCount: words,
-              textContent: doc.textContent || "",
-              createdAt: doc.createdAt || null,
+              textContent: localizedDoc.textContent || "",
+              createdAt: localizedDoc.createdAt || null,
             },
             null,
             2

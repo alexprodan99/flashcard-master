@@ -79,6 +79,15 @@ export function getDefaultDatabasePath(): string {
   return path.join(dir, "data.sqlite");
 }
 
+export function getDefaultMediaDirectory(): string {
+  const home = os.homedir();
+  const dir = path.join(home, ".flashcard-master", "media");
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+}
+
 export function createDatabaseClient(options: DatabaseClientOptions = {}): Database.Database {
   let dbLocation = options.dbPath;
   if (options.inMemory || options.dbPath === ":memory:") {

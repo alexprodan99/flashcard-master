@@ -81,6 +81,20 @@ describe("htmlToCleanText and normalizeCleanText", () => {
     expect(clean).toBe(md.trim());
   });
 
+  it("converts img tags to structured Markdown images with alt text and resolves relative URLs", () => {
+    const html = `
+      <h1>Architecture Overview</h1>
+      <p>Here is our system design:</p>
+      <img src="/assets/diagram.png" alt="Architecture Diagram" />
+      <p>Followed by a photo without alt text:</p>
+      <img src="https://example.com/photo.jpg" />
+    `;
+
+    const clean = htmlToCleanText(html, "https://example.com/docs/intro");
+    expect(clean).toContain("![Architecture Diagram](https://example.com/assets/diagram.png)");
+    expect(clean).toContain("![](https://example.com/photo.jpg)");
+  });
+
   it("handles empty or null inputs gracefully", () => {
     expect(htmlToCleanText("")).toBe("");
     expect(htmlToCleanText("   ")).toBe("");

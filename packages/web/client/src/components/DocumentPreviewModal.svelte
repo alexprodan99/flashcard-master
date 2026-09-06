@@ -35,8 +35,13 @@
     // Italic: *text* or _text_
     escaped = escaped.replace(/\*([^*]+)\*/g, '<em>$1</em>');
     escaped = escaped.replace(/_([^_]+)_/g, '<em>$1</em>');
+    // Markdown image: ![alt](url)
+    escaped = escaped.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_match, alt, src) => {
+      const figcaption = alt ? `<figcaption>${alt}</figcaption>` : '';
+      return `<figure class="doc-figure"><img src="${src}" alt="${alt}" loading="lazy" referrerpolicy="no-referrer" />${figcaption}</figure>`;
+    });
     // Markdown link: [label](url)
-    escaped = escaped.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1 ↗</a>');
+    escaped = escaped.replace(/(?<!\!)\[([^\]]+)\]\((https?:\/\/[^\s)]+|\/[^\s)]+|\.\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1 ↗</a>');
     return escaped;
   }
 
@@ -75,6 +80,18 @@
       // Horizontal rule
       if (/^(\-{3,}|\*{3,}|_{3,})$/.test(block)) {
         htmlBlocks.push('<hr />');
+        continue;
+      }
+
+      // Block image: ![alt](url)
+      const imgMatch = block.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
+      if (imgMatch) {
+        const alt = imgMatch[1].trim();
+        const src = imgMatch[2].trim();
+        const figcaption = alt ? `<figcaption>${escapeHtml(alt)}</figcaption>` : '';
+        htmlBlocks.push(
+          `<figure class="doc-figure"><img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" loading="lazy" referrerpolicy="no-referrer" />${figcaption}</figure>`
+        );
         continue;
       }
 
@@ -523,6 +540,28 @@
 
   .reader-view :global(a:hover) {
     text-decoration: underline;
+  }
+
+  .reader-view :global(.doc-figure) {
+    margin: 20px 0;
+    text-align: center;
+  }
+
+  .reader-view :global(.doc-figure img) {
+    max-width: 100%;
+    height: auto;
+    border-radius: 8px;
+    border: 1px solid #334155;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+    display: block;
+    margin: 0 auto;
+  }
+
+  .reader-view :global(.doc-figure figcaption) {
+    margin-top: 8px;
+    font-size: 12px;
+    color: #94a3b8;
+    font-style: italic;
   }
 
   .preview-footer {

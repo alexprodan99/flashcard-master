@@ -93,3 +93,15 @@ export const DiscoveredDocumentSchema = z.object({
   updatedAt: z.string().datetime().optional(),
 });
 export type DiscoveredDocument = z.infer<typeof DiscoveredDocumentSchema>;
+
+export const MediaAssetSchema = z.object({
+  id: z.string(),
+  filename: z.string().min(1),
+  hash: z.string().min(1),
+  mimeType: z.string().min(1),
+  byteSize: z.number().int().nonnegative(),
+  url: z.string().min(1),
+  path: z.string().optional(),
+  createdAt: z.string().datetime().optional(),
+});
+export type MediaAsset = z.infer<typeof MediaAssetSchema>;

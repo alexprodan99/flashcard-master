@@ -219,4 +219,102 @@ describe("DocumentExportService", () => {
       expect(parsed.wordCount).toBe(10);
     });
   });
+
+  describe("Media Asset Pipeline (Offline Export)", () => {
+    it("inlines local media as Base64 Data URLs and renders responsive <figure> in Standalone HTML", async () => {
+      const { MediaService } = await import("@flashcard-master/core");
+      const mediaService = new MediaService({ mediaDir: path.join(tempDir, "media") });
+      const asset = await mediaService.saveMedia(Buffer.from("png-raw-binary-bytes"), "image/png");
+
+      const docWithMedia: DiscoveredDocument = {
+        id: "doc-media-1",
+        sourceId: "src-1",
+        title: "System Architecture",
+        url: "https://example.com/arch",
+        textContent: `Here is the architecture:\n\n![System Diagram](/api/media/${asset.filename})\n\nAnd some concluding notes.`,
+        wordCount: 12,
+      };
+
+      const mediaExporter = new DocumentExportService(mediaService);
+      const result = await mediaExporter.export([docWithMedia], {
+        format: "html",
+        mode: "merged",
+        sourceName: "Architecture Doc",
+      });
+
+      expect(result.mimeType).toBe("text/html");
+      const html = result.content as string;
+      expect(html).toContain("data:image/png;base64,");
+      expect(html).toContain('<figure class="doc-figure">');
+      expect(html).toContain('<figcaption>System Diagram</figcaption>');
+      expect(html).toContain('alt="System Diagram"');
+      expect(html).not.toContain(`/api/media/${asset.filename}`);
+    });
+
+    it("leaves media URL unchanged in Standalone HTML if media file is missing", async () => {
+      const { MediaService } = await import("@flashcard-master/core");
+      const mediaService = new MediaService({ mediaDir: path.join(tempDir, "media") });
+
+      const docWithMissingMedia: DiscoveredDocument = {
+        id: "doc-media-2",
+        sourceId: "src-1",
+        title: "Missing Media Doc",
+        url: "https://example.com/missing",
+        textContent: "![Missing Graphic](/api/media/nonexistent123.png)",
+        wordCount: 5,
+      };
+
+      const mediaExporter = new DocumentExportService(mediaService);
+      const result = await mediaExporter.export([docWithMissingMedia], {
+        format: "html",
+        mode: "merged",
+        sourceName: "Missing Doc",
+      });
+
+      const html = result.content as string;
+      expect(html).toContain("/api/media/nonexistent123.png");
+    });
+
+    it("bundles referenced media into media/ folder in Split ZIP and rewrites links to ./media/<filename>", async () => {
+      const { MediaService } = await import("@flashcard-master/core");
+      const mediaService = new MediaService({ mediaDir: path.join(tempDir, "media") });
+      const asset1 = await mediaService.saveMedia(Buffer.from("image-1-bytes"), "image/png");
+      const asset2 = await mediaService.saveMedia(Buffer.from("image-2-bytes"), "image/jpeg");
+
+      const docsWithMedia: DiscoveredDocument[] = [
+        {
+          id: "doc-m1",
+          sourceId: "src-1",
+          title: "Article with PNG",
+          textContent: `Content diagram:\n\n![Diagram](/api/media/${asset1.filename})`,
+          wordCount: 5,
+        },
+        {
+          id: "doc-m2",
+          sourceId: "src-1",
+          title: "Article with JPEG",
+          textContent: `Photo figure:\n\n![Photo](/api/media/${asset2.filename})`,
+          wordCount: 5,
+        },
+      ];
+
+      const mediaExporter = new DocumentExportService(mediaService);
+      const result = await mediaExporter.export(docsWithMedia, {
+        format: "markdown",
+        mode: "split",
+        sourceName: "Offline Knowledge Base",
+      });
+
+      const zip = await JSZip.loadAsync(result.content as Buffer);
+      expect(zip.file(`media/${asset1.filename}`)).not.toBeNull();
+      expect(zip.file(`media/${asset2.filename}`)).not.toBeNull();
+
+      const img1Data = await zip.file(`media/${asset1.filename}`)!.async("nodebuffer");
+      expect(img1Data).toEqual(Buffer.from("image-1-bytes"));
+
+      const doc1Content = await zip.file("01-article-with-png.md")!.async("string");
+      expect(doc1Content).toContain(`![Diagram](./media/${asset1.filename})`);
+      expect(doc1Content).not.toContain(`/api/media/${asset1.filename}`);
+    });
+  });
 });

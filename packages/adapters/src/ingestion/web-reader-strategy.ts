@@ -1,4 +1,11 @@
-import type { IngestionStrategy, DataSource, RawDocument, CleanTextDocument, SyncState } from "@flashcard-master/core";
+import type {
+  IngestionStrategy,
+  DataSource,
+  RawDocument,
+  CleanTextDocument,
+  SyncState,
+  MediaService,
+} from "@flashcard-master/core";
 import { Readability } from "@mozilla/readability";
 import { JSDOM } from "jsdom";
 import crypto from "node:crypto";
@@ -9,6 +16,7 @@ export interface WebReaderStrategyOptions {
   timeoutMs?: number;
   customFetch?: typeof fetch;
   concurrency?: number;
+  mediaService?: MediaService;
 }
 
 export function parseSourceUrls(uri: string): string[] {
@@ -82,6 +90,7 @@ export class WebReaderStrategy implements IngestionStrategy {
   private readonly timeoutMs: number;
   private readonly fetchFn: typeof fetch;
   private readonly concurrency: number;
+  private readonly mediaService?: MediaService;
 
   constructor(options: WebReaderStrategyOptions = {}) {
     this.timeoutMs = options.timeoutMs ?? 10000;
@@ -90,6 +99,42 @@ export class WebReaderStrategy implements IngestionStrategy {
       typeof options.concurrency === "number" && Number.isFinite(options.concurrency)
         ? Math.max(1, Math.min(Math.floor(options.concurrency), 10))
         : 3;
+    this.mediaService = options.mediaService;
+  }
+
+  async localizeImagesInHtml(html: string, originUrl: string): Promise<string> {
+    if (!this.mediaService || !html || typeof html !== "string") {
+      return html;
+    }
+
+    try {
+      const dom = new JSDOM(html, { url: originUrl });
+      const doc = dom.window.document;
+      const images = Array.from(doc.querySelectorAll("img"));
+
+      for (const img of images) {
+        const src = (img.getAttribute("src") || img.getAttribute("data-src") || "").trim();
+        if (!src) continue;
+
+        if (src.startsWith("/api/media/")) continue;
+
+        try {
+          const resolvedUrl = new URL(src, originUrl).href;
+          const asset = await this.mediaService.downloadAndSave(resolvedUrl, originUrl);
+          if (asset) {
+            img.setAttribute("src", asset.url);
+          } else {
+            img.setAttribute("src", resolvedUrl);
+          }
+        } catch {
+          // Leave src as-is if URL parsing fails
+        }
+      }
+
+      return dom.serialize();
+    } catch {
+      return html;
+    }
   }
 
   async fetch(source: DataSource, lastSync?: SyncState): Promise<RawDocument[]> {
@@ -132,7 +177,10 @@ export class WebReaderStrategy implements IngestionStrategy {
         return null;
       }
 
-      const html = await response.text();
+      let html = await response.text();
+      if (this.mediaService) {
+        html = await this.localizeImagesInHtml(html, url);
+      }
       return this.parseHtml(html, sourceId, url);
     } catch (err: any) {
       console.warn(`[WebReaderStrategy] Network or parse failure for ${url}:`, err.message);
@@ -183,7 +231,7 @@ export class WebReaderStrategy implements IngestionStrategy {
   }
 
   extractCleanText(raw: RawDocument): CleanTextDocument {
-    const clean = htmlToCleanText(raw.rawContent || "");
+    const clean = htmlToCleanText(raw.rawContent || "", raw.originUrl);
 
     // Calculate SHA-256 hash
     const contentHash = crypto.createHash("sha256").update(clean, "utf8").digest("hex");

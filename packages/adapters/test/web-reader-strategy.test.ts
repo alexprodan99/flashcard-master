@@ -279,4 +279,142 @@ describe("WebReaderStrategy", () => {
       expect(maxSimultaneousRequests).toBeLessThanOrEqual(2);
     });
   });
+
+  describe("Media Asset Localization", () => {
+    it("downloads and localizes article images with SHA-256 deduplication and replaces them with /api/media/<hash>.<ext>", async () => {
+      const { MediaService } = await import("@flashcard-master/core");
+      const fs = await import("node:fs");
+      const path = await import("node:path");
+      const os = await import("node:os");
+
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "fc-web-media-"));
+
+      const imagePayload = Buffer.from("fake-diagram-image-bytes");
+      const mockFetch = async (url: string | URL | Request) => {
+        const u = url.toString();
+        if (u === "https://example.com/article") {
+          return new Response(
+            `<!DOCTYPE html>
+            <html>
+              <head><title>Distributed Systems Architecture</title></head>
+              <body>
+                <article>
+                  <h1>Distributed Systems Architecture</h1>
+                  <p>Here is the replication scheme:</p>
+                  <img src="/images/raft.png" alt="Raft Architecture" />
+                </article>
+              </body>
+            </html>`,
+            { status: 200, headers: { "Content-Type": "text/html" } }
+          );
+        }
+        if (u === "https://example.com/images/raft.png") {
+          return new Response(imagePayload, {
+            status: 200,
+            headers: { "Content-Type": "image/png" },
+          });
+        }
+        return new Response("Not Found", { status: 404 });
+      };
+
+      const mediaService = new MediaService({
+        mediaDir: tempDir,
+        customFetch: mockFetch as any,
+      });
+
+      const strategy = new WebReaderStrategy({
+        customFetch: mockFetch as any,
+        mediaService,
+      });
+
+      const source: DataSource = {
+        id: "source-media-test",
+        name: "Media Source",
+        type: "web",
+        uri: "https://example.com/article",
+        targetDeck: "Default",
+        tags: [],
+        isActive: true,
+      };
+
+      try {
+        const docs = await strategy.fetch(source);
+        expect(docs).toHaveLength(1);
+        expect(docs[0].rawContent).toContain("/api/media/");
+
+        const cleanDoc = strategy.extractCleanText(docs[0]);
+        expect(cleanDoc.textContent).toMatch(/!\[Raft Architecture\]\(\/api\/media\/[a-f0-9]{32}\.png\)/);
+
+        // Verify image was saved to mediaDir
+        const files = fs.readdirSync(tempDir);
+        expect(files).toHaveLength(1);
+        expect(files[0].endsWith(".png")).toBe(true);
+      } finally {
+        if (fs.existsSync(tempDir)) {
+          fs.rmSync(tempDir, { recursive: true, force: true });
+        }
+      }
+    });
+
+    it("degrades gracefully to resolved remote URL when image download fails", async () => {
+      const { MediaService } = await import("@flashcard-master/core");
+      const fs = await import("node:fs");
+      const path = await import("node:path");
+      const os = await import("node:os");
+
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "fc-web-media-fail-"));
+
+      const mockFetch = async (url: string | URL | Request) => {
+        const u = url.toString();
+        if (u === "https://example.com/article-404-img") {
+          return new Response(
+            `<!DOCTYPE html>
+            <html>
+              <head><title>Fault Tolerant Article</title></head>
+              <body>
+                <article>
+                  <h1>Fault Tolerant Article</h1>
+                  <p>Check out our figure:</p>
+                  <img src="/broken/diagram.png" alt="Broken Diagram" />
+                </article>
+              </body>
+            </html>`,
+            { status: 200, headers: { "Content-Type": "text/html" } }
+          );
+        }
+        return new Response("Not Found", { status: 404 });
+      };
+
+      const mediaService = new MediaService({
+        mediaDir: tempDir,
+        customFetch: mockFetch as any,
+      });
+
+      const strategy = new WebReaderStrategy({
+        customFetch: mockFetch as any,
+        mediaService,
+      });
+
+      const source: DataSource = {
+        id: "source-fail-test",
+        name: "Fail Source",
+        type: "web",
+        uri: "https://example.com/article-404-img",
+        targetDeck: "Default",
+        tags: [],
+        isActive: true,
+      };
+
+      try {
+        const docs = await strategy.fetch(source);
+        expect(docs).toHaveLength(1);
+        const cleanDoc = strategy.extractCleanText(docs[0]);
+        expect(cleanDoc.textContent).toContain("![Broken Diagram](https://example.com/broken/diagram.png)");
+      } finally {
+        if (fs.existsSync(tempDir)) {
+          fs.rmSync(tempDir, { recursive: true, force: true });
+        }
+      }
+    });
+  });
 });
