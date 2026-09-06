@@ -37,18 +37,110 @@ export class DocumentExportService {
       .replace(/'/g, "&#039;");
   }
 
+  private formatInlineMarkdown(text: string): string {
+    let escaped = this.escapeHtml(text);
+    // Inline code: `code`
+    escaped = escaped.replace(/`([^`]+)`/g, "<code>$1</code>");
+    // Bold: **text** or __text__
+    escaped = escaped.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    escaped = escaped.replace(/__([^_]+)__/g, "<strong>$1</strong>");
+    // Italic: *text* or _text_
+    escaped = escaped.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+    escaped = escaped.replace(/_([^_]+)_/g, "<em>$1</em>");
+    // Markdown link: [label](url)
+    escaped = escaped.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1 ↗</a>');
+    return escaped;
+  }
+
   private formatHtmlParagraphs(text: string): string {
     const trimmed = text.trim();
     if (!trimmed) return "<p><em>(No content available)</em></p>";
 
-    // Split by multiple newlines into paragraphs
-    const paragraphs = trimmed.split(/\n{2,}/);
-    return paragraphs
-      .map((p) => {
-        const escaped = this.escapeHtml(p.trim()).replace(/\n/g, "<br />");
-        return `<p>${escaped}</p>`;
-      })
-      .join("\n");
+    // Extract code blocks first to protect formatting and line breaks
+    const codeBlocks: string[] = [];
+    const placeholderPrefix = `__CODE_BLOCK_${Date.now()}_`;
+    const textWithPlaceholders = trimmed.replace(/```([a-zA-Z0-9_-]*)\r?\n([\s\S]*?)```/g, (_match, lang, code) => {
+      const idx = codeBlocks.length;
+      const langClass = lang ? ` class="language-${this.escapeHtml(lang)}"` : "";
+      const escapedCode = this.escapeHtml(code.trimEnd());
+      codeBlocks.push(`<pre><code${langClass}>${escapedCode}</code></pre>`);
+      return `\n\n${placeholderPrefix}${idx}\n\n`;
+    });
+
+    // Split by double newlines into block elements
+    const rawBlocks = textWithPlaceholders.split(/\n{2,}/);
+    const htmlBlocks: string[] = [];
+
+    for (const rawBlock of rawBlocks) {
+      const block = rawBlock.trim();
+      if (!block) continue;
+
+      // Check for code block placeholder
+      const codeMatch = block.match(new RegExp(`^${placeholderPrefix}(\\d+)$`));
+      if (codeMatch) {
+        const idx = parseInt(codeMatch[1], 10);
+        if (codeBlocks[idx]) {
+          htmlBlocks.push(codeBlocks[idx]);
+          continue;
+        }
+      }
+
+      // Check for horizontal rule (--- or ***)
+      if (/^(\-{3,}|\*{3,}|_{3,})$/.test(block)) {
+        htmlBlocks.push("<hr />");
+        continue;
+      }
+
+      // Check for heading (# Heading)
+      const headingMatch = block.match(/^(#{1,6})\s+(.+)$/s);
+      if (headingMatch && !block.includes("\n")) {
+        const level = Math.min(6, headingMatch[1].length + 2); // Shift h1->h3, h2->h4 so document title remains top heading
+        const content = this.formatInlineMarkdown(headingMatch[2].trim());
+        htmlBlocks.push(`<h${level}>${content}</h${level}>`);
+        continue;
+      }
+
+      // Check for blockquote (> Quote)
+      if (block.startsWith(">")) {
+        const quoteLines = block
+          .split("\n")
+          .map((l) => l.replace(/^>\s?/, ""))
+          .join("\n");
+        const content = this.formatInlineMarkdown(quoteLines).replace(/\n/g, "<br />");
+        htmlBlocks.push(`<blockquote>${content}</blockquote>`);
+        continue;
+      }
+
+      // Check for unordered list (- item or * item)
+      if (/^[\*\-]\s+/m.test(block) && block.split("\n").every((l) => /^[\*\-]\s+/.test(l.trim()) || l.trim() === "")) {
+        const items = block
+          .split("\n")
+          .map((l) => l.trim())
+          .filter((l) => /^[\*\-]\s+/.test(l))
+          .map((l) => `<li>${this.formatInlineMarkdown(l.replace(/^[\*\-]\s+/, ""))}</li>`)
+          .join("\n");
+        htmlBlocks.push(`<ul>\n${items}\n</ul>`);
+        continue;
+      }
+
+      // Check for ordered list (1. item)
+      if (/^\d+\.\s+/m.test(block) && block.split("\n").every((l) => /^\d+\.\s+/.test(l.trim()) || l.trim() === "")) {
+        const items = block
+          .split("\n")
+          .map((l) => l.trim())
+          .filter((l) => /^\d+\.\s+/.test(l))
+          .map((l) => `<li>${this.formatInlineMarkdown(l.replace(/^\d+\.\s+/, ""))}</li>`)
+          .join("\n");
+        htmlBlocks.push(`<ol>\n${items}\n</ol>`);
+        continue;
+      }
+
+      // Standard paragraph
+      const formattedPara = this.formatInlineMarkdown(block).replace(/\n/g, "<br />");
+      htmlBlocks.push(`<p>${formattedPara}</p>`);
+    }
+
+    return htmlBlocks.join("\n");
   }
 
   private calculateTotalWords(docs: DiscoveredDocument[]): number {
@@ -496,6 +588,79 @@ export class DocumentExportService {
     .doc-body p:last-child {
       margin-bottom: 0;
     }
+    .doc-body h3 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: var(--primary);
+      margin: 1.75rem 0 0.75rem 0;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0.35rem;
+    }
+    .doc-body h4 {
+      font-size: 1.15rem;
+      font-weight: 600;
+      color: var(--text);
+      margin: 1.5rem 0 0.5rem 0;
+    }
+    .doc-body h5, .doc-body h6 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin: 1.25rem 0 0.5rem 0;
+    }
+    .doc-body pre {
+      background: #090d16;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      overflow-x: auto;
+      margin: 1.25rem 0;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.9rem;
+      line-height: 1.5;
+      color: #e2e8f0;
+    }
+    .doc-body code {
+      background: rgba(255, 255, 255, 0.08);
+      padding: 0.2rem 0.45rem;
+      border-radius: 4px;
+      font-size: 0.875rem;
+      color: #93c5fd;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+    .doc-body pre code {
+      background: transparent;
+      padding: 0;
+      color: inherit;
+    }
+    .doc-body blockquote {
+      border-left: 4px solid var(--accent);
+      padding: 0.75rem 1.25rem;
+      background: rgba(99, 102, 241, 0.08);
+      border-radius: 0 8px 8px 0;
+      margin: 1.25rem 0;
+      color: #cbd5e1;
+      font-style: italic;
+    }
+    .doc-body ul, .doc-body ol {
+      margin: 0 0 1.25rem 0;
+      padding-left: 1.75rem;
+    }
+    .doc-body li {
+      margin-bottom: 0.4rem;
+    }
+    .doc-body hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 2rem 0;
+    }
+    .doc-body a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+    .doc-body a:hover {
+      text-decoration: underline;
+    }
     .doc-footer {
       margin-top: 1.5rem;
       padding-top: 1rem;
@@ -611,9 +776,22 @@ export class DocumentExportService {
   <meta charset="UTF-8">
   <title>${escapedTitle}</title>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; line-height: 1.6; color: #1e293b; }
-    h1 { font-size: 2rem; margin-bottom: 0.5rem; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; line-height: 1.7; color: #0f172a; }
+    h1 { font-size: 2rem; margin-bottom: 0.5rem; color: #0f172a; }
     .meta { color: #64748b; font-size: 0.9rem; margin-bottom: 1.5rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.75rem; }
+    h3 { font-size: 1.35rem; font-weight: 700; color: #0284c7; margin: 1.75rem 0 0.75rem 0; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.35rem; }
+    h4 { font-size: 1.15rem; font-weight: 600; color: #0f172a; margin: 1.5rem 0 0.5rem 0; }
+    h5, h6 { font-size: 1.05rem; font-weight: 600; color: #64748b; margin: 1.25rem 0 0.5rem 0; }
+    p { margin-bottom: 1.25rem; line-height: 1.75; }
+    pre { background: #0f172a; border-radius: 8px; padding: 1rem 1.25rem; overflow-x: auto; margin: 1.25rem 0; font-family: ui-monospace, monospace; font-size: 0.9rem; line-height: 1.5; color: #f8fafc; }
+    code { background: #f1f5f9; padding: 0.2rem 0.45rem; border-radius: 4px; font-size: 0.875rem; color: #0284c7; font-family: ui-monospace, monospace; }
+    pre code { background: transparent; padding: 0; color: inherit; }
+    blockquote { border-left: 4px solid #6366f1; padding: 0.75rem 1.25rem; background: #f8fafc; border-radius: 0 8px 8px 0; margin: 1.25rem 0; color: #475569; font-style: italic; }
+    ul, ol { margin: 0 0 1.25rem 0; padding-left: 1.75rem; }
+    li { margin-bottom: 0.4rem; }
+    hr { border: none; border-top: 1px solid #e2e8f0; margin: 2rem 0; }
+    a { color: #0284c7; text-decoration: none; }
+    a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
