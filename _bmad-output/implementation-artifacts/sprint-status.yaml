@@ -133,5 +133,5 @@ development_status:
   12-8-raw-document-storage-and-format-preserving-extraction: done
   12-10-media-asset-webp-compression-and-optimization: done
   12-11-compact-html-export-and-ingestion-performance-optimization: done
-  epic-12-retrospective: optional
+  epic-12-retrospective: done
 
