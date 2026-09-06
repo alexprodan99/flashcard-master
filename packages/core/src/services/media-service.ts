@@ -1,10 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import type { MediaAsset } from "../domain/models.js";
+import sharp from "sharp";
+import type { MediaAsset, MediaOptimizationOptions } from "../domain/models.js";
 import { getDefaultMediaDirectory } from "../storage/db.js";
 
-export interface MediaServiceOptions {
+export interface MediaServiceOptions extends MediaOptimizationOptions {
   mediaDir?: string;
   customFetch?: typeof fetch;
   timeoutMs?: number;
@@ -14,11 +15,19 @@ export class MediaService {
   private readonly mediaDir: string;
   private readonly fetchFn: typeof fetch;
   private readonly timeoutMs: number;
+  private readonly optimizeWebp: boolean;
+  private readonly webpQuality: number;
+  private readonly maxWidth?: number;
+  private readonly maxHeight?: number;
 
   constructor(options: MediaServiceOptions = {}) {
     this.mediaDir = options.mediaDir || getDefaultMediaDirectory();
     this.fetchFn = options.customFetch || globalThis.fetch;
     this.timeoutMs = options.timeoutMs ?? 10000;
+    this.optimizeWebp = options.optimizeWebp ?? true;
+    this.webpQuality = Math.min(Math.max(options.webpQuality ?? 80, 1), 100);
+    this.maxWidth = options.maxWidth;
+    this.maxHeight = options.maxHeight;
 
     if (!fs.existsSync(this.mediaDir)) {
       fs.mkdirSync(this.mediaDir, { recursive: true });
@@ -60,7 +69,7 @@ export class MediaService {
       // Handle bare file extension passed in mimeType parameter
       if (!cleanMime.includes("/")) {
         const bareExt = cleanMime.replace(/^\./, "");
-        if (["png", "jpg", "jpeg", "webp", "gif", "svg", "avif", "ico"].includes(bareExt)) {
+        if (["png", "jpg", "jpeg", "webp", "gif", "svg", "avif", "ico", "bin", "tiff", "bmp"].includes(bareExt)) {
           return bareExt === "jpeg" ? "jpg" : bareExt;
         }
       }
@@ -80,9 +89,16 @@ export class MediaService {
           return "svg";
         case "image/avif":
           return "avif";
+        case "image/tiff":
+          return "tiff";
+        case "image/bmp":
+        case "image/x-ms-bmp":
+          return "bmp";
         case "image/x-icon":
         case "image/vnd.microsoft.icon":
           return "ico";
+        case "application/octet-stream":
+          return "bin";
       }
     }
 
@@ -90,7 +106,7 @@ export class MediaService {
       try {
         const parsed = new URL(url, "https://dummy.local");
         const ext = path.extname(parsed.pathname).toLowerCase().replace(/^\./, "");
-        if (["png", "jpg", "jpeg", "webp", "gif", "svg", "avif", "ico"].includes(ext)) {
+        if (["png", "jpg", "jpeg", "webp", "gif", "svg", "avif", "ico", "bin", "tiff", "bmp"].includes(ext)) {
           return ext === "jpeg" ? "jpg" : ext;
         }
       } catch {
@@ -120,8 +136,14 @@ export class MediaService {
         return "image/svg+xml";
       case "avif":
         return "image/avif";
+      case "tiff":
+      case "tif":
+        return "image/tiff";
+      case "bmp":
+        return "image/bmp";
       case "ico":
         return "image/x-icon";
+      case "bin":
       default:
         return "application/octet-stream";
     }
@@ -131,31 +153,103 @@ export class MediaService {
     return crypto.createHash("sha256").update(buffer).digest("hex").slice(0, 32);
   }
 
+  async optimizeImageBuffer(
+    buffer: Buffer | Uint8Array,
+    mimeType?: string,
+    originalUrl?: string
+  ): Promise<{ buffer: Buffer; mimeType: string; ext: string }> {
+    const nodeBuf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+    const cleanMime = mimeType ? mimeType.split(";")[0].trim().toLowerCase() : undefined;
+    const detectedExt = this.detectExtension(cleanMime, originalUrl);
+    const detectedMime =
+      cleanMime && cleanMime !== "application/octet-stream"
+        ? cleanMime
+        : this.detectMimeType(detectedExt);
+
+    // If WebP optimization is disabled, return original buffer
+    if (!this.optimizeWebp) {
+      return {
+        buffer: nodeBuf,
+        mimeType: detectedMime,
+        ext: detectedExt,
+      };
+    }
+
+    // Preserve vector graphics (SVG) verbatim without rasterization
+    if (detectedExt === "svg" || cleanMime === "image/svg+xml") {
+      return {
+        buffer: nodeBuf,
+        mimeType: "image/svg+xml",
+        ext: "svg",
+      };
+    }
+
+    // Preserve animated GIFs safely without corrupting frames
+    if (detectedExt === "gif" || cleanMime === "image/gif") {
+      return {
+        buffer: nodeBuf,
+        mimeType: "image/gif",
+        ext: "gif",
+      };
+    }
+
+    try {
+      let pipeline = sharp(nodeBuf, { failOn: "none", limitInputPixels: 40_000_000, animated: true })
+        .rotate()
+        .toColorspace("srgb");
+
+      if (this.maxWidth || this.maxHeight) {
+        pipeline = pipeline.resize({
+          width: this.maxWidth,
+          height: this.maxHeight,
+          fit: "inside",
+          withoutEnlargement: true,
+        });
+      }
+
+      const optimizedBuffer = await pipeline
+        .webp({ quality: this.webpQuality, effort: 4 })
+        .toBuffer();
+
+      return {
+        buffer: optimizedBuffer,
+        mimeType: "image/webp",
+        ext: "webp",
+      };
+    } catch (err: any) {
+      console.warn(
+        `[MediaService] Image optimization failed, falling back to original buffer: ${err?.message || err}`
+      );
+      return {
+        buffer: nodeBuf,
+        mimeType: detectedMime,
+        ext: detectedExt,
+      };
+    }
+  }
+
   async saveMedia(
     buffer: Buffer | Uint8Array,
     mimeType?: string,
     originalUrl?: string
   ): Promise<MediaAsset> {
     const nodeBuf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
-    const hash = this.computeHash(nodeBuf);
-    const ext = this.detectExtension(mimeType, originalUrl);
-    const filename = `${hash}.${ext}`;
-    const detectedMime =
-      mimeType && mimeType !== "application/octet-stream"
-        ? mimeType.split(";")[0].trim().toLowerCase()
-        : this.detectMimeType(filename);
+    const optimized = await this.optimizeImageBuffer(nodeBuf, mimeType, originalUrl);
+    const finalBuf = optimized.buffer;
+    const hash = this.computeHash(finalBuf);
+    const filename = `${hash}.${optimized.ext}`;
     const targetPath = this.getMediaPath(filename);
 
     if (!fs.existsSync(targetPath)) {
-      await fs.promises.writeFile(targetPath, nodeBuf);
+      await fs.promises.writeFile(targetPath, finalBuf);
     }
 
     return {
       id: hash,
       filename,
       hash,
-      mimeType: detectedMime,
-      byteSize: nodeBuf.length,
+      mimeType: optimized.mimeType,
+      byteSize: finalBuf.length,
       url: `/api/media/${filename}`,
       path: targetPath,
       createdAt: new Date().toISOString(),
@@ -251,3 +345,4 @@ export class MediaService {
     };
   }
 }
+

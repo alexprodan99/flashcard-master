@@ -109,4 +109,191 @@ describe("LlmsTxtIngestionStrategy", () => {
     const docs = await strategy.fetch(dummySource);
     expect(docs).toEqual([]);
   });
+
+  describe("Media Asset Localization & WebP Optimization", () => {
+    const validPngBuffer = Buffer.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+      0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+      0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00,
+      0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
+      0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
+      0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+    ]);
+
+    it("downloads and localizes article images, optimizing them to WebP format", async () => {
+      const { MediaService } = await import("@flashcard-master/core");
+      const fs = await import("node:fs");
+      const path = await import("node:path");
+      const os = await import("node:os");
+
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "fc-llms-media-"));
+
+      const mockFetch = vi.fn().mockImplementation(async (url: string) => {
+        if (url === "https://example.com/llms-full.txt") {
+          return {
+            ok: true,
+            status: 200,
+            text: async () => `# Catalog\n\n- [Architecture Guide](https://example.com/blog/arch): Deep dive.`,
+          };
+        }
+        if (url === "https://example.com/blog/arch") {
+          return {
+            ok: true,
+            status: 200,
+            text: async () => `<!DOCTYPE html><html><head><title>Architecture Guide</title></head><body><article><h1>Architecture Guide</h1><img src="/assets/diagram.png" alt="System Flow" /></article></body></html>`,
+          };
+        }
+        if (url === "https://example.com/assets/diagram.png") {
+          return new Response(validPngBuffer, {
+            status: 200,
+            headers: { "Content-Type": "image/png" },
+          });
+        }
+        return { ok: false, status: 404, text: async () => "Not Found" };
+      });
+
+      const mediaService = new MediaService({
+        mediaDir: tempDir,
+        customFetch: mockFetch as any,
+      });
+
+      const strategy = new LlmsTxtIngestionStrategy({
+        customFetch: mockFetch as any,
+        mediaService,
+      });
+
+      try {
+        const docs = await strategy.fetch(dummySource);
+        expect(docs).toHaveLength(1);
+        expect(docs[0].rawContent).toContain("/api/media/");
+
+        const cleanDoc = strategy.extractCleanText(docs[0]);
+        expect(cleanDoc.textContent).toMatch(/!\[System Flow\]\(\/api\/media\/[a-f0-9]{32}\.webp\)/);
+
+        const files = fs.readdirSync(tempDir);
+        expect(files).toHaveLength(1);
+        expect(files[0].endsWith(".webp")).toBe(true);
+      } finally {
+        if (fs.existsSync(tempDir)) {
+          try {
+            fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 3 });
+          } catch {}
+        }
+      }
+    });
+
+    it("falls back safely to raw buffer when image buffer is corrupted", async () => {
+      const { MediaService } = await import("@flashcard-master/core");
+      const fs = await import("node:fs");
+      const path = await import("node:path");
+      const os = await import("node:os");
+
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "fc-llms-corrupt-"));
+      const corruptedBytes = Buffer.from("corrupted-not-an-image-data");
+
+      const mockFetch = vi.fn().mockImplementation(async (url: string) => {
+        if (url === "https://example.com/llms-full.txt") {
+          return {
+            ok: true,
+            status: 200,
+            text: async () => `# Catalog\n\n- [Corrupt Image Article](https://example.com/blog/corrupt): Info.`,
+          };
+        }
+        if (url === "https://example.com/blog/corrupt") {
+          return {
+            ok: true,
+            status: 200,
+            text: async () => `<!DOCTYPE html><html><head><title>Corrupt Image Article</title></head><body><article><h1>Article</h1><img src="/corrupted.png" alt="Corrupt" /></article></body></html>`,
+          };
+        }
+        if (url === "https://example.com/corrupted.png") {
+          return new Response(corruptedBytes, {
+            status: 200,
+            headers: { "Content-Type": "image/png" },
+          });
+        }
+        return { ok: false, status: 404, text: async () => "Not Found" };
+      });
+
+      const mediaService = new MediaService({
+        mediaDir: tempDir,
+        customFetch: mockFetch as any,
+      });
+
+      const strategy = new LlmsTxtIngestionStrategy({
+        customFetch: mockFetch as any,
+        mediaService,
+      });
+
+      try {
+        const docs = await strategy.fetch(dummySource);
+        expect(docs).toHaveLength(1);
+        const cleanDoc = strategy.extractCleanText(docs[0]);
+        expect(cleanDoc.textContent).toMatch(/!\[Corrupt\]\(\/api\/media\/[a-f0-9]{32}\.png\)/);
+
+        const files = fs.readdirSync(tempDir);
+        expect(files).toHaveLength(1);
+        expect(files[0].endsWith(".png")).toBe(true);
+      } finally {
+        if (fs.existsSync(tempDir)) {
+          try {
+            fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 3 });
+          } catch {}
+        }
+      }
+    });
+
+    it("degrades gracefully to resolved URL when image download fails", async () => {
+      const { MediaService } = await import("@flashcard-master/core");
+      const fs = await import("node:fs");
+      const path = await import("node:path");
+      const os = await import("node:os");
+
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "fc-llms-media-fail-"));
+
+      const mockFetch = vi.fn().mockImplementation(async (url: string) => {
+        if (url === "https://example.com/llms-full.txt") {
+          return {
+            ok: true,
+            status: 200,
+            text: async () => `# Catalog\n\n- [Faulty Article](https://example.com/blog/faulty): Info.`,
+          };
+        }
+        if (url === "https://example.com/blog/faulty") {
+          return {
+            ok: true,
+            status: 200,
+            text: async () => `<!DOCTYPE html><html><head><title>Faulty Article</title></head><body><article><h1>Faulty Article</h1><img src="/broken/photo.jpg" alt="Missing Photo" /></article></body></html>`,
+          };
+        }
+        return { ok: false, status: 404, text: async () => "Not Found" };
+      });
+
+      const mediaService = new MediaService({
+        mediaDir: tempDir,
+        customFetch: mockFetch as any,
+      });
+
+      const strategy = new LlmsTxtIngestionStrategy({
+        customFetch: mockFetch as any,
+        mediaService,
+      });
+
+      try {
+        const docs = await strategy.fetch(dummySource);
+        expect(docs).toHaveLength(1);
+
+        const cleanDoc = strategy.extractCleanText(docs[0]);
+        expect(cleanDoc.textContent).toContain("![Missing Photo](https://example.com/broken/photo.jpg)");
+      } finally {
+        if (fs.existsSync(tempDir)) {
+          try {
+            fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 3 });
+          } catch {}
+        }
+      }
+    });
+  });
 });
+
+

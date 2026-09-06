@@ -281,7 +281,16 @@ describe("WebReaderStrategy", () => {
   });
 
   describe("Media Asset Localization", () => {
-    it("downloads and localizes article images with SHA-256 deduplication and replaces them with /api/media/<hash>.<ext>", async () => {
+    const validPngBuffer = Buffer.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+      0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+      0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00,
+      0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
+      0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
+      0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+    ]);
+
+    it("downloads and localizes article images with WebP optimization and replaces them with /api/media/<hash>.webp", async () => {
       const { MediaService } = await import("@flashcard-master/core");
       const fs = await import("node:fs");
       const path = await import("node:path");
@@ -289,7 +298,6 @@ describe("WebReaderStrategy", () => {
 
       const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "fc-web-media-"));
 
-      const imagePayload = Buffer.from("fake-diagram-image-bytes");
       const mockFetch = async (url: string | URL | Request) => {
         const u = url.toString();
         if (u === "https://example.com/article") {
@@ -309,7 +317,7 @@ describe("WebReaderStrategy", () => {
           );
         }
         if (u === "https://example.com/images/raft.png") {
-          return new Response(imagePayload, {
+          return new Response(validPngBuffer, {
             status: 200,
             headers: { "Content-Type": "image/png" },
           });
@@ -343,15 +351,90 @@ describe("WebReaderStrategy", () => {
         expect(docs[0].rawContent).toContain("/api/media/");
 
         const cleanDoc = strategy.extractCleanText(docs[0]);
-        expect(cleanDoc.textContent).toMatch(/!\[Raft Architecture\]\(\/api\/media\/[a-f0-9]{32}\.png\)/);
+        expect(cleanDoc.textContent).toMatch(/!\[Raft Architecture\]\(\/api\/media\/[a-f0-9]{32}\.webp\)/);
 
-        // Verify image was saved to mediaDir
+        // Verify image was saved to mediaDir as .webp
+        const files = fs.readdirSync(tempDir);
+        expect(files).toHaveLength(1);
+        expect(files[0].endsWith(".webp")).toBe(true);
+      } finally {
+        if (fs.existsSync(tempDir)) {
+          try {
+            fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 3 });
+          } catch {}
+        }
+      }
+    });
+
+    it("falls back to saving raw buffer when image binary is corrupted", async () => {
+      const { MediaService } = await import("@flashcard-master/core");
+      const fs = await import("node:fs");
+      const path = await import("node:path");
+      const os = await import("node:os");
+
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "fc-web-media-corrupt-"));
+      const corruptPayload = Buffer.from("corrupted-not-an-image-data");
+
+      const mockFetch = async (url: string | URL | Request) => {
+        const u = url.toString();
+        if (u === "https://example.com/article") {
+          return new Response(
+            `<!DOCTYPE html>
+            <html>
+              <head><title>Corrupted Image Article</title></head>
+              <body>
+                <article>
+                  <h1>Corrupted Image Article</h1>
+                  <img src="/images/corrupted.png" alt="Corrupt" />
+                </article>
+              </body>
+            </html>`,
+            { status: 200, headers: { "Content-Type": "text/html" } }
+          );
+        }
+        if (u === "https://example.com/images/corrupted.png") {
+          return new Response(corruptPayload, {
+            status: 200,
+            headers: { "Content-Type": "image/png" },
+          });
+        }
+        return new Response("Not Found", { status: 404 });
+      };
+
+      const mediaService = new MediaService({
+        mediaDir: tempDir,
+        customFetch: mockFetch as any,
+      });
+
+      const strategy = new WebReaderStrategy({
+        customFetch: mockFetch as any,
+        mediaService,
+      });
+
+      const source: DataSource = {
+        id: "source-corrupt-test",
+        name: "Corrupt Source",
+        type: "web",
+        uri: "https://example.com/article",
+        targetDeck: "Default",
+        tags: [],
+        isActive: true,
+      };
+
+      try {
+        const docs = await strategy.fetch(source);
+        expect(docs).toHaveLength(1);
+        const cleanDoc = strategy.extractCleanText(docs[0]);
+        expect(cleanDoc.textContent).toMatch(/!\[Corrupt\]\(\/api\/media\/[a-f0-9]{32}\.png\)/);
+
         const files = fs.readdirSync(tempDir);
         expect(files).toHaveLength(1);
         expect(files[0].endsWith(".png")).toBe(true);
       } finally {
         if (fs.existsSync(tempDir)) {
-          fs.rmSync(tempDir, { recursive: true, force: true });
+          try {
+            fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 3 });
+          } catch {}
         }
       }
     });
@@ -412,9 +495,12 @@ describe("WebReaderStrategy", () => {
         expect(cleanDoc.textContent).toContain("![Broken Diagram](https://example.com/broken/diagram.png)");
       } finally {
         if (fs.existsSync(tempDir)) {
-          fs.rmSync(tempDir, { recursive: true, force: true });
+          try {
+            fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 3 });
+          } catch {}
         }
       }
     });
   });
 });
+

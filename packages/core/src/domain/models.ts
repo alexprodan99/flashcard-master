@@ -105,3 +105,11 @@ export const MediaAssetSchema = z.object({
   createdAt: z.string().datetime().optional(),
 });
 export type MediaAsset = z.infer<typeof MediaAssetSchema>;
+
+export interface MediaOptimizationOptions {
+  optimizeWebp?: boolean;
+  webpQuality?: number;
+  maxWidth?: number;
+  maxHeight?: number;
+}
+

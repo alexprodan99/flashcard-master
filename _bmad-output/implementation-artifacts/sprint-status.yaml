@@ -131,5 +131,6 @@ development_status:
   12-6-document-export-ui-modal-and-streaming-endpoints: done
   12-7-monorepo-verification-and-automated-test-suites: done
   12-8-raw-document-storage-and-format-preserving-extraction: done
+  12-10-media-asset-webp-compression-and-optimization: done
   epic-12-retrospective: optional
 

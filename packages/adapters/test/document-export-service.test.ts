@@ -221,7 +221,46 @@ describe("DocumentExportService", () => {
   });
 
   describe("Media Asset Pipeline (Offline Export)", () => {
-    it("inlines local media as Base64 Data URLs and renders responsive <figure> in Standalone HTML", async () => {
+    it("inlines optimized WebP media as Base64 Data URLs (data:image/webp;base64) in Standalone HTML", async () => {
+      const { MediaService } = await import("@flashcard-master/core");
+      const mediaService = new MediaService({ mediaDir: path.join(tempDir, "media") });
+      const validPngBuffer = Buffer.from([
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+        0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+        0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00,
+        0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
+        0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
+        0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+      ]);
+      const asset = await mediaService.saveMedia(validPngBuffer, "image/png");
+
+      expect(asset.filename.endsWith(".webp")).toBe(true);
+      expect(asset.mimeType).toBe("image/webp");
+
+      const docWithMedia: DiscoveredDocument = {
+        id: "doc-media-webp",
+        sourceId: "src-1",
+        title: "Optimized Architecture",
+        url: "https://example.com/arch",
+        textContent: `Here is the architecture:\n\n![System Diagram](/api/media/${asset.filename})\n\nDone.`,
+        wordCount: 10,
+      };
+
+      const mediaExporter = new DocumentExportService(mediaService);
+      const result = await mediaExporter.export([docWithMedia], {
+        format: "html",
+        mode: "merged",
+        sourceName: "Optimized Doc",
+      });
+
+      expect(result.mimeType).toBe("text/html");
+      const html = result.content as string;
+      expect(html).toContain("data:image/webp;base64,");
+      expect(html).toContain('<figcaption>System Diagram</figcaption>');
+      expect(html).not.toContain(`/api/media/${asset.filename}`);
+    });
+
+    it("inlines local media as Base64 Data URLs and renders responsive <figure> in Standalone HTML (fallback for raw buffer)", async () => {
       const { MediaService } = await import("@flashcard-master/core");
       const mediaService = new MediaService({ mediaDir: path.join(tempDir, "media") });
       const asset = await mediaService.saveMedia(Buffer.from("png-raw-binary-bytes"), "image/png");
