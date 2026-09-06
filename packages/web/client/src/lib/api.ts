@@ -204,6 +204,50 @@ export async function deleteDocumentsBulk(documentIds: string[]): Promise<{ succ
   return res.json();
 }
 
+export interface DocumentExportParams {
+  sourceId?: string;
+  ids?: string[];
+  format: 'markdown' | 'html' | 'txt' | 'json';
+  mode: 'merged' | 'split';
+  includeTableOfContents?: boolean;
+  includeCitations?: boolean;
+}
+
+export async function exportDocuments(params: DocumentExportParams): Promise<{ filename: string }> {
+  const res = await fetch('/api/documents/export', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.error || `Failed to export documents (HTTP ${res.status})`);
+  }
+
+  let filename = 'documents-export';
+  const disposition = res.headers.get('Content-Disposition');
+  if (disposition) {
+    const match = /filename=["']?([^"';]+)["']?/i.exec(disposition);
+    if (match && match[1]) {
+      filename = match[1].trim();
+    }
+  }
+
+  const blob = await res.blob();
+  const blobUrl = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = blobUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.URL.revokeObjectURL(blobUrl);
+
+  return { filename };
+}
+
+
 export async function checkAnkiStatus(): Promise<{ connected: boolean; version?: number }> {
   try {
     const res = await fetch('/api/ankiconnect/status');

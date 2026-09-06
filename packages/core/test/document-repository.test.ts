@@ -336,4 +336,46 @@ describe("DocumentRepository", () => {
     expect(cardRepo.getById(card2.id)).not.toBeNull();
     expect(cardRepo.getById(card3.id)).not.toBeNull();
   });
+
+  it("retrieves multiple documents by IDs list and lists all documents with search", () => {
+    docRepo.upsertBatch([
+      {
+        id: "doc-alpha",
+        sourceId: testSourceId,
+        title: "Alpha Article",
+        textContent: "Alpha content about caching strategies.",
+      },
+      {
+        id: "doc-beta",
+        sourceId: testSourceId,
+        title: "Beta Article",
+        textContent: "Beta content about indexing strategies.",
+      },
+      {
+        id: "doc-gamma",
+        sourceId: testSourceId,
+        title: "Gamma Article",
+        textContent: "Gamma content about replication.",
+      },
+    ]);
+
+    // getByIds
+    const subset = docRepo.getByIds(["doc-alpha", "doc-gamma", "non-existent"]);
+    expect(subset.length).toBe(2);
+    expect(subset.map((d) => d.id)).toContain("doc-alpha");
+    expect(subset.map((d) => d.id)).toContain("doc-gamma");
+
+    // Empty or invalid getByIds
+    expect(docRepo.getByIds([])).toEqual([]);
+    expect(docRepo.getByIds(["  "])).toEqual([]);
+
+    // listAll with search
+    const all = docRepo.listAll();
+    expect(all.length).toBe(3);
+
+    const filtered = docRepo.listAll({ search: "caching" });
+    expect(filtered.length).toBe(1);
+    expect(filtered[0].title).toBe("Alpha Article");
+  });
 });
+

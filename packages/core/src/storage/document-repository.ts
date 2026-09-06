@@ -167,6 +167,45 @@ export class DocumentRepository {
     return this.mapRowToDocument(row);
   }
 
+  getByIds(ids: string[]): DiscoveredDocument[] {
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return [];
+    }
+    const cleanIds = Array.from(new Set(ids.filter((id) => typeof id === "string" && id.trim().length > 0)));
+    if (cleanIds.length === 0) {
+      return [];
+    }
+
+    const placeholders = cleanIds.map(() => "?").join(", ");
+    const rows = this.db.prepare(`SELECT * FROM documents WHERE id IN (${placeholders}) ORDER BY created_at DESC`).all(...cleanIds);
+    return rows.map((row) => this.mapRowToDocument(row));
+  }
+
+  listAll(options: DocumentListOptions = {}): DiscoveredDocument[] {
+    let query = "SELECT * FROM documents WHERE 1=1";
+    const params: any[] = [];
+
+    if (options.search && options.search.trim().length > 0) {
+      query += " AND (title LIKE ? OR url LIKE ? OR text_content LIKE ?)";
+      const pattern = `%${options.search.trim()}%`;
+      params.push(pattern, pattern, pattern);
+    }
+
+    query += " ORDER BY created_at DESC";
+
+    if (options.limit !== undefined) {
+      query += " LIMIT ?";
+      params.push(options.limit);
+      if (options.offset !== undefined) {
+        query += " OFFSET ?";
+        params.push(options.offset);
+      }
+    }
+
+    const rows = this.db.prepare(query).all(...params);
+    return rows.map((row) => this.mapRowToDocument(row));
+  }
+
   listBySourceId(sourceId: string, options: DocumentListOptions = {}): DiscoveredDocument[] {
     let query = "SELECT * FROM documents WHERE source_id = ?";
     const params: any[] = [sourceId];

@@ -8,10 +8,11 @@
     onSynthesize?: (doc: DiscoveredDocument) => void;
     onOpenInStudio?: (doc: DiscoveredDocument) => void;
     onDelete?: (doc: DiscoveredDocument) => void;
+    onExport?: (doc: DiscoveredDocument) => void;
     isDeleting?: boolean;
   }
 
-  let { isOpen, document, onClose, onSynthesize, onOpenInStudio, onDelete, isDeleting = false }: Props = $props();
+  let { isOpen, document, onClose, onSynthesize, onOpenInStudio, onDelete, onExport, isDeleting = false }: Props = $props();
 </script>
 
 {#if isOpen && document}
@@ -66,6 +67,17 @@
         {/if}
         <div class="footer-right">
           <button type="button" class="btn btn-secondary" onclick={onClose}>Close</button>
+          {#if onExport}
+            <button
+              type="button"
+              class="btn btn-secondary"
+              onclick={() => {
+                if (document) onExport(document);
+              }}
+            >
+              📤 Export Document
+            </button>
+          {/if}
           {#if onOpenInStudio}
             <button
               type="button"

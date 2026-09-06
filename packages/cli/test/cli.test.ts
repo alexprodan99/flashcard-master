@@ -192,4 +192,30 @@ describe("CLI Application", () => {
     await cli.parseAsync(["node", "flashcard-master", "sources", "docs", source.id, "--json"]);
     expect(logs.some((l) => l.includes('"title": "Paxos vs Raft Comparison"'))).toBe(true);
   });
+
+  it("exports discovered clean text documents for a source via sources export-docs CLI command", async () => {
+    const source = context.sourceRepo.create({
+      name: "Cloud Knowledge",
+      type: "web",
+      uri: "https://example.com/cloud",
+    });
+
+    context.docRepo.upsert({
+      sourceId: source.id,
+      title: "Kubernetes Ingress Controllers",
+      url: "https://example.com/cloud/k8s",
+      textContent: "Ingress controllers manage external access to HTTP services in Kubernetes.",
+    });
+
+    const cli = createCli(context);
+    cli.exitOverride();
+
+    logs = [];
+    await cli.parseAsync(["node", "flashcard-master", "sources", "export-docs", source.id, "-f", "markdown", "-m", "merged"]);
+
+    expect(logs.some((l) => l.includes("# Cloud Knowledge - Knowledge Base"))).toBe(true);
+    expect(logs.some((l) => l.includes("## 📑 Table of Contents"))).toBe(true);
+    expect(logs.some((l) => l.includes("Kubernetes Ingress Controllers"))).toBe(true);
+  });
 });
+

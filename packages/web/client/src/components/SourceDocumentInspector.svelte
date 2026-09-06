@@ -4,6 +4,7 @@
   import type { DataSource, DiscoveredDocument, PersonaType, DifficultyLevel, CardDepthMode } from '../lib/types';
   import GenerationConfigFields from './GenerationConfigFields.svelte';
   import DocumentPreviewModal from './DocumentPreviewModal.svelte';
+  import DocumentExportModal from './DocumentExportModal.svelte';
 
   interface Props {
     isOpen: boolean;
@@ -26,9 +27,29 @@
   let selectedCount = $derived(selectedIds.size);
   let isDeleting = $state(false);
 
+  // Export Modal State
+  let isExportModalOpen = $state(false);
+  let exportTargetDocs = $state<DiscoveredDocument[]>([]);
+
+  function handleExportAll() {
+    exportTargetDocs = documents;
+    isExportModalOpen = true;
+  }
+
+  function handleExportSelected() {
+    exportTargetDocs = documents.filter((d) => selectedIds.has(d.id));
+    isExportModalOpen = true;
+  }
+
+  function handleExportSingle(doc: DiscoveredDocument) {
+    exportTargetDocs = [doc];
+    isExportModalOpen = true;
+  }
+
   // Preview Modal State
   let previewDoc = $state<DiscoveredDocument | null>(null);
   let isPreviewOpen = $state(false);
+
 
   // Configuration & Synthesis Modal State (Story 11.2)
   let configDoc = $state<DiscoveredDocument | null>(null);
@@ -304,6 +325,9 @@
             <span>Select All</span>
           </label>
         {/if}
+        <button class="btn btn-secondary btn-sm" onclick={handleExportAll} disabled={documents.length === 0} title="Export knowledge base">
+          📤 Export KB
+        </button>
         <button class="btn btn-secondary btn-sm" onclick={loadDocuments}>🔄 Refresh</button>
       </div>
 
@@ -314,6 +338,9 @@
           <div class="batch-buttons">
             <button type="button" class="btn btn-secondary btn-sm" disabled={isDeleting} onclick={() => (selectedIds = new Set())}>
               Clear
+            </button>
+            <button type="button" class="btn btn-primary btn-sm" disabled={isDeleting} onclick={handleExportSelected}>
+              📤 Export Selected ({selectedCount})
             </button>
             <button type="button" class="btn btn-danger btn-sm" disabled={isDeleting} onclick={handleDeleteBulk}>
               {isDeleting ? '⏳ Deleting...' : `🗑️ Delete Selected (${selectedCount})`}
@@ -381,6 +408,15 @@
 
                   <button
                     type="button"
+                    class="btn btn-secondary btn-sm"
+                    onclick={() => handleExportSingle(doc)}
+                    title="Export this document"
+                  >
+                    📤 Export
+                  </button>
+
+                  <button
+                    type="button"
                     class="btn btn-primary btn-sm"
                     onclick={() => handleOpenConfigModal(doc)}
                   >
@@ -414,6 +450,7 @@
   isDeleting={isDeleting}
   onClose={() => (isPreviewOpen = false)}
   onDelete={(doc) => handleDeleteSingle(doc)}
+  onExport={(doc) => handleExportSingle(doc)}
   onSynthesize={(doc) => {
     isPreviewOpen = false;
     handleOpenConfigModal(doc);
@@ -423,6 +460,17 @@
     if (onOpenInStudio) onOpenInStudio(doc);
   }}
 />
+
+<!-- Document Knowledge Base Export Modal -->
+<DocumentExportModal
+  isOpen={isExportModalOpen}
+  documents={exportTargetDocs}
+  sourceName={source?.name || 'Knowledge Base'}
+  sourceId={source?.id}
+  onClose={() => (isExportModalOpen = false)}
+  onExportSuccess={(fn) => showSuccessNotice(`Successfully exported ${fn}`)}
+/>
+
 
 <!-- In-Context "Synthesize Flashcards" Configuration Modal (Story 11.2) -->
 {#if isConfigModalOpen && configDoc}

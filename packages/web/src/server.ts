@@ -18,9 +18,10 @@ import {
   type DifficultyLevel,
   type PersonaType,
   type CardDepthMode,
+  type DiscoveredDocument,
   CardGenerationService,
 } from "@flashcard-master/core";
-import { createLLMAdapter } from "@flashcard-master/adapters";
+import { createLLMAdapter, DocumentExportService } from "@flashcard-master/adapters";
 
 export type ExportFormat = "apkg" | "csv" | "tsv" | "markdown" | "html" | "pdf";
 
@@ -1879,7 +1880,71 @@ export class WebServer {
             return;
           }
 
-          // 6d. Single Discovered Document: GET /api/documents/:id & DELETE /api/documents/:id
+          // 6d. Discovered Documents Knowledge Base Export: POST /api/documents/export
+          if (pathname === "/api/documents/export" && method === "POST") {
+            if (!this.options.documentRepo) {
+              this.sendJson(res, 400, { error: "Document repository is not configured on this server." });
+              return;
+            }
+
+            const body = await this.parseBody(req);
+            const {
+              sourceId,
+              ids,
+              format = "markdown",
+              mode = "merged",
+              includeTableOfContents,
+              includeCitations,
+            } = body || {};
+
+            let targetDocs: DiscoveredDocument[] = [];
+            let sourceName = "Knowledge Base";
+
+            if (Array.isArray(ids) && ids.length > 0) {
+              targetDocs = this.options.documentRepo.getByIds(ids);
+              if (sourceId) {
+                const src = this.options.sourceRepo.getById(sourceId);
+                if (src) sourceName = src.name;
+              } else if (targetDocs.length > 0 && targetDocs[0].sourceId) {
+                const src = this.options.sourceRepo.getById(targetDocs[0].sourceId);
+                if (src) sourceName = src.name;
+              }
+            } else if (sourceId && typeof sourceId === "string") {
+              targetDocs = this.options.documentRepo.listBySourceId(sourceId);
+              const src = this.options.sourceRepo.getById(sourceId);
+              if (src) sourceName = src.name;
+            } else {
+              targetDocs = this.options.documentRepo.listAll();
+            }
+
+            if (targetDocs.length === 0) {
+              this.sendJson(res, 404, { error: "No documents found to export." });
+              return;
+            }
+
+            const docExporter = new DocumentExportService();
+            const exportResult = await docExporter.export(targetDocs, {
+              format,
+              mode,
+              sourceName,
+              includeTableOfContents: includeTableOfContents !== false,
+              includeCitations: includeCitations !== false,
+            });
+
+            const contentBuffer = Buffer.isBuffer(exportResult.content)
+              ? exportResult.content
+              : Buffer.from(exportResult.content as string, "utf-8");
+
+            res.writeHead(200, {
+              "Content-Type": exportResult.mimeType,
+              "Content-Disposition": `attachment; filename="${exportResult.filename}"`,
+              "Content-Length": contentBuffer.length,
+            });
+            res.end(contentBuffer);
+            return;
+          }
+
+          // 6e. Single Discovered Document: GET /api/documents/:id & DELETE /api/documents/:id
           if (pathname.startsWith("/api/documents/")) {
             let docId = pathname.slice("/api/documents/".length);
             try {

@@ -11,7 +11,7 @@ import {
   type CardDepthMode,
   CardGenerationService,
 } from "@flashcard-master/core";
-import { createLLMAdapter } from "@flashcard-master/adapters";
+import { createLLMAdapter, DocumentExportService } from "@flashcard-master/adapters";
 import { createWebServer } from "@flashcard-master/web";
 
 export function createCli(providedContext?: AppContext): Command {
@@ -204,6 +204,56 @@ export function createCli(providedContext?: AppContext): Command {
         process.exitCode = 1;
       }
     });
+
+  sourcesCmd
+    .command("export-docs <sourceId>")
+    .description("Export discovered clean text documents for a data source into Markdown, HTML, Plain Text, or JSON")
+    .option("-f, --format <format>", "Export format: markdown | html | txt | json", "markdown")
+    .option("-m, --mode <mode>", "Packaging mode: merged | split", "merged")
+    .option("-o, --output <path>", "Output file path")
+    .option("--no-toc", "Omit Table of Contents in merged export")
+    .option("--no-citations", "Omit origin URL citations in exported sections")
+    .action(async (sourceId: string, options: { format: string; mode: string; output?: string; toc: boolean; citations: boolean }) => {
+      try {
+        const source = context.sourceRepo.getById(sourceId);
+        if (!source) {
+          console.error(`Error: Data source "${sourceId}" not found.`);
+          process.exitCode = 1;
+          return;
+        }
+
+        const docs = context.docRepo.listBySourceId(source.id);
+        if (docs.length === 0) {
+          console.error(`Error: No documents found for source "${source.name}". Run 'flashcard-master sync ${source.id}' first.`);
+          process.exitCode = 1;
+          return;
+        }
+
+        const docExporter = new DocumentExportService();
+        const result = await docExporter.export(docs, {
+          format: options.format as any,
+          mode: options.mode as any,
+          sourceName: source.name,
+          includeTableOfContents: options.toc !== false,
+          includeCitations: options.citations !== false,
+          outputPath: options.output,
+        });
+
+        if (options.output) {
+          console.log(`✅ Successfully exported ${result.documentCount} documents to "${options.output}"`);
+        } else {
+          if (typeof result.content === "string") {
+            console.log(result.content);
+          } else {
+            console.log(`✅ Generated binary archive: ${result.filename} (${result.content.length} bytes)`);
+          }
+        }
+      } catch (err: any) {
+        console.error(`Error exporting source documents: ${err.message}`);
+        process.exitCode = 1;
+      }
+    });
+
 
   // ==========================================
   // SYNC COMMAND

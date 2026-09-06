@@ -808,4 +808,141 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     const cardsList = await cardsApiRes.json();
     expect(cardsList.length).toBe(2);
   });
+
+  describe("POST /api/documents/export (Knowledge Base Document Exporter)", () => {
+    it("streams merged Markdown export for a data source with TOC and citations", async () => {
+      const source = sourceRepo.create({
+        name: "Cloud Architecture",
+        type: "web",
+        uri: "https://example.com/cloud",
+        targetDeck: "Cloud",
+      });
+
+      const docA = docRepo.upsert({
+        sourceId: source.id,
+        title: "Microservices Patterns",
+        url: "https://example.com/cloud/patterns",
+        textContent: "Microservices decouple domain logic into discrete services.",
+      });
+
+      const docB = docRepo.upsert({
+        sourceId: source.id,
+        title: "Serverless Compute",
+        url: "https://example.com/cloud/serverless",
+        textContent: "Serverless functions scale to zero automatically.",
+      });
+
+      const res = await fetch(`${serverUrl}/api/documents/export`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourceId: source.id,
+          format: "markdown",
+          mode: "merged",
+          includeTableOfContents: true,
+          includeCitations: true,
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("text/markdown");
+      expect(res.headers.get("content-disposition")).toContain('filename="cloud-architecture-knowledge-base.md"');
+
+      const text = await res.text();
+      expect(text).toContain("# Cloud Architecture - Knowledge Base");
+      expect(text).toContain("## 📑 Table of Contents");
+      expect(text).toContain("Microservices Patterns");
+      expect(text).toContain("Serverless Compute");
+      expect(text).toContain("https://example.com/cloud/patterns");
+    });
+
+    it("streams split ZIP archive containing individual slugified document files", async () => {
+      const source = sourceRepo.create({
+        name: "Database Systems",
+        type: "web",
+        uri: "https://example.com/db",
+        targetDeck: "DB",
+      });
+
+      const doc1 = docRepo.upsert({
+        sourceId: source.id,
+        title: "Write-Ahead Logging",
+        url: "https://example.com/db/wal",
+        textContent: "WAL ensures durability before modifying data pages.",
+      });
+
+      const res = await fetch(`${serverUrl}/api/documents/export`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourceId: source.id,
+          format: "html",
+          mode: "split",
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("application/zip");
+      expect(res.headers.get("content-disposition")).toContain('filename="database-systems-documents-split.zip"');
+
+      const arrayBuffer = await res.arrayBuffer();
+      expect(arrayBuffer.byteLength).toBeGreaterThan(0);
+    });
+
+    it("exports targeted subset by document IDs array", async () => {
+      const source = sourceRepo.create({
+        name: "Security Guidelines",
+        type: "web",
+        uri: "https://example.com/sec",
+        targetDeck: "Sec",
+      });
+
+      const doc1 = docRepo.upsert({
+        sourceId: source.id,
+        title: "OAuth2 & OIDC",
+        url: "https://example.com/sec/oauth",
+        textContent: "OAuth2 is an authorization framework.",
+      });
+
+      const doc2 = docRepo.upsert({
+        sourceId: source.id,
+        title: "Zero Trust Architecture",
+        url: "https://example.com/sec/zero-trust",
+        textContent: "Never trust, always verify.",
+      });
+
+      const res = await fetch(`${serverUrl}/api/documents/export`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ids: [doc2.id],
+          format: "json",
+          mode: "merged",
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("application/json");
+
+      const json = await res.json();
+      expect(json.totalDocuments).toBe(1);
+      expect(json.documents[0].title).toBe("Zero Trust Architecture");
+    });
+
+    it("returns 404 error when no matching documents exist", async () => {
+      const res = await fetch(`${serverUrl}/api/documents/export`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ids: ["non-existent-doc-id-12345"],
+          format: "markdown",
+        }),
+      });
+
+      expect(res.status).toBe(404);
+      const data = await res.json();
+      expect(data.error).toBe("No documents found to export.");
+    });
+  });
 });
+
