@@ -1,4 +1,4 @@
-import type { DataSource, RawDocument, CleanTextDocument, SyncState, Flashcard, DifficultyLevel } from "../domain/models.js";
+import type { DataSource, RawDocument, CleanTextDocument, SyncState, Flashcard, DifficultyLevel, ImageQuality } from "../domain/models.js";
 
 export interface IngestionStrategy {
   readonly type: DataSource["type"];
@@ -59,6 +59,8 @@ export interface DocumentExportOptions {
   includeTableOfContents?: boolean;
   includeCitations?: boolean;
   outputPath?: string;
+  imageQuality?: ImageQuality;
+  grayscale?: boolean;
 }
 
 export interface DocumentExportResult {

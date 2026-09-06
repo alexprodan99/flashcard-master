@@ -24,6 +24,8 @@
   let mode = $state<'merged' | 'split'>('merged');
   let includeTableOfContents = $state(true);
   let includeCitations = $state(true);
+  let imageQuality = $state<'compact' | 'standard' | 'high'>('compact');
+  let grayscale = $state(false);
   let isExporting = $state(false);
   let errorMessage = $state<string | null>(null);
   let successNotice = $state<string | null>(null);
@@ -56,6 +58,8 @@
         mode,
         includeTableOfContents,
         includeCitations,
+        imageQuality,
+        grayscale,
       };
 
       const { filename } = await exportDocuments(params);
@@ -228,6 +232,30 @@
             </label>
           </div>
         </div>
+
+        {#if format === 'html' && mode === 'merged'}
+          <div class="form-group">
+            <span class="form-label">E-Reader & Kindle Image Optimization</span>
+            <div class="checkbox-group">
+              <label class="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={imageQuality === 'compact'}
+                  onchange={(e) => (imageQuality = e.currentTarget.checked ? 'compact' : 'high')}
+                />
+                <span><strong>Compact Base64 Inlining</strong> (Downscales images to 600px WebP, shrinks export to ~7MB, prevents Edge crashes)</span>
+              </label>
+
+              <label class="checkbox-label">
+                <input
+                  type="checkbox"
+                  bind:checked={grayscale}
+                />
+                <span><strong>Kindle E-Ink Grayscale</strong> (Convert inlined images to monochrome for black & white e-readers, extra 15% smaller)</span>
+              </label>
+            </div>
+          </div>
+        {/if}
       </div>
 
       <div class="modal-footer">

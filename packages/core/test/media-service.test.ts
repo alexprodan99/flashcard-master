@@ -393,6 +393,93 @@ describe("MediaService", () => {
     expect(missingBase64).toBeNull();
   });
 
+  it("reads media as compact Base64 with downscaled dimensions and WebP compression for e-reader HTML export", async () => {
+    // Generate a large 1200x800 test image
+    const largeBuffer = await sharp({
+      create: {
+        width: 1200,
+        height: 800,
+        channels: 3,
+        background: { r: 50, g: 100, b: 200 },
+      },
+    })
+      .jpeg()
+      .toBuffer();
+
+    const asset = await mediaService.saveMedia(largeBuffer, "image/jpeg");
+    const standardBase64 = await mediaService.readMediaAsBase64(asset.filename);
+    const compactBase64 = await mediaService.readMediaAsCompactBase64(asset.filename, {
+      maxWidth: 600,
+      maxHeight: 600,
+      quality: 50,
+      effort: 6,
+    });
+
+    expect(compactBase64).not.toBeNull();
+    expect(compactBase64?.mimeType).toBe("image/webp");
+    expect(compactBase64?.dataUrl.startsWith("data:image/webp;base64,")).toBe(true);
+
+    // Compact Base64 should be substantially smaller than standard full-resolution Base64
+    expect(compactBase64!.dataUrl.length).toBeLessThan(standardBase64!.dataUrl.length);
+
+    // Verify dimensions of compact image
+    const base64Payload = compactBase64!.dataUrl.replace("data:image/webp;base64,", "");
+    const decodedBuffer = Buffer.from(base64Payload, "base64");
+    const meta = await sharp(decodedBuffer).metadata();
+    expect(meta.format).toBe("webp");
+    expect(meta.width).toBeLessThanOrEqual(600);
+    expect(meta.height).toBeLessThanOrEqual(600);
+  });
+
+  it("supports grayscale compact Base64 mode for e-ink devices", async () => {
+    const colorBuffer = await sharp({
+      create: {
+        width: 400,
+        height: 400,
+        channels: 3,
+        background: { r: 255, g: 128, b: 0 },
+      },
+    })
+      .png()
+      .toBuffer();
+
+    const asset = await mediaService.saveMedia(colorBuffer, "image/png");
+    const grayscaleResult = await mediaService.readMediaAsCompactBase64(asset.filename, {
+      maxWidth: 600,
+      maxHeight: 600,
+      quality: 50,
+      effort: 6,
+      grayscale: true,
+    });
+
+    expect(grayscaleResult).not.toBeNull();
+    expect(grayscaleResult?.mimeType).toBe("image/webp");
+
+    const decoded = Buffer.from(grayscaleResult!.dataUrl.replace("data:image/webp;base64,", ""), "base64");
+    const meta = await sharp(decoded).metadata();
+    expect(meta.format).toBe("webp");
+
+    // Verify image has been converted to grayscale (all RGB channels are equal)
+    const rawPixels = await sharp(decoded).raw().toBuffer();
+    expect(rawPixels[0]).toBe(rawPixels[1]);
+    expect(rawPixels[1]).toBe(rawPixels[2]);
+  });
+
+  it("preserves SVG verbatim in readMediaAsCompactBase64 without rasterization", async () => {
+    const svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="red"/></svg>`;
+    const asset = await mediaService.saveMedia(Buffer.from(svgContent), "image/svg+xml");
+
+    const compactResult = await mediaService.readMediaAsCompactBase64(asset.filename);
+    expect(compactResult).not.toBeNull();
+    expect(compactResult?.mimeType).toBe("image/svg+xml");
+    expect(compactResult?.dataUrl.startsWith("data:image/svg+xml;base64,")).toBe(true);
+  });
+
+  it("limits Sharp concurrency to prevent 100% CPU starvation during batch processing", () => {
+    const concurrency = sharp.concurrency();
+    expect(concurrency).toBeLessThanOrEqual(2);
+  });
+
   it("provides default media directory in ~/.flashcard-master/media", () => {
     const defaultDir = getDefaultMediaDirectory();
     expect(defaultDir).toContain(".flashcard-master");

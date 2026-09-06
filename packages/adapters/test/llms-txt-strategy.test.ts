@@ -293,6 +293,44 @@ describe("LlmsTxtIngestionStrategy", () => {
         }
       }
     });
+
+    it("localizes multiple intra-article images concurrently via Promise.all", async () => {
+      let activeDownloads = 0;
+      let maxConcurrent = 0;
+
+      const mockMediaService: any = {
+        downloadAndSave: vi.fn().mockImplementation(async (url: string) => {
+          activeDownloads++;
+          maxConcurrent = Math.max(maxConcurrent, activeDownloads);
+          await new Promise((r) => setTimeout(r, 20));
+          activeDownloads--;
+          return {
+            filename: "mock.webp",
+            url: `/api/media/mock-${encodeURIComponent(url)}.webp`,
+          };
+        }),
+      };
+
+      const strategy = new LlmsTxtIngestionStrategy({
+        mediaService: mockMediaService,
+      });
+
+      const htmlWithMultipleImages = `
+        <html>
+          <body>
+            <img src="https://example.com/img1.png" />
+            <img src="https://example.com/img2.png" />
+            <img src="https://example.com/img3.png" />
+          </body>
+        </html>
+      `;
+
+      const resultHtml = await strategy.localizeImagesInHtml(htmlWithMultipleImages, "https://example.com/article");
+
+      expect(mockMediaService.downloadAndSave).toHaveBeenCalledTimes(3);
+      expect(maxConcurrent).toBeGreaterThan(1);
+      expect(resultHtml).toContain("/api/media/mock-");
+    });
   });
 });
 

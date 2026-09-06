@@ -7,6 +7,7 @@ import type {
   DocumentExportMode,
   DocumentExportOptions,
   DocumentExportResult,
+  ImageQuality,
   MediaService,
 } from "@flashcard-master/core";
 
@@ -173,7 +174,10 @@ export class DocumentExportService {
     }, 0);
   }
 
-  private async inlineMediaAsBase64(htmlContent: string): Promise<string> {
+  private async inlineMediaAsBase64(
+    htmlContent: string,
+    options?: { imageQuality?: ImageQuality; grayscale?: boolean }
+  ): Promise<string> {
     if (!this.mediaService || !htmlContent) {
       return htmlContent;
     }
@@ -184,22 +188,62 @@ export class DocumentExportService {
       return htmlContent;
     }
 
-    let result = htmlContent;
     const uniqueFilenames = Array.from(new Set(matches.map((m) => m[1])));
+    const qualitySetting = options?.imageQuality ?? "compact";
+    const isGrayscale = options?.grayscale ?? false;
 
-    for (const filename of uniqueFilenames) {
-      try {
-        const base64Data = await this.mediaService.readMediaAsBase64(filename);
-        if (base64Data) {
-          const targetPattern = new RegExp(`(?:/api/media/|api/media/)${filename.replace(/\./g, "\\.")}`, "g");
-          result = result.replace(targetPattern, base64Data.dataUrl);
+    // Parallelize image reading and compression across worker threads
+    const base64Entries = await Promise.all(
+      uniqueFilenames.map(async (filename) => {
+        try {
+          let base64Data: { dataUrl: string; mimeType: string } | null = null;
+          if (qualitySetting === "compact") {
+            base64Data = await this.mediaService!.readMediaAsCompactBase64(filename, {
+              maxWidth: 600,
+              maxHeight: 600,
+              quality: 50,
+              effort: 6,
+              grayscale: isGrayscale,
+            });
+          } else if (qualitySetting === "standard") {
+            base64Data = await this.mediaService!.readMediaAsCompactBase64(filename, {
+              maxWidth: 1200,
+              maxHeight: 1200,
+              quality: 75,
+              effort: 4,
+              grayscale: isGrayscale,
+            });
+          } else if (isGrayscale) {
+            base64Data = await this.mediaService!.readMediaAsCompactBase64(filename, {
+              maxWidth: 4000,
+              maxHeight: 4000,
+              quality: 90,
+              effort: 4,
+              grayscale: true,
+            });
+          }
+
+          if (!base64Data) {
+            base64Data = await this.mediaService!.readMediaAsBase64(filename);
+          }
+          return { filename, dataUrl: base64Data?.dataUrl };
+        } catch {
+          return { filename, dataUrl: null };
         }
-      } catch {
-        // Keep URL as-is if reading media fails
+      })
+    );
+
+    const dataUrlMap = new Map<string, string>();
+    for (const entry of base64Entries) {
+      if (entry.dataUrl) {
+        dataUrlMap.set(entry.filename, entry.dataUrl);
       }
     }
 
-    return result;
+    // Single-pass replacement using replacer function to avoid $ replacement issues and string copying
+    return htmlContent.replace(mediaRegex, (_match, filename) => {
+      return dataUrlMap.get(filename) || `/api/media/${filename}`;
+    });
   }
 
   private normalizeFormat(format: string): "markdown" | "html" | "txt" | "json" {
@@ -239,6 +283,8 @@ export class DocumentExportService {
         sourceSlug,
         includeToc,
         includeCitations,
+        imageQuality: options.imageQuality,
+        grayscale: options.grayscale,
       });
     }
 
@@ -263,6 +309,8 @@ export class DocumentExportService {
       sourceSlug: string;
       includeToc: boolean;
       includeCitations: boolean;
+      imageQuality?: ImageQuality;
+      grayscale?: boolean;
     }
   ): Promise<DocumentExportResult> {
     const totalWords = this.calculateTotalWords(docs);
@@ -328,7 +376,10 @@ export class DocumentExportService {
       case "html": {
         let html = this.generateMergedHtml(docs, opts, totalWords, dateStr);
         if (this.mediaService) {
-          html = await this.inlineMediaAsBase64(html);
+          html = await this.inlineMediaAsBase64(html, {
+            imageQuality: opts.imageQuality,
+            grayscale: opts.grayscale,
+          });
         }
         return {
           filename: `${opts.sourceSlug}-knowledge-base.html`,

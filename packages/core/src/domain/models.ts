@@ -113,3 +113,13 @@ export interface MediaOptimizationOptions {
   maxHeight?: number;
 }
 
+export type ImageQuality = "compact" | "standard" | "high";
+
+export interface CompactMediaOptions {
+  maxWidth?: number;
+  maxHeight?: number;
+  quality?: number;
+  effort?: number;
+  grayscale?: boolean;
+}
+

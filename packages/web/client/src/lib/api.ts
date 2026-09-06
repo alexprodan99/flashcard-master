@@ -224,6 +224,8 @@ export interface DocumentExportParams {
   mode: 'merged' | 'split';
   includeTableOfContents?: boolean;
   includeCitations?: boolean;
+  imageQuality?: 'compact' | 'standard' | 'high';
+  grayscale?: boolean;
 }
 
 export async function exportDocuments(params: DocumentExportParams): Promise<{ filename: string }> {

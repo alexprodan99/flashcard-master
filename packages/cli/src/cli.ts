@@ -211,9 +211,11 @@ export function createCli(providedContext?: AppContext): Command {
     .option("-f, --format <format>", "Export format: markdown | html | txt | json", "markdown")
     .option("-m, --mode <mode>", "Packaging mode: merged | split", "merged")
     .option("-o, --output <path>", "Output file path")
+    .option("-q, --quality <quality>", "Image quality profile: compact | standard | high", "compact")
+    .option("--grayscale", "Convert inlined images to grayscale for Kindle e-ink e-readers", false)
     .option("--no-toc", "Omit Table of Contents in merged export")
     .option("--no-citations", "Omit origin URL citations in exported sections")
-    .action(async (sourceId: string, options: { format: string; mode: string; output?: string; toc: boolean; citations: boolean }) => {
+    .action(async (sourceId: string, options: { format: string; mode: string; output?: string; quality: string; grayscale: boolean; toc: boolean; citations: boolean }) => {
       try {
         const source = context.sourceRepo.getById(sourceId);
         if (!source) {
@@ -229,7 +231,7 @@ export function createCli(providedContext?: AppContext): Command {
           return;
         }
 
-        const docExporter = new DocumentExportService();
+        const docExporter = new DocumentExportService(context.mediaService);
         const result = await docExporter.export(docs, {
           format: options.format as any,
           mode: options.mode as any,
@@ -237,6 +239,8 @@ export function createCli(providedContext?: AppContext): Command {
           includeTableOfContents: options.toc !== false,
           includeCitations: options.citations !== false,
           outputPath: options.output,
+          imageQuality: (options.quality as any) || "compact",
+          grayscale: Boolean(options.grayscale),
         });
 
         if (options.output) {

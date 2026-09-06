@@ -112,23 +112,63 @@ export class WebReaderStrategy implements IngestionStrategy {
       const doc = dom.window.document;
       const images = Array.from(doc.querySelectorAll("img"));
 
+      // Collect unique candidate image URLs
+      const targetUrls = new Set<string>();
       for (const img of images) {
-        const src = (img.getAttribute("src") || img.getAttribute("data-src") || "").trim();
-        if (!src) continue;
+        let src = (img.getAttribute("src") || "").trim();
+        const dataSrc = (img.getAttribute("data-src") || "").trim();
 
-        if (src.startsWith("/api/media/")) continue;
+        // Handle lazy-loaded images where src is a placeholder data URI
+        if (!src || src.startsWith("data:")) {
+          src = dataSrc;
+        }
+        if (!src || src.startsWith("data:") || src.startsWith("/api/media/")) {
+          continue;
+        }
 
         try {
           const resolvedUrl = new URL(src, originUrl).href;
-          const asset = await this.mediaService.downloadAndSave(resolvedUrl, originUrl);
-          if (asset) {
-            img.setAttribute("src", asset.url);
+          targetUrls.add(resolvedUrl);
+        } catch {}
+      }
+
+      if (targetUrls.size === 0) {
+        return html;
+      }
+
+      // Concurrently download unique image assets
+      const urlToAssetMap = new Map<string, string>();
+      await Promise.all(
+        Array.from(targetUrls).map(async (url) => {
+          try {
+            const asset = await this.mediaService!.downloadAndSave(url, originUrl);
+            if (asset) {
+              urlToAssetMap.set(url, asset.url);
+            }
+          } catch {}
+        })
+      );
+
+      // Replace img src attributes
+      for (const img of images) {
+        let src = (img.getAttribute("src") || "").trim();
+        const dataSrc = (img.getAttribute("data-src") || "").trim();
+        if (!src || src.startsWith("data:")) {
+          src = dataSrc;
+        }
+        if (!src || src.startsWith("data:") || src.startsWith("/api/media/")) {
+          continue;
+        }
+
+        try {
+          const resolvedUrl = new URL(src, originUrl).href;
+          const localizedUrl = urlToAssetMap.get(resolvedUrl);
+          if (localizedUrl) {
+            img.setAttribute("src", localizedUrl);
           } else {
             img.setAttribute("src", resolvedUrl);
           }
-        } catch {
-          // Leave src as-is if URL parsing fails
-        }
+        } catch {}
       }
 
       return dom.serialize();

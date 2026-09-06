@@ -1069,6 +1069,60 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       expect(html).not.toContain(`/api/media/${asset.filename}`);
     });
 
+    it("inlines grayscale compact media when grayscale: true is passed to /api/documents/export", async () => {
+      const sharp = (await import("sharp")).default;
+      const colorBuffer = await sharp({
+        create: {
+          width: 200,
+          height: 200,
+          channels: 3,
+          background: { r: 255, g: 80, b: 20 },
+        },
+      })
+        .png()
+        .toBuffer();
+
+      const asset = await mediaService.saveMedia(colorBuffer, "image/png");
+
+      const source = sourceRepo.create({
+        name: "Grayscale Source",
+        type: "web",
+        uri: "https://example.com/gray",
+        targetDeck: "Test",
+      });
+
+      const doc = docRepo.upsert({
+        sourceId: source.id,
+        title: "Grayscale Article",
+        url: "https://example.com/gray-article",
+        textContent: `Diagram:\n\n![Figure](/api/media/${asset.filename})`,
+      });
+
+      const res = await fetch(`${serverUrl}/api/documents/export`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ids: [doc.id],
+          format: "html",
+          mode: "merged",
+          imageQuality: "compact",
+          grayscale: true,
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain("data:image/webp;base64,");
+
+      const match = html.match(/data:image\/webp;base64,([A-Za-z0-9+/=]+)/);
+      expect(match).not.toBeNull();
+      const decoded = Buffer.from(match![1], "base64");
+      const rawPixels = await sharp(decoded).raw().toBuffer();
+      // Grayscale check: R === G === B
+      expect(rawPixels[0]).toBe(rawPixels[1]);
+      expect(rawPixels[1]).toBe(rawPixels[2]);
+    });
+
     it("bundles media files into media/ directory and rewrites relative paths in Split ZIP export", async () => {
       const imageBytes = Buffer.from("split-zip-image-content");
       const asset = await mediaService.saveMedia(imageBytes, "image/png");

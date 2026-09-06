@@ -1,9 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import crypto from "node:crypto";
 import sharp from "sharp";
-import type { MediaAsset, MediaOptimizationOptions } from "../domain/models.js";
+import type { MediaAsset, MediaOptimizationOptions, CompactMediaOptions } from "../domain/models.js";
 import { getDefaultMediaDirectory } from "../storage/db.js";
+
+// Limit Sharp thread concurrency to avoid 100% CPU starvation during batch ingestion
+sharp.concurrency(Math.min(2, os.cpus().length || 2));
 
 export interface MediaServiceOptions extends MediaOptimizationOptions {
   mediaDir?: string;
@@ -343,6 +347,72 @@ export class MediaService {
       dataUrl: `data:${mimeType};base64,${base64}`,
       mimeType,
     };
+  }
+
+  async readMediaAsCompactBase64(
+    filename: string,
+    options?: CompactMediaOptions
+  ): Promise<{ dataUrl: string; mimeType: string } | null> {
+    const buffer = await this.readMedia(filename);
+    if (!buffer) {
+      return null;
+    }
+
+    const safeName = this.sanitizeFilename(filename);
+    const mimeType = this.detectMimeType(safeName);
+
+    // Preserve vector graphics (SVG) verbatim without rasterization
+    if (mimeType === "image/svg+xml" || safeName.endsWith(".svg")) {
+      const base64 = buffer.toString("base64");
+      return {
+        dataUrl: `data:image/svg+xml;base64,${base64}`,
+        mimeType: "image/svg+xml",
+      };
+    }
+
+    const maxWidth = Math.max(1, options?.maxWidth ?? 600);
+    const maxHeight = Math.max(1, options?.maxHeight ?? 600);
+    const quality = Math.min(Math.max(options?.quality ?? 50, 1), 100);
+    const effort = Math.min(Math.max(options?.effort ?? 6, 0), 6);
+    const grayscale = options?.grayscale ?? false;
+    const isGif = mimeType === "image/gif" || safeName.endsWith(".gif");
+
+    try {
+      let pipeline = sharp(buffer, {
+        failOn: "none",
+        limitInputPixels: 40_000_000,
+        pages: isGif ? 1 : undefined,
+      })
+        .rotate()
+        .toColorspace("srgb")
+        .resize({
+          width: maxWidth,
+          height: maxHeight,
+          fit: "inside",
+          withoutEnlargement: true,
+        });
+
+      if (grayscale) {
+        pipeline = pipeline.grayscale();
+      }
+
+      const compactBuffer = await pipeline
+        .webp({ quality, effort })
+        .toBuffer();
+
+      const base64 = compactBuffer.toString("base64");
+      return {
+        dataUrl: `data:image/webp;base64,${base64}`,
+        mimeType: "image/webp",
+      };
+    } catch {
+      // Fallback to in-memory Base64 if Sharp compact resizing fails
+      const fallbackBase64 = buffer.toString("base64");
+      return {
+        dataUrl: `data:${mimeType};base64,${fallbackBase64}`,
+        mimeType,
+      };
+    }
   }
 }
 

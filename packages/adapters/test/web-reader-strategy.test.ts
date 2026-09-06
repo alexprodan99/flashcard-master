@@ -501,6 +501,43 @@ describe("WebReaderStrategy", () => {
         }
       }
     });
+
+    it("localizes multiple intra-article images concurrently via Promise.all", async () => {
+      let activeDownloads = 0;
+      let maxConcurrent = 0;
+
+      const mockMediaService: any = {
+        downloadAndSave: async (url: string) => {
+          activeDownloads++;
+          maxConcurrent = Math.max(maxConcurrent, activeDownloads);
+          await new Promise((r) => setTimeout(r, 20));
+          activeDownloads--;
+          return {
+            filename: "mock.webp",
+            url: `/api/media/mock-${encodeURIComponent(url)}.webp`,
+          };
+        },
+      };
+
+      const strategy = new WebReaderStrategy({
+        mediaService: mockMediaService,
+      });
+
+      const htmlWithMultipleImages = `
+        <html>
+          <body>
+            <img src="https://example.com/fig1.png" />
+            <img src="https://example.com/fig2.png" />
+            <img src="https://example.com/fig3.png" />
+          </body>
+        </html>
+      `;
+
+      const resultHtml = await strategy.localizeImagesInHtml(htmlWithMultipleImages, "https://example.com/article");
+
+      expect(maxConcurrent).toBeGreaterThan(1);
+      expect(resultHtml).toContain("/api/media/mock-");
+    });
   });
 });
 

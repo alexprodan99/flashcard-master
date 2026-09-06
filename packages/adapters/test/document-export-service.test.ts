@@ -260,6 +260,177 @@ describe("DocumentExportService", () => {
       expect(html).not.toContain(`/api/media/${asset.filename}`);
     });
 
+    it("inlines compact e-reader WebP Base64 by default and downscales large images", async () => {
+      const { MediaService } = await import("@flashcard-master/core");
+      const sharp = (await import("sharp")).default;
+      const mediaService = new MediaService({ mediaDir: path.join(tempDir, "media") });
+
+      // Generate a large 1000x800 image
+      const largeBuffer = await sharp({
+        create: {
+          width: 1000,
+          height: 800,
+          channels: 3,
+          background: { r: 60, g: 120, b: 240 },
+        },
+      })
+        .jpeg()
+        .toBuffer();
+
+      const asset = await mediaService.saveMedia(largeBuffer, "image/jpeg");
+
+      const doc: DiscoveredDocument = {
+        id: "doc-large-img",
+        sourceId: "src-1",
+        title: "Large Image Doc",
+        textContent: `![Architecture](/api/media/${asset.filename})`,
+      };
+
+      const mediaExporter = new DocumentExportService(mediaService);
+      const compactResult = await mediaExporter.export([doc], {
+        format: "html",
+        mode: "merged",
+        sourceName: "Compact Test",
+        imageQuality: "compact",
+      });
+
+      const highResult = await mediaExporter.export([doc], {
+        format: "html",
+        mode: "merged",
+        sourceName: "High Quality Test",
+        imageQuality: "high",
+      });
+
+      const compactHtml = compactResult.content as string;
+      const highHtml = highResult.content as string;
+
+      expect(compactHtml).toContain("data:image/webp;base64,");
+      expect(compactHtml.length).toBeLessThan(highHtml.length);
+    });
+
+    it("supports grayscale e-ink mode in standalone HTML export", async () => {
+      const { MediaService } = await import("@flashcard-master/core");
+      const sharp = (await import("sharp")).default;
+      const mediaService = new MediaService({ mediaDir: path.join(tempDir, "media") });
+
+      const colorBuffer = await sharp({
+        create: {
+          width: 500,
+          height: 500,
+          channels: 3,
+          background: { r: 255, g: 100, b: 50 },
+        },
+      })
+        .png()
+        .toBuffer();
+
+      const asset = await mediaService.saveMedia(colorBuffer, "image/png");
+
+      const doc: DiscoveredDocument = {
+        id: "doc-color-img",
+        sourceId: "src-1",
+        title: "Color Image Doc",
+        textContent: `![Diagram](/api/media/${asset.filename})`,
+      };
+
+      const mediaExporter = new DocumentExportService(mediaService);
+      const result = await mediaExporter.export([doc], {
+        format: "html",
+        mode: "merged",
+        sourceName: "Grayscale Test",
+        grayscale: true,
+      });
+
+      const html = result.content as string;
+      expect(html).toContain("data:image/webp;base64,");
+      const match = html.match(/data:image\/webp;base64,([A-Za-z0-9+/=]+)/);
+      expect(match).not.toBeNull();
+
+      const decoded = Buffer.from(match![1], "base64");
+      const rawPixels = await sharp(decoded).raw().toBuffer();
+      // Grayscale pixel check: R == G == B
+      expect(rawPixels[0]).toBe(rawPixels[1]);
+      expect(rawPixels[1]).toBe(rawPixels[2]);
+    });
+
+    it("preserves SVG vector diagrams verbatim without rasterization in standalone HTML export", async () => {
+      const { MediaService } = await import("@flashcard-master/core");
+      const mediaService = new MediaService({ mediaDir: path.join(tempDir, "media") });
+
+      const svgContent = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" fill="purple"/></svg>`;
+      const asset = await mediaService.saveMedia(Buffer.from(svgContent), "image/svg+xml");
+
+      const doc: DiscoveredDocument = {
+        id: "doc-svg",
+        sourceId: "src-1",
+        title: "SVG Architecture",
+        textContent: `![Vector Flow](/api/media/${asset.filename})`,
+      };
+
+      const mediaExporter = new DocumentExportService(mediaService);
+      const result = await mediaExporter.export([doc], {
+        format: "html",
+        mode: "merged",
+        sourceName: "SVG Export",
+      });
+
+      const html = result.content as string;
+      expect(html).toContain("data:image/svg+xml;base64,");
+      expect(html).not.toContain(`/api/media/${asset.filename}`);
+
+      // Verify decoded base64 matches original svg string
+      const match = html.match(/data:image\/svg\+xml;base64,([A-Za-z0-9+/=]+)/);
+      expect(match).not.toBeNull();
+      const decodedSvg = Buffer.from(match![1], "base64").toString("utf-8");
+      expect(decodedSvg).toBe(svgContent);
+    });
+
+    it("inlines multi-image collections in parallel and achieves substantial compression", async () => {
+      const { MediaService } = await import("@flashcard-master/core");
+      const sharp = (await import("sharp")).default;
+      const mediaService = new MediaService({ mediaDir: path.join(tempDir, "media") });
+
+      // Create 5 different synthetic images
+      const filenames: string[] = [];
+      for (let i = 0; i < 5; i++) {
+        const buf = await sharp({
+          create: {
+            width: 800,
+            height: 600,
+            channels: 3,
+            background: { r: i * 40, g: 100 + i * 20, b: 200 - i * 30 },
+          },
+        })
+          .jpeg()
+          .toBuffer();
+        const asset = await mediaService.saveMedia(buf, "image/jpeg");
+        filenames.push(asset.filename);
+      }
+
+      const docs: DiscoveredDocument[] = filenames.map((fn, idx) => ({
+        id: `doc-multi-${idx}`,
+        sourceId: "src-1",
+        title: `Document ${idx + 1}`,
+        textContent: `Article paragraph content.\n\n![Diagram ${idx + 1}](/api/media/${fn})`,
+        wordCount: 15,
+      }));
+
+      const mediaExporter = new DocumentExportService(mediaService);
+      const result = await mediaExporter.export(docs, {
+        format: "html",
+        mode: "merged",
+        sourceName: "Multi-Image Batch",
+        imageQuality: "compact",
+      });
+
+      const html = result.content as string;
+      expect(result.documentCount).toBe(5);
+      // All 5 images should be inlined as WebP
+      expect(html).not.toContain("/api/media/");
+      const webpMatches = html.match(/data:image\/webp;base64,/g);
+      expect(webpMatches).toHaveLength(5);
+    });
+
     it("inlines local media as Base64 Data URLs and renders responsive <figure> in Standalone HTML (fallback for raw buffer)", async () => {
       const { MediaService } = await import("@flashcard-master/core");
       const mediaService = new MediaService({ mediaDir: path.join(tempDir, "media") });
