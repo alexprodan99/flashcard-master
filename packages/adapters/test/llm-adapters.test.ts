@@ -302,5 +302,99 @@ describe("LLM Provider Adapters", () => {
       );
       expect(() => parseCardDraftsFromJson("", "anthropic")).toThrow(LLMResponseParsingError);
     });
+
+    it("parses and preserves 'mixed' difficulty level from LLM output across JSON, XML, and Markdown formats", async () => {
+      const { parseCardDraftsFromJson } = await import("../src/llm/types.js");
+
+      // JSON
+      const jsonStr = JSON.stringify([
+        {
+          question: "What is an architectural invariant?",
+          answer: "A rule that must never be broken.",
+          sourceQuote: "Architectural invariants are non-negotiable.",
+          difficulty: "mixed",
+        },
+      ]);
+      const jsonCards = parseCardDraftsFromJson(jsonStr, "openai");
+      expect(jsonCards[0].difficulty).toBe("mixed");
+
+      // XML
+      const xmlStr = `<card>
+        <question>What is an architectural invariant?</question>
+        <answer>A non-negotiable rule.</answer>
+        <source_quote>Architectural invariants are non-negotiable.</source_quote>
+        <difficulty>mixed</difficulty>
+      </card>`;
+      const xmlCards = parseCardDraftsFromJson(xmlStr, "gemini");
+      expect(xmlCards[0].difficulty).toBe("mixed");
+
+      // Markdown
+      const mdStr = `- Question: What is an architectural invariant?
+- Answer: A non-negotiable rule.
+- Source Quote: Architectural invariants are non-negotiable.
+- Difficulty: mixed`;
+      const mdCards = parseCardDraftsFromJson(mdStr, "anthropic");
+      expect(mdCards[0].difficulty).toBe("mixed");
+    });
+
+    it("generates adaptive progression prompt when difficulty is 'mixed' across all adapters", async () => {
+      let capturedPrompts: string[] = [];
+
+      const mockFetch = async (_url: string, opts: any) => {
+        const body = JSON.parse(opts.body);
+        if (body.system) {
+          capturedPrompts.push(body.system);
+        } else if (body.messages && body.messages[0]?.role === "system") {
+          capturedPrompts.push(body.messages[0].content);
+        } else if (body.contents) {
+          capturedPrompts.push(body.contents[0].parts[0].text);
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            choices: [{ message: { content: SAMPLE_DRAFT_RESPONSE } }],
+            candidates: [{ content: { parts: [{ text: SAMPLE_DRAFT_RESPONSE }] } }],
+            content: [{ type: "text", text: SAMPLE_DRAFT_RESPONSE }],
+            message: { content: SAMPLE_DRAFT_RESPONSE },
+          }),
+        };
+      };
+
+      const openai = new OpenAIAdapter({ apiKey: "test", customFetch: mockFetch as any });
+      await openai.generateQAPairs("sample text", {
+        difficulty: "mixed",
+        personaPrompt: "Persona intro.",
+        targetCount: 6,
+      });
+
+      const gemini = new GeminiAdapter({ apiKey: "test", customFetch: mockFetch as any });
+      await gemini.generateQAPairs("sample text", {
+        difficulty: "mixed",
+        personaPrompt: "Persona intro.",
+        targetCount: 6,
+      });
+
+      const anthropic = new AnthropicAdapter({ apiKey: "test", customFetch: mockFetch as any });
+      await anthropic.generateQAPairs("sample text", {
+        difficulty: "mixed",
+        personaPrompt: "Persona intro.",
+        targetCount: 6,
+      });
+
+      const ollama = new OllamaAdapter({ baseUrl: "http://localhost:11434", customFetch: mockFetch as any });
+      await ollama.generateQAPairs("sample text", {
+        difficulty: "mixed",
+        personaPrompt: "Persona intro.",
+        targetCount: 6,
+      });
+
+      expect(capturedPrompts.length).toBe(4);
+      for (const prompt of capturedPrompts) {
+        expect(prompt).toContain("balanced progression");
+        expect(prompt).toContain("beginner fundamentals");
+        expect(prompt).toContain("expert trade-offs");
+      }
+    });
   });
 });

@@ -155,6 +155,7 @@
           <option value="beginner">Beginner (Foundational Concepts)</option>
           <option value="intermediate">Intermediate (Standard Engineering & Architecture)</option>
           <option value="expert">Expert (Advanced Invariants, Protocols, Trade-offs)</option>
+          <option value="mixed">🌈 Mixed (Adaptive Progression)</option>
         </select>
       </div>
     </div>

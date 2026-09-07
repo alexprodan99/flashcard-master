@@ -118,7 +118,7 @@ export function extractFlexCard(obj: any): CardGenerationDraft | null {
     const aStr = String(answer).trim();
     const sqStr = String(sourceQuote || aStr).trim();
     const diffStr = String(difficulty).toLowerCase().trim();
-    const validDiff: DifficultyLevel = diffStr === "beginner" || diffStr === "expert" ? diffStr : "intermediate";
+    const validDiff: DifficultyLevel = diffStr === "beginner" || diffStr === "expert" || diffStr === "mixed" ? diffStr : "intermediate";
 
     if (qStr.length > 0 && aStr.length > 0) {
       return {
@@ -195,7 +195,7 @@ export function extractCardsWithRegex(raw: string): CardGenerationDraft[] {
       const a = aMatch[1].replace(/\\"/g, '"').trim();
       const sq = sqMatch ? sqMatch[1].replace(/\\"/g, '"').trim() : a;
       const diffStr = diffMatch ? diffMatch[1].toLowerCase().trim() : "intermediate";
-      const diff: DifficultyLevel = diffStr === "beginner" || diffStr === "expert" ? diffStr : "intermediate";
+      const diff: DifficultyLevel = diffStr === "beginner" || diffStr === "expert" || diffStr === "mixed" ? diffStr : "intermediate";
 
       if (q && a) {
         cards.push({
@@ -228,7 +228,7 @@ export function parseXmlCards(text: string): CardGenerationDraft[] {
       const a = aMatch[1].trim();
       const sq = sqMatch ? sqMatch[1].trim() : a;
       const diffStr = diffMatch ? diffMatch[1].toLowerCase().trim() : "intermediate";
-      const diff: DifficultyLevel = diffStr === "beginner" || diffStr === "expert" ? diffStr : "intermediate";
+      const diff: DifficultyLevel = diffStr === "beginner" || diffStr === "expert" || diffStr === "mixed" ? diffStr : "intermediate";
 
       if (q && a) {
         cards.push({
@@ -271,7 +271,7 @@ export function parseMarkdownQAPairs(text: string): CardGenerationDraft[] {
       const a = aMatch[1].replace(/^[\s*:"'-]+|[\s*:"'-]+$/g, "").trim();
       const sq = sqMatch ? sqMatch[1].replace(/^[\s*:"'-]+|[\s*:"'-]+$/g, "").trim() : a;
       const diffStr = diffMatch ? diffMatch[1].toLowerCase().trim() : "intermediate";
-      const diff: DifficultyLevel = diffStr === "beginner" || diffStr === "expert" ? diffStr : "intermediate";
+      const diff: DifficultyLevel = diffStr === "beginner" || diffStr === "expert" || diffStr === "mixed" ? diffStr : "intermediate";
 
       if (q && a) {
         cards.push({

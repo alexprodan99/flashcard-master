@@ -179,4 +179,60 @@ describe("SQLite Database Client", () => {
 
     migratedDb.close();
   });
+
+  it("automatically migrates legacy flashcards check constraint to support mixed difficulty", () => {
+    // 1. Manually create legacy database with old 3-difficulty check constraint
+    const legacyDb = new (require("better-sqlite3"))(tempDbPath);
+    legacyDb.exec(`
+      CREATE TABLE data_sources (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          type TEXT NOT NULL CHECK(type IN ('rss', 'web', 'local', 'sitemap', 'llms-txt')),
+          uri TEXT NOT NULL,
+          target_deck TEXT NOT NULL DEFAULT 'Default',
+          tags TEXT NOT NULL DEFAULT '[]',
+          is_active INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+          updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+      );
+      CREATE TABLE flashcards (
+          id TEXT PRIMARY KEY,
+          source_id TEXT,
+          question TEXT NOT NULL,
+          answer TEXT NOT NULL,
+          source_quote TEXT NOT NULL,
+          source_origin_url TEXT,
+          document_title TEXT,
+          difficulty TEXT NOT NULL CHECK(difficulty IN ('beginner', 'intermediate', 'expert')),
+          persona_used TEXT NOT NULL DEFAULT 'socratic-mentor',
+          target_deck TEXT NOT NULL DEFAULT 'Default',
+          tags TEXT NOT NULL DEFAULT '[]',
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+          updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+      );
+      INSERT INTO flashcards (id, question, answer, source_quote, difficulty)
+      VALUES ('c-1', 'Legacy Question', 'Legacy Answer', 'Legacy quote', 'beginner');
+    `);
+    legacyDb.close();
+
+    // 2. Open with createDatabaseClient which triggers auto-migration step 8
+    const migratedDb = createDatabaseClient({ dbPath: tempDbPath });
+
+    // 3. Verify existing legacy card is preserved
+    const oldCard = migratedDb.prepare("SELECT * FROM flashcards WHERE id = 'c-1'").get() as any;
+    expect(oldCard.question).toBe("Legacy Question");
+    expect(oldCard.difficulty).toBe("beginner");
+
+    // 4. Verify inserting a new card with 'mixed' difficulty succeeds without check violation
+    migratedDb.prepare(`
+      INSERT INTO flashcards (id, question, answer, source_quote, difficulty)
+      VALUES ('c-2', 'Mixed Question', 'Mixed Answer', 'Mixed quote', 'mixed')
+    `).run();
+
+    const mixedCard = migratedDb.prepare("SELECT * FROM flashcards WHERE id = 'c-2'").get() as any;
+    expect(mixedCard).toBeDefined();
+    expect(mixedCard.difficulty).toBe("mixed");
+
+    migratedDb.close();
+  });
 });

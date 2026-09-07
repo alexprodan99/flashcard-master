@@ -2,7 +2,7 @@
 title: 'Mixed Target Difficulty Category & Adaptive Synthesis Pipeline'
 type: 'feature'
 created: '2026-09-07'
-status: 'ready-for-dev'
+status: 'done'
 baseline_commit: 'b4c42ba59ea335977b1200dd5df08b5dde97f3f8'
 review_loop_iteration: 0
 context:
@@ -65,18 +65,18 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `packages/core/src/domain/models.ts` -- Extend `DifficultyLevelSchema` to `z.enum(["beginner", "intermediate", "expert", "mixed"])`.
-- [ ] `packages/core/src/storage/schema.sql` -- Update `flashcards` CHECK constraint to include `'mixed'`.
-- [ ] `packages/core/src/storage/db.ts` -- Update `SCHEMA_SQL` and add migration step 7 upgrading existing `flashcards` check constraints to allow `'mixed'`.
-- [ ] `packages/adapters/src/llm/types.ts` -- Update parser normalization to recognize and preserve `mixed`.
-- [ ] `packages/adapters/src/llm/*-adapter.ts` -- Update prompt templates across all 4 adapters to provide specific mixed-difficulty instructions when `options.difficulty === 'mixed'`.
-- [ ] `packages/cli/src/cli.ts` -- Update Commander CLI option definitions to include `mixed`.
-- [ ] `packages/web/client/src/lib/types.ts` -- Add `'mixed'` to web `DifficultyLevel`.
-- [ ] `packages/web/client/src/components/GenerationConfigFields.svelte` -- Add `<option value="mixed">🌈 Mixed (Adaptive Progression)</option>`.
-- [ ] `packages/web/client/src/components/CardEditorDrawer.svelte` -- Add `<option value="mixed">Mixed</option>`.
-- [ ] `packages/web/client/src/views/QuestionExplorer.svelte` -- Add `<span class="filter-chip" class:active={selectedDifficulty === 'mixed'} onclick={() => setFilter('difficulty', 'mixed')}>🌈 Mixed</span>` and `.badge-diff.mixed` styles.
-- [ ] `packages/core/test/db.test.ts` & `card-repository.test.ts` -- Verify persisting and querying cards with `difficulty: "mixed"`.
-- [ ] `packages/adapters/test/llm-adapters.test.ts` -- Verify LLM adapters produce valid prompts when `difficulty === 'mixed'`.
+- [x] `packages/core/src/domain/models.ts` -- Extend `DifficultyLevelSchema` to `z.enum(["beginner", "intermediate", "expert", "mixed"])`.
+- [x] `packages/core/src/storage/schema.sql` -- Update `flashcards` CHECK constraint to include `'mixed'`.
+- [x] `packages/core/src/storage/db.ts` -- Update `SCHEMA_SQL` and add migration step 8 upgrading existing `flashcards` check constraints to allow `'mixed'`.
+- [x] `packages/adapters/src/llm/types.ts` -- Update parser normalization to recognize and preserve `mixed`.
+- [x] `packages/adapters/src/llm/*-adapter.ts` -- Update prompt templates across all 4 adapters to provide specific mixed-difficulty instructions when `options.difficulty === 'mixed'`.
+- [x] `packages/cli/src/cli.ts` -- Update Commander CLI option definitions to include `mixed`.
+- [x] `packages/web/client/src/lib/types.ts` -- Add `'mixed'` to web `DifficultyLevel`.
+- [x] `packages/web/client/src/components/GenerationConfigFields.svelte` -- Add `<option value="mixed">🌈 Mixed (Adaptive Progression)</option>`.
+- [x] `packages/web/client/src/components/CardEditorDrawer.svelte` -- Add `<option value="mixed">Mixed</option>`.
+- [x] `packages/web/client/src/views/QuestionExplorer.svelte` -- Add `<button class="chip mixed" class:active={selectedDifficulty === 'mixed'} onclick={() => (selectedDifficulty = 'mixed')}>🌈 Mixed</button>` and `.difficulty-badge.mixed` styles.
+- [x] `packages/core/test/db.test.ts` & `card-repository.test.ts` -- Verify persisting and querying cards with `difficulty: "mixed"`.
+- [x] `packages/adapters/test/llm-adapters.test.ts` -- Verify LLM adapters produce valid prompts when `difficulty === 'mixed'`.
 
 **Acceptance Criteria:**
 - Given a generation request with `difficulty: "mixed"`

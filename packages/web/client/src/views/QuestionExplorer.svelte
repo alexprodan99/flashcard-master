@@ -241,6 +241,14 @@
         >
           Expert
         </button>
+        <button
+          type="button"
+          class="chip mixed"
+          class:active={selectedDifficulty === 'mixed'}
+          onclick={() => (selectedDifficulty = 'mixed')}
+        >
+          🌈 Mixed
+        </button>
       </div>
     </div>
   </div>
@@ -543,6 +551,7 @@
   .chip.beginner.active { background: #10b981; border-color: #10b981; }
   .chip.intermediate.active { background: #3b82f6; border-color: #3b82f6; }
   .chip.expert.active { background: #8b5cf6; border-color: #8b5cf6; }
+  .chip.mixed.active { background: linear-gradient(135deg, #ec4899, #8b5cf6); border-color: #ec4899; color: white; }
 
   .cards-grid {
     display: grid;
@@ -583,6 +592,7 @@
   .difficulty-badge.beginner { background: rgba(16, 185, 129, 0.15); color: #34d399; }
   .difficulty-badge.intermediate { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
   .difficulty-badge.expert { background: rgba(168, 85, 247, 0.15); color: #c084fc; }
+  .difficulty-badge.mixed { background: rgba(236, 72, 153, 0.15); color: #f472b6; border: 1px solid rgba(236, 72, 153, 0.3); }
 
   .deck-tag {
     font-size: 12px;

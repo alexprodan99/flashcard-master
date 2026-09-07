@@ -25,7 +25,7 @@ export const SyncStateSchema = z.object({
 });
 export type SyncState = z.infer<typeof SyncStateSchema>;
 
-export const DifficultyLevelSchema = z.enum(["beginner", "intermediate", "expert"]);
+export const DifficultyLevelSchema = z.enum(["beginner", "intermediate", "expert", "mixed"]);
 export type DifficultyLevel = z.infer<typeof DifficultyLevelSchema>;
 
 export const PersonaTypeSchema = z.enum(["socratic-mentor", "strict-examiner", "executive-synthesizer"]);
