@@ -2,7 +2,7 @@
 title: 'Monorepo Verification & Automated Regression Test Suite'
 type: 'feature'
 created: '2026-09-07'
-status: 'ready-for-dev'
+status: 'done'
 baseline_commit: 'b4c42ba59ea335977b1200dd5df08b5dde97f3f8'
 review_loop_iteration: 0
 context:
@@ -58,12 +58,12 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] Run `npm test -w @flashcard-master/core` and confirm all domain and repository tests pass.
-- [ ] Run `npm test -w @flashcard-master/adapters` and confirm all exporter and LLM tests pass.
-- [ ] Run `npm test -w @flashcard-master/cli` and confirm all command parsing tests pass.
-- [ ] Run `npm test -w @flashcard-master/web` and confirm all REST server and export tests pass.
-- [ ] Run `npm run build` across the entire monorepo and verify zero TypeScript or Vite build errors.
-- [ ] Execute `npm test` across all workspaces to confirm end-to-end suite health.
+- [x] Run `npm test -w @flashcard-master/core` and confirm all domain and repository tests pass.
+- [x] Run `npm test -w @flashcard-master/adapters` and confirm all exporter and LLM tests pass.
+- [x] Run `npm test -w @flashcard-master/cli` and confirm all command parsing tests pass.
+- [x] Run `npm test -w @flashcard-master/web` and confirm all REST server and export tests pass.
+- [x] Run `npm run build` across the entire monorepo and verify zero TypeScript or Vite build errors.
+- [x] Execute `npm test` across all workspaces to confirm end-to-end suite health.
 
 **Acceptance Criteria:**
 - Given the complete codebase with all Epic 13 features implemented

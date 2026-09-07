@@ -135,11 +135,11 @@ development_status:
   12-11-compact-html-export-and-ingestion-performance-optimization: done
   epic-12-retrospective: done
 
-  epic-13: in-progress
+  epic-13: done
   13-1-epub-ebook-export-engine: done
   13-2-epub-export-ui-and-endpoints: done
   13-3-mixed-difficulty-flashcard-category-and-synthesis: done
   13-4-question-explorer-refresh-button: done
   13-5-interactive-local-file-picker-source: done
-  13-6-monorepo-verification-and-test-suite: ready-for-dev
+  13-6-monorepo-verification-and-test-suite: done
   epic-13-retrospective: optional
