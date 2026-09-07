@@ -2007,6 +2007,10 @@ export class WebServer {
               if (query.grayscale !== undefined) grayscale = query.grayscale === "true" || query.grayscale === "1";
             }
 
+            if (format === "epub") {
+              mode = "merged";
+            }
+
             let targetDocs: DiscoveredDocument[] = [];
             let sourceName = "Knowledge Base";
 

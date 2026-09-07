@@ -1,4 +1,4 @@
-import type { DashboardStats, DataSource, Flashcard, GenerationResult, DiscoveredDocument } from './types';
+import type { DashboardStats, DataSource, Flashcard, GenerationResult, DiscoveredDocument, DocumentExportFormat } from './types';
 
 export async function fetchStats(): Promise<DashboardStats> {
   const res = await fetch('/api/stats');
@@ -220,7 +220,7 @@ export async function deleteDocumentsBulk(documentIds: string[]): Promise<{ succ
 export interface DocumentExportParams {
   sourceId?: string;
   ids?: string[];
-  format: 'markdown' | 'html' | 'txt' | 'json';
+  format: DocumentExportFormat;
   mode: 'merged' | 'split';
   includeTableOfContents?: boolean;
   includeCitations?: boolean;

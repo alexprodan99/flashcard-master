@@ -943,6 +943,53 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       expect(json.documents[0].title).toBe("Zero Trust Architecture");
     });
 
+    it("streams compiled EPUB 3.0 eBook with application/epub+zip MIME headers", async () => {
+      const source = sourceRepo.create({
+        name: "Kubernetes Handbook",
+        type: "web",
+        uri: "https://example.com/k8s",
+        targetDeck: "K8s",
+      });
+
+      const doc1 = docRepo.upsert({
+        sourceId: source.id,
+        title: "Pods & Deployments",
+        url: "https://example.com/k8s/pods",
+        textContent: "Pods are the smallest deployable units of computing in Kubernetes.",
+      });
+
+      const doc2 = docRepo.upsert({
+        sourceId: source.id,
+        title: "Services & Ingress",
+        url: "https://example.com/k8s/services",
+        textContent: "Services expose an application running on a set of Pods as a network service.",
+      });
+
+      const res = await fetch(`${serverUrl}/api/documents/export`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourceId: source.id,
+          format: "epub",
+          includeTableOfContents: true,
+          includeCitations: true,
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("application/epub+zip");
+      expect(res.headers.get("content-disposition")).toContain('filename="kubernetes-handbook-knowledge-base.epub"');
+
+      const arrayBuffer = await res.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      expect(buffer.length).toBeGreaterThan(100);
+
+      // Verify EPUB magic bytes and uncompressed mimetype at byte offset 8 (STORE compression)
+      expect(buffer.toString("ascii", 0, 2)).toBe("PK");
+      expect(buffer.readUInt16LE(8)).toBe(0);
+      expect(buffer.toString("utf-8", 30, 58)).toBe("mimetypeapplication/epub+zip");
+    });
+
     it("returns 404 error when no matching documents exist", async () => {
       const res = await fetch(`${serverUrl}/api/documents/export`, {
         method: "POST",

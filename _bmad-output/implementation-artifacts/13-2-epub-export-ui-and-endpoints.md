@@ -2,7 +2,7 @@
 title: 'EPUB Export UI Integration & Streaming Endpoints'
 type: 'feature'
 created: '2026-09-07'
-status: 'ready-for-dev'
+status: 'done'
 baseline_commit: 'b4c42ba59ea335977b1200dd5df08b5dde97f3f8'
 review_loop_iteration: 0
 context:
@@ -58,11 +58,11 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `packages/web/client/src/lib/types.ts` -- Add `'epub'` to `DocumentExportFormat` type union.
-- [ ] `packages/web/src/server.ts` -- Update `POST /api/documents/export` route handler to recognize `'epub'` format and stream the resulting buffer with `Content-Type: application/epub+zip`.
-- [ ] `packages/web/client/src/components/DocumentExportModal.svelte` -- Add "📚 EPUB eBook (.epub)" format option with description "Compiled eBook formatted for Kindle, Apple Books, Kobo, and e-readers."
-- [ ] `packages/web/client/src/components/DocumentExportModal.svelte` -- Automatically lock mode to merged when `'epub'` is active and show an explanatory badge.
-- [ ] `packages/web/test/server.test.ts` -- Add test case asserting `POST /api/documents/export` with `format: 'epub'` returns HTTP 200, `application/epub+zip`, and valid binary content.
+- [x] `packages/web/client/src/lib/types.ts` -- Add `'epub'` to `DocumentExportFormat` type union.
+- [x] `packages/web/src/server.ts` -- Update `POST /api/documents/export` route handler to recognize `'epub'` format and stream the resulting buffer with `Content-Type: application/epub+zip`.
+- [x] `packages/web/client/src/components/DocumentExportModal.svelte` -- Add "📚 EPUB eBook (.epub)" format option with description "Compiled eBook formatted for Kindle, Apple Books, Kobo, and e-readers."
+- [x] `packages/web/client/src/components/DocumentExportModal.svelte` -- Automatically lock mode to merged when `'epub'` is active and show an explanatory badge.
+- [x] `packages/web/test/server.test.ts` -- Add test case asserting `POST /api/documents/export` with `format: 'epub'` returns HTTP 200, `application/epub+zip`, and valid binary content.
 
 **Acceptance Criteria:**
 - Given the Document Export Modal in the Web UI
