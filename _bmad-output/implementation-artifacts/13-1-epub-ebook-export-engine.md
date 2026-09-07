@@ -2,7 +2,7 @@
 title: 'EPUB eBook Export Engine & Manifest Packaging'
 type: 'feature'
 created: '2026-09-07'
-status: 'ready-for-dev'
+status: 'done'
 baseline_commit: 'b4c42ba59ea335977b1200dd5df08b5dde97f3f8'
 review_loop_iteration: 0
 context:
@@ -57,16 +57,16 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `packages/core/src/domain/models.ts` -- Add `'epub'` to `DocumentExportFormat` type union (`"markdown" | "html" | "txt" | "json" | "epub"`).
-- [ ] `packages/adapters/src/export/document-export-service.ts` -- Add `exportEpub(docs: DiscoveredDocument[], opts: ...)` method utilizing `JSZip`.
-- [ ] `packages/adapters/src/export/document-export-service.ts` -- Construct compliant `mimetype` (uncompressed STORE) as first zip entry.
-- [ ] `packages/adapters/src/export/document-export-service.ts` -- Build `META-INF/container.xml` pointing to `OEBPS/content.opf`.
-- [ ] `packages/adapters/src/export/document-export-service.ts` -- Build `OEBPS/content.opf` with Dublin Core metadata, manifest items (XHTML, CSS, images), and spine order.
-- [ ] `packages/adapters/src/export/document-export-service.ts` -- Build `OEBPS/nav.xhtml` and `OEBPS/toc.ncx` for chapter navigation.
-- [ ] `packages/adapters/src/export/document-export-service.ts` -- Build `OEBPS/styles.css` with clean, high-readability typography for E-Ink and mobile displays.
-- [ ] `packages/adapters/src/export/document-export-service.ts` -- Convert document markdown/text into valid XML-compliant XHTML chapter files (`chapter_1.xhtml`, etc.).
-- [ ] `packages/adapters/src/export/document-export-service.ts` -- Localize `/api/media/` image references into `OEBPS/images/` using `MediaService.readMedia()`.
-- [ ] `packages/adapters/test/document-export-service.test.ts` -- Add unit tests asserting valid EPUB zip container, entry order, uncompressed mimetype, and manifest items.
+- [x] `packages/core/src/domain/models.ts` -- Add `'epub'` to `DocumentExportFormat` type union (`"markdown" | "html" | "txt" | "json" | "epub"`).
+- [x] `packages/adapters/src/export/document-export-service.ts` -- Add `exportEpub(docs: DiscoveredDocument[], opts: ...)` method utilizing `JSZip`.
+- [x] `packages/adapters/src/export/document-export-service.ts` -- Construct compliant `mimetype` (uncompressed STORE) as first zip entry.
+- [x] `packages/adapters/src/export/document-export-service.ts` -- Build `META-INF/container.xml` pointing to `OEBPS/content.opf`.
+- [x] `packages/adapters/src/export/document-export-service.ts` -- Build `OEBPS/content.opf` with Dublin Core metadata, manifest items (XHTML, CSS, images), and spine order.
+- [x] `packages/adapters/src/export/document-export-service.ts` -- Build `OEBPS/nav.xhtml` and `OEBPS/toc.ncx` for chapter navigation.
+- [x] `packages/adapters/src/export/document-export-service.ts` -- Build `OEBPS/styles.css` with clean, high-readability typography for E-Ink and mobile displays.
+- [x] `packages/adapters/src/export/document-export-service.ts` -- Convert document markdown/text into valid XML-compliant XHTML chapter files (`chapter_1.xhtml`, etc.).
+- [x] `packages/adapters/src/export/document-export-service.ts` -- Localize `/api/media/` image references into `OEBPS/images/` using `MediaService.readMedia()`.
+- [x] `packages/adapters/test/document-export-service.test.ts` -- Add unit tests asserting valid EPUB zip container, entry order, uncompressed mimetype, and manifest items.
 
 **Acceptance Criteria:**
 - Given a list of discovered documents and export format `'epub'`

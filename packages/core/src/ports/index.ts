@@ -49,7 +49,7 @@ export interface ExporterPort {
   export(cards: Flashcard[], options?: ExportOptions): Promise<ExportResult>;
 }
 
-export type DocumentExportFormat = "markdown" | "md" | "html" | "txt" | "text" | "json";
+export type DocumentExportFormat = "markdown" | "md" | "html" | "txt" | "text" | "json" | "epub";
 export type DocumentExportMode = "merged" | "split";
 
 export interface DocumentExportOptions {

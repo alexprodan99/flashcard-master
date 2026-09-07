@@ -135,8 +135,8 @@ development_status:
   12-11-compact-html-export-and-ingestion-performance-optimization: done
   epic-12-retrospective: done
 
-  epic-13: ready-for-dev
-  13-1-epub-ebook-export-engine: ready-for-dev
+  epic-13: in-progress
+  13-1-epub-ebook-export-engine: in-progress
   13-2-epub-export-ui-and-endpoints: ready-for-dev
   13-3-mixed-difficulty-flashcard-category-and-synthesis: ready-for-dev
   13-4-question-explorer-refresh-button: ready-for-dev
