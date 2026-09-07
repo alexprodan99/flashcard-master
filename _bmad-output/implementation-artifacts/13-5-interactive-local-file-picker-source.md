@@ -2,7 +2,7 @@
 title: 'Interactive File Picker & Upload for Local Data Sources'
 type: 'feature'
 created: '2026-09-07'
-status: 'ready-for-dev'
+status: 'done'
 baseline_commit: 'b4c42ba59ea335977b1200dd5df08b5dde97f3f8'
 review_loop_iteration: 0
 context:
@@ -60,13 +60,13 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `packages/web/src/server.ts` -- Implement `POST /api/sources/upload` route accepting raw file or multipart data for `.md`, `.markdown`, and `.txt` files.
-- [ ] `packages/web/src/server.ts` -- Store uploaded files safely in local app storage (`~/.flashcard-master/local-files/`), sanitizing filenames against path traversal.
-- [ ] `packages/web/client/src/lib/api.ts` -- Export `uploadSourceFile(file: File)` API function returning `{ path, filename, size }`.
-- [ ] `packages/web/client/src/components/AddSourceModal.svelte` -- Update `type === 'local'` section with an interactive drag-and-drop dropzone and file browse trigger.
-- [ ] `packages/web/client/src/components/AddSourceModal.svelte` -- On file upload: show selected file badge (`📄 filename (size)`), auto-fill source name, and set `uri = result.path`.
-- [ ] `packages/web/client/src/components/AddSourceModal.svelte` -- Add a collapsible "Advanced: Specify Directory or Absolute Path" toggle for folder scanning.
-- [ ] `packages/web/test/server.test.ts` -- Add integration tests verifying successful upload of Markdown files, rejection of invalid extensions, and sanitization of filenames.
+- [x] `packages/web/src/server.ts` -- Implement `POST /api/sources/upload` route accepting raw file or multipart data for `.md`, `.markdown`, and `.txt` files.
+- [x] `packages/web/src/server.ts` -- Store uploaded files safely in local app storage (`~/.flashcard-master/local-files/`), sanitizing filenames against path traversal.
+- [x] `packages/web/client/src/lib/api.ts` -- Export `uploadSourceFile(file: File)` API function returning `{ path, filename, size }`.
+- [x] `packages/web/client/src/components/AddSourceModal.svelte` -- Update `type === 'local'` section with an interactive drag-and-drop dropzone and file browse trigger.
+- [x] `packages/web/client/src/components/AddSourceModal.svelte` -- On file upload: show selected file badge (`📄 filename (size)`), auto-fill source name, and set `uri = result.path`.
+- [x] `packages/web/client/src/components/AddSourceModal.svelte` -- Add a collapsible "Advanced: Specify Directory or Absolute Path" toggle for folder scanning.
+- [x] `packages/web/test/server.test.ts` -- Add integration tests verifying successful upload of Markdown files, rejection of invalid extensions, and sanitization of filenames.
 
 **Acceptance Criteria:**
 - Given the Add Source Modal with "📁 Local" selected

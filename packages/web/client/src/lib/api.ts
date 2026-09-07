@@ -295,3 +295,20 @@ export async function pushToAnki(targetDeck?: string): Promise<{ success: boolea
     message: `Synced ${totalSuccess} cards (${added} added, ${updated} updated${skipped > 0 ? `, ${skipped} skipped` : ''}).`,
   };
 }
+
+export async function uploadSourceFile(file: File): Promise<{ path: string; filename: string; size: number }> {
+  const formData = new FormData();
+  formData.append('file', file, file.name);
+
+  const res = await fetch('/api/sources/upload', {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Failed to upload file (${res.status})`);
+  }
+
+  return res.json();
+}
