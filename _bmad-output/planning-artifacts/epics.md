@@ -842,6 +842,77 @@ So that the interface naturally guides me from data ingestion to flashcard gener
 - **When** `npm test` and `npm run build` are run
 - **Then** 100% of tests pass across `core`, `adapters`, `cli`, and `web`.
 
+---
+
+## Epic 13: EPUB Knowledge Base Publishing, Mixed Difficulty Synthesis & Workflow Usability Enhancements
+
+**Goal:** Provide e-reader EPUB eBook publishing for knowledge bases, expand flashcard difficulty scaling with an adaptive 'mixed' tier, equip Question Explorer with dynamic instant-refresh capabilities, and streamline local file source ingestion with an interactive file chooser eliminating free-text path entry errors.
+
+### Story 13.1: EPUB eBook Export Engine & Manifest Packaging
+**ID:** `13-1-epub-ebook-export-engine`
+**Description:** Extend `DocumentExportFormat` to include `'epub'` and implement standard EPUB 3.0 packaging in `DocumentExportService` using `JSZip`, including uncompressed mimetype, `META-INF/container.xml`, `OEBPS/content.opf` (metadata, manifest, spine), `OEBPS/nav.xhtml` & `OEBPS/toc.ncx` (chapter navigation), `OEBPS/styles.css`, and XHTML chapter documents with embedded media asset support.
+**Acceptance Criteria:**
+- **Given** a collection of clean documents and export format `'epub'`
+- **When** `DocumentExportService.export(documents, { format: 'epub', ... })` is called
+- **Then** a valid `.epub` buffer is generated structured as a compliant EPUB 3.0 container.
+- **And** the package contains `mimetype` (`application/epub+zip` uncompressed STORE), `container.xml`, `content.opf`, `nav.xhtml`, `toc.ncx`, and valid XHTML chapter files for each document.
+- **And** local media assets referenced in document bodies are packaged into `OEBPS/images/` and linked via relative paths.
+- **And** unit tests verify container compliance, manifest integrity, and XHTML formatting.
+
+### Story 13.2: EPUB Export UI Integration & Streaming Endpoints
+**ID:** `13-2-epub-export-ui-and-endpoints`
+**Description:** Update `POST /api/documents/export` to support `'epub'` format streaming with `application/epub+zip` MIME headers and `.epub` filename. Update `<DocumentExportModal.svelte>` to offer "📚 EPUB eBook (.epub)" as a selectable export format, alongside format descriptions and badge indicators.
+**Acceptance Criteria:**
+- **Given** the Document Export Modal in `SourceDocumentInspector` or `DocumentPreviewModal`
+- **When** user selects "📚 EPUB eBook (.epub)" and clicks "Download Export"
+- **Then** the browser downloads a valid `.epub` eBook with appropriate filename and MIME headers.
+- **And** the downloaded EPUB opens cleanly in e-reader applications (Apple Books, Calibre, Kobo, Kindle Previewer).
+- **And** integration tests verify the HTTP streaming endpoint and modal format options.
+
+### Story 13.3: Mixed Target Difficulty Category & Adaptive Synthesis Pipeline
+**ID:** `13-3-mixed-difficulty-flashcard-category-and-synthesis`
+**Description:** Expand `DifficultyLevelSchema` and database CHECK constraint to include `'mixed'`. Update all LLM prompt adapters (OpenAI, Anthropic, Gemini, Ollama) so that when `difficulty: 'mixed'` is selected, the model is instructed to synthesize a balanced progression of beginner, intermediate, and expert cards across the source document, tagging each card appropriately. Update UI difficulty selectors in `GenerationConfigFields.svelte`, `CardEditorDrawer.svelte`, CLI options, and `QuestionExplorer.svelte` with `mixed` badge styling and filter chips.
+**Acceptance Criteria:**
+- **Given** flashcard generation initiated with `difficulty: 'mixed'`
+- **When** the LLM synthesizes flashcards
+- **Then** the prompt directs the LLM to create a balanced mix of beginner, intermediate, and expert questions.
+- **And** the cards are saved with their generated difficulty level (or `mixed`) and validated by schema.
+- **And** `QuestionExplorer` provides a "🌈 Mixed" filter chip and distinct badge presentation.
+- **And** CLI `--difficulty` option validates and accepts `mixed`.
+- **And** unit and integration tests verify prompt generation, response parsing, and database persistence with the updated CHECK constraint.
+
+### Story 13.4: Question Explorer Real-Time Refresh Action
+**ID:** `13-4-question-explorer-refresh-button`
+**Description:** Add a dedicated "🔄 Refresh" button in `QuestionExplorer.svelte` toolbar. Clicking the button re-invokes `loadCards()` while preserving active filter state (`selectedDeck`, `selectedDifficulty`, `searchQuery`), displaying an animated spinning indicator and disabling the trigger while in-flight to prevent duplicate concurrent network requests.
+**Acceptance Criteria:**
+- **Given** user in Question Explorer with active filters applied
+- **When** user clicks the "🔄 Refresh" button (or presses shortcut)
+- **Then** the button shows an animated spinner and disables while fetching cards.
+- **And** the latest card catalog is reloaded and filtered according to the existing active filters without page reload.
+- **And** a transient toast notification confirms catalog refresh.
+- **And** component verification tests confirm refresh behavior and loading states.
+
+### Story 13.5: Interactive File Picker & Upload for Local Data Sources
+**ID:** `13-5-interactive-local-file-picker-source`
+**Description:** Implement `POST /api/sources/upload` in `packages/web/src/server.ts` to accept local file uploads (`.md`, `.markdown`, `.txt`) and save them into the application's local files directory. Upgrade `AddSourceModal.svelte` and `EditSourceModal.svelte` so that when `type === 'local'`, an interactive drag-and-drop file chooser replaces the mandatory free-text path input. Selecting or dropping a file uploads it, auto-populates the source name from filename, and sets the source URI to the resolved local file path, while providing an optional toggle for manual directory path entry.
+**Acceptance Criteria:**
+- **Given** the Add Source Modal with source type "Local"
+- **When** user drags a Markdown/text file into the dropzone or selects it via the file browser
+- **Then** the file is uploaded to the local server, and a badge displays the filename and size.
+- **And** the source name is automatically filled if empty, and `uri` is set to the saved file path.
+- **And** saving the source allows `LocalFileStrategy` to ingest the document seamlessly.
+- **And** unit and integration tests verify upload route validation, file storage, and UI interactions.
+
+### Story 13.6: Monorepo Verification & Automated Regression Test Suite
+**ID:** `13-6-monorepo-verification-and-test-suite`
+**Description:** Implement automated test suites covering EPUB generation, mixed difficulty prompt handling, Question Explorer refresh reactions, and local file upload ingestion. Verify full monorepo build and test suites pass with 100% success across all packages.
+**Acceptance Criteria:**
+- **Given** the complete monorepo
+- **When** `npm test` and `npm run build` are executed
+- **Then** 100% of tests pass across `core`, `adapters`, `cli`, and `web`.
+- **And** zero regressions or lint errors exist.
+
+
 
 
 
