@@ -2,7 +2,7 @@
 title: 'Question Explorer Real-Time Refresh Action'
 type: 'feature'
 created: '2026-09-07'
-status: 'ready-for-dev'
+status: 'done'
 baseline_commit: 'b4c42ba59ea335977b1200dd5df08b5dde97f3f8'
 review_loop_iteration: 0
 context:
@@ -53,12 +53,12 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `packages/web/client/src/views/QuestionExplorer.svelte` -- Add a "🔄 Refresh" button in the filter toolbar next to the Deck and Difficulty filters.
-- [ ] `packages/web/client/src/views/QuestionExplorer.svelte` -- Add spinning CSS animation (`@keyframes spin`) applied to the refresh icon when `loading === true`.
-- [ ] `packages/web/client/src/views/QuestionExplorer.svelte` -- Ensure `disabled={loading}` on the button prevents double-triggering.
-- [ ] `packages/web/client/src/views/QuestionExplorer.svelte` -- Retain active `searchQuery`, `selectedDeck`, and `selectedDifficulty` values upon fetch completion.
-- [ ] `packages/web/client/src/views/QuestionExplorer.svelte` -- Cleanly prune `selectedIds` to only IDs that exist in the newly fetched cards list.
-- [ ] `packages/web/client/src/views/QuestionExplorer.svelte` -- Set `toastMessage = '⚡ Flashcards refreshed.'` with a 3-second timeout on successful refresh.
+- [x] `packages/web/client/src/views/QuestionExplorer.svelte` -- Add a "🔄 Refresh" button in the filter toolbar next to the Deck and Difficulty filters.
+- [x] `packages/web/client/src/views/QuestionExplorer.svelte` -- Add spinning CSS animation (`@keyframes spin`) applied to the refresh icon when `loading === true`.
+- [x] `packages/web/client/src/views/QuestionExplorer.svelte` -- Ensure `disabled={loading}` on the button prevents double-triggering.
+- [x] `packages/web/client/src/views/QuestionExplorer.svelte` -- Retain active `searchQuery`, `selectedDeck`, and `selectedDifficulty` values upon fetch completion.
+- [x] `packages/web/client/src/views/QuestionExplorer.svelte` -- Cleanly prune `selectedIds` to only IDs that exist in the newly fetched cards list.
+- [x] `packages/web/client/src/views/QuestionExplorer.svelte` -- Set `toastMessage = '⚡ Flashcards refreshed.'` with a 3-second timeout on successful refresh.
 
 **Acceptance Criteria:**
 - Given the Question Explorer view with active filters
