@@ -1,4 +1,4 @@
-import type { DataSource, RawDocument, CleanTextDocument, SyncState, Flashcard, DifficultyLevel } from "../domain/models.js";
+import type { DataSource, RawDocument, CleanTextDocument, SyncState, Flashcard, DifficultyLevel, ImageQuality } from "../domain/models.js";
 
 export interface IngestionStrategy {
   readonly type: DataSource["type"];
@@ -29,6 +29,10 @@ export interface ExportOptions {
   outputPath?: string;
   targetDeck?: string;
   includeCitationFootnotes?: boolean;
+  includeCitations?: boolean;
+  includeToc?: boolean;
+  includeFoldGuide?: boolean;
+  includeBadges?: boolean;
   tags?: string[];
 }
 
@@ -44,3 +48,25 @@ export interface ExporterPort {
   readonly format: string;
   export(cards: Flashcard[], options?: ExportOptions): Promise<ExportResult>;
 }
+
+export type DocumentExportFormat = "markdown" | "md" | "html" | "txt" | "text" | "json";
+export type DocumentExportMode = "merged" | "split";
+
+export interface DocumentExportOptions {
+  format: DocumentExportFormat;
+  mode: DocumentExportMode;
+  sourceName?: string;
+  includeTableOfContents?: boolean;
+  includeCitations?: boolean;
+  outputPath?: string;
+  imageQuality?: ImageQuality;
+  grayscale?: boolean;
+}
+
+export interface DocumentExportResult {
+  filename: string;
+  mimeType: string;
+  content: string | Buffer | Uint8Array;
+  documentCount: number;
+}
+

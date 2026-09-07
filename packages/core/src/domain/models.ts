@@ -75,6 +75,7 @@ export interface CleanTextDocument {
   sourceId: string;
   title: string;
   textContent: string;
+  rawContent?: string;
   originUrl?: string;
   contentHash: string;
 }
@@ -85,9 +86,40 @@ export const DiscoveredDocumentSchema = z.object({
   title: z.string().min(1),
   url: z.string().nullable().optional(),
   textContent: z.string(),
+  rawContent: z.string().nullable().optional(),
   contentHash: z.string().nullable().optional(),
   wordCount: z.number().int().nonnegative().default(0),
   createdAt: z.string().datetime().optional(),
   updatedAt: z.string().datetime().optional(),
 });
 export type DiscoveredDocument = z.infer<typeof DiscoveredDocumentSchema>;
+
+export const MediaAssetSchema = z.object({
+  id: z.string(),
+  filename: z.string().min(1),
+  hash: z.string().min(1),
+  mimeType: z.string().min(1),
+  byteSize: z.number().int().nonnegative(),
+  url: z.string().min(1),
+  path: z.string().optional(),
+  createdAt: z.string().datetime().optional(),
+});
+export type MediaAsset = z.infer<typeof MediaAssetSchema>;
+
+export interface MediaOptimizationOptions {
+  optimizeWebp?: boolean;
+  webpQuality?: number;
+  maxWidth?: number;
+  maxHeight?: number;
+}
+
+export type ImageQuality = "compact" | "standard" | "high";
+
+export interface CompactMediaOptions {
+  maxWidth?: number;
+  maxHeight?: number;
+  quality?: number;
+  effort?: number;
+  grayscale?: boolean;
+}
+

@@ -1,8 +1,8 @@
 ---
 title: "Technical Architecture Spine: flashcard-master"
-status: "final"
+status: "draft"
 created: "2026-08-30"
-updated: "2026-08-30"
+updated: "2026-09-05"
 ---
 
 # Technical Architecture Spine: flashcard-master
@@ -146,6 +146,53 @@ flowchart TD
   3. The `WebServer` serves compiled static assets (`index.html`, JS chunks, CSS bundles) from `dist/client/` when available, while routing all `/api/*` requests to the REST controllers.
   4. The backend server remains 100% decoupled from the UI framework, relying solely on JSON REST endpoints.
 
+### AD-11: Multi-URL Web Ingestion & Bounded Concurrency
+- **Binds:** `WebReaderStrategy` ingestion and `data_sources.uri` contract.
+- **Prevents:** Breaking schema migrations for web sources and high-concurrency requests hammering external web servers.
+- **Rule:**
+  1. `data_sources.uri` for `type = 'web'` accepts either a single URL string (`"https://..."`) or a serialized JSON array string (`'["https://a.com", "https://b.com"]'`).
+  2. `WebReaderStrategy.fetch()` parses and normalizes the URI input into an array of URLs.
+  3. `WebReaderStrategy` executes page fetching concurrently with a bounded pool (concurrency limit = 3–5) using `Promise.allSettled` to isolate network/parsing failures per URL.
+  4. Each fetched URL produces a distinct `RawDocument` / `CleanTextDocument` persisted to the `documents` table with its unique origin URL.
+
+### AD-12: Document Lifecycle & Non-Destructive Flashcard Preservation
+- **Binds:** Document deletion contracts across `DocumentRepository`, `CardRepository`, and REST controllers (`DELETE /api/documents/:id`, `POST /api/documents/bulk-delete`).
+- **Prevents:** Orphaned, broken, or accidentally deleted flashcards when users clean up noisy or temporary raw document texts.
+- **Rule:**
+  1. Deleting a document removes the row from the `documents` table.
+  2. The `flashcards` table MUST NOT cascade-delete cards when a document is removed. All cards retain their standalone immutable fields: `question`, `answer`, `source_quote`, `source_origin_url`, `document_title`, `difficulty`, and `target_deck`.
+  3. REST controllers return deleted counts and updated document catalogs.
+
+### AD-13: Document Knowledge Base Exporter Architecture (`DocumentExportService`)
+- **Binds:** Document export port and formatting pipeline:
+  ```typescript
+  export type DocumentExportFormat = 'markdown' | 'html' | 'txt' | 'json';
+  export type DocumentExportMode = 'merged' | 'split';
+
+  export interface DocumentExportOptions {
+    format: DocumentExportFormat;
+    mode: DocumentExportMode;
+    sourceName?: string;
+    includeTableOfContents?: boolean;
+    includeCitations?: boolean;
+  }
+
+  export interface DocumentExportResult {
+    filename: string;
+    mimeType: string;
+    content: string | Buffer | Uint8Array;
+  }
+  ```
+- **Prevents:** Ad-hoc file generation in web server controllers and tight coupling between UI and export formatters.
+- **Rule:**
+  1. `DocumentExportService` in `packages/core` coordinates clean text transformation into Markdown, HTML, Plain Text, and JSON.
+  2. In **Merged Mode**, documents are joined in order with:
+     - Header banner (Title, Generation Date, Total Documents, Total Word Count).
+     - Clickable Table of Contents with markdown/HTML jump links.
+     - Section dividers with document title, word count, and source URL citation link.
+  3. In **Split Mode**, individual documents are packaged into a `.zip` archive using `JSZip` with sanitized slug filenames (`01-title.md`, etc.).
+  4. WebServer streams the result with `Content-Disposition: attachment; filename="..."` and the correct MIME type.
+
 ---
 
 ## 3. Database Schema Specification (SQLite)
@@ -155,13 +202,27 @@ flowchart TD
 CREATE TABLE IF NOT EXISTS data_sources (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    type TEXT NOT NULL CHECK(type IN ('rss', 'web', 'local')),
+    type TEXT NOT NULL CHECK(type IN ('rss', 'web', 'local', 'sitemap', 'llms-txt')),
     uri TEXT NOT NULL,
     target_deck TEXT NOT NULL DEFAULT 'Default',
     tags TEXT NOT NULL DEFAULT '[]', -- JSON array of strings
     is_active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Discovered Documents Catalog per Data Source
+CREATE TABLE IF NOT EXISTS documents (
+    id TEXT PRIMARY KEY,
+    source_id TEXT NOT NULL REFERENCES data_sources(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    url TEXT,
+    text_content TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    word_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(source_id, url)
 );
 
 -- Synchronization Cursor & Hash Cache
@@ -173,7 +234,7 @@ CREATE TABLE IF NOT EXISTS sync_state (
     item_count INTEGER NOT NULL DEFAULT 0
 );
 
--- Generated Flashcards Store
+-- Generated Flashcards Store (Self-Contained & Resilient)
 CREATE TABLE IF NOT EXISTS flashcards (
     id TEXT PRIMARY KEY,
     source_id TEXT REFERENCES data_sources(id) ON DELETE SET NULL,
@@ -181,6 +242,7 @@ CREATE TABLE IF NOT EXISTS flashcards (
     answer TEXT NOT NULL,
     source_quote TEXT NOT NULL,
     source_origin_url TEXT,
+    document_title TEXT,
     difficulty TEXT NOT NULL CHECK(difficulty IN ('beginner', 'intermediate', 'expert')),
     persona_used TEXT NOT NULL,
     target_deck TEXT NOT NULL,
@@ -195,6 +257,12 @@ CREATE TABLE IF NOT EXISTS app_settings (
     value TEXT NOT NULL,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Indices for rapid lookup
+CREATE INDEX IF NOT EXISTS idx_flashcards_source_id ON flashcards(source_id);
+CREATE INDEX IF NOT EXISTS idx_flashcards_target_deck ON flashcards(target_deck);
+CREATE INDEX IF NOT EXISTS idx_flashcards_difficulty ON flashcards(difficulty);
+CREATE INDEX IF NOT EXISTS idx_documents_source_id ON documents(source_id);
 ```
 
 ---
@@ -206,15 +274,15 @@ flashcard-master/
 ├── packages/
 │   ├── core/                          # Core domain, ports, and models
 │   │   ├── src/
-│   │   │   ├── domain/                # Flashcard, DataSource, SyncState models
+│   │   │   ├── domain/                # Flashcard, DataSource, Document, SyncState models
 │   │   │   ├── ports/                 # IngestionStrategy, LLMProviderPort, ExporterPort
-│   │   │   ├── services/              # IngestionService, QAEngine, GroundingGuard
+│   │   │   ├── services/              # IngestionService, QAEngine, GroundingGuard, DocumentExportService
 │   │   │   └── storage/               # SQLite repositories & migrations
 │   │   └── package.json
 │   ├── adapters/                      # Pluggable driven implementations
-│   │   ├── ingestion/                 # RssStrategy, WebReaderStrategy, LocalFileStrategy
-│   │   ├── llm/                       # OpenAIAdapter, GeminiAdapter, OllamaAdapter
-│   │   └── exporters/                 # ApkgExporter, AnkiConnectAdapter, MarkdownExporter, PdfExporter
+│   │   ├── ingestion/                 # RssStrategy, WebReaderStrategy, LocalFileStrategy, SitemapStrategy, LlmsTxtStrategy
+│   │   ├── llm/                       # OpenAIAdapter, GeminiAdapter, AnthropicAdapter, OllamaAdapter
+│   │   └── exporters/                 # ApkgExporter, AnkiConnectAdapter, MarkdownExporter, PdfExporter, DocumentExporters
 │   ├── cli/                           # Driving adapter: Terminal CLI & wizard
 │   │   ├── src/
 │   │   │   ├── commands/              # source, sync, export, cards, config

@@ -82,7 +82,47 @@ Two-phase commit (2PC) ensures all nodes either commit or abort.
 
     const clean = strategy.extractCleanText(raw);
     expect(clean.textContent).toBe("Consensus requires a quorum.");
+    expect(clean.rawContent).toBe(raw.rawContent);
     expect(clean.contentHash).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it("preserves exact headers, paragraphs, lists, and code blocks in clean text extraction", () => {
+    const markdownContent = `---
+title: System Architecture
+---
+
+# Microservices Overview
+
+Microservices communicate asynchronously via message queues.
+
+## Key Patterns
+
+- Event-driven choreography
+- Dead-letter queues (DLQ)
+- Circuit breaker pattern
+
+\`\`\`typescript
+interface Message {
+  id: string;
+  payload: unknown;
+}
+\`\`\`
+`;
+
+    const raw: RawDocument = {
+      id: "doc-loc-2",
+      sourceId: "source-1",
+      title: "System Architecture",
+      rawContent: markdownContent,
+    };
+
+    const clean = strategy.extractCleanText(raw);
+    expect(clean.rawContent).toBe(markdownContent);
+    expect(clean.textContent).toContain("# Microservices Overview\n\nMicroservices communicate asynchronously via message queues.");
+    expect(clean.textContent).toContain("## Key Patterns\n\n- Event-driven choreography\n- Dead-letter queues (DLQ)\n- Circuit breaker pattern");
+    expect(clean.textContent).toContain("```typescript\ninterface Message {\n  id: string;\n  payload: unknown;\n}\n```");
+    expect(clean.textContent).not.toContain("---");
+    expect(clean.textContent).not.toContain("title: System Architecture");
   });
 
   it("returns empty array gracefully on non-existent path", async () => {

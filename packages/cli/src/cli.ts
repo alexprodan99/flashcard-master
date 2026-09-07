@@ -11,7 +11,7 @@ import {
   type CardDepthMode,
   CardGenerationService,
 } from "@flashcard-master/core";
-import { createLLMAdapter } from "@flashcard-master/adapters";
+import { createLLMAdapter, DocumentExportService } from "@flashcard-master/adapters";
 import { createWebServer } from "@flashcard-master/web";
 
 export function createCli(providedContext?: AppContext): Command {
@@ -205,6 +205,60 @@ export function createCli(providedContext?: AppContext): Command {
       }
     });
 
+  sourcesCmd
+    .command("export-docs <sourceId>")
+    .description("Export discovered clean text documents for a data source into Markdown, HTML, Plain Text, or JSON")
+    .option("-f, --format <format>", "Export format: markdown | html | txt | json", "markdown")
+    .option("-m, --mode <mode>", "Packaging mode: merged | split", "merged")
+    .option("-o, --output <path>", "Output file path")
+    .option("-q, --quality <quality>", "Image quality profile: compact | standard | high", "compact")
+    .option("--grayscale", "Convert inlined images to grayscale for Kindle e-ink e-readers", false)
+    .option("--no-toc", "Omit Table of Contents in merged export")
+    .option("--no-citations", "Omit origin URL citations in exported sections")
+    .action(async (sourceId: string, options: { format: string; mode: string; output?: string; quality: string; grayscale: boolean; toc: boolean; citations: boolean }) => {
+      try {
+        const source = context.sourceRepo.getById(sourceId);
+        if (!source) {
+          console.error(`Error: Data source "${sourceId}" not found.`);
+          process.exitCode = 1;
+          return;
+        }
+
+        const docs = context.docRepo.listBySourceId(source.id);
+        if (docs.length === 0) {
+          console.error(`Error: No documents found for source "${source.name}". Run 'flashcard-master sync ${source.id}' first.`);
+          process.exitCode = 1;
+          return;
+        }
+
+        const docExporter = new DocumentExportService(context.mediaService);
+        const result = await docExporter.export(docs, {
+          format: options.format as any,
+          mode: options.mode as any,
+          sourceName: source.name,
+          includeTableOfContents: options.toc !== false,
+          includeCitations: options.citations !== false,
+          outputPath: options.output,
+          imageQuality: (options.quality as any) || "compact",
+          grayscale: Boolean(options.grayscale),
+        });
+
+        if (options.output) {
+          console.log(`✅ Successfully exported ${result.documentCount} documents to "${options.output}"`);
+        } else {
+          if (typeof result.content === "string") {
+            console.log(result.content);
+          } else {
+            console.log(`✅ Generated binary archive: ${result.filename} (${result.content.length} bytes)`);
+          }
+        }
+      } catch (err: any) {
+        console.error(`Error exporting source documents: ${err.message}`);
+        process.exitCode = 1;
+      }
+    });
+
+
   // ==========================================
   // SYNC COMMAND
   // ==========================================
@@ -340,12 +394,15 @@ export function createCli(providedContext?: AppContext): Command {
   // ==========================================
   program
     .command("export <format>")
-    .description("Export flashcards (apkg, ankiconnect, csv, tsv, markdown, html)")
+    .description("Export flashcards (apkg, ankiconnect, csv, tsv, markdown, html, pdf)")
     .option("-d, --deck <deck>", "Filter by target deck name")
     .option("-t, --tag <tag>", "Filter by tag")
     .option("--difficulty <diff>", "Filter by difficulty (beginner, intermediate, expert)")
     .option("-o, --out <path>", "Output file destination path")
     .option("--all-decks <dir>", "Export all distinct decks into separate files inside directory")
+    .option("--no-toc", "Omit Table of Contents in study guides")
+    .option("--no-citations", "Omit source citation quotes and references in study guides")
+    .option("--no-fold-guide", "Omit fold guide markers in printable HTML study guide")
     .action(async (format: string, options: any) => {
       try {
         if (options.allDecks) {
@@ -353,6 +410,11 @@ export function createCli(providedContext?: AppContext): Command {
           const results = await context.exportService.exportAllDecks({
             format,
             outputDir: options.allDecks,
+            options: {
+              includeToc: options.toc,
+              includeCitations: options.citations,
+              includeFoldGuide: options.foldGuide,
+            },
           });
 
           for (const r of results) {
@@ -371,6 +433,9 @@ export function createCli(providedContext?: AppContext): Command {
           options: {
             outputPath: options.out,
             targetDeck: options.deck,
+            includeToc: options.toc,
+            includeCitations: options.citations,
+            includeFoldGuide: options.foldGuide,
           },
         });
 

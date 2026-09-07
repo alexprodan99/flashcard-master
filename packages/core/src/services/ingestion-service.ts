@@ -108,6 +108,7 @@ export class IngestionService {
             title: cleanDoc.title || "Untitled Document",
             url: docUrl,
             textContent: cleanDoc.textContent,
+            rawContent: raw.rawContent || cleanDoc.rawContent || null,
             contentHash: cleanDoc.contentHash || null,
             wordCount,
           };

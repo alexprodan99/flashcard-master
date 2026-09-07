@@ -1,4 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
+import JSZip from "jszip";
 import {
   createDatabaseClient,
   DataSourceRepository,
@@ -12,6 +16,7 @@ import {
   PromptBuilder,
   GroundingGuard,
   CardDeduplicationService,
+  MediaService,
   type LLMProviderPort,
 } from "@flashcard-master/core";
 import {
@@ -74,8 +79,13 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
   let ankiConnectAdapter: AnkiConnectAdapter;
   let server: WebServer;
   let serverUrl: string;
+  let tempMediaDir: string;
+  let mediaService: MediaService;
 
   beforeEach(async () => {
+    tempMediaDir = fs.mkdtempSync(path.join(os.tmpdir(), "fc-web-srv-media-"));
+    mediaService = new MediaService({ mediaDir: tempMediaDir });
+
     db = createDatabaseClient({ inMemory: true });
     sourceRepo = new DataSourceRepository(db);
     syncRepo = new SyncStateRepository(db);
@@ -138,6 +148,7 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       promptBuilder: new PromptBuilder(),
       groundingGuard: new GroundingGuard(),
       dedupService: new CardDeduplicationService(),
+      mediaService,
       createLLMAdapterFn: () => new MockLLM(),
     });
 
@@ -148,6 +159,9 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
   afterEach(async () => {
     await server.close();
     db.close();
+    if (fs.existsSync(tempMediaDir)) {
+      fs.rmSync(tempMediaDir, { recursive: true, force: true });
+    }
   });
 
   it("serves HTML Single Page Application dashboard at / with Export Center", async () => {
@@ -617,4 +631,540 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     expect(data.success).toBe(true);
     expect(data.cardsCreated).toBe(2);
   });
+
+  it("creates and updates data source with multi-URL JSON array via PATCH and PUT", async () => {
+    // 1. Create source with multi-URL array
+    const createRes = await fetch(`${serverUrl}/api/sources`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Multi-Web Tech Docs",
+        type: "web",
+        uri: JSON.stringify(["https://example.com/doc1", "https://example.com/doc2"]),
+        targetDeck: "WebDev",
+        tags: ["docs", "web"],
+      }),
+    });
+    expect(createRes.status).toBe(201);
+    const created = await createRes.json();
+    expect(created.name).toBe("Multi-Web Tech Docs");
+    expect(created.uri).toBe(JSON.stringify(["https://example.com/doc1", "https://example.com/doc2"]));
+
+    // 2. Update source via PATCH
+    const patchRes = await fetch(`${serverUrl}/api/sources/${created.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Updated Tech Docs",
+        uri: JSON.stringify(["https://example.com/doc1", "https://example.com/doc2", "https://example.com/doc3"]),
+      }),
+    });
+    expect(patchRes.status).toBe(200);
+    const patched = await patchRes.json();
+    expect(patched.name).toBe("Updated Tech Docs");
+    expect(patched.uri).toContain("https://example.com/doc3");
+
+    // 3. Update source via PUT
+    const putRes = await fetch(`${serverUrl}/api/sources/${created.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        targetDeck: "AdvancedWeb",
+      }),
+    });
+    expect(putRes.status).toBe(200);
+    const putUpdated = await putRes.json();
+    expect(putUpdated.targetDeck).toBe("AdvancedWeb");
+  });
+
+  it("deletes single and bulk documents via REST API while preserving all flashcards intact", async () => {
+    // 1. Create a source and documents
+    const source = sourceRepo.create({
+      name: "Distributed Systems Course",
+      type: "web",
+      uri: "https://example.com/systems",
+      targetDeck: "Systems",
+      tags: ["distributed"],
+    });
+
+    const doc1 = docRepo.upsert({
+      sourceId: source.id,
+      title: "Chandy-Lamport Snapshots",
+      url: "https://example.com/systems/chandy-lamport",
+      textContent: "Chandy-Lamport algorithm determines a consistent global state in a distributed system.",
+    });
+
+    const doc2 = docRepo.upsert({
+      sourceId: source.id,
+      title: "Vector Clocks",
+      url: "https://example.com/systems/vector-clocks",
+      textContent: "Vector clocks determine causal ordering of events across nodes.",
+    });
+
+    const doc3 = docRepo.upsert({
+      sourceId: source.id,
+      title: "Byzantine Fault Tolerance",
+      url: "https://example.com/systems/bft",
+      textContent: "BFT protocols tolerate arbitrary and malicious node failures.",
+    });
+
+    // 2. Create flashcards referencing these documents
+    const card1 = cardRepo.create({
+      sourceId: source.id,
+      documentTitle: doc1.title,
+      sourceOriginUrl: doc1.url,
+      question: "What is Chandy-Lamport used for?",
+      answer: "Determining a consistent global state in distributed systems.",
+      sourceQuote: "consistent global state in a distributed system",
+      difficulty: "expert",
+      personaUsed: "socratic-mentor",
+      targetDeck: "Systems",
+      tags: ["distributed"],
+    });
+
+    const card2 = cardRepo.create({
+      sourceId: source.id,
+      documentTitle: doc2.title,
+      sourceOriginUrl: doc2.url,
+      question: "What do vector clocks determine?",
+      answer: "Causal ordering of events across nodes.",
+      sourceQuote: "causal ordering of events",
+      difficulty: "intermediate",
+      personaUsed: "socratic-mentor",
+      targetDeck: "Systems",
+      tags: ["distributed"],
+    });
+
+    // 3. Delete single document via DELETE /api/documents/:id
+    const singleDelRes = await fetch(`${serverUrl}/api/documents/${doc1.id}`, {
+      method: "DELETE",
+    });
+    expect(singleDelRes.status).toBe(200);
+    const singleDelData = await singleDelRes.json();
+    expect(singleDelData.success).toBe(true);
+
+    // Confirm doc1 is gone but doc2 & doc3 remain
+    expect(docRepo.getById(doc1.id)).toBeNull();
+    expect(docRepo.getById(doc2.id)).not.toBeNull();
+    expect(docRepo.getById(doc3.id)).not.toBeNull();
+
+    // 4. Delete non-existent document returns 404
+    const notFoundDelRes = await fetch(`${serverUrl}/api/documents/${doc1.id}`, {
+      method: "DELETE",
+    });
+    expect(notFoundDelRes.status).toBe(404);
+
+    // 5. Bulk delete documents via POST /api/documents/bulk-delete
+    const bulkDelRes = await fetch(`${serverUrl}/api/documents/bulk-delete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [doc2.id, doc3.id, "non-existent-doc-id"] }),
+    });
+    expect(bulkDelRes.status).toBe(200);
+    const bulkDelData = await bulkDelRes.json();
+    expect(bulkDelData.success).toBe(true);
+    expect(bulkDelData.deletedCount).toBe(2);
+
+    expect(docRepo.getById(doc2.id)).toBeNull();
+    expect(docRepo.getById(doc3.id)).toBeNull();
+
+    // 6. Bulk delete with empty array returns deletedCount: 0
+    const emptyBulkRes = await fetch(`${serverUrl}/api/documents/bulk-delete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [] }),
+    });
+    expect(emptyBulkRes.status).toBe(200);
+    const emptyBulkData = await emptyBulkRes.json();
+    expect(emptyBulkData.success).toBe(true);
+    expect(emptyBulkData.deletedCount).toBe(0);
+
+    // 6b. Test DELETE HTTP method on /api/documents/bulk-delete and malformed payloads
+    const extraDoc = docRepo.upsert({
+      sourceId: source.id,
+      title: "Temporary Test Doc",
+      textContent: "Delete via DELETE method.",
+    });
+
+    const httpDelRes = await fetch(`${serverUrl}/api/documents/bulk-delete`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [extraDoc.id] }),
+    });
+    expect(httpDelRes.status).toBe(200);
+    expect((await httpDelRes.json()).deletedCount).toBe(1);
+
+    // Malformed body where ids is not an array or object is empty
+    const malformedRes = await fetch(`${serverUrl}/api/documents/bulk-delete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: "not-an-array" }),
+    });
+    expect(malformedRes.status).toBe(200);
+    expect((await malformedRes.json()).deletedCount).toBe(0);
+
+    // 7. CRITICAL: Verify flashcards remain 100% intact with all metadata
+    const fetchedCard1 = cardRepo.getById(card1.id);
+    expect(fetchedCard1).not.toBeNull();
+    expect(fetchedCard1?.question).toBe("What is Chandy-Lamport used for?");
+    expect(fetchedCard1?.documentTitle).toBe("Chandy-Lamport Snapshots");
+    expect(fetchedCard1?.sourceOriginUrl).toBe("https://example.com/systems/chandy-lamport");
+
+    const fetchedCard2 = cardRepo.getById(card2.id);
+    expect(fetchedCard2).not.toBeNull();
+    expect(fetchedCard2?.question).toBe("What do vector clocks determine?");
+    expect(fetchedCard2?.documentTitle).toBe("Vector Clocks");
+    expect(fetchedCard2?.sourceOriginUrl).toBe("https://example.com/systems/vector-clocks");
+
+    // Also verify /api/cards endpoint returns the preserved cards
+    const cardsApiRes = await fetch(`${serverUrl}/api/cards?deck=Systems`);
+    expect(cardsApiRes.status).toBe(200);
+    const cardsList = await cardsApiRes.json();
+    expect(cardsList.length).toBe(2);
+  });
+
+  describe("POST /api/documents/export (Knowledge Base Document Exporter)", () => {
+    it("streams merged Markdown export for a data source with TOC and citations", async () => {
+      const source = sourceRepo.create({
+        name: "Cloud Architecture",
+        type: "web",
+        uri: "https://example.com/cloud",
+        targetDeck: "Cloud",
+      });
+
+      const docA = docRepo.upsert({
+        sourceId: source.id,
+        title: "Microservices Patterns",
+        url: "https://example.com/cloud/patterns",
+        textContent: "Microservices decouple domain logic into discrete services.",
+      });
+
+      const docB = docRepo.upsert({
+        sourceId: source.id,
+        title: "Serverless Compute",
+        url: "https://example.com/cloud/serverless",
+        textContent: "Serverless functions scale to zero automatically.",
+      });
+
+      const res = await fetch(`${serverUrl}/api/documents/export`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourceId: source.id,
+          format: "markdown",
+          mode: "merged",
+          includeTableOfContents: true,
+          includeCitations: true,
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("text/markdown");
+      expect(res.headers.get("content-disposition")).toContain('filename="cloud-architecture-knowledge-base.md"');
+
+      const text = await res.text();
+      expect(text).toContain("# Cloud Architecture - Knowledge Base");
+      expect(text).toContain("## 📑 Table of Contents");
+      expect(text).toContain("Microservices Patterns");
+      expect(text).toContain("Serverless Compute");
+      expect(text).toContain("https://example.com/cloud/patterns");
+    });
+
+    it("streams split ZIP archive containing individual slugified document files", async () => {
+      const source = sourceRepo.create({
+        name: "Database Systems",
+        type: "web",
+        uri: "https://example.com/db",
+        targetDeck: "DB",
+      });
+
+      const doc1 = docRepo.upsert({
+        sourceId: source.id,
+        title: "Write-Ahead Logging",
+        url: "https://example.com/db/wal",
+        textContent: "WAL ensures durability before modifying data pages.",
+      });
+
+      const res = await fetch(`${serverUrl}/api/documents/export`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourceId: source.id,
+          format: "html",
+          mode: "split",
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("application/zip");
+      expect(res.headers.get("content-disposition")).toContain('filename="database-systems-documents-split.zip"');
+
+      const arrayBuffer = await res.arrayBuffer();
+      expect(arrayBuffer.byteLength).toBeGreaterThan(0);
+    });
+
+    it("exports targeted subset by document IDs array", async () => {
+      const source = sourceRepo.create({
+        name: "Security Guidelines",
+        type: "web",
+        uri: "https://example.com/sec",
+        targetDeck: "Sec",
+      });
+
+      const doc1 = docRepo.upsert({
+        sourceId: source.id,
+        title: "OAuth2 & OIDC",
+        url: "https://example.com/sec/oauth",
+        textContent: "OAuth2 is an authorization framework.",
+      });
+
+      const doc2 = docRepo.upsert({
+        sourceId: source.id,
+        title: "Zero Trust Architecture",
+        url: "https://example.com/sec/zero-trust",
+        textContent: "Never trust, always verify.",
+      });
+
+      const res = await fetch(`${serverUrl}/api/documents/export`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ids: [doc2.id],
+          format: "json",
+          mode: "merged",
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("application/json");
+
+      const json = await res.json();
+      expect(json.totalDocuments).toBe(1);
+      expect(json.documents[0].title).toBe("Zero Trust Architecture");
+    });
+
+    it("returns 404 error when no matching documents exist", async () => {
+      const res = await fetch(`${serverUrl}/api/documents/export`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ids: ["non-existent-doc-id-12345"],
+          format: "markdown",
+        }),
+      });
+
+      expect(res.status).toBe(404);
+      const data = await res.json();
+      expect(data.error).toContain("No documents found to export");
+    });
+
+    it("supports GET /api/documents/export with query parameters", async () => {
+      const source = sourceRepo.create({
+        name: "GET Export Source",
+        type: "web",
+        uri: "https://example.com/get-export",
+        targetDeck: "Test",
+      });
+      const doc = docRepo.upsert({
+        sourceId: source.id,
+        title: "GET Export Doc",
+        url: "https://example.com/get-export",
+        textContent: "Testing GET document export functionality.",
+      });
+
+      const res = await fetch(`${serverUrl}/api/documents/export?ids=${doc.id}&format=markdown&mode=merged`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("text/markdown");
+      const text = await res.text();
+      expect(text).toContain("GET Export Doc");
+    });
+
+    it("supports GET /api/documents to list all documents across sources", async () => {
+      const source = sourceRepo.create({
+        name: "List All Docs Source",
+        type: "web",
+        uri: "https://example.com/list-all",
+        targetDeck: "Test",
+      });
+      docRepo.upsert({
+        sourceId: source.id,
+        title: "List All Doc 1",
+        url: "https://example.com/list-all/1",
+        textContent: "Sample content 1",
+      });
+
+      const res = await fetch(`${serverUrl}/api/documents`);
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(Array.isArray(data.documents)).toBe(true);
+      expect(data.total).toBeGreaterThan(0);
+    });
+  });
+
+  describe("Local Media Serving & Content-Addressed Pipeline", () => {
+    it("serves local media file with correct MIME type and immutable cache headers", async () => {
+      const pngPayload = Buffer.from("fake-png-data-stream-bytes-12345");
+      const asset = await mediaService.saveMedia(pngPayload, "image/png");
+
+      const res = await fetch(`${serverUrl}/api/media/${asset.filename}`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toBe("image/png");
+      expect(res.headers.get("cache-control")).toContain("public");
+      expect(res.headers.get("cache-control")).toContain("max-age=31536000");
+      expect(res.headers.get("cache-control")).toContain("immutable");
+
+      const arrayBuf = await res.arrayBuffer();
+      expect(Buffer.from(arrayBuf)).toEqual(pngPayload);
+    });
+
+    it("returns 404 when requested media file does not exist", async () => {
+      const res = await fetch(`${serverUrl}/api/media/nonexistent-hash.png`);
+      expect(res.status).toBe(404);
+      const data = await res.json();
+      expect(data.error).toContain("Media file not found");
+    });
+
+    it("rejects path traversal attempts with 400 Bad Request", async () => {
+      const res = await fetch(`${serverUrl}/api/media/%2e%2e%2f%2e%2e%2fetc%2fpasswd`);
+      expect(res.status).toBe(400);
+      const data = await res.json();
+      expect(data.error).toContain("path traversal");
+    });
+
+    it("inlines Base64 media data when exporting standalone HTML through /api/documents/export", async () => {
+      const imageBytes = Buffer.from("inline-html-pixel-bytes");
+      const asset = await mediaService.saveMedia(imageBytes, "image/webp");
+
+      const source = sourceRepo.create({
+        name: "Media Export Source",
+        type: "web",
+        uri: "https://example.com/media-export",
+        targetDeck: "Test",
+      });
+
+      const doc = docRepo.upsert({
+        sourceId: source.id,
+        title: "Diagram Article",
+        url: "https://example.com/diagram-article",
+        textContent: `Overview diagram:\n\n![Cloud Architecture](/api/media/${asset.filename})`,
+      });
+
+      const res = await fetch(`${serverUrl}/api/documents/export`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ids: [doc.id],
+          format: "html",
+          mode: "merged",
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("text/html");
+
+      const html = await res.text();
+      expect(html).toContain("data:image/webp;base64,");
+      expect(html).toContain('<figure class="doc-figure">');
+      expect(html).toContain('<figcaption>Cloud Architecture</figcaption>');
+      expect(html).not.toContain(`/api/media/${asset.filename}`);
+    });
+
+    it("inlines grayscale compact media when grayscale: true is passed to /api/documents/export", async () => {
+      const sharp = (await import("sharp")).default;
+      const colorBuffer = await sharp({
+        create: {
+          width: 200,
+          height: 200,
+          channels: 3,
+          background: { r: 255, g: 80, b: 20 },
+        },
+      })
+        .png()
+        .toBuffer();
+
+      const asset = await mediaService.saveMedia(colorBuffer, "image/png");
+
+      const source = sourceRepo.create({
+        name: "Grayscale Source",
+        type: "web",
+        uri: "https://example.com/gray",
+        targetDeck: "Test",
+      });
+
+      const doc = docRepo.upsert({
+        sourceId: source.id,
+        title: "Grayscale Article",
+        url: "https://example.com/gray-article",
+        textContent: `Diagram:\n\n![Figure](/api/media/${asset.filename})`,
+      });
+
+      const res = await fetch(`${serverUrl}/api/documents/export`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ids: [doc.id],
+          format: "html",
+          mode: "merged",
+          imageQuality: "compact",
+          grayscale: true,
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain("data:image/webp;base64,");
+
+      const match = html.match(/data:image\/webp;base64,([A-Za-z0-9+/=]+)/);
+      expect(match).not.toBeNull();
+      const decoded = Buffer.from(match![1], "base64");
+      const rawPixels = await sharp(decoded).raw().toBuffer();
+      // Grayscale check: R === G === B
+      expect(rawPixels[0]).toBe(rawPixels[1]);
+      expect(rawPixels[1]).toBe(rawPixels[2]);
+    });
+
+    it("bundles media files into media/ directory and rewrites relative paths in Split ZIP export", async () => {
+      const imageBytes = Buffer.from("split-zip-image-content");
+      const asset = await mediaService.saveMedia(imageBytes, "image/png");
+
+      const source = sourceRepo.create({
+        name: "Split ZIP Media Source",
+        type: "web",
+        uri: "https://example.com/split-zip-media",
+        targetDeck: "Test",
+      });
+
+      const doc = docRepo.upsert({
+        sourceId: source.id,
+        title: "Split ZIP Article",
+        url: "https://example.com/split-zip-article",
+        textContent: `Diagram reference:\n\n![Network Layout](/api/media/${asset.filename})`,
+      });
+
+      const res = await fetch(`${serverUrl}/api/documents/export`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ids: [doc.id],
+          format: "markdown",
+          mode: "split",
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("application/zip");
+
+      const zipBuf = Buffer.from(await res.arrayBuffer());
+      const zip = await JSZip.loadAsync(zipBuf);
+
+      expect(zip.file(`media/${asset.filename}`)).not.toBeNull();
+      const bundledImage = await zip.file(`media/${asset.filename}`)!.async("nodebuffer");
+      expect(bundledImage).toEqual(imageBytes);
+
+      const docContent = await zip.file("01-split-zip-article.md")!.async("string");
+      expect(docContent).toContain(`![Network Layout](./media/${asset.filename})`);
+      expect(docContent).not.toContain(`/api/media/${asset.filename}`);
+    });
+  });
 });
+

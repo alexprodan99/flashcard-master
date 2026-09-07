@@ -16,6 +16,7 @@ import {
   CardGenerationService,
   ExporterRegistry,
   ExportService,
+  MediaService,
 } from "@flashcard-master/core";
 import {
   RssIngestionStrategy,
@@ -40,6 +41,7 @@ export interface AppContext {
   syncRepo: SyncStateRepository;
   cardRepo: FlashcardRepository;
   docRepo: DocumentRepository;
+  mediaService: MediaService;
   strategyRegistry: StrategyRegistry;
   ingestionService: IngestionService;
   exporterRegistry: ExporterRegistry;
@@ -74,14 +76,15 @@ export function createAppContext(options: AppOptions = {}): AppContext {
   const syncRepo = new SyncStateRepository(db);
   const cardRepo = new FlashcardRepository(db);
   const docRepo = new DocumentRepository(db);
+  const mediaService = new MediaService();
 
   // Ingestion strategies
   const strategyRegistry = new StrategyRegistry();
   strategyRegistry.register(new RssIngestionStrategy());
-  strategyRegistry.register(new WebReaderStrategy());
+  strategyRegistry.register(new WebReaderStrategy({ mediaService }));
   strategyRegistry.register(new LocalFileStrategy());
   strategyRegistry.register(new SitemapIngestionStrategy());
-  strategyRegistry.register(new LlmsTxtIngestionStrategy());
+  strategyRegistry.register(new LlmsTxtIngestionStrategy({ mediaService }));
 
   const ingestionService = new IngestionService(sourceRepo, syncRepo, strategyRegistry, docRepo);
 
@@ -110,6 +113,7 @@ export function createAppContext(options: AppOptions = {}): AppContext {
     syncRepo,
     cardRepo,
     docRepo,
+    mediaService,
     strategyRegistry,
     ingestionService,
     exporterRegistry,
@@ -122,3 +126,4 @@ export function createAppContext(options: AppOptions = {}): AppContext {
     close: () => db.close(),
   };
 }
+

@@ -1,49 +1,232 @@
-import type { IngestionStrategy, DataSource, RawDocument, CleanTextDocument, SyncState } from "@flashcard-master/core";
+import type {
+  IngestionStrategy,
+  DataSource,
+  RawDocument,
+  CleanTextDocument,
+  SyncState,
+  MediaService,
+} from "@flashcard-master/core";
 import { Readability } from "@mozilla/readability";
 import { JSDOM } from "jsdom";
 import crypto from "node:crypto";
 import { safeIsoDate } from "../utils/date.js";
+import { htmlToCleanText } from "../utils/html-cleaner.js";
 
 export interface WebReaderStrategyOptions {
   timeoutMs?: number;
   customFetch?: typeof fetch;
+  concurrency?: number;
+  mediaService?: MediaService;
+}
+
+export function parseSourceUrls(uri: string): string[] {
+  if (!uri || typeof uri !== "string") {
+    return [];
+  }
+  const trimmed = uri.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  let rawTokens: string[] = [];
+
+  // 1. Try parsing JSON array
+  if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        rawTokens = parsed.map((u) => (typeof u === "string" ? u.trim() : ""));
+      }
+    } catch {
+      const stripped = trimmed.replace(/^\[|\]$/g, "").trim();
+      rawTokens = [stripped];
+    }
+  } else {
+    rawTokens = [trimmed];
+  }
+
+  // 2. Tokenize by newlines and URL boundary delimiters
+  const candidates: string[] = [];
+  for (const token of rawTokens) {
+    if (!token) continue;
+    const lines = token.split(/[\r\n]+/);
+    for (const line of lines) {
+      const l = line.trim();
+      if (!l) continue;
+      // Split on comma or whitespace only if followed by http:// or https://
+      const splitByUrls = l.split(/[\s,]+(?=https?:\/\/)/i);
+      for (const piece of splitByUrls) {
+        const p = piece.trim().replace(/^[<"']|[>"']$/g, "");
+        if (p) candidates.push(p);
+      }
+    }
+  }
+
+  // Filter valid HTTP/HTTPS URLs and deduplicate
+  const validUrls: string[] = [];
+  const seen = new Set<string>();
+
+  for (const item of candidates) {
+    if (!item) continue;
+    try {
+      const parsed = new URL(item);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+        const normalized = parsed.href;
+        if (!seen.has(normalized)) {
+          seen.add(normalized);
+          validUrls.push(item);
+        }
+      }
+    } catch {
+      // Skip invalid URL syntax
+    }
+  }
+
+  return validUrls;
 }
 
 export class WebReaderStrategy implements IngestionStrategy {
   readonly type = "web" as const;
   private readonly timeoutMs: number;
   private readonly fetchFn: typeof fetch;
+  private readonly concurrency: number;
+  private readonly mediaService?: MediaService;
 
   constructor(options: WebReaderStrategyOptions = {}) {
     this.timeoutMs = options.timeoutMs ?? 10000;
     this.fetchFn = options.customFetch ?? globalThis.fetch;
+    this.concurrency =
+      typeof options.concurrency === "number" && Number.isFinite(options.concurrency)
+        ? Math.max(1, Math.min(Math.floor(options.concurrency), 10))
+        : 3;
+    this.mediaService = options.mediaService;
+  }
+
+  async localizeImagesInHtml(html: string, originUrl: string): Promise<string> {
+    if (!this.mediaService || !html || typeof html !== "string") {
+      return html;
+    }
+
+    try {
+      const dom = new JSDOM(html, { url: originUrl });
+      const doc = dom.window.document;
+      const images = Array.from(doc.querySelectorAll("img"));
+
+      // Collect unique candidate image URLs
+      const targetUrls = new Set<string>();
+      for (const img of images) {
+        let src = (img.getAttribute("src") || "").trim();
+        const dataSrc = (img.getAttribute("data-src") || "").trim();
+
+        // Handle lazy-loaded images where src is a placeholder data URI
+        if (!src || src.startsWith("data:")) {
+          src = dataSrc;
+        }
+        if (!src || src.startsWith("data:") || src.startsWith("/api/media/")) {
+          continue;
+        }
+
+        try {
+          const resolvedUrl = new URL(src, originUrl).href;
+          targetUrls.add(resolvedUrl);
+        } catch {}
+      }
+
+      if (targetUrls.size === 0) {
+        return html;
+      }
+
+      // Concurrently download unique image assets
+      const urlToAssetMap = new Map<string, string>();
+      await Promise.all(
+        Array.from(targetUrls).map(async (url) => {
+          try {
+            const asset = await this.mediaService!.downloadAndSave(url, originUrl);
+            if (asset) {
+              urlToAssetMap.set(url, asset.url);
+            }
+          } catch {}
+        })
+      );
+
+      // Replace img src attributes
+      for (const img of images) {
+        let src = (img.getAttribute("src") || "").trim();
+        const dataSrc = (img.getAttribute("data-src") || "").trim();
+        if (!src || src.startsWith("data:")) {
+          src = dataSrc;
+        }
+        if (!src || src.startsWith("data:") || src.startsWith("/api/media/")) {
+          continue;
+        }
+
+        try {
+          const resolvedUrl = new URL(src, originUrl).href;
+          const localizedUrl = urlToAssetMap.get(resolvedUrl);
+          if (localizedUrl) {
+            img.setAttribute("src", localizedUrl);
+          } else {
+            img.setAttribute("src", resolvedUrl);
+          }
+        } catch {}
+      }
+
+      return dom.serialize();
+    } catch {
+      return html;
+    }
   }
 
   async fetch(source: DataSource, lastSync?: SyncState): Promise<RawDocument[]> {
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const urls = parseSourceUrls(source.uri);
+    if (urls.length === 0) {
+      return [];
+    }
 
-      const response = await this.fetchFn(source.uri, {
+    const results: (RawDocument | null)[] = new Array(urls.length);
+    let currentIndex = 0;
+
+    const workerCount = Math.min(this.concurrency, urls.length);
+    const workers = Array.from({ length: workerCount }, async () => {
+      while (currentIndex < urls.length) {
+        const idx = currentIndex++;
+        const targetUrl = urls[idx];
+        results[idx] = await this.fetchSingleUrl(targetUrl, source.id);
+      }
+    });
+
+    await Promise.allSettled(workers);
+
+    return results.filter((doc): doc is RawDocument => doc !== null);
+  }
+
+  async fetchSingleUrl(url: string, sourceId: string): Promise<RawDocument | null> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      const response = await this.fetchFn(url, {
         signal: controller.signal,
         headers: {
           "User-Agent": "flashcard-master/1.0 (Mozilla/5.0 Compatible; +https://github.com/aprodan/flashcard-master)",
           Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         },
       });
-      clearTimeout(timer);
 
       if (!response.ok) {
-        console.warn(`[WebReaderStrategy] HTTP error ${response.status} fetching ${source.uri}`);
-        return [];
+        console.warn(`[WebReaderStrategy] HTTP error ${response.status} fetching ${url}`);
+        return null;
       }
 
-      const html = await response.text();
-      const doc = this.parseHtml(html, source.id, source.uri);
-      return doc ? [doc] : [];
+      let html = await response.text();
+      if (this.mediaService) {
+        html = await this.localizeImagesInHtml(html, url);
+      }
+      return this.parseHtml(html, sourceId, url);
     } catch (err: any) {
-      console.warn(`[WebReaderStrategy] Network or parse failure for ${source.uri}:`, err.message);
-      return [];
+      console.warn(`[WebReaderStrategy] Network or parse failure for ${url}:`, err.message);
+      return null;
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -88,24 +271,9 @@ export class WebReaderStrategy implements IngestionStrategy {
   }
 
   extractCleanText(raw: RawDocument): CleanTextDocument {
-    let clean = raw.rawContent || "";
+    const clean = htmlToCleanText(raw.rawContent || "", raw.originUrl);
 
-    // 1. Strip HTML tags
-    clean = clean.replace(/<[^>]+>/g, " ");
-
-    // 2. Decode standard HTML entities
-    clean = clean
-      .replace(/&amp;/g, "&")
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .replace(/&nbsp;/g, " ");
-
-    // 3. Normalize multiple whitespace and newlines
-    clean = clean.replace(/\s+/g, " ").trim();
-
-    // 4. Calculate SHA-256 hash
+    // Calculate SHA-256 hash
     const contentHash = crypto.createHash("sha256").update(clean, "utf8").digest("hex");
 
     return {
@@ -113,6 +281,7 @@ export class WebReaderStrategy implements IngestionStrategy {
       sourceId: raw.sourceId,
       title: raw.title,
       textContent: clean,
+      rawContent: raw.rawContent,
       originUrl: raw.originUrl,
       contentHash,
     };

@@ -18,6 +18,7 @@ export class DocumentRepository {
       title: row.title,
       url: row.url || null,
       textContent: row.text_content,
+      rawContent: row.raw_content !== undefined && row.raw_content !== null ? row.raw_content : null,
       contentHash: row.content_hash || null,
       wordCount: typeof row.word_count === "number" ? row.word_count : 0,
       createdAt: row.created_at,
@@ -57,12 +58,13 @@ export class DocumentRepository {
         : 0;
 
     const stmt = this.db.prepare(`
-      INSERT INTO documents (id, source_id, title, url, text_content, content_hash, word_count)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO documents (id, source_id, title, url, text_content, raw_content, content_hash, word_count)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         title = excluded.title,
         url = excluded.url,
         text_content = excluded.text_content,
+        raw_content = excluded.raw_content,
         content_hash = excluded.content_hash,
         word_count = excluded.word_count,
         updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
@@ -74,6 +76,7 @@ export class DocumentRepository {
       rawDoc.title,
       cleanUrl,
       rawDoc.textContent,
+      rawDoc.rawContent || null,
       rawDoc.contentHash || null,
       wordCount
     );
@@ -101,12 +104,13 @@ export class DocumentRepository {
     const findByTitleStmt = this.db.prepare("SELECT id FROM documents WHERE source_id = ? AND url IS NULL AND title = ?");
 
     const stmt = this.db.prepare(`
-      INSERT INTO documents (id, source_id, title, url, text_content, content_hash, word_count)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO documents (id, source_id, title, url, text_content, raw_content, content_hash, word_count)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         title = excluded.title,
         url = excluded.url,
         text_content = excluded.text_content,
+        raw_content = excluded.raw_content,
         content_hash = excluded.content_hash,
         word_count = excluded.word_count,
         updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
@@ -150,6 +154,7 @@ export class DocumentRepository {
           rawDoc.title,
           cleanUrl,
           rawDoc.textContent,
+          rawDoc.rawContent || null,
           rawDoc.contentHash || null,
           wordCount
         );
@@ -165,6 +170,45 @@ export class DocumentRepository {
       return null;
     }
     return this.mapRowToDocument(row);
+  }
+
+  getByIds(ids: string[]): DiscoveredDocument[] {
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return [];
+    }
+    const cleanIds = Array.from(new Set(ids.filter((id) => typeof id === "string" && id.trim().length > 0)));
+    if (cleanIds.length === 0) {
+      return [];
+    }
+
+    const placeholders = cleanIds.map(() => "?").join(", ");
+    const rows = this.db.prepare(`SELECT * FROM documents WHERE id IN (${placeholders}) ORDER BY created_at DESC`).all(...cleanIds);
+    return rows.map((row) => this.mapRowToDocument(row));
+  }
+
+  listAll(options: DocumentListOptions = {}): DiscoveredDocument[] {
+    let query = "SELECT * FROM documents WHERE 1=1";
+    const params: any[] = [];
+
+    if (options.search && options.search.trim().length > 0) {
+      query += " AND (title LIKE ? OR url LIKE ? OR text_content LIKE ?)";
+      const pattern = `%${options.search.trim()}%`;
+      params.push(pattern, pattern, pattern);
+    }
+
+    query += " ORDER BY created_at DESC";
+
+    if (options.limit !== undefined) {
+      query += " LIMIT ?";
+      params.push(options.limit);
+      if (options.offset !== undefined) {
+        query += " OFFSET ?";
+        params.push(options.offset);
+      }
+    }
+
+    const rows = this.db.prepare(query).all(...params);
+    return rows.map((row) => this.mapRowToDocument(row));
   }
 
   listBySourceId(sourceId: string, options: DocumentListOptions = {}): DiscoveredDocument[] {
@@ -202,8 +246,42 @@ export class DocumentRepository {
   }
 
   deleteById(id: string): boolean {
-    const res = this.db.prepare("DELETE FROM documents WHERE id = ?").run(id);
+    if (!id || typeof id !== "string" || id.trim().length === 0) return false;
+    const res = this.db.prepare("DELETE FROM documents WHERE id = ?").run(id.trim());
     return res.changes > 0;
+  }
+
+  deleteMany(ids: string[]): number {
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return 0;
+    }
+    const validIds = Array.from(
+      new Set(
+        ids
+          .filter((id) => typeof id === "string")
+          .map((id) => id.trim())
+          .filter((id) => id.length > 0)
+      )
+    );
+    if (validIds.length === 0) {
+      return 0;
+    }
+
+    const stmt = this.db.prepare("DELETE FROM documents WHERE id = ?");
+    const transaction = this.db.transaction((idList: string[]) => {
+      let count = 0;
+      for (const docId of idList) {
+        const res = stmt.run(docId);
+        count += res.changes;
+      }
+      return count;
+    });
+
+    return transaction(validIds);
+  }
+
+  deleteBulk(ids: string[]): number {
+    return this.deleteMany(ids);
   }
 
   deleteBySourceId(sourceId: string): number {

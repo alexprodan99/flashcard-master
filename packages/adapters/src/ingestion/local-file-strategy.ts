@@ -100,10 +100,22 @@ export class LocalFileStrategy implements IngestionStrategy {
     // 1. Strip YAML frontmatter if present
     clean = clean.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
 
-    // 2. Normalize multiple whitespace and newlines
-    clean = clean.replace(/\s+/g, " ").trim();
+    // 2. Normalize line endings (\r\n -> \n)
+    clean = clean.replace(/\r\n/g, "\n");
 
-    // 3. Calculate SHA-256 hash
+    // 3. Trim trailing whitespace on individual lines
+    clean = clean
+      .split("\n")
+      .map((line) => line.trimEnd())
+      .join("\n");
+
+    // 4. Collapse 3+ consecutive newlines to 2 newlines (\n\n)
+    clean = clean.replace(/\n{3,}/g, "\n\n");
+
+    // 5. Trim leading and trailing whitespace
+    clean = clean.trim();
+
+    // 6. Calculate SHA-256 hash
     const contentHash = crypto.createHash("sha256").update(clean, "utf8").digest("hex");
 
     return {
@@ -111,6 +123,7 @@ export class LocalFileStrategy implements IngestionStrategy {
       sourceId: raw.sourceId,
       title: raw.title,
       textContent: clean,
+      rawContent: raw.rawContent,
       originUrl: raw.originUrl,
       contentHash,
     };

@@ -1,9 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { fetchSourceDocuments, fetchDocumentDetails, generateCards } from '../lib/api';
+  import { fetchSourceDocuments, fetchDocumentDetails, generateCards, deleteDocument, deleteDocumentsBulk } from '../lib/api';
   import type { DataSource, DiscoveredDocument, PersonaType, DifficultyLevel, CardDepthMode } from '../lib/types';
   import GenerationConfigFields from './GenerationConfigFields.svelte';
   import DocumentPreviewModal from './DocumentPreviewModal.svelte';
+  import DocumentExportModal from './DocumentExportModal.svelte';
 
   interface Props {
     isOpen: boolean;
@@ -19,15 +20,53 @@
   let searchQuery = $state('');
   let errorMessage = $state<string | null>(null);
 
+  // Multi-Selection State
+  let selectedIds = $state<Set<string>>(new Set());
+  let isAllSelected = $derived(documents.length > 0 && documents.every((d) => selectedIds.has(d.id)));
+  let isSomeSelected = $derived(documents.length > 0 && selectedIds.size > 0 && !isAllSelected);
+  let selectedCount = $derived(selectedIds.size);
+  let isDeleting = $state(false);
+
+  // Export Modal State
+  let isExportModalOpen = $state(false);
+  let exportTargetDocs = $state<DiscoveredDocument[]>([]);
+
+  function handleExportAll() {
+    exportTargetDocs = documents;
+    isExportModalOpen = true;
+  }
+
+  function handleExportSelected() {
+    exportTargetDocs = documents.filter((d) => selectedIds.has(d.id));
+    isExportModalOpen = true;
+  }
+
+  function handleExportSingle(doc: DiscoveredDocument) {
+    exportTargetDocs = [doc];
+    isExportModalOpen = true;
+  }
+
   // Preview Modal State
   let previewDoc = $state<DiscoveredDocument | null>(null);
   let isPreviewOpen = $state(false);
+
 
   // Configuration & Synthesis Modal State (Story 11.2)
   let configDoc = $state<DiscoveredDocument | null>(null);
   let isConfigModalOpen = $state(false);
   let isGenerating = $state(false);
   let successNotice = $state<string | null>(null);
+  let noticeTimer: ReturnType<typeof setTimeout> | null = null;
+  let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function showSuccessNotice(msg: string) {
+    if (noticeTimer) clearTimeout(noticeTimer);
+    successNotice = msg;
+    noticeTimer = setTimeout(() => {
+      successNotice = null;
+      noticeTimer = null;
+    }, 4000);
+  }
 
   // Generation parameters
   let provider = $state('ollama');
@@ -48,6 +87,13 @@
     try {
       const data = await fetchSourceDocuments(source.id, searchQuery.trim() || undefined);
       documents = data.documents;
+      // Retain only selected IDs that still exist in the new document list
+      const docIdSet = new Set(data.documents.map((d) => d.id));
+      const nextSelected = new Set<string>();
+      for (const id of selectedIds) {
+        if (docIdSet.has(id)) nextSelected.add(id);
+      }
+      selectedIds = nextSelected;
     } catch (err: any) {
       errorMessage = err.message || 'Failed to load source documents';
     } finally {
@@ -60,15 +106,103 @@
       loadDocuments();
     } else {
       documents = [];
+      selectedIds = new Set();
       searchQuery = '';
       errorMessage = null;
       successNotice = null;
+      if (noticeTimer) clearTimeout(noticeTimer);
+      if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
     }
   });
 
   function handleSearchInput(e: Event) {
     searchQuery = (e.target as HTMLInputElement).value;
-    loadDocuments();
+    if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(() => {
+      loadDocuments();
+    }, 250);
+  }
+
+  function toggleSelectDoc(id: string) {
+    const next = new Set(selectedIds);
+    if (next.has(id)) {
+      next.delete(id);
+    } else {
+      next.add(id);
+    }
+    selectedIds = next;
+  }
+
+  function toggleSelectAll() {
+    if (isAllSelected) {
+      selectedIds = new Set();
+    } else {
+      selectedIds = new Set(documents.map((d) => d.id));
+    }
+  }
+
+  async function handleDeleteSingle(doc: DiscoveredDocument) {
+    if (isDeleting) return;
+    const confirmed = window.confirm(
+      `Are you sure you want to delete "${doc.title}"?\n\nNote: All generated flashcards will remain safely preserved in your collection.`
+    );
+    if (!confirmed) return;
+
+    isDeleting = true;
+    errorMessage = null;
+    try {
+      await deleteDocument(doc.id);
+      if (selectedIds.has(doc.id)) {
+        const next = new Set(selectedIds);
+        next.delete(doc.id);
+        selectedIds = next;
+      }
+      if (previewDoc?.id === doc.id) {
+        isPreviewOpen = false;
+        previewDoc = null;
+      }
+      if (configDoc?.id === doc.id) {
+        isConfigModalOpen = false;
+        configDoc = null;
+      }
+      showSuccessNotice(`🗑️ Deleted document "${doc.title}". Generated flashcards remain preserved.`);
+      await loadDocuments();
+    } catch (err: any) {
+      errorMessage = 'Failed to delete document: ' + err.message;
+    } finally {
+      isDeleting = false;
+    }
+  }
+
+  async function handleDeleteBulk() {
+    if (selectedCount === 0 || isDeleting) return;
+    const count = selectedCount;
+    const confirmed = window.confirm(
+      `Are you sure you want to delete ${count} selected document(s)?\n\nNote: All generated flashcards will remain safely preserved in your collection.`
+    );
+    if (!confirmed) return;
+
+    isDeleting = true;
+    errorMessage = null;
+    try {
+      const idsToDelete = Array.from(selectedIds);
+      const res = await deleteDocumentsBulk(idsToDelete);
+      if (previewDoc && selectedIds.has(previewDoc.id)) {
+        isPreviewOpen = false;
+        previewDoc = null;
+      }
+      if (configDoc && selectedIds.has(configDoc.id)) {
+        isConfigModalOpen = false;
+        configDoc = null;
+      }
+      selectedIds = new Set();
+      showSuccessNotice(`🗑️ Deleted ${res.deletedCount} document(s). Generated flashcards remain preserved.`);
+      await loadDocuments();
+    } catch (err: any) {
+      errorMessage = 'Failed to delete selected documents: ' + err.message;
+    } finally {
+      isDeleting = false;
+    }
   }
 
   async function handleOpenPreview(doc: DiscoveredDocument) {
@@ -180,8 +314,40 @@
           value={searchQuery}
           oninput={handleSearchInput}
         />
+        {#if documents.length > 0}
+          <label class="select-all-toggle" title="Select / Deselect all documents">
+            <input
+              type="checkbox"
+              checked={isAllSelected}
+              indeterminate={isSomeSelected}
+              onchange={toggleSelectAll}
+            />
+            <span>Select All</span>
+          </label>
+        {/if}
+        <button class="btn btn-secondary btn-sm" onclick={handleExportAll} disabled={documents.length === 0} title="Export knowledge base">
+          📤 Export KB
+        </button>
         <button class="btn btn-secondary btn-sm" onclick={loadDocuments}>🔄 Refresh</button>
       </div>
+
+      <!-- Floating Batch Actions Toolbar -->
+      {#if selectedCount > 0}
+        <div class="batch-action-bar">
+          <span class="batch-count-badge">✅ {selectedCount} of {documents.length} selected</span>
+          <div class="batch-buttons">
+            <button type="button" class="btn btn-secondary btn-sm" disabled={isDeleting} onclick={() => (selectedIds = new Set())}>
+              Clear
+            </button>
+            <button type="button" class="btn btn-primary btn-sm" disabled={isDeleting} onclick={handleExportSelected}>
+              📤 Export Selected ({selectedCount})
+            </button>
+            <button type="button" class="btn btn-danger btn-sm" disabled={isDeleting} onclick={handleDeleteBulk}>
+              {isDeleting ? '⏳ Deleting...' : `🗑️ Delete Selected (${selectedCount})`}
+            </button>
+          </div>
+        </div>
+      {/if}
 
       <!-- Documents Catalog List -->
       <div class="drawer-body">
@@ -201,7 +367,16 @@
         {:else}
           <div class="document-list">
             {#each documents as doc (doc.id)}
-              <div class="document-card">
+              <div class="document-card" class:selected={selectedIds.has(doc.id)}>
+                <div class="doc-select-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(doc.id)}
+                    onchange={() => toggleSelectDoc(doc.id)}
+                    aria-label="Select {doc.title}"
+                  />
+                </div>
+
                 <div class="doc-main">
                   <div class="doc-header">
                     <h4 class="doc-title">{doc.title}</h4>
@@ -233,10 +408,30 @@
 
                   <button
                     type="button"
+                    class="btn btn-secondary btn-sm"
+                    onclick={() => handleExportSingle(doc)}
+                    title="Export this document"
+                  >
+                    📤 Export
+                  </button>
+
+                  <button
+                    type="button"
                     class="btn btn-primary btn-sm"
                     onclick={() => handleOpenConfigModal(doc)}
                   >
-                    ⚡ Generate Cards
+                    ⚡ Generate
+                  </button>
+
+                  <button
+                    type="button"
+                    class="btn btn-danger-icon btn-sm"
+                    disabled={isDeleting}
+                    onclick={() => handleDeleteSingle(doc)}
+                    title="Delete this document (preserves flashcards)"
+                    aria-label="Delete document"
+                  >
+                    🗑️
                   </button>
                 </div>
               </div>
@@ -252,7 +447,10 @@
 <DocumentPreviewModal
   isOpen={isPreviewOpen}
   document={previewDoc}
+  isDeleting={isDeleting}
   onClose={() => (isPreviewOpen = false)}
+  onDelete={(doc) => handleDeleteSingle(doc)}
+  onExport={(doc) => handleExportSingle(doc)}
   onSynthesize={(doc) => {
     isPreviewOpen = false;
     handleOpenConfigModal(doc);
@@ -262,6 +460,17 @@
     if (onOpenInStudio) onOpenInStudio(doc);
   }}
 />
+
+<!-- Document Knowledge Base Export Modal -->
+<DocumentExportModal
+  isOpen={isExportModalOpen}
+  documents={exportTargetDocs}
+  sourceName={source?.name || 'Knowledge Base'}
+  sourceId={source?.id}
+  onClose={() => (isExportModalOpen = false)}
+  onExportSuccess={(fn) => showSuccessNotice(`Successfully exported ${fn}`)}
+/>
+
 
 <!-- In-Context "Synthesize Flashcards" Configuration Modal (Story 11.2) -->
 {#if isConfigModalOpen && configDoc}
@@ -424,6 +633,7 @@
   .search-bar {
     padding: 14px 24px;
     display: flex;
+    align-items: center;
     gap: 10px;
     border-bottom: 1px solid #1e293b;
   }
@@ -441,6 +651,57 @@
   .search-bar input:focus {
     outline: none;
     border-color: #6366f1;
+  }
+
+  .select-all-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    color: #94a3b8;
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+    padding: 6px 10px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid #334155;
+    border-radius: 6px;
+  }
+
+  .select-all-toggle:hover {
+    color: #f8fafc;
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .select-all-toggle input[type="checkbox"] {
+    width: 15px;
+    height: 15px;
+    accent-color: #6366f1;
+    cursor: pointer;
+  }
+
+  /* Batch Actions Toolbar */
+  .batch-action-bar {
+    padding: 10px 24px;
+    background: rgba(99, 102, 241, 0.1);
+    border-bottom: 1px solid rgba(99, 102, 241, 0.3);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .batch-count-badge {
+    font-size: 13px;
+    font-weight: 600;
+    color: #a5b4fc;
+  }
+
+  .batch-buttons {
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
 
   .drawer-body {
@@ -463,12 +724,31 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 16px;
-    transition: border-color 0.15s;
+    gap: 12px;
+    transition: all 0.15s;
   }
 
   .document-card:hover {
     border-color: #475569;
+  }
+
+  .document-card.selected {
+    border-color: #6366f1;
+    background: #192238;
+  }
+
+  .doc-select-checkbox {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .doc-select-checkbox input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: #6366f1;
+    cursor: pointer;
   }
 
   .doc-main {
@@ -583,8 +863,33 @@
     background: rgba(255, 255, 255, 0.15);
   }
 
-  .btn:disabled,
-  .btn[disabled] {
+  .btn-danger {
+    background: #dc2626;
+    color: white;
+  }
+
+  .btn-danger:hover:not(:disabled) {
+    background: #b91c1c;
+  }
+
+  .btn-danger-icon {
+    background: rgba(239, 68, 68, 0.1);
+    color: #fca5a5;
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    padding: 4px 6px;
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .btn-danger-icon:hover:not(:disabled) {
+    background: rgba(239, 68, 68, 0.25);
+    border-color: rgba(239, 68, 68, 0.5);
+    color: #fee2e2;
+  }
+
+  .btn:disabled {
     opacity: 0.5 !important;
     cursor: not-allowed !important;
     pointer-events: none !important;

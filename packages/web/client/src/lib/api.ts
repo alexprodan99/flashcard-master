@@ -41,6 +41,28 @@ export async function toggleSourceActive(id: string, isActive: boolean): Promise
   return res.json();
 }
 
+export async function updateSource(
+  id: string,
+  payload: Partial<{
+    name: string;
+    uri: string;
+    targetDeck: string;
+    tags: string[];
+    isActive: boolean;
+  }>
+): Promise<DataSource> {
+  const res = await fetch(`/api/sources/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to update data source');
+  }
+  return res.json();
+}
+
 export async function deleteSource(id: string): Promise<void> {
   const res = await fetch(`/api/sources/${encodeURIComponent(id)}`, {
     method: 'DELETE',
@@ -140,6 +162,19 @@ export async function generateCards(payload: {
   return res.json();
 }
 
+export async function fetchDocuments(sourceId?: string, search?: string): Promise<{ documents: DiscoveredDocument[]; total: number }> {
+  const params = new URLSearchParams();
+  if (sourceId && sourceId !== 'all') params.set('sourceId', sourceId);
+  if (search) params.set('search', search);
+  const queryString = params.toString() ? `?${params.toString()}` : '';
+  const res = await fetch(`/api/documents${queryString}`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to fetch documents');
+  }
+  return res.json();
+}
+
 export async function fetchSourceDocuments(sourceId: string, search?: string): Promise<{ documents: DiscoveredDocument[]; total: number }> {
   const query = search ? `?search=${encodeURIComponent(search)}` : '';
   const res = await fetch(`/api/sources/${sourceId}/documents${query}`);
@@ -151,7 +186,7 @@ export async function fetchSourceDocuments(sourceId: string, search?: string): P
 }
 
 export async function fetchDocumentDetails(documentId: string): Promise<{ document: DiscoveredDocument }> {
-  const res = await fetch(`/api/documents/${documentId}`);
+  const res = await fetch(`/api/documents/${encodeURIComponent(documentId)}`);
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || 'Failed to fetch document details');
@@ -160,7 +195,7 @@ export async function fetchDocumentDetails(documentId: string): Promise<{ docume
 }
 
 export async function deleteDocument(documentId: string): Promise<boolean> {
-  const res = await fetch(`/api/documents/${documentId}`, { method: 'DELETE' });
+  const res = await fetch(`/api/documents/${encodeURIComponent(documentId)}`, { method: 'DELETE' });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || 'Failed to delete document');
@@ -168,6 +203,65 @@ export async function deleteDocument(documentId: string): Promise<boolean> {
   const data = await res.json();
   return !!data.success;
 }
+
+export async function deleteDocumentsBulk(documentIds: string[]): Promise<{ success: boolean; deletedCount: number }> {
+  const res = await fetch('/api/documents/bulk-delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids: documentIds }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to delete selected documents');
+  }
+  return res.json();
+}
+
+export interface DocumentExportParams {
+  sourceId?: string;
+  ids?: string[];
+  format: 'markdown' | 'html' | 'txt' | 'json';
+  mode: 'merged' | 'split';
+  includeTableOfContents?: boolean;
+  includeCitations?: boolean;
+  imageQuality?: 'compact' | 'standard' | 'high';
+  grayscale?: boolean;
+}
+
+export async function exportDocuments(params: DocumentExportParams): Promise<{ filename: string }> {
+  const res = await fetch('/api/documents/export', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.error || `Failed to export documents (HTTP ${res.status})`);
+  }
+
+  let filename = 'documents-export';
+  const disposition = res.headers.get('Content-Disposition');
+  if (disposition) {
+    const match = /filename=["']?([^"';]+)["']?/i.exec(disposition);
+    if (match && match[1]) {
+      filename = match[1].trim();
+    }
+  }
+
+  const blob = await res.blob();
+  const blobUrl = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = blobUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.URL.revokeObjectURL(blobUrl);
+
+  return { filename };
+}
+
 
 export async function checkAnkiStatus(): Promise<{ connected: boolean; version?: number }> {
   try {

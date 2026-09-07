@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 08-30-2026 20:47
-last_updated: 08-31-2026 14:42
+last_updated: 09-05-2026 20:26
 project: flashcard-master
 project_key: NOKEY
 tracking_system: file-system
@@ -122,4 +122,16 @@ development_status:
   11-5-e2e-verification-and-regression-tests: done
   epic-11-retrospective: done
 
+  epic-12: done
+  12-1-multi-url-storage-and-concurrent-web-reader-engine: done
+  12-2-interactive-url-list-manager-ui: done
+  12-3-document-deletion-and-safe-flashcard-preservation: done
+  12-4-document-inspector-bulk-selection-and-management-ui: done
+  12-5-document-knowledge-base-export-engine: done
+  12-6-document-export-ui-modal-and-streaming-endpoints: done
+  12-7-monorepo-verification-and-automated-test-suites: done
+  12-8-raw-document-storage-and-format-preserving-extraction: done
+  12-10-media-asset-webp-compression-and-optimization: done
+  12-11-compact-html-export-and-ingestion-performance-optimization: done
+  epic-12-retrospective: done
 

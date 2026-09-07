@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS documents (
     title TEXT NOT NULL,
     url TEXT,
     text_content TEXT NOT NULL,
+    raw_content TEXT,
     content_hash TEXT,
     word_count INTEGER DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
@@ -76,6 +77,15 @@ export function getDefaultDatabasePath(): string {
     fs.mkdirSync(dir, { recursive: true });
   }
   return path.join(dir, "data.sqlite");
+}
+
+export function getDefaultMediaDirectory(): string {
+  const home = os.homedir();
+  const dir = path.join(home, ".flashcard-master", "media");
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
 }
 
 export function createDatabaseClient(options: DatabaseClientOptions = {}): Database.Database {
@@ -228,6 +238,7 @@ export function runMigrations(db: Database.Database): void {
         title TEXT NOT NULL,
         url TEXT,
         text_content TEXT NOT NULL,
+        raw_content TEXT,
         content_hash TEXT,
         word_count INTEGER DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
@@ -242,4 +253,14 @@ export function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_documents_source_id ON documents(source_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_source_url ON documents(source_id, url) WHERE url IS NOT NULL;
   `);
+
+  // 7. Ensure raw_content column exists in documents table for existing databases
+  const docCols = db.prepare("PRAGMA table_info(documents)").all() as Array<{ name: string }>;
+  if (docCols && docCols.length > 0 && !docCols.some((c) => c.name === "raw_content")) {
+    try {
+      db.exec("ALTER TABLE documents ADD COLUMN raw_content TEXT;");
+    } catch {
+      // Catch "duplicate column" or other non-fatal migration errors cleanly
+    }
+  }
 }

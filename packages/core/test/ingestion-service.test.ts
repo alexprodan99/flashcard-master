@@ -73,6 +73,7 @@ describe("IngestionService", () => {
     expect(savedDocs[0].title).toBe("Post 1");
     expect(savedDocs[0].url).toBe("https://tech.blog/post-1");
     expect(savedDocs[0].wordCount).toBe(4);
+    expect(savedDocs[0].rawContent).toBe("Content 1 with words");
   });
 
   it("filters previously seen documents in incremental delta sync", async () => {

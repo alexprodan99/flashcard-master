@@ -18,9 +18,11 @@ import {
   type DifficultyLevel,
   type PersonaType,
   type CardDepthMode,
+  type DiscoveredDocument,
+  MediaService,
   CardGenerationService,
 } from "@flashcard-master/core";
-import { createLLMAdapter } from "@flashcard-master/adapters";
+import { createLLMAdapter, DocumentExportService } from "@flashcard-master/adapters";
 
 export type ExportFormat = "apkg" | "csv" | "tsv" | "markdown" | "html" | "pdf";
 
@@ -43,6 +45,7 @@ export interface WebServerOptions {
   promptBuilder?: PromptBuilder;
   groundingGuard?: GroundingGuard;
   dedupService?: CardDeduplicationService;
+  mediaService?: MediaService;
   createLLMAdapterFn?: (config: any) => any;
   ankiConnectAdapter?: {
     checkHealth(): Promise<AnkiConnectHealthCheck>;
@@ -54,10 +57,12 @@ export class WebServer {
   private server: http.Server | null = null;
   private readonly port: number;
   private readonly host: string;
+  private readonly mediaService: MediaService;
 
   constructor(private readonly options: WebServerOptions) {
     this.port = options.port !== undefined ? options.port : 3000;
     this.host = options.host || "127.0.0.1";
+    this.mediaService = options.mediaService || new MediaService();
   }
 
   private getHtmlSpa(): string {
@@ -1633,6 +1638,62 @@ export class WebServer {
             return;
           }
 
+          // 2b. Local Media Static Streaming Endpoint: GET /api/media/:filename
+          if (pathname.startsWith("/api/media/") && method === "GET") {
+            const rawFilename = pathname.slice("/api/media/".length);
+            let filename = "";
+            try {
+              filename = decodeURIComponent(rawFilename);
+            } catch {
+              filename = rawFilename;
+            }
+
+            // Path traversal security checks
+            if (
+              !filename ||
+              filename.includes("..") ||
+              filename.includes("/") ||
+              filename.includes("\\") ||
+              filename.includes("\0")
+            ) {
+              this.sendJson(res, 400, { error: "Invalid media filename or path traversal detected" });
+              return;
+            }
+
+            const sanitized = this.mediaService.sanitizeFilename(filename);
+            let mediaPath = "";
+            try {
+              mediaPath = this.mediaService.getMediaPath(sanitized);
+            } catch {
+              this.sendJson(res, 400, { error: "Invalid media path" });
+              return;
+            }
+
+            if (!fs.existsSync(mediaPath) || !fs.statSync(mediaPath).isFile()) {
+              this.sendJson(res, 404, { error: "Media file not found" });
+              return;
+            }
+
+            const stat = fs.statSync(mediaPath);
+            const contentType = this.mediaService.detectMimeType(sanitized);
+
+            res.writeHead(200, {
+              "Content-Type": contentType,
+              "Content-Length": stat.size,
+              "Cache-Control": "public, max-age=31536000, immutable",
+              "Access-Control-Allow-Origin": "*",
+            });
+
+            const stream = fs.createReadStream(mediaPath);
+            stream.on("error", () => {
+              if (!res.headersSent) {
+                this.sendJson(res, 500, { error: "Failed to stream media file" });
+              }
+            });
+            stream.pipe(res);
+            return;
+          }
+
           // 3. Stats Endpoint
           if (pathname === "/api/stats" && method === "GET") {
             const sources = this.options.sourceRepo.list();
@@ -1866,9 +1927,148 @@ export class WebServer {
             return;
           }
 
-          // 6c. Single Discovered Document: GET /api/documents/:id & DELETE /api/documents/:id
-          if (pathname.startsWith("/api/documents/")) {
-            const docId = pathname.slice("/api/documents/".length);
+          // 6c. All Discovered Documents Catalog: GET /api/documents
+          if (pathname === "/api/documents" && method === "GET") {
+            const search = parsedUrl.query.search as string | undefined;
+            const sourceId = parsedUrl.query.sourceId as string | undefined;
+            if (!this.options.documentRepo) {
+              this.sendJson(res, 200, { documents: [], total: 0 });
+              return;
+            }
+            const docs = sourceId
+              ? this.options.documentRepo.listBySourceId(sourceId, { search })
+              : this.options.documentRepo.listAll({ search });
+            const allCards = this.options.cardRepo.list(sourceId ? { sourceId } : undefined);
+            const enrichedDocs = docs.map((doc) => {
+              const cardCount = allCards.filter(
+                (c) =>
+                  (c.documentTitle && c.documentTitle.toLowerCase() === doc.title.toLowerCase()) ||
+                  (c.sourceOriginUrl && doc.url && c.sourceOriginUrl === doc.url)
+              ).length;
+              return {
+                ...doc,
+                cardCount,
+              };
+            });
+            this.sendJson(res, 200, { documents: enrichedDocs, total: enrichedDocs.length });
+            return;
+          }
+
+          // 6d. Bulk Discovered Documents Delete: POST /api/documents/bulk-delete
+          if (pathname === "/api/documents/bulk-delete" && (method === "POST" || method === "DELETE")) {
+            if (!this.options.documentRepo) {
+              this.sendJson(res, 200, { success: true, deletedCount: 0 });
+              return;
+            }
+            const body = await this.parseBody(req);
+            const ids = Array.isArray(body?.ids) ? body.ids : [];
+            const deletedCount = this.options.documentRepo.deleteMany(ids);
+            this.sendJson(res, 200, { success: true, deletedCount });
+            return;
+          }
+
+          // 6d. Discovered Documents Knowledge Base Export: POST or GET /api/documents/export
+          if (pathname === "/api/documents/export" && (method === "POST" || method === "GET")) {
+            if (!this.options.documentRepo) {
+              this.sendJson(res, 400, { error: "Document repository is not configured on this server." });
+              return;
+            }
+
+            let sourceId: string | undefined;
+            let ids: string[] | undefined;
+            let format = "markdown";
+            let mode = "merged";
+            let includeTableOfContents = true;
+            let includeCitations = true;
+            let imageQuality: "compact" | "standard" | "high" = "compact";
+            let grayscale = false;
+
+            if (method === "POST") {
+              const body = await this.parseBody(req);
+              sourceId = body?.sourceId;
+              ids = Array.isArray(body?.ids) ? body.ids : undefined;
+              if (body?.format) format = body.format;
+              if (body?.mode) mode = body.mode;
+              if (body?.includeTableOfContents !== undefined) includeTableOfContents = body.includeTableOfContents;
+              if (body?.includeCitations !== undefined) includeCitations = body.includeCitations;
+              if (body?.imageQuality) imageQuality = body.imageQuality;
+              if (body?.grayscale !== undefined) grayscale = Boolean(body.grayscale);
+            } else {
+              const query = parsedUrl.query;
+              sourceId = (query.sourceId as string) || (query.source as string) || undefined;
+              if (query.ids) {
+                ids = typeof query.ids === "string" ? query.ids.split(",") : Array.isArray(query.ids) ? query.ids : undefined;
+              }
+              if (query.format) format = query.format as string;
+              if (query.mode) mode = query.mode as string;
+              if (query.toc !== undefined) includeTableOfContents = query.toc !== "false" && query.toc !== "0";
+              if (query.citations !== undefined) includeCitations = query.citations !== "false" && query.citations !== "0";
+              if (query.quality || query.imageQuality) imageQuality = ((query.quality || query.imageQuality) as any);
+              if (query.grayscale !== undefined) grayscale = query.grayscale === "true" || query.grayscale === "1";
+            }
+
+            let targetDocs: DiscoveredDocument[] = [];
+            let sourceName = "Knowledge Base";
+
+            if (Array.isArray(ids) && ids.length > 0) {
+              targetDocs = this.options.documentRepo.getByIds(ids);
+              if (sourceId) {
+                const src = this.options.sourceRepo.getById(sourceId);
+                if (src) sourceName = src.name;
+              } else if (targetDocs.length > 0 && targetDocs[0].sourceId) {
+                const src = this.options.sourceRepo.getById(targetDocs[0].sourceId);
+                if (src) sourceName = src.name;
+              }
+            } else if (sourceId && typeof sourceId === "string") {
+              targetDocs = this.options.documentRepo.listBySourceId(sourceId);
+              const src = this.options.sourceRepo.getById(sourceId);
+              if (src) sourceName = src.name;
+            } else {
+              targetDocs = this.options.documentRepo.listAll();
+            }
+
+            if (targetDocs.length === 0) {
+              const msg = sourceId
+                ? `No documents found to export for source "${sourceName}". Please sync the data source first to ingest articles.`
+                : "No documents found to export in the knowledge base.";
+              this.sendJson(res, 404, { error: msg });
+              return;
+            }
+
+            const docExporter = new DocumentExportService(this.mediaService);
+            const exportResult = await docExporter.export(targetDocs, {
+              format: format as any,
+              mode: mode as any,
+              sourceName,
+              includeTableOfContents: includeTableOfContents !== false,
+              includeCitations: includeCitations !== false,
+              imageQuality,
+              grayscale,
+            });
+
+            const contentBuffer = Buffer.isBuffer(exportResult.content)
+              ? exportResult.content
+              : Buffer.from(exportResult.content as string, "utf-8");
+
+            res.writeHead(200, {
+              "Content-Type": exportResult.mimeType,
+              "Content-Disposition": `attachment; filename="${exportResult.filename}"`,
+              "Content-Length": contentBuffer.length,
+            });
+            res.end(contentBuffer);
+            return;
+          }
+
+          // 6e. Single Discovered Document: GET /api/documents/:id & DELETE /api/documents/:id
+          if (
+            pathname.startsWith("/api/documents/") &&
+            pathname !== "/api/documents/export" &&
+            pathname !== "/api/documents/bulk-delete"
+          ) {
+            let docId = pathname.slice("/api/documents/".length);
+            try {
+              docId = decodeURIComponent(docId);
+            } catch {}
             if (!this.options.documentRepo) {
               this.sendJson(res, 404, { error: "Document not found" });
               return;
@@ -1901,7 +2101,7 @@ export class WebServer {
               return;
             }
 
-            if (method === "PATCH") {
+            if (method === "PATCH" || method === "PUT") {
               const body = await this.parseBody(req);
               const updated = this.options.sourceRepo.update(id, body);
               this.sendJson(res, updated ? 200 : 404, updated || { error: "Source not found" });

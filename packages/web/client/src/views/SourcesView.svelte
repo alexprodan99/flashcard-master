@@ -1,9 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { fetchSources, toggleSourceActive, deleteSource, syncSource, syncAllSources } from '../lib/api';
-  import type { DataSource } from '../lib/types';
+  import { fetchSources, fetchSourceDocuments, toggleSourceActive, deleteSource, syncSource, syncAllSources } from '../lib/api';
+  import type { DataSource, DiscoveredDocument } from '../lib/types';
   import AddSourceModal from '../components/AddSourceModal.svelte';
+  import EditSourceModal from '../components/EditSourceModal.svelte';
   import SourceDocumentInspector from '../components/SourceDocumentInspector.svelte';
+  import DocumentExportModal from '../components/DocumentExportModal.svelte';
 
   interface Props {
     onNavigate?: (tab: string, queryParams?: Record<string, string>) => void;
@@ -15,12 +17,33 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
   let isAddModalOpen = $state(false);
+  let editingSource = $state<DataSource | null>(null);
+  let isEditModalOpen = $state(false);
   let inspectingSource = $state<DataSource | null>(null);
   let isInspectorOpen = $state(false);
+  let exportingSource = $state<DataSource | null>(null);
+  let isExportModalOpen = $state(false);
+  let sourceDocsForExport = $state<DiscoveredDocument[]>([]);
   let syncingId = $state<string | null>(null);
   let toastMessage = $state<string | null>(null);
 
   let isSyncingAll = $state(false);
+
+  async function handleOpenExport(source: DataSource) {
+    try {
+      const data = await fetchSourceDocuments(source.id);
+      if (!data.documents || data.documents.length === 0) {
+        alert(`No discovered documents found for "${source.name}". Click "Sync" first to fetch and extract articles from this source.`);
+        return;
+      }
+      exportingSource = source;
+      sourceDocsForExport = data.documents;
+      isExportModalOpen = true;
+    } catch (err: any) {
+      alert('Failed to load documents for export: ' + err.message);
+    }
+  }
+
 
   async function loadSources() {
     loading = true;
@@ -94,6 +117,30 @@
     setTimeout(() => (toastMessage = null), 4000);
   }
 
+  function handleSourceUpdated(updated: DataSource) {
+    sources = sources.map((s) => (s.id === updated.id ? updated : s));
+    toastMessage = `✅ Data source "${updated.name}" updated successfully.`;
+    setTimeout(() => (toastMessage = null), 4000);
+  }
+
+  function getUriSummary(source: DataSource): { displayUri: string; countBadge?: string } {
+    if (source.type === 'web') {
+      const raw = source.uri || '';
+      if (raw.trim().startsWith('[') && raw.trim().endsWith(']')) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return {
+              displayUri: `${parsed[0]}${parsed.length > 1 ? ` (+${parsed.length - 1} more)` : ''}`,
+              countBadge: `${parsed.length} URLs`,
+            };
+          }
+        } catch {}
+      }
+    }
+    return { displayUri: source.uri };
+  }
+
   onMount(() => {
     loadSources();
   });
@@ -157,6 +204,7 @@
         </thead>
         <tbody>
           {#each sources as s}
+            {@const uriInfo = getUriSummary(s)}
             <tr>
               <td>
                 <span class="type-badge {s.type}">{s.type}</span>
@@ -164,7 +212,12 @@
               <td>
                 <div class="source-info">
                   <span class="source-name">{s.name}</span>
-                  <span class="source-uri" title={s.uri}>{s.uri}</span>
+                  <div class="uri-row">
+                    <span class="source-uri" title={s.uri}>{uriInfo.displayUri}</span>
+                    {#if uriInfo.countBadge}
+                      <span class="url-count-pill">{uriInfo.countBadge}</span>
+                    {/if}
+                  </div>
                 </div>
               </td>
               <td>
@@ -194,6 +247,16 @@
               <td>
                 <div class="actions-cell">
                   <button
+                    class="action-btn edit-btn"
+                    onclick={() => {
+                      editingSource = s;
+                      isEditModalOpen = true;
+                    }}
+                    title="Edit Data Source"
+                  >
+                    ✏️ Edit
+                  </button>
+                  <button
                     class="action-btn inspect-btn"
                     onclick={() => {
                       inspectingSource = s;
@@ -202,6 +265,13 @@
                     title="Inspect Discovered Documents & Articles"
                   >
                     📖 Documents
+                  </button>
+                  <button
+                    class="action-btn export-btn"
+                    onclick={() => handleOpenExport(s)}
+                    title="Export Clean Document Knowledge Base"
+                  >
+                    📤 Export
                   </button>
                   <button
                     class="action-btn sync-btn"
@@ -238,6 +308,13 @@
   onSourceCreated={handleSourceCreated}
 />
 
+<EditSourceModal
+  isOpen={isEditModalOpen}
+  source={editingSource}
+  onClose={() => (isEditModalOpen = false)}
+  onSourceUpdated={handleSourceUpdated}
+/>
+
 <SourceDocumentInspector
   isOpen={isInspectorOpen}
   source={inspectingSource}
@@ -247,6 +324,19 @@
     onNavigate?.('generate', { docId: doc.id });
   }}
 />
+
+<DocumentExportModal
+  isOpen={isExportModalOpen}
+  documents={sourceDocsForExport}
+  sourceName={exportingSource?.name || 'Knowledge Base'}
+  sourceId={exportingSource?.id}
+  onClose={() => (isExportModalOpen = false)}
+  onExportSuccess={(fn) => {
+    toastMessage = `✅ Exported ${fn}`;
+    setTimeout(() => (toastMessage = null), 4000);
+  }}
+/>
+
 
 <style>
   .view-container {
@@ -323,7 +413,14 @@
     display: flex;
     flex-direction: column;
     gap: 3px;
-    max-width: 320px;
+    max-width: 340px;
+  }
+
+  .uri-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow: hidden;
   }
 
   .source-name {
@@ -339,6 +436,18 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .url-count-pill {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 10px;
+    background: rgba(99, 102, 241, 0.2);
+    color: #818cf8;
+    border: 1px solid rgba(99, 102, 241, 0.35);
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .type-badge {
@@ -423,6 +532,17 @@
     cursor: pointer;
     border: 1px solid transparent;
     transition: all 0.15s;
+  }
+
+  .edit-btn {
+    background: rgba(148, 163, 184, 0.15);
+    color: #cbd5e1;
+    border-color: rgba(148, 163, 184, 0.3);
+  }
+
+  .edit-btn:hover {
+    background: #475569;
+    color: white;
   }
 
   .inspect-btn {
