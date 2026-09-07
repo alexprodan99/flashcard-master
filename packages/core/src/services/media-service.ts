@@ -46,8 +46,9 @@ export class MediaService {
     if (!filename || typeof filename !== "string") {
       return "";
     }
-    // Extract base filename and strip any null bytes or traversal characters
-    const base = path.basename(filename.replace(/\0/g, ""));
+    // Extract base filename and strip null bytes and traversal characters across both POSIX and Windows environments
+    const normalized = filename.replace(/\0/g, "").replace(/\\/g, "/");
+    const base = path.win32.basename(normalized);
     return base;
   }
 
