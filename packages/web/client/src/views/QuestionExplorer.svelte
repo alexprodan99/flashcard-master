@@ -91,16 +91,32 @@
     }
   }
 
-  async function loadCards() {
+  async function loadCards(isUserRefresh = false) {
     loading = true;
     error = null;
     try {
-      cards = await fetchCards();
+      const fetched = await fetchCards();
+      cards = fetched;
+      const fetchedIdSet = new Set(fetched.map((c) => c.id));
+      selectedIds = selectedIds.filter((id) => fetchedIdSet.has(id));
+      if (isUserRefresh) {
+        toastMessage = '⚡ Flashcards refreshed.';
+        setTimeout(() => (toastMessage = null), 3000);
+      }
     } catch (err: any) {
       error = err.message || 'Failed to load cards';
+      if (isUserRefresh) {
+        toastMessage = `⚠️ Failed to refresh flashcards: ${err.message}`;
+        setTimeout(() => (toastMessage = null), 4000);
+      }
     } finally {
       loading = false;
     }
+  }
+
+  async function handleRefresh() {
+    if (loading) return;
+    await loadCards(true);
   }
 
   function toggleReveal(id: string) {
@@ -168,16 +184,30 @@
 
   <!-- Filter & Search Toolbar -->
   <div class="toolbar-card">
-    <div class="search-input-wrapper">
-      <span class="search-icon">🔍</span>
-      <input
-        type="text"
-        placeholder="Search questions, answers, tags, or source quotes..."
-        bind:value={searchQuery}
-      />
-      {#if searchQuery}
-        <button class="clear-btn" onclick={() => (searchQuery = '')}>✕</button>
-      {/if}
+    <div class="toolbar-top-row">
+      <div class="search-input-wrapper">
+        <span class="search-icon">🔍</span>
+        <input
+          type="text"
+          placeholder="Search questions, answers, tags, or source quotes..."
+          bind:value={searchQuery}
+        />
+        {#if searchQuery}
+          <button class="clear-btn" onclick={() => (searchQuery = '')}>✕</button>
+        {/if}
+      </div>
+
+      <button
+        type="button"
+        class="btn-refresh"
+        onclick={handleRefresh}
+        disabled={loading}
+        title="Refresh flashcard catalog"
+        aria-label="Refresh flashcard catalog"
+      >
+        <span class="refresh-icon" class:spinning={loading}>🔄</span>
+        <span>{loading ? 'Refreshing...' : 'Refresh'}</span>
+      </button>
     </div>
 
     <!-- Deck filter chips -->
@@ -240,6 +270,14 @@
           onclick={() => (selectedDifficulty = 'expert')}
         >
           Expert
+        </button>
+        <button
+          type="button"
+          class="chip mixed"
+          class:active={selectedDifficulty === 'mixed'}
+          onclick={() => (selectedDifficulty = 'mixed')}
+        >
+          🌈 Mixed
         </button>
       </div>
     </div>
@@ -455,10 +493,56 @@
     gap: 16px;
   }
 
+  .toolbar-top-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
   .search-input-wrapper {
     position: relative;
     display: flex;
     align-items: center;
+    flex: 1;
+  }
+
+  .btn-refresh {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 16px;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    color: #e2e8f0;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+    height: 44px;
+    box-sizing: border-box;
+  }
+
+  .btn-refresh:hover:not(:disabled) {
+    background: #1e293b;
+    border-color: #6366f1;
+    color: #ffffff;
+  }
+
+  .btn-refresh:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .refresh-icon {
+    display: inline-block;
+    font-size: 14px;
+    line-height: 1;
+  }
+
+  .refresh-icon.spinning {
+    animation: spin 0.8s linear infinite;
   }
 
   .search-icon {
@@ -543,6 +627,7 @@
   .chip.beginner.active { background: #10b981; border-color: #10b981; }
   .chip.intermediate.active { background: #3b82f6; border-color: #3b82f6; }
   .chip.expert.active { background: #8b5cf6; border-color: #8b5cf6; }
+  .chip.mixed.active { background: linear-gradient(135deg, #ec4899, #8b5cf6); border-color: #ec4899; color: white; }
 
   .cards-grid {
     display: grid;
@@ -583,6 +668,7 @@
   .difficulty-badge.beginner { background: rgba(16, 185, 129, 0.15); color: #34d399; }
   .difficulty-badge.intermediate { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
   .difficulty-badge.expert { background: rgba(168, 85, 247, 0.15); color: #c084fc; }
+  .difficulty-badge.mixed { background: rgba(236, 72, 153, 0.15); color: #f472b6; border: 1px solid rgba(236, 72, 153, 0.3); }
 
   .deck-tag {
     font-size: 12px;

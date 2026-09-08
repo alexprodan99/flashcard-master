@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { updateSource } from '../lib/api';
+  import { updateSource, uploadSourceFile } from '../lib/api';
   import type { DataSource } from '../lib/types';
   import UrlListManager from './UrlListManager.svelte';
 
@@ -19,6 +19,38 @@
   let tagsInput = $state('');
   let isSubmitting = $state(false);
   let errorMessage = $state<string | null>(null);
+  let isUploadingFile = $state(false);
+  let fileInputRef = $state<HTMLInputElement | null>(null);
+
+  async function handleFileReplace(file: File) {
+    const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
+    if (!['.md', '.markdown', '.txt'].includes(ext)) {
+      errorMessage = 'Only .md, .markdown, and .txt files are supported.';
+      return;
+    }
+
+    isUploadingFile = true;
+    errorMessage = null;
+
+    try {
+      const result = await uploadSourceFile(file);
+      uri = result.path;
+      if (!name.trim()) {
+        name = result.filename.replace(/\.(md|markdown|txt)$/i, '');
+      }
+    } catch (err: any) {
+      errorMessage = err.message || 'Failed to upload file';
+    } finally {
+      isUploadingFile = false;
+    }
+  }
+
+  function handleFileSelect(e: Event) {
+    const input = e.target as HTMLInputElement;
+    if (input.files && input.files[0]) {
+      handleFileReplace(input.files[0]);
+    }
+  }
 
   $effect(() => {
     if (isOpen && source) {
@@ -133,6 +165,30 @@
               disabled={isSubmitting}
             />
           </div>
+        {:else if source.type === 'local'}
+          <div class="form-group">
+            <label for="edit-src-uri">Local File / Directory Path</label>
+            <div class="local-path-input-group">
+              <input
+                id="edit-src-uri"
+                type="text"
+                bind:value={uri}
+                required
+              />
+              <label class="btn-browse-replace">
+                {isUploadingFile ? 'Uploading...' : '📁 Replace File...'}
+                <input
+                  bind:this={fileInputRef}
+                  type="file"
+                  accept=".md,.markdown,.txt"
+                  onchange={handleFileSelect}
+                  disabled={isSubmitting || isUploadingFile}
+                  hidden
+                />
+              </label>
+            </div>
+            <span class="field-hint">Specify an absolute directory path, custom file path, or click Replace File to upload a new document.</span>
+          </div>
         {:else}
           <div class="form-group">
             <label for="edit-src-uri">
@@ -140,9 +196,7 @@
                 ? 'RSS / Atom Feed URL'
                 : source.type === 'sitemap'
                 ? 'XML Sitemap URL'
-                : source.type === 'llms-txt'
-                ? 'LLMs.txt Catalog URL'
-                : 'Local Directory / Markdown File Path'}
+                : 'LLMs.txt Catalog URL'}
             </label>
             <input
               id="edit-src-uri"
@@ -367,5 +421,38 @@
     border-radius: 8px;
     font-size: 13px;
     margin-bottom: 12px;
+  }
+
+  .local-path-input-group {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .local-path-input-group input {
+    flex: 1;
+  }
+
+  .btn-browse-replace {
+    background: #334155;
+    color: #f1f5f9;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 10px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    white-space: nowrap;
+    border: 1px solid #475569;
+    transition: all 0.15s ease;
+  }
+
+  .btn-browse-replace:hover {
+    background: #475569;
+    border-color: #6366f1;
+  }
+
+  .field-hint {
+    font-size: 11px;
+    color: #64748b;
   }
 </style>

@@ -1,4 +1,4 @@
-import type { DashboardStats, DataSource, Flashcard, GenerationResult, DiscoveredDocument } from './types';
+import type { DashboardStats, DataSource, Flashcard, GenerationResult, DiscoveredDocument, DocumentExportFormat } from './types';
 
 export async function fetchStats(): Promise<DashboardStats> {
   const res = await fetch('/api/stats');
@@ -220,7 +220,7 @@ export async function deleteDocumentsBulk(documentIds: string[]): Promise<{ succ
 export interface DocumentExportParams {
   sourceId?: string;
   ids?: string[];
-  format: 'markdown' | 'html' | 'txt' | 'json';
+  format: DocumentExportFormat;
   mode: 'merged' | 'split';
   includeTableOfContents?: boolean;
   includeCitations?: boolean;
@@ -294,4 +294,21 @@ export async function pushToAnki(targetDeck?: string): Promise<{ success: boolea
     cardsPushed: totalSuccess,
     message: `Synced ${totalSuccess} cards (${added} added, ${updated} updated${skipped > 0 ? `, ${skipped} skipped` : ''}).`,
   };
+}
+
+export async function uploadSourceFile(file: File): Promise<{ path: string; filename: string; size: number }> {
+  const formData = new FormData();
+  formData.append('file', file, file.name);
+
+  const res = await fetch('/api/sources/upload', {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Failed to upload file (${res.status})`);
+  }
+
+  return res.json();
 }

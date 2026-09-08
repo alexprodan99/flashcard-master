@@ -24,8 +24,12 @@ export class OllamaAdapter implements LLMProviderPort {
     }
   ): Promise<CardGenerationDraft[]> {
     const count = options.targetCount ?? 5;
+    const diffInstruction = options.difficulty === "mixed"
+      ? `Generate a balanced progression of ${count} atomic Front/Back flashcards across the text, spanning beginner fundamentals, intermediate mechanics, and expert trade-offs (assign each card its appropriate difficulty: "beginner", "intermediate", "expert", or "mixed").`
+      : `Generate exactly ${count} atomic Front/Back flashcards from the provided document at "${options.difficulty}" difficulty.`;
+
     const systemPrompt = `${options.personaPrompt}
-Generate exactly ${count} atomic Front/Back flashcards from the provided document at "${options.difficulty}" difficulty.
+${diffInstruction}
 CRITICAL GROUNDING RULE: For each card, copy and paste an EXACT, word-for-word sentence from the provided text into "sourceQuote". Do NOT paraphrase, edit, or summarize any words in "sourceQuote".
 CRITICAL JSON FORMATTING: Ensure all inner quotes inside strings (such as code snippets, filenames, or CLI flags) are strictly escaped with backslashes (\\").
 Respond with a JSON object containing a "cards" array:
@@ -35,7 +39,7 @@ Respond with a JSON object containing a "cards" array:
       "question": "...",
       "answer": "...",
       "sourceQuote": "...",
-      "difficulty": "${options.difficulty}"
+      "difficulty": "${options.difficulty === "mixed" ? "beginner" : options.difficulty}"
     }
   ]
 }`;

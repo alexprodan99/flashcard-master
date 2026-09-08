@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS flashcards (
     source_quote TEXT NOT NULL,
     source_origin_url TEXT,
     document_title TEXT,
-    difficulty TEXT NOT NULL CHECK(difficulty IN ('beginner', 'intermediate', 'expert')),
+    difficulty TEXT NOT NULL CHECK(difficulty IN ('beginner', 'intermediate', 'expert', 'mixed')),
     persona_used TEXT NOT NULL DEFAULT 'socratic-mentor',
     target_deck TEXT NOT NULL DEFAULT 'Default',
     tags TEXT NOT NULL DEFAULT '[]',
@@ -196,7 +196,7 @@ export function runMigrations(db: Database.Database): void {
             answer TEXT NOT NULL,
             source_quote TEXT NOT NULL,
             source_origin_url TEXT,
-            difficulty TEXT NOT NULL CHECK(difficulty IN ('beginner', 'intermediate', 'expert')),
+            difficulty TEXT NOT NULL CHECK(difficulty IN ('beginner', 'intermediate', 'expert', 'mixed')),
             persona_used TEXT NOT NULL DEFAULT 'socratic-mentor',
             target_deck TEXT NOT NULL DEFAULT 'Default',
             tags TEXT NOT NULL DEFAULT '[]',
@@ -262,5 +262,41 @@ export function runMigrations(db: Database.Database): void {
     } catch {
       // Catch "duplicate column" or other non-fatal migration errors cleanly
     }
+  }
+
+  // 8. Update flashcards table CHECK constraint to include 'mixed' difficulty
+  const flashcardsSchemaRow = db
+    .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='flashcards'")
+    .get() as { sql?: string } | undefined;
+
+  if (flashcardsSchemaRow && flashcardsSchemaRow.sql && !flashcardsSchemaRow.sql.includes("'mixed'")) {
+    db.transaction(() => {
+      db.exec("ALTER TABLE flashcards RENAME TO _flashcards_difficulty_old;");
+      db.exec(`
+        CREATE TABLE flashcards (
+            id TEXT PRIMARY KEY,
+            source_id TEXT REFERENCES data_sources(id) ON DELETE SET NULL,
+            question TEXT NOT NULL,
+            answer TEXT NOT NULL,
+            source_quote TEXT NOT NULL,
+            source_origin_url TEXT,
+            document_title TEXT,
+            difficulty TEXT NOT NULL CHECK(difficulty IN ('beginner', 'intermediate', 'expert', 'mixed')),
+            persona_used TEXT NOT NULL DEFAULT 'socratic-mentor',
+            target_deck TEXT NOT NULL DEFAULT 'Default',
+            tags TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+            updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+        );
+      `);
+      db.exec(`
+        INSERT INTO flashcards (id, source_id, question, answer, source_quote, source_origin_url, document_title, difficulty, persona_used, target_deck, tags, created_at, updated_at)
+        SELECT id, source_id, question, answer, source_quote, source_origin_url, document_title, difficulty, persona_used, target_deck, tags, created_at, updated_at FROM _flashcards_difficulty_old;
+      `);
+      db.exec("DROP TABLE _flashcards_difficulty_old;");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_flashcards_source_id ON flashcards(source_id);");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_flashcards_target_deck ON flashcards(target_deck);");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_flashcards_difficulty ON flashcards(difficulty);");
+    })();
   }
 }

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { DocumentExportService } from "../src/export/document-export-service.js";
-import type { DiscoveredDocument } from "@flashcard-master/core";
+import { type DiscoveredDocument, MediaService } from "@flashcard-master/core";
 import JSZip from "jszip";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -527,4 +527,172 @@ describe("DocumentExportService", () => {
       expect(doc1Content).not.toContain(`/api/media/${asset1.filename}`);
     });
   });
+
+  describe("EPUB Mode", () => {
+    it("exports valid EPUB 3.0 container with uncompressed mimetype as first entry", async () => {
+      const result = await exporter.export(mockDocs, {
+        format: "epub",
+        mode: "merged",
+        sourceName: "TypeScript Guide & Patterns",
+        includeTableOfContents: true,
+        includeCitations: true,
+      });
+
+      expect(result.filename).toBe("typescript-guide-patterns-knowledge-base.epub");
+      expect(result.mimeType).toBe("application/epub+zip");
+      expect(result.documentCount).toBe(3);
+      expect(Buffer.isBuffer(result.content)).toBe(true);
+
+      const buffer = result.content as Buffer;
+
+      // EPUB Standard invariant: The local header compressionMethod for the first file (mimetype) must be 0 (STORE)
+      // In ZIP specification, bytes 8-9 in local file header represent the compression method
+      const firstEntryCompression = buffer.readUInt16LE(8);
+      expect(firstEntryCompression).toBe(0);
+
+      // Verify mimetype starts right after the 30-byte local header + 8-byte filename "mimetype"
+      const mimetypeRawContent = buffer.slice(38, 38 + "application/epub+zip".length).toString("utf-8");
+      expect(mimetypeRawContent).toBe("application/epub+zip");
+
+      // Load with JSZip to verify internal structure
+      const zip = await JSZip.loadAsync(buffer);
+
+      // Check mimetype entry
+      const mimetypeFile = zip.file("mimetype");
+      expect(mimetypeFile).not.toBeNull();
+      const mimetypeText = await mimetypeFile!.async("string");
+      expect(mimetypeText).toBe("application/epub+zip");
+
+      // Check container.xml
+      const containerFile = zip.file("META-INF/container.xml");
+      expect(containerFile).not.toBeNull();
+      const containerText = await containerFile!.async("string");
+      expect(containerText).toContain('full-path="OEBPS/content.opf"');
+      expect(containerText).toContain('media-type="application/oebps-package+xml"');
+
+      // Check content.opf
+      const opfFile = zip.file("OEBPS/content.opf");
+      expect(opfFile).not.toBeNull();
+      const opfText = await opfFile!.async("string");
+      expect(opfText).toContain("<dc:title>TypeScript Guide &amp; Patterns</dc:title>");
+      expect(opfText).toContain("<dc:identifier id=\"BookId\">urn:uuid:");
+      expect(opfText).toContain('<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav" />');
+      expect(opfText).toContain('<item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml" />');
+      expect(opfText).toContain('<item id="css" href="styles.css" media-type="text/css" />');
+      expect(opfText).toContain('<item id="chapter_1" href="chapter_1.xhtml" media-type="application/xhtml+xml" />');
+      expect(opfText).toContain('<item id="chapter_2" href="chapter_2.xhtml" media-type="application/xhtml+xml" />');
+      expect(opfText).toContain('<item id="chapter_3" href="chapter_3.xhtml" media-type="application/xhtml+xml" />');
+      expect(opfText).toContain('<itemref idref="chapter_1" />');
+      expect(opfText).toContain('<itemref idref="chapter_2" />');
+      expect(opfText).toContain('<itemref idref="chapter_3" />');
+
+      // Check nav.xhtml
+      const navFile = zip.file("OEBPS/nav.xhtml");
+      expect(navFile).not.toBeNull();
+      const navText = await navFile!.async("string");
+      expect(navText).toContain('<nav epub:type="toc" id="toc">');
+      expect(navText).toContain('<li><a href="chapter_1.xhtml">1. Introduction to TypeScript</a></li>');
+      expect(navText).toContain('<li><a href="chapter_2.xhtml">2. Advanced Generics &amp; Constraints [Deep-Dive]</a></li>');
+
+      // Check toc.ncx (EPUB 2 backward fallback)
+      const ncxFile = zip.file("OEBPS/toc.ncx");
+      expect(ncxFile).not.toBeNull();
+      const ncxText = await ncxFile!.async("string");
+      expect(ncxText).toContain("<ncx xmlns=");
+      expect(ncxText).toContain('<content src="chapter_1.xhtml" />');
+
+      // Check styles.css
+      const cssFile = zip.file("OEBPS/styles.css");
+      expect(cssFile).not.toBeNull();
+      const cssText = await cssFile!.async("string");
+      expect(cssText).toContain(".chapter-header");
+
+      // Check chapter XHTML files
+      const ch1File = zip.file("OEBPS/chapter_1.xhtml");
+      expect(ch1File).not.toBeNull();
+      const ch1Text = await ch1File!.async("string");
+      expect(ch1Text).toContain('<?xml version="1.0" encoding="UTF-8"?>');
+      expect(ch1Text).toContain('<html xmlns="http://www.w3.org/1999/xhtml" lang="en">');
+      expect(ch1Text).toContain('<h1 class="chapter-title">Introduction to TypeScript</h1>');
+      expect(ch1Text).toContain('<p>TypeScript is a strongly typed programming language that builds on JavaScript.</p>');
+      expect(ch1Text).toContain('https://example.com/docs/intro');
+
+      // Check chapter 2 with special characters
+      const ch2File = zip.file("OEBPS/chapter_2.xhtml");
+      expect(ch2File).not.toBeNull();
+      const ch2Text = await ch2File!.async("string");
+      expect(ch2Text).toContain("Advanced Generics &amp; Constraints [Deep-Dive]");
+    });
+
+    it("handles empty document collections gracefully with placeholder chapter", async () => {
+      const result = await exporter.export([], {
+        format: "epub",
+        sourceName: "Empty Collection",
+      });
+
+      expect(result.filename).toBe("empty-collection-knowledge-base.epub");
+      expect(result.mimeType).toBe("application/epub+zip");
+      expect(result.documentCount).toBe(0);
+
+      const zip = await JSZip.loadAsync(result.content as Buffer);
+      const ch1 = await zip.file("OEBPS/chapter_1.xhtml")!.async("string");
+      expect(ch1).toContain("No documents found in this knowledge base collection");
+    });
+
+    it("embeds and localizes referenced media assets into OEBPS/images/", async () => {
+      const mediaService = new MediaService({ mediaDir: path.join(tempDir, "media") });
+      const asset1 = await mediaService.saveMedia(Buffer.from("image-1-bytes"), "image/webp");
+      const asset2 = await mediaService.saveMedia(Buffer.from("image-2-bytes"), "image/png");
+
+      const docsWithMedia: DiscoveredDocument[] = [
+        {
+          id: "doc-m1",
+          sourceId: "src-1",
+          title: "Architecture Diagrams",
+          textContent: `Overview diagram:\n\n![Diagram](/api/media/${asset1.filename})\n\nSecondary chart:\n\n![Chart](/api/media/${asset2.filename})`,
+          wordCount: 10,
+        },
+      ];
+
+      const mediaExporter = new DocumentExportService(mediaService);
+      const result = await mediaExporter.export(docsWithMedia, {
+        format: "epub",
+        sourceName: "Media Book",
+      });
+
+      const zip = await JSZip.loadAsync(result.content as Buffer);
+
+      // Verify images packaged into OEBPS/images/
+      expect(zip.file(`OEBPS/images/${asset1.filename}`)).not.toBeNull();
+      expect(zip.file(`OEBPS/images/${asset2.filename}`)).not.toBeNull();
+
+      // Verify chapter XHTML rewrites paths to relative images/
+      const chapterContent = await zip.file("OEBPS/chapter_1.xhtml")!.async("string");
+      expect(chapterContent).toContain(`<img src="images/${asset1.filename}" alt="Diagram" />`);
+      expect(chapterContent).toContain(`<img src="images/${asset2.filename}" alt="Chart" />`);
+      expect(chapterContent).not.toContain(`/api/media/${asset1.filename}`);
+
+      // Verify content.opf manifest includes images
+      const opfContent = await zip.file("OEBPS/content.opf")!.async("string");
+      expect(opfContent).toContain(`href="images/${asset1.filename}" media-type="image/webp"`);
+      expect(opfContent).toContain(`href="images/${asset2.filename}" media-type="image/png"`);
+    });
+
+    it("writes EPUB binary directly to disk when outputPath is specified", async () => {
+      const outputPath = path.join(tempDir, "output", "handbook.epub");
+      const result = await exporter.export(mockDocs, {
+        format: "epub",
+        sourceName: "Handbook",
+        outputPath,
+      });
+
+      expect(result.filename).toBe("handbook-knowledge-base.epub");
+      const exists = await fs.stat(outputPath).then(() => true).catch(() => false);
+      expect(exists).toBe(true);
+
+      const diskBytes = await fs.readFile(outputPath);
+      expect(diskBytes.length).toBe((result.content as Buffer).length);
+    });
+  });
 });
+

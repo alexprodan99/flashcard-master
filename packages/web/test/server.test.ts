@@ -27,6 +27,7 @@ import {
   PdfStudyGuideExporter,
   AnkiPackageExporter,
   AnkiConnectAdapter,
+  LocalFileStrategy,
 } from "@flashcard-master/adapters";
 import { createWebServer, WebServer } from "../src/server.js";
 import type Database from "better-sqlite3";
@@ -80,10 +81,12 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
   let server: WebServer;
   let serverUrl: string;
   let tempMediaDir: string;
+  let tempLocalFilesDir: string;
   let mediaService: MediaService;
 
   beforeEach(async () => {
     tempMediaDir = fs.mkdtempSync(path.join(os.tmpdir(), "fc-web-srv-media-"));
+    tempLocalFilesDir = fs.mkdtempSync(path.join(os.tmpdir(), "fc-web-srv-local-"));
     mediaService = new MediaService({ mediaDir: tempMediaDir });
 
     db = createDatabaseClient({ inMemory: true });
@@ -94,6 +97,7 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
 
     const stratRegistry = new StrategyRegistry();
     stratRegistry.register(new MockStrategy());
+    stratRegistry.register(new LocalFileStrategy());
     ingestionService = new IngestionService(sourceRepo, syncRepo, stratRegistry, docRepo);
 
     const exporterRegistry = new ExporterRegistry();
@@ -149,6 +153,7 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       groundingGuard: new GroundingGuard(),
       dedupService: new CardDeduplicationService(),
       mediaService,
+      localFilesDir: tempLocalFilesDir,
       createLLMAdapterFn: () => new MockLLM(),
     });
 
@@ -161,6 +166,9 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     db.close();
     if (fs.existsSync(tempMediaDir)) {
       fs.rmSync(tempMediaDir, { recursive: true, force: true });
+    }
+    if (fs.existsSync(tempLocalFilesDir)) {
+      fs.rmSync(tempLocalFilesDir, { recursive: true, force: true });
     }
   });
 
@@ -943,6 +951,53 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       expect(json.documents[0].title).toBe("Zero Trust Architecture");
     });
 
+    it("streams compiled EPUB 3.0 eBook with application/epub+zip MIME headers", async () => {
+      const source = sourceRepo.create({
+        name: "Kubernetes Handbook",
+        type: "web",
+        uri: "https://example.com/k8s",
+        targetDeck: "K8s",
+      });
+
+      const doc1 = docRepo.upsert({
+        sourceId: source.id,
+        title: "Pods & Deployments",
+        url: "https://example.com/k8s/pods",
+        textContent: "Pods are the smallest deployable units of computing in Kubernetes.",
+      });
+
+      const doc2 = docRepo.upsert({
+        sourceId: source.id,
+        title: "Services & Ingress",
+        url: "https://example.com/k8s/services",
+        textContent: "Services expose an application running on a set of Pods as a network service.",
+      });
+
+      const res = await fetch(`${serverUrl}/api/documents/export`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourceId: source.id,
+          format: "epub",
+          includeTableOfContents: true,
+          includeCitations: true,
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("application/epub+zip");
+      expect(res.headers.get("content-disposition")).toContain('filename="kubernetes-handbook-knowledge-base.epub"');
+
+      const arrayBuffer = await res.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      expect(buffer.length).toBeGreaterThan(100);
+
+      // Verify EPUB magic bytes and uncompressed mimetype at byte offset 8 (STORE compression)
+      expect(buffer.toString("ascii", 0, 2)).toBe("PK");
+      expect(buffer.readUInt16LE(8)).toBe(0);
+      expect(buffer.toString("utf-8", 30, 58)).toBe("mimetypeapplication/epub+zip");
+    });
+
     it("returns 404 error when no matching documents exist", async () => {
       const res = await fetch(`${serverUrl}/api/documents/export`, {
         method: "POST",
@@ -1164,6 +1219,177 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       const docContent = await zip.file("01-split-zip-article.md")!.async("string");
       expect(docContent).toContain(`![Network Layout](./media/${asset.filename})`);
       expect(docContent).not.toContain(`/api/media/${asset.filename}`);
+    });
+  });
+
+  describe("POST /api/sources/upload - Local Document File Upload", () => {
+    it("uploads a .md file using multipart/form-data and stores it in localFilesDir", async () => {
+      const boundary = "---------------------------974767299852498929531610575";
+      const fileContent = "# Getting Started with Microservices\n\nMicroservices break down large monolithic applications.";
+      const body =
+        `--${boundary}\r\n` +
+        `Content-Disposition: form-data; name="file"; filename="microservices-guide.md"\r\n` +
+        `Content-Type: text/markdown\r\n\r\n` +
+        `${fileContent}\r\n` +
+        `--${boundary}--\r\n`;
+
+      const res = await fetch(`${serverUrl}/api/sources/upload`, {
+        method: "POST",
+        headers: {
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+        },
+        body,
+      });
+
+      expect(res.status).toBe(200);
+      const data = (await res.json()) as any;
+      expect(data.filename).toBe("microservices-guide.md");
+      expect(data.size).toBe(Buffer.byteLength(fileContent));
+      expect(data.path).toBe(path.resolve(tempLocalFilesDir, "microservices-guide.md"));
+
+      expect(fs.existsSync(data.path)).toBe(true);
+      expect(fs.readFileSync(data.path, "utf-8")).toBe(fileContent);
+    });
+
+    it("uploads a .txt file using raw octet-stream and x-filename header", async () => {
+      const textContent = "Plain text study notes for algorithms.";
+      const res = await fetch(`${serverUrl}/api/sources/upload`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "text/plain",
+          "x-filename": "algorithms.txt",
+        },
+        body: textContent,
+      });
+
+      expect(res.status).toBe(200);
+      const data = (await res.json()) as any;
+      expect(data.filename).toBe("algorithms.txt");
+      expect(data.size).toBe(textContent.length);
+      expect(fs.existsSync(data.path)).toBe(true);
+      expect(fs.readFileSync(data.path, "utf-8")).toBe(textContent);
+    });
+
+    it("accepts .markdown extension", async () => {
+      const content = "# Architecture Invariants\n\nInvariants must hold true.";
+      const res = await fetch(`${serverUrl}/api/sources/upload`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          filename: "invariants.markdown",
+          content,
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = (await res.json()) as any;
+      expect(data.filename).toBe("invariants.markdown");
+      expect(fs.existsSync(data.path)).toBe(true);
+    });
+
+    it("rejects unsupported file extensions with HTTP 400", async () => {
+      const invalidExtensions = ["script.sh", "program.exe", "image.png", "data.json", "archive.zip"];
+
+      for (const badFile of invalidExtensions) {
+        const res = await fetch(`${serverUrl}/api/sources/upload`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            filename: badFile,
+            content: "some content",
+          }),
+        });
+
+        expect(res.status).toBe(400);
+        const data = (await res.json()) as any;
+        expect(data.error).toContain("Unsupported file type");
+        expect(fs.existsSync(path.join(tempLocalFilesDir, badFile))).toBe(false);
+      }
+    });
+
+    it("sanitizes directory traversal patterns in filenames safely into localFilesDir", async () => {
+      const traversalFilename = "../../malicious-notes.md";
+      const res = await fetch(`${serverUrl}/api/sources/upload`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          filename: traversalFilename,
+          content: "# Secure notes",
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = (await res.json()) as any;
+      expect(data.filename).toBe("malicious-notes.md");
+      expect(data.path).toBe(path.resolve(tempLocalFilesDir, "malicious-notes.md"));
+      expect(fs.existsSync(path.resolve(tempLocalFilesDir, "malicious-notes.md"))).toBe(true);
+      expect(fs.existsSync(path.resolve(tempLocalFilesDir, "../../malicious-notes.md"))).toBe(false);
+    });
+
+    it("returns HTTP 400 if filename is empty or missing", async () => {
+      const res = await fetch(`${serverUrl}/api/sources/upload`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          content: "No filename",
+        }),
+      });
+
+      expect(res.status).toBe(400);
+    });
+
+    it("creates a local data source and syncs the uploaded document end-to-end", async () => {
+      // 1. Upload Markdown note
+      const docContent = "# Distributed Systems Notes\n\nConsensus algorithms guarantee consistency.";
+      const uploadRes = await fetch(`${serverUrl}/api/sources/upload`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filename: "distributed-systems.md",
+          content: docContent,
+        }),
+      });
+      expect(uploadRes.status).toBe(200);
+      const uploadData = (await uploadRes.json()) as any;
+
+      // 2. Create local source using uploaded file path
+      const createRes = await fetch(`${serverUrl}/api/sources`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Distributed Systems Notes",
+          type: "local",
+          uri: uploadData.path,
+          targetDeck: "Engineering",
+        }),
+      });
+      expect(createRes.status).toBe(201);
+      const source = (await createRes.json()) as any;
+      expect(source.uri).toBe(uploadData.path);
+
+      // 3. Sync source and verify document is cataloged
+      const syncRes = await fetch(`${serverUrl}/api/sync/${source.id}`, {
+        method: "POST",
+      });
+      expect(syncRes.status).toBe(200);
+      const syncData = (await syncRes.json()) as any;
+      expect(syncData.newCount).toBe(1);
+
+      // Verify discovered document is queryable
+      const docsRes = await fetch(`${serverUrl}/api/sources/${source.id}/documents`);
+      expect(docsRes.status).toBe(200);
+      const docsData = (await docsRes.json()) as any;
+      expect(docsData.documents.length).toBe(1);
+      expect(docsData.documents[0].title).toBe("Distributed Systems Notes");
+      expect(docsData.documents[0].textContent).toContain("Consensus algorithms guarantee consistency.");
     });
   });
 });

@@ -1,7 +1,8 @@
 export type DataSourceType = 'rss' | 'web' | 'local' | 'sitemap' | 'llms-txt';
-export type DifficultyLevel = 'beginner' | 'intermediate' | 'expert';
+export type DifficultyLevel = 'beginner' | 'intermediate' | 'expert' | 'mixed';
 export type PersonaType = 'socratic-mentor' | 'strict-examiner' | 'analogy-builder';
 export type CardDepthMode = 'atomic' | 'deep-dive' | 'scenario';
+export type DocumentExportFormat = 'markdown' | 'html' | 'txt' | 'json' | 'epub';
 
 export interface DataSource {
   id: string;

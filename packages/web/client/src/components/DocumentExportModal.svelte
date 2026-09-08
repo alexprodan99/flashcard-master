@@ -1,6 +1,6 @@
 <script lang="ts">
   import { exportDocuments, type DocumentExportParams } from '../lib/api';
-  import type { DiscoveredDocument } from '../lib/types';
+  import type { DiscoveredDocument, DocumentExportFormat } from '../lib/types';
 
   interface Props {
     isOpen: boolean;
@@ -20,8 +20,14 @@
     onExportSuccess,
   }: Props = $props();
 
-  let format = $state<'markdown' | 'html' | 'txt' | 'json'>('markdown');
+  let format = $state<DocumentExportFormat>('markdown');
   let mode = $state<'merged' | 'split'>('merged');
+
+  $effect(() => {
+    if (format === 'epub' && mode !== 'merged') {
+      mode = 'merged';
+    }
+  });
   let includeTableOfContents = $state(true);
   let includeCitations = $state(true);
   let imageQuality = $state<'compact' | 'standard' | 'high'>('compact');
@@ -94,7 +100,7 @@
       <div class="modal-header">
         <div class="header-title">
           <h2>📤 Export Knowledge Base</h2>
-          <p class="subtitle">Export extracted clean document text to Markdown, HTML, Plain Text, or JSON</p>
+          <p class="subtitle">Export extracted clean document text to EPUB eBook, Markdown, HTML, Plain Text, or JSON</p>
         </div>
         <button type="button" class="btn-close" onclick={onClose} aria-label="Close dialog">✕</button>
       </div>
@@ -144,6 +150,20 @@
             <button
               type="button"
               class="format-btn"
+              class:selected={format === 'epub'}
+              onclick={() => {
+                format = 'epub';
+                mode = 'merged';
+              }}
+            >
+              <div class="format-icon">📚</div>
+              <div class="format-name">EPUB eBook</div>
+              <div class="format-ext">.epub</div>
+            </button>
+
+            <button
+              type="button"
+              class="format-btn"
               class:selected={format === 'html'}
               onclick={() => (format = 'html')}
             >
@@ -176,16 +196,35 @@
           </div>
         </div>
 
+        {#if format === 'epub'}
+          <div class="format-callout">
+            <div class="callout-header">
+              <span class="callout-icon">📚</span>
+              <span class="callout-title">EPUB eBook (.epub)</span>
+              <span class="badge-ereader">E-Reader</span>
+            </div>
+            <p class="callout-desc">
+              Compiled eBook formatted for Kindle, Apple Books, Kobo, and e-readers.
+            </p>
+          </div>
+        {/if}
+
         <!-- Packaging Mode Selector -->
         <div class="form-group">
-          <label class="form-label" for="packaging-mode">Packaging Mode</label>
+          <div class="mode-header-row">
+            <label class="form-label" for="packaging-mode">Packaging Mode</label>
+            {#if format === 'epub'}
+              <span class="badge-epub-lock">🔒 Merged eBook Only</span>
+            {/if}
+          </div>
           <div class="mode-options" id="packaging-mode">
-            <label class="mode-card" class:active={mode === 'merged'}>
+            <label class="mode-card" class:active={mode === 'merged'} class:disabled={format === 'epub'}>
               <input
                 type="radio"
                 name="export-mode"
                 value="merged"
                 checked={mode === 'merged'}
+                disabled={format === 'epub'}
                 onchange={() => (mode = 'merged')}
               />
               <div class="mode-info">
@@ -194,12 +233,13 @@
               </div>
             </label>
 
-            <label class="mode-card" class:active={mode === 'split'}>
+            <label class="mode-card" class:active={mode === 'split'} class:disabled={format === 'epub'}>
               <input
                 type="radio"
                 name="export-mode"
                 value="split"
                 checked={mode === 'split'}
+                disabled={format === 'epub'}
                 onchange={() => (mode = 'split')}
               />
               <div class="mode-info">
@@ -208,6 +248,11 @@
               </div>
             </label>
           </div>
+          {#if format === 'epub'}
+            <p class="mode-help-text">
+              EPUB packaging is always compiled into a single eBook file. Split archive mode is disabled.
+            </p>
+          {/if}
         </div>
 
         <!-- Additional Options -->
@@ -233,7 +278,7 @@
           </div>
         </div>
 
-        {#if format === 'html' && mode === 'merged'}
+        {#if (format === 'html' || format === 'epub') && mode === 'merged'}
           <div class="form-group">
             <span class="form-label">E-Reader & Kindle Image Optimization</span>
             <div class="checkbox-group">
@@ -243,7 +288,7 @@
                   checked={imageQuality === 'compact'}
                   onchange={(e) => (imageQuality = e.currentTarget.checked ? 'compact' : 'high')}
                 />
-                <span><strong>Compact Base64 Inlining</strong> (Downscales images to 600px WebP, shrinks export to ~7MB, prevents Edge crashes)</span>
+                <span><strong>Compact Base64 / Local Inlining</strong> (Downscales images to 600px WebP, shrinks export to ~7MB, prevents Edge crashes)</span>
               </label>
 
               <label class="checkbox-label">
@@ -269,9 +314,9 @@
           disabled={isExporting || documents.length === 0}
         >
           {#if isExporting}
-            <span class="spinner-small"></span> Generating Export...
+            <span class="spinner-small"></span> {format === 'epub' ? 'Generating eBook...' : 'Generating Export...'}
           {:else}
-            📥 Download Export ({format === 'markdown' ? 'Markdown' : format.toUpperCase()})
+            📥 Download Export ({format === 'markdown' ? 'Markdown' : format === 'epub' ? 'EPUB' : format.toUpperCase()})
           {/if}
         </button>
       </div>
@@ -403,7 +448,7 @@
 
   .format-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 0.5rem;
   }
 
@@ -447,6 +492,66 @@
     color: #94a3b8;
   }
 
+  .format-callout {
+    background: rgba(99, 102, 241, 0.08);
+    border: 1px solid rgba(99, 102, 241, 0.25);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .callout-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .callout-icon {
+    font-size: 1rem;
+  }
+
+  .callout-title {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #e0e7ff;
+  }
+
+  .badge-ereader {
+    background: #059669;
+    color: #ecfdf5;
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    margin-left: auto;
+  }
+
+  .callout-desc {
+    font-size: 0.8rem;
+    color: #cbd5e1;
+    margin: 0;
+    line-height: 1.4;
+  }
+
+  .mode-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .badge-epub-lock {
+    background: rgba(99, 102, 241, 0.2);
+    color: #a5b4fc;
+    border: 1px solid rgba(99, 102, 241, 0.4);
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.15rem 0.5rem;
+    border-radius: 9999px;
+  }
+
   .mode-options {
     display: flex;
     flex-direction: column;
@@ -465,7 +570,7 @@
     transition: all 0.15s ease;
   }
 
-  .mode-card:hover {
+  .mode-card:hover:not(.disabled) {
     border-color: #64748b;
   }
 
@@ -474,8 +579,23 @@
     background: rgba(56, 189, 248, 0.08);
   }
 
+  .mode-card.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .mode-card.disabled input {
+    cursor: not-allowed;
+  }
+
   .mode-card input {
     margin-top: 0.2rem;
+  }
+
+  .mode-help-text {
+    font-size: 0.75rem;
+    color: #94a3b8;
+    margin: 0.25rem 0 0 0;
   }
 
   .mode-info {

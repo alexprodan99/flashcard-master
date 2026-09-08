@@ -160,13 +160,13 @@ flowchart TD
 - **Prevents:** Orphaned, broken, or accidentally deleted flashcards when users clean up noisy or temporary raw document texts.
 - **Rule:**
   1. Deleting a document removes the row from the `documents` table.
-  2. The `flashcards` table MUST NOT cascade-delete cards when a document is removed. All cards retain their standalone immutable fields: `question`, `answer`, `source_quote`, `source_origin_url`, `document_title`, `difficulty`, and `target_deck`.
+  2. The `flashcards` table MUST not cascade-delete cards when a document is removed. All cards retain their standalone immutable fields: `question`, `answer`, `source_quote`, `source_origin_url`, `document_title`, `difficulty`, and `target_deck`.
   3. REST controllers return deleted counts and updated document catalogs.
 
 ### AD-13: Document Knowledge Base Exporter Architecture (`DocumentExportService`)
 - **Binds:** Document export port and formatting pipeline:
   ```typescript
-  export type DocumentExportFormat = 'markdown' | 'html' | 'txt' | 'json';
+  export type DocumentExportFormat = 'markdown' | 'html' | 'txt' | 'json' | 'epub';
   export type DocumentExportMode = 'merged' | 'split';
 
   export interface DocumentExportOptions {
@@ -185,13 +185,47 @@ flowchart TD
   ```
 - **Prevents:** Ad-hoc file generation in web server controllers and tight coupling between UI and export formatters.
 - **Rule:**
-  1. `DocumentExportService` in `packages/core` coordinates clean text transformation into Markdown, HTML, Plain Text, and JSON.
+  1. `DocumentExportService` in `packages/core` coordinates clean text transformation into Markdown, HTML, Plain Text, JSON, and EPUB.
   2. In **Merged Mode**, documents are joined in order with:
      - Header banner (Title, Generation Date, Total Documents, Total Word Count).
      - Clickable Table of Contents with markdown/HTML jump links.
      - Section dividers with document title, word count, and source URL citation link.
   3. In **Split Mode**, individual documents are packaged into a `.zip` archive using `JSZip` with sanitized slug filenames (`01-title.md`, etc.).
   4. WebServer streams the result with `Content-Disposition: attachment; filename="..."` and the correct MIME type.
+
+### AD-14: EPUB 3.0 Document Knowledge Base Exporter
+- **Binds:** `DocumentExportService.exportEpub` and EPUB 3.0 container packaging.
+- **Prevents:** External heavy runtime eBook dependencies and malformed e-reader files incompatible with Kindle / Apple Books / Kobo / Calibre.
+- **Rule:**
+  1. EPUBs are packaged using `JSZip` containing uncompressed `mimetype` (`application/epub+zip`), `META-INF/container.xml`, `OEBPS/content.opf` (manifest, metadata, spine), `OEBPS/nav.xhtml`, `OEBPS/toc.ncx`, `OEBPS/styles.css`, and XHTML chapter documents.
+  2. Local media assets referenced in document bodies are embedded into `OEBPS/images/` and referenced via relative paths.
+  3. Strict XHTML compliance is enforced (closed tags, XML entities).
+
+### AD-15: Mixed Difficulty Schema & Adaptive Prompt Directives
+- **Binds:** Domain models (`DifficultyLevelSchema`), database CHECK constraints, and LLM prompt generation pipelines.
+- **Prevents:** Inflexible generation presets where users must run separate generation passes for beginner, intermediate, and expert cards.
+- **Rule:**
+  1. `DifficultyLevelSchema` expands to `z.enum(["beginner", "intermediate", "expert", "mixed"])`.
+  2. The SQLite `flashcards` table CHECK constraint expands to `CHECK(difficulty IN ('beginner', 'intermediate', 'expert', 'mixed'))`.
+  3. When `difficulty = 'mixed'`, LLM prompt templates instruct the model to produce a balanced progression of beginner, intermediate, and expert cards, assigning the specific difficulty to each synthesized card.
+  4. The Question Explorer and card editor provide filter chips and badge renderers for `mixed`.
+
+### AD-16: Reactive Question Explorer Dynamic Cache Refresh
+- **Binds:** `QuestionExplorer.svelte` client state and `fetchCards` API invocation.
+- **Prevents:** Stale client card catalogs requiring browser page reload or navigation churn after synthesis/edits.
+- **Rule:**
+  1. A dedicated "🔄 Refresh" action is provided in the toolbar with reactive loading runes (`$state(loading)`).
+  2. The refresh operation preserves the user's active filter state (`selectedDeck`, `selectedDifficulty`, `searchQuery`).
+  3. In-flight refresh requests disable the button and show an animated spinner to prevent race conditions.
+
+### AD-17: Local Data Source File Picker & Upload Handler
+- **Binds:** `AddSourceModal.svelte`, `EditSourceModal.svelte`, and WebServer upload route `POST /api/sources/upload`.
+- **Prevents:** User errors from manually typing absolute filesystem paths in the web browser.
+- **Rule:**
+  1. When source type is `'local'`, the UI presents an interactive file dropzone and file chooser (`<input type="file" accept=".md,.markdown,.txt" />`).
+  2. Uploaded files are written to `.flashcard-master/local-files/` (or `data/uploads/`) and assigned absolute paths.
+  3. The source name is auto-derived from the file basename if not already provided.
+  4. Advanced users retain the option to input directory paths or absolute filesystem paths via a toggle.
 
 ---
 
@@ -243,7 +277,7 @@ CREATE TABLE IF NOT EXISTS flashcards (
     source_quote TEXT NOT NULL,
     source_origin_url TEXT,
     document_title TEXT,
-    difficulty TEXT NOT NULL CHECK(difficulty IN ('beginner', 'intermediate', 'expert')),
+    difficulty TEXT NOT NULL CHECK(difficulty IN ('beginner', 'intermediate', 'expert', 'mixed')),
     persona_used TEXT NOT NULL,
     target_deck TEXT NOT NULL,
     tags TEXT NOT NULL DEFAULT '[]',

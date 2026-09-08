@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createSource } from '../lib/api';
+  import { createSource, uploadSourceFile } from '../lib/api';
   import type { DataSource, DataSourceType } from '../lib/types';
   import UrlListManager from './UrlListManager.svelte';
 
@@ -20,6 +20,82 @@
   let isSubmitting = $state(false);
   let errorMessage = $state<string | null>(null);
 
+  let selectedLocalFile = $state<{ name: string; size: number; path: string } | null>(null);
+  let isUploadingFile = $state(false);
+  let isDragging = $state(false);
+  let showAdvancedPath = $state(false);
+  let fileInputRef = $state<HTMLInputElement | null>(null);
+
+  function formatFileSize(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  async function handleFile(file: File) {
+    const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
+    if (!['.md', '.markdown', '.txt'].includes(ext)) {
+      errorMessage = 'Only .md, .markdown, and .txt files are supported.';
+      return;
+    }
+
+    isUploadingFile = true;
+    errorMessage = null;
+
+    try {
+      const result = await uploadSourceFile(file);
+      selectedLocalFile = {
+        name: result.filename,
+        size: result.size,
+        path: result.path,
+      };
+      uri = result.path;
+
+      if (!name.trim()) {
+        name = result.filename.replace(/\.(md|markdown|txt)$/i, '');
+      }
+    } catch (err: any) {
+      errorMessage = err.message || 'Failed to upload local file';
+    } finally {
+      isUploadingFile = false;
+    }
+  }
+
+  function handleFileSelect(e: Event) {
+    const input = e.target as HTMLInputElement;
+    if (input.files && input.files[0]) {
+      handleFile(input.files[0]);
+    }
+  }
+
+  function handleFileDrop(e: DragEvent) {
+    e.preventDefault();
+    isDragging = false;
+    if (e.dataTransfer?.files && e.dataTransfer.files[0]) {
+      handleFile(e.dataTransfer.files[0]);
+    }
+  }
+
+  function handleDragOver(e: DragEvent) {
+    e.preventDefault();
+    isDragging = true;
+  }
+
+  function handleDragLeave(e: DragEvent) {
+    e.preventDefault();
+    isDragging = false;
+  }
+
+  function clearFile() {
+    selectedLocalFile = null;
+    if (!showAdvancedPath) {
+      uri = '';
+    }
+    if (fileInputRef) {
+      fileInputRef.value = '';
+    }
+  }
+
   async function handleSubmit(e: Event) {
     e.preventDefault();
     if (isSubmitting) return;
@@ -32,6 +108,12 @@
         return;
       }
       finalUri = cleanUrls.length === 1 ? cleanUrls[0] : JSON.stringify(cleanUrls);
+    } else if (type === 'local') {
+      finalUri = uri.trim();
+      if (!finalUri) {
+        errorMessage = 'Please select a Markdown or text file to upload, or specify a directory path.';
+        return;
+      }
     } else {
       finalUri = uri.trim();
     }
@@ -68,6 +150,10 @@
       webUrls = [];
       targetDeck = 'Default';
       tagsInput = '';
+      selectedLocalFile = null;
+      isUploadingFile = false;
+      isDragging = false;
+      showAdvancedPath = false;
       onSourceCreated(source);
       onClose();
     } catch (err: any) {
@@ -136,6 +222,77 @@
               disabled={isSubmitting}
             />
           </div>
+        {:else if type === 'local'}
+          <div class="form-group">
+            <label for="src-uri">Local Document File</label>
+            {#if selectedLocalFile}
+              <div class="file-chip">
+                <span class="file-icon">📄</span>
+                <div class="file-details">
+                  <span class="file-name">{selectedLocalFile.name}</span>
+                  <span class="file-size">({formatFileSize(selectedLocalFile.size)})</span>
+                </div>
+                <button
+                  type="button"
+                  class="btn-remove-file"
+                  onclick={clearFile}
+                  aria-label="Remove selected file"
+                  disabled={isSubmitting || isUploadingFile}
+                >✕</button>
+              </div>
+            {:else}
+              <div
+                class="dropzone"
+                class:dragging={isDragging}
+                class:uploading={isUploadingFile}
+                ondrop={handleFileDrop}
+                ondragover={handleDragOver}
+                ondragleave={handleDragLeave}
+                role="region"
+                aria-label="File upload dropzone"
+              >
+                {#if isUploadingFile}
+                  <span class="drop-icon spinning">⏳</span>
+                  <p class="drop-text">Uploading file...</p>
+                {:else}
+                  <span class="drop-icon">📁</span>
+                  <p class="drop-text">Drag &amp; drop Markdown/Text file here, or</p>
+                  <label class="btn-browse">
+                    Browse File...
+                    <input
+                      bind:this={fileInputRef}
+                      type="file"
+                      accept=".md,.markdown,.txt"
+                      onchange={handleFileSelect}
+                      hidden
+                    />
+                  </label>
+                {/if}
+              </div>
+            {/if}
+
+            <div class="advanced-toggle">
+              <button
+                type="button"
+                class="btn-toggle-advanced"
+                onclick={() => (showAdvancedPath = !showAdvancedPath)}
+              >
+                {showAdvancedPath ? '▼ Hide Advanced Path' : '▶ Advanced: Specify Directory or Absolute Path'}
+              </button>
+            </div>
+
+            {#if showAdvancedPath}
+              <div class="advanced-path-box">
+                <input
+                  id="src-uri-advanced"
+                  type="text"
+                  placeholder="C:\path\to\notes or /home/user/docs"
+                  bind:value={uri}
+                />
+                <span class="field-hint">Specify an absolute directory path for recursive scanning or a custom file path.</span>
+              </div>
+            {/if}
+          </div>
         {:else}
           <div class="form-group">
             <label for="src-uri">
@@ -143,9 +300,7 @@
                 ? 'RSS / Atom Feed URL'
                 : type === 'sitemap'
                 ? 'XML Sitemap URL'
-                : type === 'llms-txt'
-                ? 'LLMs.txt Catalog URL'
-                : 'Local Directory / Markdown File Path'}
+                : 'LLMs.txt Catalog URL'}
             </label>
             <input
               id="src-uri"
@@ -154,9 +309,7 @@
                 ? 'https://example.com/feed.xml'
                 : type === 'sitemap'
                 ? 'https://example.com/sitemap.xml'
-                : type === 'llms-txt'
-                ? 'https://example.com/llms-full.txt'
-                : 'C:\\path\\to\\notes'}
+                : 'https://example.com/llms-full.txt'}
               bind:value={uri}
               required
             />
@@ -365,5 +518,141 @@
     border-radius: 8px;
     font-size: 13px;
     margin-bottom: 12px;
+  }
+
+  .dropzone {
+    border: 2px dashed #475569;
+    border-radius: 12px;
+    background: rgba(15, 23, 42, 0.6);
+    padding: 24px 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    transition: all 0.2s ease;
+  }
+
+  .dropzone.dragging {
+    border-color: #6366f1;
+    background: rgba(99, 102, 241, 0.1);
+  }
+
+  .drop-icon {
+    font-size: 28px;
+    margin-bottom: 6px;
+  }
+
+  .drop-icon.spinning {
+    display: inline-block;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  .drop-text {
+    font-size: 13px;
+    color: #94a3b8;
+    margin-bottom: 8px;
+  }
+
+  .btn-browse {
+    background: #334155;
+    color: #f1f5f9;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+
+  .btn-browse:hover {
+    background: #475569;
+  }
+
+  .file-chip {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(99, 102, 241, 0.12);
+    border: 1px solid rgba(99, 102, 241, 0.35);
+    border-radius: 8px;
+    padding: 10px 14px;
+  }
+
+  .file-icon {
+    font-size: 18px;
+  }
+
+  .file-details {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .file-name {
+    font-weight: 600;
+    font-size: 13px;
+    color: #f8fafc;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .file-size {
+    font-size: 12px;
+    color: #94a3b8;
+  }
+
+  .btn-remove-file {
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    cursor: pointer;
+    font-size: 16px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: color 0.15s;
+  }
+
+  .btn-remove-file:hover {
+    color: #ef4444;
+  }
+
+  .advanced-toggle {
+    margin-top: 6px;
+  }
+
+  .btn-toggle-advanced {
+    background: transparent;
+    border: none;
+    color: #818cf8;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 2px 0;
+    transition: color 0.15s;
+  }
+
+  .btn-toggle-advanced:hover {
+    color: #a5b4fc;
+    text-decoration: underline;
+  }
+
+  .advanced-path-box {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 6px;
+  }
+
+  .field-hint {
+    font-size: 11px;
+    color: #64748b;
   }
 </style>

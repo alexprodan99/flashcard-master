@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import crypto from "node:crypto";
 import JSZip from "jszip";
 import type {
   DiscoveredDocument,
@@ -246,12 +247,13 @@ export class DocumentExportService {
     });
   }
 
-  private normalizeFormat(format: string): "markdown" | "html" | "txt" | "json" {
+  private normalizeFormat(format: string): "markdown" | "html" | "txt" | "json" | "epub" {
     const f = (format || "").toLowerCase().trim();
     if (f === "md" || f === "markdown") return "markdown";
     if (f === "html" || f === "htm") return "html";
     if (f === "txt" || f === "text" || f === "plain") return "txt";
     if (f === "json") return "json";
+    if (f === "epub") return "epub";
     return "markdown";
   }
 
@@ -268,7 +270,16 @@ export class DocumentExportService {
 
     let result: DocumentExportResult;
 
-    if (mode === "split") {
+    if (format === "epub") {
+      result = await this.exportEpub(documents, {
+        sourceName,
+        sourceSlug,
+        includeToc,
+        includeCitations,
+        imageQuality: options.imageQuality,
+        grayscale: options.grayscale,
+      });
+    } else if (mode === "split") {
       result = await this.exportSplit(documents, {
         format,
         sourceName,
@@ -1013,6 +1024,545 @@ export class DocumentExportService {
     return {
       filename: `${opts.sourceSlug}-documents-split.zip`,
       mimeType: "application/zip",
+      content: buffer,
+      documentCount: docs.length,
+    };
+  }
+
+  private escapeXml(str: string): string {
+    return (str || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&apos;");
+  }
+
+  private getImageMimeType(filename: string): string {
+    const ext = path.extname(filename).toLowerCase().replace(/^\./, "");
+    switch (ext) {
+      case "webp":
+        return "image/webp";
+      case "png":
+        return "image/png";
+      case "jpg":
+      case "jpeg":
+        return "image/jpeg";
+      case "gif":
+        return "image/gif";
+      case "svg":
+        return "image/svg+xml";
+      case "avif":
+        return "image/avif";
+      default:
+        return "image/jpeg";
+    }
+  }
+
+  private formatInlineMarkdownXhtml(text: string): string {
+    let escaped = this.escapeXml(text);
+    // Inline code: `code`
+    escaped = escaped.replace(/`([^`]+)`/g, "<code>$1</code>");
+    // Bold: **text** or __text__
+    escaped = escaped.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    escaped = escaped.replace(/__([^_]+)__/g, "<strong>$1</strong>");
+    // Italic: *text* or _text_
+    escaped = escaped.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+    escaped = escaped.replace(/_([^_]+)_/g, "<em>$1</em>");
+    // Markdown image: ![alt](url)
+    escaped = escaped.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_match, alt, src) => {
+      const figcaption = alt ? `<figcaption>${this.escapeXml(alt)}</figcaption>` : "";
+      return `<figure class="doc-figure"><img src="${src}" alt="${this.escapeXml(alt)}" />${figcaption}</figure>`;
+    });
+    // Markdown link: [label](url)
+    escaped = escaped.replace(
+      /(?<!\!)\[([^\]]+)\]\((https?:\/\/[^\s)]+|\/[^\s)]+|\.\/[^\s)]+|images\/[^\s)]+)\)/g,
+      '<a href="$2">$1 ↗</a>'
+    );
+    return escaped;
+  }
+
+  private formatXhtmlParagraphs(text: string): string {
+    const trimmed = text.trim();
+    if (!trimmed) return "<p><em>(No content available)</em></p>";
+
+    // Extract code blocks first to protect formatting and line breaks
+    const codeBlocks: string[] = [];
+    const placeholderPrefix = `__CODE_BLOCK_${Date.now()}_`;
+    const textWithPlaceholders = trimmed.replace(
+      /```([a-zA-Z0-9_-]*)\r?\n([\s\S]*?)```/g,
+      (_match, lang, code) => {
+        const idx = codeBlocks.length;
+        const langClass = lang ? ` class="language-${this.escapeXml(lang)}"` : "";
+        const escapedCode = this.escapeXml(code.trimEnd());
+        codeBlocks.push(`<pre><code${langClass}>${escapedCode}</code></pre>`);
+        return `\n\n${placeholderPrefix}${idx}\n\n`;
+      }
+    );
+
+    const rawBlocks = textWithPlaceholders.split(/\n{2,}/);
+    const xhtmlBlocks: string[] = [];
+
+    for (const rawBlock of rawBlocks) {
+      const block = rawBlock.trim();
+      if (!block) continue;
+
+      const codeMatch = block.match(new RegExp(`^${placeholderPrefix}(\\d+)$`));
+      if (codeMatch) {
+        const idx = parseInt(codeMatch[1], 10);
+        if (codeBlocks[idx]) {
+          xhtmlBlocks.push(codeBlocks[idx]);
+          continue;
+        }
+      }
+
+      if (/^(\-{3,}|\*{3,}|_{3,})$/.test(block)) {
+        xhtmlBlocks.push("<hr />");
+        continue;
+      }
+
+      const imgMatch = block.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
+      if (imgMatch) {
+        const alt = imgMatch[1].trim();
+        const src = imgMatch[2].trim();
+        const figcaption = alt ? `<figcaption>${this.escapeXml(alt)}</figcaption>` : "";
+        xhtmlBlocks.push(
+          `<figure class="doc-figure"><img src="${this.escapeXml(src)}" alt="${this.escapeXml(
+            alt
+          )}" />${figcaption}</figure>`
+        );
+        continue;
+      }
+
+      const headingMatch = block.match(/^(#{1,6})\s+(.+)$/s);
+      if (headingMatch && !block.includes("\n")) {
+        const level = Math.min(6, headingMatch[1].length + 1);
+        const content = this.formatInlineMarkdownXhtml(headingMatch[2].trim());
+        xhtmlBlocks.push(`<h${level}>${content}</h${level}>`);
+        continue;
+      }
+
+      if (block.startsWith(">")) {
+        const quoteLines = block
+          .split("\n")
+          .map((l) => l.replace(/^>\s?/, ""))
+          .join("\n");
+        const content = this.formatInlineMarkdownXhtml(quoteLines).replace(/\n/g, "<br />");
+        xhtmlBlocks.push(`<blockquote>${content}</blockquote>`);
+        continue;
+      }
+
+      if (
+        /^[\*\-]\s+/m.test(block) &&
+        block.split("\n").every((l) => /^[\*\-]\s+/.test(l.trim()) || l.trim() === "")
+      ) {
+        const items = block
+          .split("\n")
+          .map((l) => l.trim())
+          .filter((l) => /^[\*\-]\s+/.test(l))
+          .map((l) => `<li>${this.formatInlineMarkdownXhtml(l.replace(/^[\*\-]\s+/, ""))}</li>`)
+          .join("\n");
+        xhtmlBlocks.push(`<ul>\n${items}\n</ul>`);
+        continue;
+      }
+
+      if (
+        /^\d+\.\s+/m.test(block) &&
+        block.split("\n").every((l) => /^\d+\.\s+/.test(l.trim()) || l.trim() === "")
+      ) {
+        const items = block
+          .split("\n")
+          .map((l) => l.trim())
+          .filter((l) => /^\d+\.\s+/.test(l))
+          .map((l) => `<li>${this.formatInlineMarkdownXhtml(l.replace(/^\d+\.\s+/, ""))}</li>`)
+          .join("\n");
+        xhtmlBlocks.push(`<ol>\n${items}\n</ol>`);
+        continue;
+      }
+
+      const formattedPara = this.formatInlineMarkdownXhtml(block).replace(/\n/g, "<br />");
+      xhtmlBlocks.push(`<p>${formattedPara}</p>`);
+    }
+
+    return xhtmlBlocks.join("\n");
+  }
+
+  private generateEpubCss(): string {
+    return `@charset "UTF-8";
+body {
+  font-family: Georgia, serif;
+  margin: 5% 5%;
+  line-height: 1.6;
+  color: #111111;
+  background-color: #ffffff;
+}
+h1, h2, h3, h4, h5, h6 {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.25;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  page-break-after: avoid;
+}
+.chapter-header {
+  margin-bottom: 2em;
+  padding-bottom: 1em;
+  border-bottom: 1px solid #cccccc;
+}
+.chapter-badge {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 0.75em;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #555555;
+  margin-bottom: 0.5em;
+}
+.chapter-title {
+  font-size: 1.8em;
+  margin: 0 0 0.5em 0;
+  color: #111111;
+}
+.chapter-meta {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 0.85em;
+  color: #666666;
+  margin-top: 0.5em;
+}
+.meta-item {
+  margin-bottom: 0.35em;
+}
+.meta-label {
+  font-weight: 600;
+}
+.chapter-body {
+  font-size: 1em;
+}
+p {
+  margin-top: 0;
+  margin-bottom: 1.2em;
+  text-align: justify;
+}
+pre {
+  font-family: "Courier New", Courier, monospace;
+  font-size: 0.85em;
+  background-color: #f4f4f4;
+  border: 1px solid #dddddd;
+  border-radius: 4px;
+  padding: 0.75em;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  page-break-inside: avoid;
+}
+code {
+  font-family: "Courier New", Courier, monospace;
+  font-size: 0.9em;
+  background-color: #f4f4f4;
+  padding: 0.1em 0.3em;
+  border-radius: 3px;
+}
+pre code {
+  background-color: transparent;
+  padding: 0;
+}
+blockquote {
+  margin: 1em 1.5em;
+  padding-left: 1em;
+  border-left: 3px solid #666666;
+  font-style: italic;
+  color: #444444;
+}
+ul, ol {
+  margin-top: 0;
+  margin-bottom: 1.2em;
+  padding-left: 2em;
+}
+li {
+  margin-bottom: 0.4em;
+}
+hr {
+  border: none;
+  border-top: 1px solid #cccccc;
+  margin: 2em 0;
+}
+figure {
+  margin: 1.5em 0;
+  text-align: center;
+  page-break-inside: avoid;
+}
+figure.doc-figure img {
+  max-width: 100%;
+  height: auto;
+}
+figcaption {
+  font-size: 0.85em;
+  color: #666666;
+  font-style: italic;
+  margin-top: 0.5em;
+}
+a {
+  color: #0366d6;
+  text-decoration: underline;
+}
+nav ol {
+  list-style-type: decimal;
+  padding-left: 1.5em;
+}
+nav li {
+  margin-bottom: 0.5em;
+}
+`;
+  }
+
+  private async exportEpub(
+    docs: DiscoveredDocument[],
+    opts: {
+      sourceName: string;
+      sourceSlug: string;
+      includeToc: boolean;
+      includeCitations: boolean;
+      imageQuality?: ImageQuality;
+      grayscale?: boolean;
+    }
+  ): Promise<DocumentExportResult> {
+    const zip = new JSZip();
+
+    // 1. First file in EPUB must be mimetype uncompressed (STORE)
+    zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
+
+    // 2. META-INF/container.xml pointing to OEBPS/content.opf
+    zip.file(
+      "META-INF/container.xml",
+      `<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>`
+    );
+
+    // 3. Fallback for empty docs collection
+    const effectiveDocs: DiscoveredDocument[] =
+      docs.length > 0
+        ? docs
+        : [
+            {
+              id: "empty",
+              sourceId: "",
+              title: "Overview",
+              textContent: "(No documents found in this knowledge base collection.)",
+              wordCount: 0,
+            },
+          ];
+
+    // 4. Media scanning & packaging into OEBPS/images/
+    const mediaRegex = /(?:(?:\/api\/media\/)|(?:api\/media\/))([a-zA-Z0-9_.-]+)/g;
+    const referencedMedia = new Set<string>();
+
+    effectiveDocs.forEach((doc) => {
+      const text = doc.textContent || "";
+      const matches = Array.from(text.matchAll(mediaRegex));
+      for (const m of matches) {
+        referencedMedia.add(m[1]);
+      }
+    });
+
+    const packagedImages = new Set<string>();
+    if (this.mediaService && referencedMedia.size > 0) {
+      for (const filename of referencedMedia) {
+        try {
+          const mediaBuffer = await this.mediaService.readMedia(filename);
+          if (mediaBuffer) {
+            zip.file(`OEBPS/images/${filename}`, mediaBuffer);
+            packagedImages.add(filename);
+          }
+        } catch {
+          // Omit missing media from EPUB
+        }
+      }
+    }
+
+    const rewriteMediaForEpub = (content: string): string => {
+      return content.replace(
+        /(?:\/api\/media\/|api\/media\/)([a-zA-Z0-9_.-]+)/g,
+        "images/$1"
+      );
+    };
+
+    const bookUuid = crypto.randomUUID();
+    const now = new Date();
+    const dateStr = now.toISOString().split("T")[0];
+    const modifiedTimestamp = now.toISOString().replace(/\.\d+Z$/, "Z");
+    const escapedBookTitle = this.escapeXml(opts.sourceName);
+
+    // 5. Generate XHTML chapter files
+    for (let i = 0; i < effectiveDocs.length; i++) {
+      const doc = effectiveDocs[i];
+      const chapterNum = i + 1;
+      const chapterId = `chapter_${chapterNum}`;
+      const chapterFilename = `${chapterId}.xhtml`;
+      const title = doc.title || `Document ${chapterNum}`;
+      const escapedTitle = this.escapeXml(title);
+      const words =
+        doc.wordCount ||
+        (doc.textContent ? doc.textContent.trim().split(/\s+/).length : 0);
+      const localizedText = rewriteMediaForEpub(doc.textContent || "");
+      const bodyXhtml = this.formatXhtmlParagraphs(localizedText);
+
+      let citationHtml = "";
+      if (opts.includeCitations && doc.url) {
+        const escapedUrl = this.escapeXml(doc.url);
+        citationHtml = `<div class="meta-item"><span class="meta-label">Source:</span> <a href="${escapedUrl}">${escapedUrl} ↗</a></div>`;
+      }
+
+      const chapterXhtml = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>${escapedTitle}</title>
+  <link rel="stylesheet" type="text/css" href="styles.css" />
+</head>
+<body>
+  <section class="chapter" id="${chapterId}">
+    <header class="chapter-header">
+      <div class="chapter-badge">Document #${chapterNum}</div>
+      <h1 class="chapter-title">${escapedTitle}</h1>
+      <div class="chapter-meta">
+        <div class="meta-item"><span class="meta-label">Word Count:</span> ${words.toLocaleString()} words</div>
+        ${citationHtml}
+      </div>
+    </header>
+    <div class="chapter-body">
+      ${bodyXhtml}
+    </div>
+  </section>
+</body>
+</html>`;
+
+      zip.file(`OEBPS/${chapterFilename}`, chapterXhtml);
+    }
+
+    // 6. Generate OEBPS/nav.xhtml (EPUB 3 navigation document)
+    const navItems = effectiveDocs
+      .map(
+        (doc, idx) =>
+          `      <li><a href="chapter_${idx + 1}.xhtml">${idx + 1}. ${this.escapeXml(
+            doc.title || `Document ${idx + 1}`
+          )}</a></li>`
+      )
+      .join("\n");
+
+    const navXhtml = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Table of Contents</title>
+  <link rel="stylesheet" type="text/css" href="styles.css" />
+</head>
+<body>
+  <nav epub:type="toc" id="toc">
+    <h1>Table of Contents</h1>
+    <ol>
+${navItems}
+    </ol>
+  </nav>
+</body>
+</html>`;
+
+    zip.file("OEBPS/nav.xhtml", navXhtml);
+
+    // 7. Generate OEBPS/toc.ncx (EPUB 2 NCX fallback for older readers)
+    const ncxItems = effectiveDocs
+      .map(
+        (doc, idx) => `    <navPoint id="navpoint-${idx + 1}" playOrder="${idx + 1}">
+      <navLabel><text>${idx + 1}. ${this.escapeXml(
+          doc.title || `Document ${idx + 1}`
+        )}</text></navLabel>
+      <content src="chapter_${idx + 1}.xhtml" />
+    </navPoint>`
+      )
+      .join("\n");
+
+    const tocNcx = `<?xml version="1.0" encoding="UTF-8"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+  <head>
+    <meta name="dtb:uid" content="urn:uuid:${bookUuid}" />
+    <meta name="dtb:depth" content="1" />
+    <meta name="dtb:totalPageCount" content="0" />
+    <meta name="dtb:maxPageNumber" content="0" />
+  </head>
+  <docTitle>
+    <text>${escapedBookTitle}</text>
+  </docTitle>
+  <navMap>
+${ncxItems}
+  </navMap>
+</ncx>`;
+
+    zip.file("OEBPS/toc.ncx", tocNcx);
+
+    // 8. Generate OEBPS/styles.css
+    zip.file("OEBPS/styles.css", this.generateEpubCss());
+
+    // 9. Generate OEBPS/content.opf (Package document)
+    const chapterManifestItems = effectiveDocs
+      .map(
+        (_doc, idx) =>
+          `    <item id="chapter_${idx + 1}" href="chapter_${
+            idx + 1
+          }.xhtml" media-type="application/xhtml+xml" />`
+      )
+      .join("\n");
+
+    const imageManifestItems = Array.from(packagedImages)
+      .map(
+        (filename, idx) =>
+          `    <item id="img_${idx + 1}" href="images/${filename}" media-type="${this.getImageMimeType(
+            filename
+          )}" />`
+      )
+      .join("\n");
+
+    const spineItemrefs = effectiveDocs
+      .map((_doc, idx) => `    <itemref idref="chapter_${idx + 1}" />`)
+      .join("\n");
+
+    const opfXml = `<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" version="3.0">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="BookId">urn:uuid:${bookUuid}</dc:identifier>
+    <dc:title>${escapedBookTitle}</dc:title>
+    <dc:language>en</dc:language>
+    <dc:creator>Flashcard Master</dc:creator>
+    <dc:date>${dateStr}</dc:date>
+    <meta property="dcterms:modified">${modifiedTimestamp}</meta>
+  </metadata>
+  <manifest>
+    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav" />
+    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml" />
+    <item id="css" href="styles.css" media-type="text/css" />
+${chapterManifestItems}
+${imageManifestItems ? imageManifestItems + "\n" : ""}  </manifest>
+  <spine toc="ncx">
+${spineItemrefs}
+  </spine>
+</package>`;
+
+    zip.file("OEBPS/content.opf", opfXml);
+
+    // 10. Compile ZIP container with DEFLATE (mimetype was explicitly stored uncompressed)
+    const buffer = await zip.generateAsync({
+      type: "nodebuffer",
+      mimeType: "application/epub+zip",
+      compression: "DEFLATE",
+      compressionOptions: { level: 6 },
+    });
+
+    return {
+      filename: `${opts.sourceSlug}-knowledge-base.epub`,
+      mimeType: "application/epub+zip",
       content: buffer,
       documentCount: docs.length,
     };

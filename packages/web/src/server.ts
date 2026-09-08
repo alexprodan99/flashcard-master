@@ -2,6 +2,7 @@ import http from "node:http";
 import url from "node:url";
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 import {
   type DataSourceRepository,
@@ -46,6 +47,7 @@ export interface WebServerOptions {
   groundingGuard?: GroundingGuard;
   dedupService?: CardDeduplicationService;
   mediaService?: MediaService;
+  localFilesDir?: string;
   createLLMAdapterFn?: (config: any) => any;
   ankiConnectAdapter?: {
     checkHealth(): Promise<AnkiConnectHealthCheck>;
@@ -58,11 +60,13 @@ export class WebServer {
   private readonly port: number;
   private readonly host: string;
   private readonly mediaService: MediaService;
+  private readonly localFilesDir: string;
 
   constructor(private readonly options: WebServerOptions) {
     this.port = options.port !== undefined ? options.port : 3000;
     this.host = options.host || "127.0.0.1";
     this.mediaService = options.mediaService || new MediaService();
+    this.localFilesDir = options.localFilesDir || path.join(os.homedir(), ".flashcard-master", "local-files");
   }
 
   private getHtmlSpa(): string {
@@ -1572,6 +1576,69 @@ export class WebServer {
     });
   }
 
+  private readRequestBodyBuffer(req: http.IncomingMessage): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (chunk) => {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      });
+      req.on("end", () => resolve(Buffer.concat(chunks)));
+      req.on("error", reject);
+    });
+  }
+
+  private parseMultipartFormData(bodyBuffer: Buffer, boundary: string): { filename: string; content: Buffer } | null {
+    const boundaryBuf = Buffer.from(`--${boundary}`);
+    let startIdx = bodyBuffer.indexOf(boundaryBuf);
+    if (startIdx === -1) return null;
+
+    while (startIdx !== -1) {
+      const nextStart = startIdx + boundaryBuf.length;
+      if (bodyBuffer.subarray(nextStart, nextStart + 2).toString() === "--") {
+        break;
+      }
+
+      let partStart = nextStart;
+      if (bodyBuffer.subarray(partStart, partStart + 2).toString() === "\r\n") {
+        partStart += 2;
+      } else if (bodyBuffer[partStart] === 0x0a) {
+        partStart += 1;
+      }
+
+      const nextBoundaryIdx = bodyBuffer.indexOf(boundaryBuf, partStart);
+      if (nextBoundaryIdx === -1) break;
+
+      const partBuffer = bodyBuffer.subarray(partStart, nextBoundaryIdx);
+
+      let headerEndIdx = partBuffer.indexOf("\r\n\r\n");
+      let bodyOffset = 4;
+      if (headerEndIdx === -1) {
+        headerEndIdx = partBuffer.indexOf("\n\n");
+        bodyOffset = 2;
+      }
+
+      if (headerEndIdx !== -1) {
+        const headerText = partBuffer.subarray(0, headerEndIdx).toString("utf-8");
+        const cdMatch = headerText.match(/Content-Disposition:[^\r\n]*\sfilename=(?:"([^"]+)"|([^;\s\r\n]+))/i);
+        if (cdMatch) {
+          let filename = cdMatch[1] || cdMatch[2] || "";
+          filename = filename.replace(/^["']|["']$/g, "").trim();
+
+          let fileContent = partBuffer.subarray(headerEndIdx + bodyOffset);
+          if (fileContent.length >= 2 && fileContent.subarray(fileContent.length - 2).toString() === "\r\n") {
+            fileContent = fileContent.subarray(0, fileContent.length - 2);
+          } else if (fileContent.length >= 1 && fileContent[fileContent.length - 1] === 0x0a) {
+            fileContent = fileContent.subarray(0, fileContent.length - 1);
+          }
+          return { filename, content: Buffer.from(fileContent) };
+        }
+      }
+
+      startIdx = nextBoundaryIdx;
+    }
+    return null;
+  }
+
   async listen(port?: number): Promise<{ port: number; url: string }> {
     const listenPort = port !== undefined ? port : this.port;
 
@@ -1901,6 +1968,101 @@ export class WebServer {
             }
           }
 
+          // 6a. Local Source File Upload Endpoint: POST /api/sources/upload
+          if (pathname === "/api/sources/upload" && method === "POST") {
+            const contentType = req.headers["content-type"] || "";
+            let filename: string | undefined;
+            let fileBuffer: Buffer | undefined;
+
+            if (contentType.includes("multipart/form-data")) {
+              const boundaryMatch = contentType.match(/boundary=([^;]+)/i);
+              const boundary = boundaryMatch ? boundaryMatch[1].trim().replace(/^"|"$/g, "") : null;
+              if (!boundary) {
+                this.sendJson(res, 400, { error: "Missing multipart boundary in Content-Type header" });
+                return;
+              }
+              const rawBody = await this.readRequestBodyBuffer(req);
+              const parsed = this.parseMultipartFormData(rawBody, boundary);
+              if (!parsed || !parsed.filename) {
+                this.sendJson(res, 400, { error: "No file provided in multipart upload" });
+                return;
+              }
+              filename = parsed.filename;
+              fileBuffer = parsed.content;
+            } else if (contentType.includes("application/json")) {
+              const json = await this.parseBody(req);
+              filename = json.filename;
+              if (json.content !== undefined) {
+                fileBuffer = Buffer.from(json.content, "utf-8");
+              }
+            } else {
+              // Direct raw stream/buffer
+              const rawBody = await this.readRequestBodyBuffer(req);
+              const cdHeader = req.headers["content-disposition"] || "";
+              const cdMatch = cdHeader.match(/filename=(?:"([^"]+)"|([^;\s\r\n]+))/i);
+              const rawFilename =
+                (req.headers["x-filename"] as string) ||
+                (parsedUrl.query.filename as string) ||
+                (cdMatch ? cdMatch[1] || cdMatch[2] : undefined);
+
+              if (rawFilename) {
+                filename = rawFilename;
+                fileBuffer = rawBody;
+              }
+            }
+
+            if (!filename || fileBuffer === undefined) {
+              this.sendJson(res, 400, { error: "No file content or filename provided" });
+              return;
+            }
+
+            // Reject null bytes
+            if (filename.includes("\0")) {
+              this.sendJson(res, 400, { error: "Invalid filename" });
+              return;
+            }
+
+            // Extract base name, removing any directory components
+            const splitParts = filename.split(/[/\\]/);
+            const base = splitParts[splitParts.length - 1].trim();
+            const safeFilename = path.basename(base).replace(/[/\\?%*:|"<>]/g, "_").trim();
+
+            if (!safeFilename || safeFilename === "." || safeFilename === ".." || safeFilename.length === 0) {
+              this.sendJson(res, 400, { error: "Invalid filename" });
+              return;
+            }
+
+            // Validate file extension
+            const ext = path.extname(safeFilename).toLowerCase();
+            const ALLOWED_EXTS = [".md", ".markdown", ".txt"];
+            if (!ALLOWED_EXTS.includes(ext)) {
+              this.sendJson(res, 400, {
+                error: `Unsupported file type "${ext}". Only .md, .markdown, and .txt files are supported.`,
+              });
+              return;
+            }
+
+            // Ensure storage directory exists
+            fs.mkdirSync(this.localFilesDir, { recursive: true });
+            const targetFilePath = path.resolve(this.localFilesDir, safeFilename);
+
+            // Verify target path stays strictly inside localFilesDir
+            const resolvedDir = path.resolve(this.localFilesDir);
+            if (!targetFilePath.startsWith(resolvedDir)) {
+              this.sendJson(res, 400, { error: "Path traversal detected" });
+              return;
+            }
+
+            fs.writeFileSync(targetFilePath, fileBuffer);
+
+            this.sendJson(res, 200, {
+              path: targetFilePath,
+              filename: safeFilename,
+              size: fileBuffer.length,
+            });
+            return;
+          }
+
           // 6b. Discovered Documents Catalog for a Source: GET /api/sources/:id/documents
           const sourceDocsMatch = pathname.match(/^\/api\/sources\/([^/]+)\/documents$/);
           if (sourceDocsMatch && method === "GET") {
@@ -2007,6 +2169,10 @@ export class WebServer {
               if (query.grayscale !== undefined) grayscale = query.grayscale === "true" || query.grayscale === "1";
             }
 
+            if (format === "epub") {
+              mode = "merged";
+            }
+
             let targetDocs: DiscoveredDocument[] = [];
             let sourceName = "Knowledge Base";
 
@@ -2092,7 +2258,7 @@ export class WebServer {
           }
 
           // 7. Single Source Update (PATCH) / Delete (DELETE): /api/sources/:id
-          if (pathname.startsWith("/api/sources/")) {
+          if (pathname.startsWith("/api/sources/") && pathname !== "/api/sources/upload") {
             const id = pathname.slice("/api/sources/".length);
 
             if (method === "DELETE") {

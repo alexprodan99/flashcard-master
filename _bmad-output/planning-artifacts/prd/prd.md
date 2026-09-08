@@ -116,6 +116,7 @@ journey
 | **FR-208** | **Configurable Question Depth & Granularity** | The generation engine MUST support selectable card depth modes (`atomic`: rapid 1-fact recall, `deep-dive`: comprehensive multi-concept mechanisms, tradeoffs and structured explanations, `scenario`: applied architectural / troubleshooting case studies). | High |
 | **FR-209** | **Configurable Document Context Chunk Sizing** | The text chunking engine MUST support adjustable chunk size multipliers (`1x` 2,000 chars, `2x` 4,000 chars, `4x` 8,000 chars, or `full-document` mode) allowing macro-level cross-section synthesis for long articles. | High |
 | **FR-210** | **Card Depth Prompt Calibrations** | Prompt templates MUST dynamically adapt active-recall formatting and conciseness rules based on the selected depth mode while strictly enforcing verbatim quote grounding. | High |
+| **FR-211** | **Mixed Difficulty Level & Adaptive Synthesis** | The generation engine and domain schema MUST support a `mixed` difficulty option in addition to `beginner`, `intermediate`, and `expert`. When selected, prompts MUST instruct LLMs to generate a balanced progression of difficulty levels across the study material, tagging each card appropriately. | High |
 
 ### 3.3 Multi-Target & Knowledge Base Exporter Pipeline
 
@@ -130,6 +131,7 @@ journey
 | **FR-307** | **Document Clean Text Exporters (MD, HTML, TXT, JSON)** | The export engine (`DocumentExportService`) MUST support exporting clean document texts to Markdown (`.md`), HTML (`.html`), Plain Text (`.txt`), and JSON (`.json`). | Critical |
 | **FR-308** | **Merged Single-File Compilation with Table of Contents & Citations** | The system MUST support compiling multiple documents into a single master file featuring a clickable Table of Contents, header dividers, word count badges, and origin URL citation links. | High |
 | **FR-309** | **Split ZIP Archive Bundling** | `[ASSUMPTION]` The system MUST support packaging individual exported documents into a downloadable `.zip` archive named with clean slugified filenames (e.g. `01-getting-started.md`) using `jszip`. | High |
+| **FR-310** | **Document EPUB eBook Exporter** | The system MUST support exporting documents into valid EPUB 3.0 eBooks (`.epub`) with metadata packaging (`content.opf`, `mimetype`, `toc.ncx` / `nav.xhtml`), e-reader clean styling, chapter navigation, and embedded local image assets. | High |
 
 ### 3.4 Dual User Interface (CLI & Web UI)
 
@@ -162,6 +164,8 @@ journey
 | **FR-425** | **Document Inspector Quick Filter Selectors** | The Document Inspector MUST provide quick selection filters (e.g. "Select All", "Select Unused (0 cards)", "Invert Selection") to quickly clean up noisy or empty scraped pages. | Medium |
 | **FR-426** | **Document Export Modal & Scope Controls** | `SourceDocumentInspector` and Document Preview Modal MUST provide an "📤 Export Documents" action allowing users to select format (MD/HTML/TXT/JSON), packaging mode (Merged Master File vs. Split ZIP), and scope (All Documents, Selected Documents, or Current Document). | High |
 | **FR-427** | **Streaming Download & File Handlers** | The backend MUST stream exported document files or ZIP archives with appropriate `Content-Disposition` and `Content-Type` headers for direct browser downloads. | High |
+| **FR-428** | **Question Explorer Real-Time Refresh Action** | The Question Explorer MUST provide a dedicated "🔄 Refresh" action in its filter toolbar with active loading animation and disabled state, allowing users to reload flashcard catalog changes without reloading the web application or losing active filter parameters. | High |
+| **FR-429** | **Interactive Local File Picker & Drag-and-Drop** | The Web UI (Add/Edit Source Modal) MUST provide an interactive file chooser and drag-and-drop zone for local source configuration, uploading local files (`.md`, `.markdown`, `.txt`) directly to the local server, eliminating error-prone manual typing of absolute filesystem paths while preserving optional manual entry. | High |
 
 ---
 

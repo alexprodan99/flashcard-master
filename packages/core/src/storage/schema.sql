@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS flashcards (
     source_quote TEXT NOT NULL,
     source_origin_url TEXT,
     document_title TEXT,
-    difficulty TEXT NOT NULL CHECK(difficulty IN ('beginner', 'intermediate', 'expert')),
+    difficulty TEXT NOT NULL CHECK(difficulty IN ('beginner', 'intermediate', 'expert', 'mixed')),
     persona_used TEXT NOT NULL DEFAULT 'socratic-mentor',
     target_deck TEXT NOT NULL DEFAULT 'Default',
     tags TEXT NOT NULL DEFAULT '[]',

@@ -40,6 +40,7 @@ export const DIFFICULTY_MODIFIERS: Record<DifficultyLevel, string> = {
   beginner: "Focus on fundamental definitions, core terminology, and high-level concepts in plain, accessible language.",
   intermediate: "Focus on standard operational mechanics, workflows, best practices, and technical precision.",
   expert: "Focus on subtle edge cases, architectural trade-offs, internal failure modes, and performance nuances.",
+  mixed: "Generate a balanced progression spanning fundamentals (beginner), operational mechanics (intermediate), and architectural trade-offs or edge cases (expert).",
 };
 
 export class PersonaStudioService {
