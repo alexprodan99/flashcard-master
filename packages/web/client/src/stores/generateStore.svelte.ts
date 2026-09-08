@@ -166,6 +166,10 @@ export class GenerateStore {
     this.generationResult = null;
   }
 
+  setActiveJob(jobId: string) {
+    this.activeJobId = jobId;
+  }
+
   finishGenerating(result: GenerationResult | null, error?: string | null) {
     this.isGenerating = false;
     this.activeJobId = null;

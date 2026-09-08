@@ -1,6 +1,7 @@
 import type { Job, JobLog, JobStatus } from '../lib/types';
 import { fetchJobs, fetchJobDetails, cancelJobApi, clearJobHistory } from '../lib/api';
 import { toastStore } from './toastStore.svelte.js';
+import { generateStore } from './generateStore.svelte.js';
 
 export class TaskStore {
   jobs = $state<Job[]>([]);
@@ -88,8 +89,22 @@ export class TaskStore {
         try {
           const completedJob: Job = JSON.parse(e.data);
           this.upsertJob(completedJob);
-          const title = completedJob.stepName || completedJob.type;
-          toastStore.success(`🎉 Task "${title}" completed successfully!`);
+          const title = completedJob.title || completedJob.currentStep || completedJob.type;
+          if (completedJob.id === generateStore.activeJobId) {
+            const summary = completedJob.resultSummary || {};
+            const cardsCreated = summary.cardsCreated ?? 0;
+            const duplicatesSkipped = summary.duplicatesSkipped ?? 0;
+            generateStore.finishGenerating({
+              success: true,
+              cardsCreated,
+              totalDraftsGenerated: summary.totalDraftsGenerated ?? cardsCreated,
+              duplicatesSkipped,
+              newCards: summary.newCards || [],
+            });
+            toastStore.success(`🎉 Generated ${cardsCreated} cards (${duplicatesSkipped} duplicates skipped)`);
+          } else {
+            toastStore.success(`🎉 Task "${title}" completed successfully!`);
+          }
         } catch {}
       });
 
@@ -97,8 +112,14 @@ export class TaskStore {
         try {
           const failedJob: Job = JSON.parse(e.data);
           this.upsertJob(failedJob);
-          const title = failedJob.stepName || failedJob.type;
-          toastStore.error(`⚠️ Task "${title}" failed: ${failedJob.error || 'Unknown error'}`);
+          const title = failedJob.title || failedJob.currentStep || failedJob.type;
+          const errorMsg = failedJob.errorMessage || 'Unknown error';
+          if (failedJob.id === generateStore.activeJobId) {
+            generateStore.finishGenerating(null, errorMsg);
+            toastStore.error(`⚠️ Generation failed: ${errorMsg}`);
+          } else {
+            toastStore.error(`⚠️ Task "${title}" failed: ${errorMsg}`);
+          }
         } catch {}
       });
 
@@ -106,8 +127,13 @@ export class TaskStore {
         try {
           const cancelledJob: Job = JSON.parse(e.data);
           this.upsertJob(cancelledJob);
-          const title = cancelledJob.stepName || cancelledJob.type;
-          toastStore.warn(`⏹️ Task "${title}" was cancelled.`);
+          const title = cancelledJob.title || cancelledJob.currentStep || cancelledJob.type;
+          if (cancelledJob.id === generateStore.activeJobId) {
+            generateStore.finishGenerating(null, 'Generation task was cancelled');
+            toastStore.warn(`⏹️ Generation task was cancelled.`);
+          } else {
+            toastStore.warn(`⏹️ Task "${title}" was cancelled.`);
+          }
         } catch {}
       });
 
@@ -159,6 +185,9 @@ export class TaskStore {
       const res = await cancelJobApi(jobId);
       if (res.job) {
         this.upsertJob(res.job);
+      }
+      if (jobId === generateStore.activeJobId) {
+        generateStore.finishGenerating(null, 'Generation task was cancelled');
       }
       return res.success;
     } catch {

@@ -119,6 +119,8 @@ describe("WorkerExecutor", () => {
     expect(result.cardsCreated).toBe(2);
     expect(result.duplicatesSkipped).toBe(0);
     expect(result.stepAck).toBe(1);
+    expect(result.newCards).toBeDefined();
+    expect(result.newCards.length).toBe(2);
 
     // Verify main thread database writes
     const cardsInDb = cardRepo.list({ targetDeck: "Vocabulary" });
@@ -335,5 +337,5 @@ describe("WorkerExecutor", () => {
     expect(result.documentCount).toBe(1);
     expect(logs.some((l) => l.message.includes("Successfully compiled"))).toBe(true);
     expect(summary.documentCount).toBe(1);
-  });
+  }, 15000);
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { GenerateStore } from '../client/src/stores/generateStore.svelte.js';
+import { GenerateStore, generateStore } from '../client/src/stores/generateStore.svelte.js';
 import { SourcesStore } from '../client/src/stores/sourcesStore.svelte.js';
 import { ExplorerStore } from '../client/src/stores/explorerStore.svelte.js';
 import { ExportStore } from '../client/src/stores/exportStore.svelte.js';
@@ -335,6 +335,63 @@ describe('Svelte 5 Universal Client Stores (Epic 14.4)', () => {
       expect(store.activeJobs.map((j) => j.id)).toEqual(['j2', 'j1']);
       expect(store.activeCount).toBe(2);
       expect(store.historyJobs.map((j) => j.id)).toEqual(['j5', 'j4', 'j3']);
+    });
+
+    it('bridges SSE job completion and failure events to generateStore', () => {
+      const listeners: Record<string, (e: any) => void> = {};
+      class MockEventSource {
+        addEventListener(event: string, cb: (e: any) => void) {
+          listeners[event] = cb;
+        }
+        close() {}
+      }
+      vi.stubGlobal('EventSource', MockEventSource);
+
+      const store = new TaskStore();
+      store.init();
+
+      // Test active generation job completion
+      generateStore.startGenerating();
+      generateStore.setActiveJob('gen-job-42');
+      expect(generateStore.isGenerating).toBe(true);
+      expect(generateStore.activeJobId).toBe('gen-job-42');
+
+      // Trigger SSE job_completed
+      listeners['job_completed']?.({
+        data: JSON.stringify({
+          id: 'gen-job-42',
+          type: 'generation',
+          title: 'Synthesize flashcards',
+          status: 'completed',
+          resultSummary: {
+            cardsCreated: 5,
+            duplicatesSkipped: 1,
+            newCards: [{ id: 'c1', question: 'Q1', answer: 'A1' }],
+          },
+        }),
+      });
+
+      expect(generateStore.isGenerating).toBe(false);
+      expect(generateStore.activeJobId).toBe(null);
+      expect(generateStore.generationResult?.cardsCreated).toBe(5);
+      expect(generateStore.generationResult?.duplicatesSkipped).toBe(1);
+      expect(generateStore.createdCards.length).toBe(1);
+
+      // Test active generation job failure
+      generateStore.startGenerating('gen-job-failed');
+      listeners['job_failed']?.({
+        data: JSON.stringify({
+          id: 'gen-job-failed',
+          type: 'generation',
+          title: 'Synthesize flashcards',
+          status: 'failed',
+          errorMessage: 'LLM context length exceeded',
+        }),
+      });
+
+      expect(generateStore.isGenerating).toBe(false);
+      expect(generateStore.activeJobId).toBe(null);
+      expect(generateStore.errorMessage).toBe('LLM context length exceeded');
     });
   });
 });

@@ -3,6 +3,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import type {
+  Flashcard,
   FlashcardRepository,
   DataSourceRepository,
   CardDeduplicationService,
@@ -104,6 +105,8 @@ export class WorkerExecutor {
           }
         });
 
+        const committedCards: Flashcard[] = [];
+
         // Listen for IPC messages from worker
         worker.on("message", async (msg: WorkerOutboundMessage) => {
           if (isCompleted || !worker) return;
@@ -150,7 +153,7 @@ export class WorkerExecutor {
                     : "intermediate";
 
                   try {
-                    this.options.cardRepo.create({
+                    const created = this.options.cardRepo.create({
                       sourceId: targetSourceId,
                       question: draft.question,
                       answer: draft.answer,
@@ -162,11 +165,14 @@ export class WorkerExecutor {
                       personaUsed: "socratic-mentor",
                       tags: [],
                     });
+                    if (created) {
+                      committedCards.push(created);
+                    }
                   } catch (createErr: any) {
                     // Fallback to null sourceId if foreign key constraint failed
                     if (targetSourceId && String(createErr.message).includes("FOREIGN KEY")) {
                       targetSourceId = null;
-                      this.options.cardRepo.create({
+                      const created = this.options.cardRepo.create({
                         sourceId: null,
                         question: draft.question,
                         answer: draft.answer,
@@ -178,6 +184,9 @@ export class WorkerExecutor {
                         personaUsed: "socratic-mentor",
                         tags: [],
                       });
+                      if (created) {
+                        committedCards.push(created);
+                      }
                     } else {
                       throw createErr;
                     }
@@ -210,9 +219,13 @@ export class WorkerExecutor {
               };
               worker.postMessage(ackMsg);
             } else if (msg.type === "TASK_COMPLETE") {
-              ctx.setResultSummary(msg.resultSummary);
+              const summary = msg.resultSummary || {};
+              if (committedCards.length > 0 && !summary.newCards) {
+                summary.newCards = committedCards;
+              }
+              ctx.setResultSummary(summary);
               cleanup();
-              resolve(msg.resultSummary);
+              resolve(summary);
             } else if (msg.type === "TASK_ERROR") {
               cleanup();
               reject(new Error(msg.error));

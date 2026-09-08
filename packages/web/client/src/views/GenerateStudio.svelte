@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { fetchSources, fetchSourceDocuments, fetchDocumentDetails, syncSource, generateCards } from '../lib/api';
+  import { fetchSources, fetchSourceDocuments, fetchDocumentDetails, syncSource, generateCards, fetchJobDetails } from '../lib/api';
   import type { DataSource, DiscoveredDocument, Flashcard, GenerationResult, DifficultyLevel, PersonaType, CardDepthMode } from '../lib/types';
   import GenerationConfigFields from '../components/GenerationConfigFields.svelte';
   import DocumentPreviewModal from '../components/DocumentPreviewModal.svelte';
-  import { generateStore, toastStore } from '../stores/index.js';
+  import { generateStore, toastStore, taskStore } from '../stores/index.js';
 
   interface Props {
     onNavigate?: (tab: string) => void;
@@ -220,9 +220,7 @@
       return;
     }
 
-    generateStore.isGenerating = true;
-    generateStore.errorMessage = null;
-    generateStore.generationResult = null;
+    generateStore.startGenerating();
 
     try {
       const payload: any = {
@@ -244,9 +242,15 @@
         payload.sourceIds = generateStore.selectedSourceIds;
       }
 
-      const result = await generateCards(payload);
-      generateStore.finishGenerating(result);
-      toastStore.success(`🎉 Generated ${result.cardsCreated} cards (${result.duplicatesSkipped} duplicates skipped)`);
+      const result: any = await generateCards(payload);
+      if (result.jobId) {
+        generateStore.setActiveJob(result.jobId);
+        toastStore.info(`⚡ Task queued (#${result.jobId.slice(0, 8)}). Synthesizing cards in background...`);
+        pollJobCompletion(result.jobId);
+      } else {
+        generateStore.finishGenerating(result);
+        toastStore.success(`🎉 Generated ${result.cardsCreated ?? 0} cards (${result.duplicatesSkipped ?? 0} duplicates skipped)`);
+      }
     } catch (err: any) {
       const msg = err.message || 'Generation failed';
       generateStore.finishGenerating(null, msg);
@@ -254,8 +258,59 @@
     }
   }
 
+  async function pollJobCompletion(jobId: string) {
+    const pollInterval = 1500;
+    const maxAttempts = 240;
+    let attempts = 0;
+
+    while (generateStore.isGenerating && generateStore.activeJobId === jobId && attempts < maxAttempts) {
+      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+      if (!generateStore.isGenerating || generateStore.activeJobId !== jobId) {
+        break;
+      }
+      try {
+        const { job } = await fetchJobDetails(jobId);
+        if (job.status === 'completed' || job.status === 'completed_with_warnings') {
+          if (generateStore.isGenerating && generateStore.activeJobId === jobId) {
+            const summary = job.resultSummary || {};
+            const cardsCreated = summary.cardsCreated ?? 0;
+            const duplicatesSkipped = summary.duplicatesSkipped ?? 0;
+            generateStore.finishGenerating({
+              success: true,
+              cardsCreated,
+              totalDraftsGenerated: summary.totalDraftsGenerated ?? cardsCreated,
+              duplicatesSkipped,
+              newCards: summary.newCards || [],
+            });
+            toastStore.success(`🎉 Generated ${cardsCreated} cards (${duplicatesSkipped} duplicates skipped)`);
+          }
+          break;
+        } else if (job.status === 'failed') {
+          if (generateStore.isGenerating && generateStore.activeJobId === jobId) {
+            const msg = job.errorMessage || 'Generation failed';
+            generateStore.finishGenerating(null, msg);
+            toastStore.error(`⚠️ Generation failed: ${msg}`);
+          }
+          break;
+        } else if (job.status === 'cancelled') {
+          if (generateStore.isGenerating && generateStore.activeJobId === jobId) {
+            generateStore.finishGenerating(null, 'Generation task was cancelled');
+            toastStore.warn(`⏹️ Generation task was cancelled.`);
+          }
+          break;
+        }
+      } catch {
+        // Retry silently on transient poll error
+      }
+      attempts++;
+    }
+  }
+
   onMount(() => {
     loadSources();
+    if (generateStore.isGenerating && generateStore.activeJobId) {
+      pollJobCompletion(generateStore.activeJobId);
+    }
   });
 </script>
 
@@ -432,6 +487,25 @@
           <div class="pulse-spinner"></div>
           <h3>AI Engine Ingesting & Generating...</h3>
           <p>Chunking documents, running LLM inference, and verifying verbatim quote grounding.</p>
+          {#if generateStore.activeJobId}
+            <div class="active-job-actions">
+              <span class="active-job-id">Job #{generateStore.activeJobId.slice(0, 8)}</span>
+              <button
+                type="button"
+                class="btn-cancel-job"
+                onclick={() => taskStore.cancelJob(generateStore.activeJobId!)}
+              >
+                ⏹️ Cancel
+              </button>
+              <button
+                type="button"
+                class="btn-view-tasks"
+                onclick={() => taskStore.openDrawer('active')}
+              >
+                📋 View Task Logs
+              </button>
+            </div>
+          {/if}
         </div>
       {:else if generateStore.generationResult}
         <div class="result-card">
@@ -892,6 +966,58 @@
     border-radius: 50%;
     animation: spin 1s cubic-bezier(0.68, -0.55, 0.27, 1.55) infinite;
     margin-bottom: 16px;
+  }
+
+  .active-job-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 18px;
+    background: #1e293b;
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 1px solid #334155;
+  }
+
+  .active-job-id {
+    font-size: 12px;
+    font-family: monospace;
+    color: #818cf8;
+    font-weight: 600;
+  }
+
+  .btn-cancel-job {
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    color: #fca5a5;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.15s ease;
+  }
+
+  .btn-cancel-job:hover {
+    background: rgba(239, 68, 68, 0.25);
+    border-color: #ef4444;
+  }
+
+  .btn-view-tasks {
+    background: #334155;
+    border: 1px solid #475569;
+    color: #e2e8f0;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.15s ease;
+  }
+
+  .btn-view-tasks:hover {
+    background: #475569;
+    color: #ffffff;
   }
 
   .placeholder-icon {
