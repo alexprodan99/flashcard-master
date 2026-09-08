@@ -2,6 +2,7 @@ import type { Job, JobLog, JobStatus } from '../lib/types';
 import { fetchJobs, fetchJobDetails, cancelJobApi, clearJobHistory } from '../lib/api';
 import { toastStore } from './toastStore.svelte.js';
 import { generateStore } from './generateStore.svelte.js';
+import { sourcesStore } from './sourcesStore.svelte.js';
 
 export class TaskStore {
   jobs = $state<Job[]>([]);
@@ -90,6 +91,8 @@ export class TaskStore {
           const completedJob: Job = JSON.parse(e.data);
           this.upsertJob(completedJob);
           const title = completedJob.title || completedJob.currentStep || completedJob.type;
+
+          // 1. Generation job
           if (completedJob.id === generateStore.activeJobId) {
             const summary = completedJob.resultSummary || {};
             const cardsCreated = summary.cardsCreated ?? 0;
@@ -102,9 +105,52 @@ export class TaskStore {
               newCards: summary.newCards || [],
             });
             toastStore.success(`🎉 Generated ${cardsCreated} cards (${duplicatesSkipped} duplicates skipped)`);
-          } else {
-            toastStore.success(`🎉 Task "${title}" completed successfully!`);
+            return;
           }
+
+          // 2. Single source sync job
+          if (completedJob.type === 'sync_source') {
+            const sourceId = completedJob.metadata?.sourceId;
+            const isTracked = (sourceId && (sourcesStore.syncingSourceIds[sourceId] || sourcesStore.activeSyncJobIds[sourceId] === completedJob.id))
+              || Object.values(sourcesStore.activeSyncJobIds).includes(completedJob.id);
+
+            if (sourceId) {
+              sourcesStore.setSyncing(sourceId, false);
+            }
+            const summary = completedJob.resultSummary || {};
+            const newCount = summary.newCount ?? summary.totalNewDocuments ?? 0;
+            const totalFetched = summary.totalFetched ?? summary.totalFetchedDocuments ?? 0;
+            const sourceName = completedJob.metadata?.sourceName || (sourceId ? (sourcesStore.sources.find(s => s.id === sourceId)?.name || 'Source') : 'Source');
+
+            if (isTracked) {
+              if (newCount > 0) {
+                toastStore.success(`🎉 Synced "${sourceName}": ${newCount} new document(s) ingested (${totalFetched} total checked).`);
+              } else {
+                toastStore.info(`Synced "${sourceName}": Up to date (0 new documents, ${totalFetched} total checked).`);
+              }
+            } else {
+              toastStore.success(`🎉 Task "${title}" completed successfully!`);
+            }
+            return;
+          }
+
+          // 3. Bulk sync_all job
+          if (completedJob.type === 'sync_all') {
+            const isTracked = sourcesStore.isSyncingAll || sourcesStore.activeSyncAllJobId === completedJob.id;
+            sourcesStore.setSyncingAll(false);
+            const summary = completedJob.resultSummary || {};
+            const totalNew = summary.totalNewDocuments ?? summary.newCount ?? 0;
+            const totalSources = summary.totalSources ?? completedJob.metadata?.sourceCount ?? 'all';
+
+            if (isTracked) {
+              toastStore.success(`🎉 Bulk sync completed: ${totalNew} new document(s) ingested across ${totalSources} sources.`);
+            } else {
+              toastStore.success(`🎉 Task "${title}" completed successfully!`);
+            }
+            return;
+          }
+
+          toastStore.success(`🎉 Task "${title}" completed successfully!`);
         } catch {}
       });
 
@@ -114,12 +160,29 @@ export class TaskStore {
           this.upsertJob(failedJob);
           const title = failedJob.title || failedJob.currentStep || failedJob.type;
           const errorMsg = failedJob.errorMessage || 'Unknown error';
+
           if (failedJob.id === generateStore.activeJobId) {
             generateStore.finishGenerating(null, errorMsg);
             toastStore.error(`⚠️ Generation failed: ${errorMsg}`);
-          } else {
-            toastStore.error(`⚠️ Task "${title}" failed: ${errorMsg}`);
+            return;
           }
+
+          if (failedJob.type === 'sync_source') {
+            const sourceId = failedJob.metadata?.sourceId;
+            if (sourceId) {
+              sourcesStore.setSyncing(sourceId, false);
+            }
+            toastStore.error(`⚠️ Sync failed for "${failedJob.metadata?.sourceName || 'Source'}": ${errorMsg}`);
+            return;
+          }
+
+          if (failedJob.type === 'sync_all') {
+            sourcesStore.setSyncingAll(false);
+            toastStore.error(`⚠️ Bulk sync failed: ${errorMsg}`);
+            return;
+          }
+
+          toastStore.error(`⚠️ Task "${title}" failed: ${errorMsg}`);
         } catch {}
       });
 
@@ -128,12 +191,29 @@ export class TaskStore {
           const cancelledJob: Job = JSON.parse(e.data);
           this.upsertJob(cancelledJob);
           const title = cancelledJob.title || cancelledJob.currentStep || cancelledJob.type;
+
           if (cancelledJob.id === generateStore.activeJobId) {
             generateStore.finishGenerating(null, 'Generation task was cancelled');
             toastStore.warn(`⏹️ Generation task was cancelled.`);
-          } else {
-            toastStore.warn(`⏹️ Task "${title}" was cancelled.`);
+            return;
           }
+
+          if (cancelledJob.type === 'sync_source') {
+            const sourceId = cancelledJob.metadata?.sourceId;
+            if (sourceId) {
+              sourcesStore.setSyncing(sourceId, false);
+            }
+            toastStore.warn(`⏹️ Sync for "${cancelledJob.metadata?.sourceName || 'Source'}" was cancelled.`);
+            return;
+          }
+
+          if (cancelledJob.type === 'sync_all') {
+            sourcesStore.setSyncingAll(false);
+            toastStore.warn(`⏹️ Bulk sync was cancelled.`);
+            return;
+          }
+
+          toastStore.warn(`⏹️ Task "${title}" was cancelled.`);
         } catch {}
       });
 
@@ -188,6 +268,14 @@ export class TaskStore {
       }
       if (jobId === generateStore.activeJobId) {
         generateStore.finishGenerating(null, 'Generation task was cancelled');
+      }
+      if (jobId === sourcesStore.activeSyncAllJobId) {
+        sourcesStore.setSyncingAll(false);
+      }
+      for (const [sourceId, jId] of Object.entries(sourcesStore.activeSyncJobIds)) {
+        if (jId === jobId) {
+          sourcesStore.setSyncing(sourceId, false);
+        }
       }
       return res.success;
     } catch {

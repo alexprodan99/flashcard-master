@@ -8,6 +8,8 @@ export class SourcesStore {
   filterQuery = $state<string>('');
   syncingSourceIds = $state<Record<string, boolean>>({});
   isSyncingAll = $state<boolean>(false);
+  activeSyncJobIds = $state<Record<string, string>>({});
+  activeSyncAllJobId = $state<string | null>(null);
 
   setSources(list: DataSource[]) {
     this.sources = list;
@@ -30,12 +32,18 @@ export class SourcesStore {
     this.filterQuery = query;
   }
 
-  setSyncing(sourceId: string, isSyncing: boolean) {
+  setSyncing(sourceId: string, isSyncing: boolean, jobId?: string | null) {
     this.syncingSourceIds[sourceId] = isSyncing;
+    if (jobId) {
+      this.activeSyncJobIds[sourceId] = jobId;
+    } else if (!isSyncing) {
+      delete this.activeSyncJobIds[sourceId];
+    }
   }
 
-  setSyncingAll(isSyncing: boolean) {
+  setSyncingAll(isSyncing: boolean, jobId?: string | null) {
     this.isSyncingAll = isSyncing;
+    this.activeSyncAllJobId = isSyncing ? (jobId || null) : null;
   }
 }
 

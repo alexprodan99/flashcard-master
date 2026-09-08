@@ -328,6 +328,8 @@ if (parentPort) {
         totalSources,
         totalNewDocuments: totalNewDocs,
         totalFetchedDocuments: totalFetchedDocs,
+        newCount: totalNewDocs,
+        totalFetched: totalFetchedDocs,
       },
     });
   }

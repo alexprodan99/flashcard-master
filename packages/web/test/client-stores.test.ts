@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { GenerateStore, generateStore } from '../client/src/stores/generateStore.svelte.js';
-import { SourcesStore } from '../client/src/stores/sourcesStore.svelte.js';
+import { SourcesStore, sourcesStore } from '../client/src/stores/sourcesStore.svelte.js';
 import { ExplorerStore } from '../client/src/stores/explorerStore.svelte.js';
 import { ExportStore } from '../client/src/stores/exportStore.svelte.js';
 import { TaskStore } from '../client/src/stores/taskStore.svelte.js';
@@ -392,6 +392,43 @@ describe('Svelte 5 Universal Client Stores (Epic 14.4)', () => {
       expect(generateStore.isGenerating).toBe(false);
       expect(generateStore.activeJobId).toBe(null);
       expect(generateStore.errorMessage).toBe('LLM context length exceeded');
+
+      // Test single source sync job completion
+      sourcesStore.setSyncing('src-101', true, 'sync-job-101');
+      expect(sourcesStore.syncingSourceIds['src-101']).toBe(true);
+      expect(sourcesStore.activeSyncJobIds['src-101']).toBe('sync-job-101');
+
+      listeners['job_completed']?.({
+        data: JSON.stringify({
+          id: 'sync-job-101',
+          type: 'sync_source',
+          title: 'Sync source: Rust Docs',
+          status: 'completed',
+          metadata: { sourceId: 'src-101', sourceName: 'Rust Docs' },
+          resultSummary: { newCount: 3, totalFetched: 10 },
+        }),
+      });
+
+      expect(sourcesStore.syncingSourceIds['src-101']).toBe(false);
+      expect(sourcesStore.activeSyncJobIds['src-101']).toBeUndefined();
+
+      // Test bulk sync_all job completion
+      sourcesStore.setSyncingAll(true, 'sync-all-job');
+      expect(sourcesStore.isSyncingAll).toBe(true);
+      expect(sourcesStore.activeSyncAllJobId).toBe('sync-all-job');
+
+      listeners['job_completed']?.({
+        data: JSON.stringify({
+          id: 'sync-all-job',
+          type: 'sync_all',
+          title: 'Sync all sources',
+          status: 'completed',
+          resultSummary: { totalSources: 4, totalNewDocuments: 12 },
+        }),
+      });
+
+      expect(sourcesStore.isSyncingAll).toBe(false);
+      expect(sourcesStore.activeSyncAllJobId).toBe(null);
     });
   });
 });

@@ -116,11 +116,28 @@
   async function handleQuickSyncSource(sourceId: string) {
     generateStore.syncingSources[sourceId] = true;
     try {
-      await syncSource(sourceId);
+      const result: any = await syncSource(sourceId);
+      if (result.jobId) {
+        toastStore.info(`⚡ Sync task queued (#${result.jobId.slice(0, 8)}). Ingesting in background...`);
+        const pollInterval = 1500;
+        let attempts = 0;
+        while (generateStore.syncingSources[sourceId] && attempts < 240) {
+          await new Promise((resolve) => setTimeout(resolve, pollInterval));
+          try {
+            const { job } = await fetchJobDetails(result.jobId);
+            if (job.status === 'completed' || job.status === 'completed_with_warnings') {
+              break;
+            } else if (job.status === 'failed' || job.status === 'cancelled') {
+              break;
+            }
+          } catch {}
+          attempts++;
+        }
+      }
       await loadDocumentsForSource(sourceId);
       selectAllDocsForSource(sourceId);
     } catch (err: any) {
-      alert('Sync failed: ' + err.message);
+      toastStore.error('Sync failed: ' + err.message);
     } finally {
       generateStore.syncingSources[sourceId] = false;
     }

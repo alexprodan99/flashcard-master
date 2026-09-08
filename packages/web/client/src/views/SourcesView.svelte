@@ -1,12 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { fetchSources, fetchSourceDocuments, toggleSourceActive, deleteSource, syncSource, syncAllSources } from '../lib/api';
+  import { fetchSources, fetchSourceDocuments, toggleSourceActive, deleteSource, syncSource, syncAllSources, fetchJobDetails } from '../lib/api';
   import type { DataSource, DiscoveredDocument } from '../lib/types';
   import AddSourceModal from '../components/AddSourceModal.svelte';
   import EditSourceModal from '../components/EditSourceModal.svelte';
   import SourceDocumentInspector from '../components/SourceDocumentInspector.svelte';
   import DocumentExportModal from '../components/DocumentExportModal.svelte';
-  import { sourcesStore, toastStore } from '../stores/index.js';
+  import { sourcesStore, toastStore, taskStore } from '../stores/index.js';
 
   interface Props {
     onNavigate?: (tab: string, queryParams?: Record<string, string>) => void;
@@ -83,37 +83,142 @@
   }
 
   async function handleSync(source: DataSource) {
-    if (isSyncingAll || syncingId !== null) return;
+    if (isSyncingAll || sourcesStore.syncingSourceIds[source.id]) return;
     syncingId = source.id;
     sourcesStore.setSyncing(source.id, true);
     try {
-      const result = await syncSource(source.id);
-      if (result.newCount > 0) {
-        toastStore.success(`Synced "${source.name}": ${result.newCount} new documents ingested (${result.totalFetched} total found).`);
+      const result: any = await syncSource(source.id);
+      if (result.jobId) {
+        sourcesStore.setSyncing(source.id, true, result.jobId);
+        toastStore.info(`⚡ Sync queued (#${result.jobId.slice(0, 8)}) for "${source.name}". Ingesting in background...`);
+        pollSyncJob(source.id, result.jobId, source.name);
       } else {
-        toastStore.info(`Synced "${source.name}": Up to date (0 new documents, ${result.totalFetched} total checked).`);
+        if (result.newCount > 0) {
+          toastStore.success(`Synced "${source.name}": ${result.newCount} new documents ingested (${result.totalFetched} total found).`);
+        } else {
+          toastStore.info(`Synced "${source.name}": Up to date (0 new documents, ${result.totalFetched} total checked).`);
+        }
+        await loadSources();
+        sourcesStore.setSyncing(source.id, false);
+        syncingId = null;
       }
-      await loadSources();
     } catch (err: any) {
       toastStore.error('Sync failed: ' + err.message);
-    } finally {
-      syncingId = null;
       sourcesStore.setSyncing(source.id, false);
+      syncingId = null;
+    }
+  }
+
+  async function pollSyncJob(sourceId: string, jobId: string, sourceName: string) {
+    const pollInterval = 1500;
+    const maxAttempts = 240;
+    let attempts = 0;
+
+    while (sourcesStore.syncingSourceIds[sourceId] && sourcesStore.activeSyncJobIds[sourceId] === jobId && attempts < maxAttempts) {
+      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+      if (!sourcesStore.syncingSourceIds[sourceId] || sourcesStore.activeSyncJobIds[sourceId] !== jobId) {
+        break;
+      }
+      try {
+        const { job } = await fetchJobDetails(jobId);
+        if (job.status === 'completed' || job.status === 'completed_with_warnings') {
+          if (sourcesStore.syncingSourceIds[sourceId] && sourcesStore.activeSyncJobIds[sourceId] === jobId) {
+            sourcesStore.setSyncing(sourceId, false);
+            syncingId = null;
+            const summary = job.resultSummary || {};
+            const newCount = summary.newCount ?? summary.totalNewDocuments ?? 0;
+            const totalFetched = summary.totalFetched ?? summary.totalFetchedDocuments ?? 0;
+            if (newCount > 0) {
+              toastStore.success(`🎉 Synced "${sourceName}": ${newCount} new document(s) ingested (${totalFetched} total checked).`);
+            } else {
+              toastStore.info(`Synced "${sourceName}": Up to date (0 new documents, ${totalFetched} total checked).`);
+            }
+            await loadSources();
+          }
+          break;
+        } else if (job.status === 'failed') {
+          if (sourcesStore.syncingSourceIds[sourceId] && sourcesStore.activeSyncJobIds[sourceId] === jobId) {
+            sourcesStore.setSyncing(sourceId, false);
+            syncingId = null;
+            const msg = job.errorMessage || 'Sync failed';
+            toastStore.error(`⚠️ Sync failed for "${sourceName}": ${msg}`);
+          }
+          break;
+        } else if (job.status === 'cancelled') {
+          if (sourcesStore.syncingSourceIds[sourceId] && sourcesStore.activeSyncJobIds[sourceId] === jobId) {
+            sourcesStore.setSyncing(sourceId, false);
+            syncingId = null;
+            toastStore.warn(`⏹️ Sync for "${sourceName}" was cancelled.`);
+          }
+          break;
+        }
+      } catch {}
+      attempts++;
     }
   }
 
   async function handleSyncAll() {
-    if (isSyncingAll || syncingId !== null) return;
+    if (isSyncingAll || Object.values(sourcesStore.syncingSourceIds).some(Boolean)) return;
     sourcesStore.setSyncingAll(true);
     try {
-      const results = await syncAllSources();
-      const totalNew = results.reduce((acc, r) => acc + (r.newCount || 0), 0);
-      toastStore.success(`Bulk sync completed: ${totalNew} new documents ingested across ${results.length} sources.`);
-      await loadSources();
+      const results: any = await syncAllSources();
+      if (results && results.jobId) {
+        sourcesStore.setSyncingAll(true, results.jobId);
+        toastStore.info(`⚡ Bulk sync queued (#${results.jobId.slice(0, 8)}). Ingesting in background...`);
+        pollSyncAllJob(results.jobId);
+      } else if (Array.isArray(results)) {
+        const totalNew = results.reduce((acc, r) => acc + (r.newCount || 0), 0);
+        toastStore.success(`Bulk sync completed: ${totalNew} new documents ingested across ${results.length} sources.`);
+        await loadSources();
+        sourcesStore.setSyncingAll(false);
+      } else {
+        await loadSources();
+        sourcesStore.setSyncingAll(false);
+      }
     } catch (err: any) {
       toastStore.error('Bulk sync failed: ' + err.message);
-    } finally {
       sourcesStore.setSyncingAll(false);
+    }
+  }
+
+  async function pollSyncAllJob(jobId: string) {
+    const pollInterval = 1500;
+    const maxAttempts = 240;
+    let attempts = 0;
+
+    while (sourcesStore.isSyncingAll && sourcesStore.activeSyncAllJobId === jobId && attempts < maxAttempts) {
+      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+      if (!sourcesStore.isSyncingAll || sourcesStore.activeSyncAllJobId !== jobId) {
+        break;
+      }
+      try {
+        const { job } = await fetchJobDetails(jobId);
+        if (job.status === 'completed' || job.status === 'completed_with_warnings') {
+          if (sourcesStore.isSyncingAll && sourcesStore.activeSyncAllJobId === jobId) {
+            sourcesStore.setSyncingAll(false);
+            const summary = job.resultSummary || {};
+            const totalNew = summary.totalNewDocuments ?? summary.newCount ?? 0;
+            const totalSources = summary.totalSources ?? job.metadata?.sourceCount ?? 'all';
+            toastStore.success(`🎉 Bulk sync completed: ${totalNew} new document(s) ingested across ${totalSources} sources.`);
+            await loadSources();
+          }
+          break;
+        } else if (job.status === 'failed') {
+          if (sourcesStore.isSyncingAll && sourcesStore.activeSyncAllJobId === jobId) {
+            sourcesStore.setSyncingAll(false);
+            const msg = job.errorMessage || 'Bulk sync failed';
+            toastStore.error(`⚠️ Bulk sync failed: ${msg}`);
+          }
+          break;
+        } else if (job.status === 'cancelled') {
+          if (sourcesStore.isSyncingAll && sourcesStore.activeSyncAllJobId === jobId) {
+            sourcesStore.setSyncingAll(false);
+            toastStore.warn(`⏹️ Bulk sync was cancelled.`);
+          }
+          break;
+        }
+      } catch {}
+      attempts++;
     }
   }
 
@@ -147,6 +252,15 @@
 
   onMount(() => {
     loadSources();
+    if (sourcesStore.isSyncingAll && sourcesStore.activeSyncAllJobId) {
+      pollSyncAllJob(sourcesStore.activeSyncAllJobId);
+    }
+    for (const [sourceId, jobId] of Object.entries(sourcesStore.activeSyncJobIds)) {
+      if (sourcesStore.syncingSourceIds[sourceId] && jobId) {
+        const source = sources.find((s) => s.id === sourceId);
+        pollSyncJob(sourceId, jobId, source ? source.name : 'Source');
+      }
+    }
   });
 </script>
 
@@ -157,7 +271,7 @@
       <p class="view-subtitle">Connect and synchronize RSS feeds, XML sitemaps, technical blogs, and local notes.</p>
     </div>
     <div class="header-actions">
-      <button class="btn btn-secondary" onclick={handleSyncAll} disabled={isSyncingAll || syncingId !== null || sources.length === 0}>
+      <button class="btn btn-secondary" onclick={handleSyncAll} disabled={isSyncingAll || Object.values(sourcesStore.syncingSourceIds).some(Boolean) || sources.length === 0}>
         {#if isSyncingAll}
           <span class="mini-spinner"></span> Syncing All...
         {:else}
@@ -239,7 +353,7 @@
                   <input
                     type="checkbox"
                     checked={s.isActive}
-                    disabled={isSyncingAll || syncingId !== null}
+                    disabled={isSyncingAll || !!sourcesStore.syncingSourceIds[s.id]}
                     onchange={() => handleToggleActive(s)}
                   />
                   <span class="slider"></span>
@@ -249,7 +363,7 @@
                 <div class="actions-cell">
                   <button
                     class="action-btn edit-btn"
-                    disabled={isSyncingAll || syncingId !== null}
+                    disabled={isSyncingAll || !!sourcesStore.syncingSourceIds[s.id]}
                     onclick={() => {
                       editingSource = s;
                       isEditModalOpen = true;
@@ -270,7 +384,7 @@
                   </button>
                   <button
                     class="action-btn export-btn"
-                    disabled={isSyncingAll || syncingId === s.id}
+                    disabled={isSyncingAll || !!sourcesStore.syncingSourceIds[s.id]}
                     onclick={() => handleOpenExport(s)}
                     title="Export Clean Document Knowledge Base"
                   >
@@ -278,11 +392,11 @@
                   </button>
                   <button
                     class="action-btn sync-btn"
-                    disabled={isSyncingAll || syncingId !== null}
+                    disabled={isSyncingAll || !!sourcesStore.syncingSourceIds[s.id]}
                     onclick={() => handleSync(s)}
                     title="Trigger Ingestion & Extraction"
                   >
-                    {#if syncingId === s.id}
+                    {#if sourcesStore.syncingSourceIds[s.id]}
                       <span class="mini-spinner"></span> Syncing...
                     {:else}
                       ⚡ Sync
@@ -290,7 +404,7 @@
                   </button>
                   <button
                     class="action-btn delete-btn"
-                    disabled={isSyncingAll || syncingId !== null}
+                    disabled={isSyncingAll || !!sourcesStore.syncingSourceIds[s.id]}
                     onclick={() => handleDelete(s)}
                     title="Delete Source"
                   >
