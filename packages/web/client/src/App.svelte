@@ -1,20 +1,38 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Navigation from './components/Navigation.svelte';
+  import TaskCenterDrawer from './components/TaskCenterDrawer.svelte';
+  import ToastContainer from './components/ToastContainer.svelte';
   import DashboardView from './views/DashboardView.svelte';
   import SourcesView from './views/SourcesView.svelte';
   import GenerateStudio from './views/GenerateStudio.svelte';
   import QuestionExplorer from './views/QuestionExplorer.svelte';
   import ExportCenter from './views/ExportCenter.svelte';
+  import { taskStore } from './stores/index.js';
 
   let activeTab = $state('dashboard');
 
-  function handleSelectTab(tab: string, queryParams?: Record<string, string>) {
+  function handleSelectTab(tab: string, queryParams?: Record<string, string>, pushState = true) {
     activeTab = tab;
-    if (queryParams && typeof window !== 'undefined') {
-      const searchParams = new URLSearchParams(queryParams);
+    if (typeof window !== 'undefined' && pushState) {
+      const searchParams = new URLSearchParams(queryParams || {});
       searchParams.set('tab', tab);
-      window.history.pushState(null, '', `?${searchParams.toString()}`);
+      const newSearch = `?${searchParams.toString()}`;
+      if (window.location.search !== newSearch) {
+        window.history.pushState({ tab }, '', newSearch);
+      }
+    }
+  }
+
+  function handlePopState() {
+    const params = new URLSearchParams(window.location.search);
+    const tabParam = params.get('tab');
+    if (tabParam && ['dashboard', 'sources', 'generate', 'cards', 'export'].includes(tabParam)) {
+      activeTab = tabParam;
+    } else if (params.get('docId') || params.get('sourceId')) {
+      activeTab = 'generate';
+    } else {
+      activeTab = 'dashboard';
     }
   }
 
@@ -25,14 +43,17 @@
       return;
     }
 
-    if (e.key === '1') activeTab = 'dashboard';
-    else if (e.key === '2' || e.key.toLowerCase() === 's') activeTab = 'sources';
-    else if (e.key === '3' || e.key.toLowerCase() === 'g') activeTab = 'generate';
-    else if (e.key === '4') activeTab = 'cards';
-    else if (e.key === '5' || e.key.toLowerCase() === 'e') activeTab = 'export';
+    if (e.key === '1') handleSelectTab('dashboard');
+    else if (e.key === '2' || e.key.toLowerCase() === 's') handleSelectTab('sources');
+    else if (e.key === '3' || e.key.toLowerCase() === 'g') handleSelectTab('generate');
+    else if (e.key === '4') handleSelectTab('cards');
+    else if (e.key === '5' || e.key.toLowerCase() === 'e') handleSelectTab('export');
+    else if (e.key.toLowerCase() === 't') taskStore.toggleDrawer();
   }
 
   onMount(() => {
+    taskStore.init();
+
     const params = new URLSearchParams(window.location.search);
     const tabParam = params.get('tab');
     if (tabParam && ['dashboard', 'sources', 'generate', 'cards', 'export'].includes(tabParam)) {
@@ -41,9 +62,12 @@
       activeTab = 'generate';
     }
 
+    window.addEventListener('popstate', handlePopState);
     window.addEventListener('keydown', handleKeyDown);
     return () => {
+      window.removeEventListener('popstate', handlePopState);
       window.removeEventListener('keydown', handleKeyDown);
+      taskStore.teardown();
     };
   });
 </script>
@@ -64,6 +88,9 @@
       <ExportCenter />
     {/if}
   </main>
+
+  <TaskCenterDrawer />
+  <ToastContainer />
 </div>
 
 <style>

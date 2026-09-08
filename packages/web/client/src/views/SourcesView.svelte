@@ -6,6 +6,7 @@
   import EditSourceModal from '../components/EditSourceModal.svelte';
   import SourceDocumentInspector from '../components/SourceDocumentInspector.svelte';
   import DocumentExportModal from '../components/DocumentExportModal.svelte';
+  import { sourcesStore, toastStore } from '../stores/index.js';
 
   interface Props {
     onNavigate?: (tab: string, queryParams?: Record<string, string>) => void;
@@ -13,9 +14,11 @@
 
   let { onNavigate }: Props = $props();
 
-  let sources = $state<DataSource[]>([]);
-  let loading = $state(true);
-  let error = $state<string | null>(null);
+  let sources = $derived(sourcesStore.sources);
+  let loading = $derived(sourcesStore.loading);
+  let error = $derived(sourcesStore.error);
+  let isSyncingAll = $derived(sourcesStore.isSyncingAll);
+
   let isAddModalOpen = $state(false);
   let editingSource = $state<DataSource | null>(null);
   let isEditModalOpen = $state(false);
@@ -25,102 +28,103 @@
   let isExportModalOpen = $state(false);
   let sourceDocsForExport = $state<DiscoveredDocument[]>([]);
   let syncingId = $state<string | null>(null);
-  let toastMessage = $state<string | null>(null);
-
-  let isSyncingAll = $state(false);
 
   async function handleOpenExport(source: DataSource) {
     try {
       const data = await fetchSourceDocuments(source.id);
       if (!data.documents || data.documents.length === 0) {
-        alert(`No discovered documents found for "${source.name}". Click "Sync" first to fetch and extract articles from this source.`);
+        toastStore.warning(`No discovered documents found for "${source.name}". Click "Sync" first.`);
         return;
       }
       exportingSource = source;
       sourceDocsForExport = data.documents;
       isExportModalOpen = true;
     } catch (err: any) {
-      alert('Failed to load documents for export: ' + err.message);
+      toastStore.error('Failed to load documents for export: ' + err.message);
     }
   }
 
-
   async function loadSources() {
-    loading = true;
-    error = null;
+    if (sourcesStore.sources.length === 0) {
+      sourcesStore.loading = true;
+    }
+    sourcesStore.error = null;
     try {
-      sources = await fetchSources();
+      const fetched = await fetchSources();
+      sourcesStore.setSources(fetched);
     } catch (err: any) {
-      error = err.message || 'Failed to load data sources';
+      sourcesStore.error = err.message || 'Failed to load data sources';
     } finally {
-      loading = false;
+      sourcesStore.loading = false;
     }
   }
 
   async function handleToggleActive(source: DataSource) {
+    if (isSyncingAll || syncingId === source.id) return;
     try {
       const updated = await toggleSourceActive(source.id, !source.isActive);
-      sources = sources.map((s) => (s.id === updated.id ? updated : s));
+      sourcesStore.updateSource(updated);
+      toastStore.info(`Source "${source.name}" is now ${updated.isActive ? 'active' : 'inactive'}.`);
     } catch (err: any) {
-      alert('Failed to toggle source: ' + err.message);
+      toastStore.error('Failed to toggle source: ' + err.message);
     }
   }
 
   async function handleDelete(source: DataSource) {
+    if (isSyncingAll || syncingId === source.id) return;
     if (!confirm(`Are you sure you want to delete source "${source.name}"?`)) return;
     try {
       await deleteSource(source.id);
-      sources = sources.filter((s) => s.id !== source.id);
+      sourcesStore.removeSource(source.id);
+      toastStore.info(`Source "${source.name}" deleted.`);
     } catch (err: any) {
-      alert('Failed to delete source: ' + err.message);
+      toastStore.error('Failed to delete source: ' + err.message);
     }
   }
 
   async function handleSync(source: DataSource) {
+    if (isSyncingAll || syncingId !== null) return;
     syncingId = source.id;
-    toastMessage = null;
+    sourcesStore.setSyncing(source.id, true);
     try {
       const result = await syncSource(source.id);
       if (result.newCount > 0) {
-        toastMessage = `✅ Synced "${source.name}": ${result.newCount} new documents ingested (${result.totalFetched} total found).`;
+        toastStore.success(`Synced "${source.name}": ${result.newCount} new documents ingested (${result.totalFetched} total found).`);
       } else {
-        toastMessage = `✅ Synced "${source.name}": Up to date (0 new documents, ${result.totalFetched} total checked).`;
+        toastStore.info(`Synced "${source.name}": Up to date (0 new documents, ${result.totalFetched} total checked).`);
       }
-      setTimeout(() => (toastMessage = null), 5000);
       await loadSources();
     } catch (err: any) {
-      alert('Sync failed: ' + err.message);
+      toastStore.error('Sync failed: ' + err.message);
     } finally {
       syncingId = null;
+      sourcesStore.setSyncing(source.id, false);
     }
   }
 
   async function handleSyncAll() {
-    isSyncingAll = true;
-    toastMessage = null;
+    if (isSyncingAll || syncingId !== null) return;
+    sourcesStore.setSyncingAll(true);
     try {
       const results = await syncAllSources();
       const totalNew = results.reduce((acc, r) => acc + (r.newCount || 0), 0);
-      toastMessage = `✅ Bulk sync completed: ${totalNew} new documents ingested across ${results.length} sources.`;
-      setTimeout(() => (toastMessage = null), 5000);
+      toastStore.success(`Bulk sync completed: ${totalNew} new documents ingested across ${results.length} sources.`);
       await loadSources();
     } catch (err: any) {
-      alert('Bulk sync failed: ' + err.message);
+      toastStore.error('Bulk sync failed: ' + err.message);
     } finally {
-      isSyncingAll = false;
+      sourcesStore.setSyncingAll(false);
     }
   }
 
   function handleSourceCreated(newSource: DataSource) {
-    sources = [newSource, ...sources];
-    toastMessage = `✅ Data source "${newSource.name}" added successfully.`;
-    setTimeout(() => (toastMessage = null), 4000);
+    sourcesStore.setSources([newSource, ...sourcesStore.sources]);
+    toastStore.success(`Data source "${newSource.name}" added successfully.`);
   }
 
   function handleSourceUpdated(updated: DataSource) {
-    sources = sources.map((s) => (s.id === updated.id ? updated : s));
-    toastMessage = `✅ Data source "${updated.name}" updated successfully.`;
-    setTimeout(() => (toastMessage = null), 4000);
+    sourcesStore.updateSource(updated);
+    toastStore.success(`Data source "${updated.name}" updated successfully.`);
   }
 
   function getUriSummary(source: DataSource): { displayUri: string; countBadge?: string } {
@@ -153,22 +157,18 @@
       <p class="view-subtitle">Connect and synchronize RSS feeds, XML sitemaps, technical blogs, and local notes.</p>
     </div>
     <div class="header-actions">
-      <button class="btn btn-secondary" onclick={handleSyncAll} disabled={isSyncingAll || sources.length === 0}>
+      <button class="btn btn-secondary" onclick={handleSyncAll} disabled={isSyncingAll || syncingId !== null || sources.length === 0}>
         {#if isSyncingAll}
           <span class="mini-spinner"></span> Syncing All...
         {:else}
           🔄 Sync All Sources
         {/if}
       </button>
-      <button class="btn btn-primary" onclick={() => (isAddModalOpen = true)}>
+      <button class="btn btn-primary" onclick={() => (isAddModalOpen = true)} disabled={isSyncingAll}>
         ➕ Add Ingestion Source
       </button>
     </div>
   </div>
-
-  {#if toastMessage}
-    <div class="toast-banner">{toastMessage}</div>
-  {/if}
 
   {#if loading && sources.length === 0}
     <div class="loading-state">
@@ -239,6 +239,7 @@
                   <input
                     type="checkbox"
                     checked={s.isActive}
+                    disabled={isSyncingAll || syncingId !== null}
                     onchange={() => handleToggleActive(s)}
                   />
                   <span class="slider"></span>
@@ -248,6 +249,7 @@
                 <div class="actions-cell">
                   <button
                     class="action-btn edit-btn"
+                    disabled={isSyncingAll || syncingId !== null}
                     onclick={() => {
                       editingSource = s;
                       isEditModalOpen = true;
@@ -268,6 +270,7 @@
                   </button>
                   <button
                     class="action-btn export-btn"
+                    disabled={isSyncingAll || syncingId === s.id}
                     onclick={() => handleOpenExport(s)}
                     title="Export Clean Document Knowledge Base"
                   >
@@ -275,18 +278,19 @@
                   </button>
                   <button
                     class="action-btn sync-btn"
-                    disabled={syncingId === s.id}
+                    disabled={isSyncingAll || syncingId !== null}
                     onclick={() => handleSync(s)}
                     title="Trigger Ingestion & Extraction"
                   >
                     {#if syncingId === s.id}
-                      <span class="mini-spinner"></span>
+                      <span class="mini-spinner"></span> Syncing...
                     {:else}
                       ⚡ Sync
                     {/if}
                   </button>
                   <button
                     class="action-btn delete-btn"
+                    disabled={isSyncingAll || syncingId !== null}
                     onclick={() => handleDelete(s)}
                     title="Delete Source"
                   >
@@ -573,9 +577,10 @@
     border-color: rgba(239, 68, 68, 0.3);
   }
 
-  .delete-btn:hover {
-    background: #ef4444;
-    color: white;
+  .action-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    pointer-events: none;
   }
 
   /* Toggle Switch */
@@ -590,6 +595,11 @@
     opacity: 0;
     width: 0;
     height: 0;
+  }
+
+  .switch input:disabled + .slider {
+    opacity: 0.45;
+    cursor: not-allowed;
   }
 
   .slider {
@@ -631,12 +641,17 @@
     transition: all 0.15s;
   }
 
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
   .btn-primary {
     background: #6366f1;
     color: #ffffff;
   }
 
-  .btn-primary:hover {
+  .btn-primary:hover:not(:disabled) {
     background: #4f46e5;
   }
 

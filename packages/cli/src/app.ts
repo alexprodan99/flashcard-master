@@ -7,6 +7,7 @@ import {
   SyncStateRepository,
   FlashcardRepository,
   DocumentRepository,
+  JobRepository,
   StrategyRegistry,
   IngestionService,
   PersonaStudioService,
@@ -41,6 +42,7 @@ export interface AppContext {
   syncRepo: SyncStateRepository;
   cardRepo: FlashcardRepository;
   docRepo: DocumentRepository;
+  jobRepo: JobRepository;
   mediaService: MediaService;
   strategyRegistry: StrategyRegistry;
   ingestionService: IngestionService;
@@ -76,6 +78,7 @@ export function createAppContext(options: AppOptions = {}): AppContext {
   const syncRepo = new SyncStateRepository(db);
   const cardRepo = new FlashcardRepository(db);
   const docRepo = new DocumentRepository(db);
+  const jobRepo = new JobRepository(db);
   const mediaService = new MediaService();
 
   // Ingestion strategies
@@ -113,6 +116,7 @@ export function createAppContext(options: AppOptions = {}): AppContext {
     syncRepo,
     cardRepo,
     docRepo,
+    jobRepo,
     mediaService,
     strategyRegistry,
     ingestionService,

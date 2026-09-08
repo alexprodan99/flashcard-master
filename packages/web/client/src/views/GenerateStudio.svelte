@@ -4,6 +4,7 @@
   import type { DataSource, DiscoveredDocument, Flashcard, GenerationResult, DifficultyLevel, PersonaType, CardDepthMode } from '../lib/types';
   import GenerationConfigFields from '../components/GenerationConfigFields.svelte';
   import DocumentPreviewModal from '../components/DocumentPreviewModal.svelte';
+  import { generateStore, toastStore } from '../stores/index.js';
 
   interface Props {
     onNavigate?: (tab: string) => void;
@@ -11,48 +12,39 @@
 
   let { onNavigate }: Props = $props();
 
-  // Sources & Documents State
+  // Active sources list
   let sources = $state<DataSource[]>([]);
-  let sourceDocuments = $state<Record<string, DiscoveredDocument[]>>({});
-  let loadingDocs = $state<Record<string, boolean>>({});
-  let syncingSources = $state<Record<string, boolean>>({});
-  let expandedSources = $state<Record<string, boolean>>({});
-  let selectedDocIds = $state<Record<string, boolean>>({});
-  let selectedSourceIds = $state<string[]>([]);
-  let sourceFilterQuery = $state<Record<string, string>>({});
 
   // Preview Modal State
   let previewDoc = $state<DiscoveredDocument | null>(null);
   let isPreviewOpen = $state(false);
 
-  // Generation Settings State (passed to GenerationConfigFields)
-  let provider = $state('ollama');
-  let model = $state('phi4-mini');
-  let apiKey = $state('');
-  let persona = $state<PersonaType>('socratic-mentor');
-  let difficulty = $state<DifficultyLevel>('intermediate');
-  let depthMode = $state<CardDepthMode>('atomic');
-  let chunkMultiplier = $state<number>(1);
-  let limit = $state(4);
-  let targetDeck = $state('');
-  let enforceGrounding = $state(true);
-
-  // Execution State
-  let isGenerating = $state(false);
-  let errorMessage = $state<string | null>(null);
-  let generationResult = $state<GenerationResult | null>(null);
-
-  // Computed Scope Metrics
+  // Computed Scope Metrics from universal generateStore
   let selectedDocCount = $derived(
-    Object.keys(selectedDocIds).filter((id) => selectedDocIds[id]).length
+    Object.keys(generateStore.selectedDocIds).filter((id) => generateStore.selectedDocIds[id]).length
   );
 
   let selectedTotalWords = $derived(
-    Object.values(sourceDocuments)
+    Object.values(generateStore.sourceDocuments)
       .flat()
-      .filter((doc) => selectedDocIds[doc.id])
+      .filter((doc) => generateStore.selectedDocIds[doc.id])
       .reduce((sum, doc) => sum + (doc.wordCount || 0), 0)
   );
+
+  // Auto-save configuration changes to localStorage
+  $effect(() => {
+    generateStore.provider;
+    generateStore.model;
+    generateStore.apiKey;
+    generateStore.persona;
+    generateStore.difficulty;
+    generateStore.depthMode;
+    generateStore.chunkMultiplier;
+    generateStore.limit;
+    generateStore.targetDeck;
+    generateStore.enforceGrounding;
+    generateStore.save();
+  });
 
   async function loadSources() {
     try {
@@ -69,58 +61,60 @@
           const docData = await fetchDocumentDetails(deepDocId);
           if (docData.document) {
             const doc = docData.document;
-            expandedSources[doc.sourceId] = true;
+            generateStore.expandedSources[doc.sourceId] = true;
             await loadDocumentsForSource(doc.sourceId);
-            selectedDocIds[doc.id] = true;
-            if (!selectedSourceIds.includes(doc.sourceId)) {
-              selectedSourceIds = [...selectedSourceIds, doc.sourceId];
+            generateStore.selectedDocIds[doc.id] = true;
+            if (!generateStore.selectedSourceIds.includes(doc.sourceId)) {
+              generateStore.selectedSourceIds = [...generateStore.selectedSourceIds, doc.sourceId];
             }
           }
         } catch {
-          // If deep-link fails, fallback to selecting all sources
-          selectedSourceIds = sources.map((s) => s.id);
+          if (generateStore.selectedSourceIds.length === 0) {
+            generateStore.selectedSourceIds = sources.map((s) => s.id);
+          }
         }
       } else if (deepSourceId) {
-        expandedSources[deepSourceId] = true;
+        generateStore.expandedSources[deepSourceId] = true;
         await loadDocumentsForSource(deepSourceId);
-        selectedSourceIds = [deepSourceId];
+        generateStore.selectedSourceIds = [deepSourceId];
         selectAllDocsForSource(deepSourceId);
       } else {
-        // Default: select all sources
-        selectedSourceIds = sources.map((s) => s.id);
+        // Only set default if user has not made any selection yet
+        if (generateStore.selectedSourceIds.length === 0 && Object.keys(generateStore.selectedDocIds).length === 0) {
+          generateStore.selectedSourceIds = sources.map((s) => s.id);
+        }
       }
     } catch (err: any) {
-      errorMessage = 'Failed to load active data sources: ' + err.message;
+      generateStore.errorMessage = 'Failed to load active data sources: ' + err.message;
     }
   }
 
   async function loadDocumentsForSource(sourceId: string) {
-    loadingDocs[sourceId] = true;
+    generateStore.loadingDocs[sourceId] = true;
     try {
       const data = await fetchSourceDocuments(sourceId);
-      sourceDocuments[sourceId] = data.documents;
+      generateStore.sourceDocuments[sourceId] = data.documents;
     } catch (err: any) {
       console.error(`Failed to load docs for source ${sourceId}:`, err);
     } finally {
-      loadingDocs[sourceId] = false;
+      generateStore.loadingDocs[sourceId] = false;
     }
   }
 
   async function handleToggleExpand(sourceId: string) {
-    expandedSources[sourceId] = !expandedSources[sourceId];
-    if (expandedSources[sourceId] && !sourceDocuments[sourceId]) {
+    generateStore.expandedSources[sourceId] = !generateStore.expandedSources[sourceId];
+    if (generateStore.expandedSources[sourceId] && !generateStore.sourceDocuments[sourceId]) {
       await loadDocumentsForSource(sourceId);
-      // If source was selected, auto-select all loaded documents
-      if (selectedSourceIds.includes(sourceId) && sourceDocuments[sourceId]) {
-        sourceDocuments[sourceId].forEach((doc) => {
-          selectedDocIds[doc.id] = true;
+      if (generateStore.selectedSourceIds.includes(sourceId) && generateStore.sourceDocuments[sourceId]) {
+        generateStore.sourceDocuments[sourceId].forEach((doc) => {
+          generateStore.selectedDocIds[doc.id] = true;
         });
       }
     }
   }
 
   async function handleQuickSyncSource(sourceId: string) {
-    syncingSources[sourceId] = true;
+    generateStore.syncingSources[sourceId] = true;
     try {
       await syncSource(sourceId);
       await loadDocumentsForSource(sourceId);
@@ -128,78 +122,77 @@
     } catch (err: any) {
       alert('Sync failed: ' + err.message);
     } finally {
-      syncingSources[sourceId] = false;
+      generateStore.syncingSources[sourceId] = false;
     }
   }
 
   function selectAllDocsForSource(sourceId: string) {
-    const docs = sourceDocuments[sourceId] || [];
+    const docs = generateStore.sourceDocuments[sourceId] || [];
     docs.forEach((doc) => {
-      selectedDocIds[doc.id] = true;
+      generateStore.selectedDocIds[doc.id] = true;
     });
   }
 
   function deselectAllDocsForSource(sourceId: string) {
-    const docs = sourceDocuments[sourceId] || [];
+    const docs = generateStore.sourceDocuments[sourceId] || [];
     docs.forEach((doc) => {
-      selectedDocIds[doc.id] = false;
+      generateStore.selectedDocIds[doc.id] = false;
     });
   }
 
   function isSourceFullyChecked(source: DataSource): boolean {
-    const docs = sourceDocuments[source.id];
+    const docs = generateStore.sourceDocuments[source.id];
     if (!docs || docs.length === 0) {
-      return selectedSourceIds.includes(source.id);
+      return generateStore.selectedSourceIds.includes(source.id);
     }
-    return docs.every((doc) => selectedDocIds[doc.id]);
+    return docs.every((doc) => generateStore.selectedDocIds[doc.id]);
   }
 
   function isSourceIndeterminate(source: DataSource): boolean {
-    const docs = sourceDocuments[source.id];
+    const docs = generateStore.sourceDocuments[source.id];
     if (!docs || docs.length === 0) return false;
-    const someChecked = docs.some((doc) => selectedDocIds[doc.id]);
-    const allChecked = docs.every((doc) => selectedDocIds[doc.id]);
+    const someChecked = docs.some((doc) => generateStore.selectedDocIds[doc.id]);
+    const allChecked = docs.every((doc) => generateStore.selectedDocIds[doc.id]);
     return someChecked && !allChecked;
   }
 
   async function toggleSourceCheck(source: DataSource) {
     const fullyChecked = isSourceFullyChecked(source);
-    if (!sourceDocuments[source.id]) {
+    if (!generateStore.sourceDocuments[source.id]) {
       await loadDocumentsForSource(source.id);
     }
 
     if (fullyChecked) {
-      selectedSourceIds = selectedSourceIds.filter((id) => id !== source.id);
+      generateStore.selectedSourceIds = generateStore.selectedSourceIds.filter((id) => id !== source.id);
       deselectAllDocsForSource(source.id);
     } else {
-      if (!selectedSourceIds.includes(source.id)) {
-        selectedSourceIds = [...selectedSourceIds, source.id];
+      if (!generateStore.selectedSourceIds.includes(source.id)) {
+        generateStore.selectedSourceIds = [...generateStore.selectedSourceIds, source.id];
       }
       selectAllDocsForSource(source.id);
     }
   }
 
   function toggleDocCheck(doc: DiscoveredDocument, sourceId: string) {
-    selectedDocIds[doc.id] = !selectedDocIds[doc.id];
-    // Keep selectedSourceIds in sync
-    const docs = sourceDocuments[sourceId] || [];
-    const anyChecked = docs.some((d) => selectedDocIds[d.id]);
-    if (anyChecked && !selectedSourceIds.includes(sourceId)) {
-      selectedSourceIds = [...selectedSourceIds, sourceId];
+    generateStore.selectedDocIds[doc.id] = !generateStore.selectedDocIds[doc.id];
+    const docs = generateStore.sourceDocuments[sourceId] || [];
+    const anyChecked = docs.some((d) => generateStore.selectedDocIds[d.id]);
+    if (anyChecked && !generateStore.selectedSourceIds.includes(sourceId)) {
+      generateStore.selectedSourceIds = [...generateStore.selectedSourceIds, sourceId];
     } else if (!anyChecked) {
-      selectedSourceIds = selectedSourceIds.filter((id) => id !== sourceId);
+      generateStore.selectedSourceIds = generateStore.selectedSourceIds.filter((id) => id !== sourceId);
     }
   }
 
   async function toggleSelectAllGlobal() {
     const allSourcesSelected = sources.every((s) => isSourceFullyChecked(s));
     if (allSourcesSelected) {
-      selectedSourceIds = [];
-      Object.keys(selectedDocIds).forEach((k) => (selectedDocIds[k] = false));
+      generateStore.selectedSourceIds = [];
+      Object.keys(generateStore.selectedDocIds).forEach((k) => (generateStore.selectedDocIds[k] = false));
     } else {
-      selectedSourceIds = sources.map((s) => s.id);
+      generateStore.selectedSourceIds = sources.map((s) => s.id);
       for (const s of sources) {
-        if (!sourceDocuments[s.id]) {
+        if (!generateStore.sourceDocuments[s.id]) {
           await loadDocumentsForSource(s.id);
         }
         selectAllDocsForSource(s.id);
@@ -219,44 +212,45 @@
 
   async function handleGenerate(e: Event) {
     e.preventDefault();
-    if (isGenerating) return;
-    const targetedDocIds = Object.keys(selectedDocIds).filter((id) => selectedDocIds[id]);
+    if (generateStore.isGenerating) return;
+    const targetedDocIds = Object.keys(generateStore.selectedDocIds).filter((id) => generateStore.selectedDocIds[id]);
 
-    if (targetedDocIds.length === 0 && selectedSourceIds.length === 0) {
-      errorMessage = 'Please select at least one document or data source to synthesize cards from.';
+    if (targetedDocIds.length === 0 && generateStore.selectedSourceIds.length === 0) {
+      generateStore.errorMessage = 'Please select at least one document or data source to synthesize cards from.';
       return;
     }
 
-    isGenerating = true;
-    errorMessage = null;
-    generationResult = null;
+    generateStore.isGenerating = true;
+    generateStore.errorMessage = null;
+    generateStore.generationResult = null;
 
     try {
       const payload: any = {
-        provider,
-        model: model.trim() || undefined,
-        apiKey: apiKey.trim() || undefined,
-        persona,
-        difficulty,
-        depthMode,
-        chunkMultiplier,
-        limit,
-        targetDeck: targetDeck.trim() || undefined,
-        enforceGrounding,
+        provider: generateStore.provider,
+        model: generateStore.model.trim() || undefined,
+        apiKey: generateStore.apiKey.trim() || undefined,
+        persona: generateStore.persona,
+        difficulty: generateStore.difficulty,
+        depthMode: generateStore.depthMode,
+        chunkMultiplier: generateStore.chunkMultiplier,
+        limit: generateStore.limit,
+        targetDeck: generateStore.targetDeck.trim() || undefined,
+        enforceGrounding: generateStore.enforceGrounding,
       };
 
       if (targetedDocIds.length > 0) {
         payload.documentIds = targetedDocIds;
       } else {
-        payload.sourceIds = selectedSourceIds;
+        payload.sourceIds = generateStore.selectedSourceIds;
       }
 
       const result = await generateCards(payload);
-      generationResult = result;
+      generateStore.finishGenerating(result);
+      toastStore.success(`🎉 Generated ${result.cardsCreated} cards (${result.duplicatesSkipped} duplicates skipped)`);
     } catch (err: any) {
-      errorMessage = err.message || 'Generation failed';
-    } finally {
-      isGenerating = false;
+      const msg = err.message || 'Generation failed';
+      generateStore.finishGenerating(null, msg);
+      toastStore.error(`⚠️ Generation failed: ${msg}`);
     }
   }
 
@@ -285,11 +279,11 @@
                 {#if selectedDocCount > 0}
                   🎯 {selectedDocCount} docs selected (~{selectedTotalWords.toLocaleString()} words)
                 {:else}
-                  📁 {selectedSourceIds.length} / {sources.length} sources
+                  📁 {generateStore.selectedSourceIds.length} / {sources.length} sources
                 {/if}
               </span>
-              <button type="button" class="btn btn-xs btn-secondary" onclick={toggleSelectAllGlobal}>
-                {selectedSourceIds.length === sources.length ? 'Deselect All' : 'Select All'}
+              <button type="button" class="btn btn-xs btn-secondary" onclick={toggleSelectAllGlobal} disabled={generateStore.isGenerating}>
+                {generateStore.selectedSourceIds.length === sources.length ? 'Deselect All' : 'Select All'}
               </button>
             </div>
           </div>
@@ -301,7 +295,7 @@
           {:else}
             <div class="scope-tree-container">
               {#each sources as s (s.id)}
-                <div class="source-node" class:expanded={expandedSources[s.id]}>
+                <div class="source-node" class:expanded={generateStore.expandedSources[s.id]}>
                   <div class="source-node-header">
                     <label class="checkbox-container">
                       <input
@@ -309,6 +303,7 @@
                         checked={isSourceFullyChecked(s)}
                         indeterminate={isSourceIndeterminate(s)}
                         onchange={() => toggleSourceCheck(s)}
+                        disabled={generateStore.isGenerating}
                       />
                     </label>
 
@@ -317,33 +312,33 @@
                       class="accordion-toggle"
                       onclick={() => handleToggleExpand(s.id)}
                     >
-                      <span class="toggle-icon">{expandedSources[s.id] ? '▼' : '▶'}</span>
+                      <span class="toggle-icon">{generateStore.expandedSources[s.id] ? '▼' : '▶'}</span>
                       <span class="type-badge {s.type}">{s.type}</span>
                       <span class="source-title">{s.name}</span>
-                      {#if sourceDocuments[s.id]}
-                        <span class="doc-count-pill">{sourceDocuments[s.id].length} docs</span>
+                      {#if generateStore.sourceDocuments[s.id]}
+                        <span class="doc-count-pill">{generateStore.sourceDocuments[s.id].length} docs</span>
                       {/if}
                     </button>
                   </div>
 
                   <!-- Expanded Document List -->
-                  {#if expandedSources[s.id]}
+                  {#if generateStore.expandedSources[s.id]}
                     <div class="source-documents-tray">
-                      {#if loadingDocs[s.id]}
+                      {#if generateStore.loadingDocs[s.id]}
                         <div class="tray-loading">
                           <span class="spinner-inline"></span>
                           <span>Loading discovered documents...</span>
                         </div>
-                      {:else if !sourceDocuments[s.id] || sourceDocuments[s.id].length === 0}
+                      {:else if !generateStore.sourceDocuments[s.id] || generateStore.sourceDocuments[s.id].length === 0}
                         <div class="tray-empty">
                           <span>No documents discovered yet.</span>
                           <button
                             type="button"
                             class="btn btn-xs btn-primary"
-                            disabled={syncingSources[s.id]}
+                            disabled={generateStore.syncingSources[s.id] || generateStore.isGenerating}
                             onclick={() => handleQuickSyncSource(s.id)}
                           >
-                            {#if syncingSources[s.id]}
+                            {#if generateStore.syncingSources[s.id]}
                               <span class="spinner-inline"></span> Syncing...
                             {:else}
                               ⚡ Sync Now
@@ -355,19 +350,21 @@
                           <input
                             type="text"
                             placeholder="🔍 Filter articles in this source..."
-                            bind:value={sourceFilterQuery[s.id]}
+                            bind:value={generateStore.sourceFilterQuery[s.id]}
                             class="tray-filter-input"
+                            disabled={generateStore.isGenerating}
                           />
                         </div>
 
                         <div class="tray-doc-list">
-                          {#each sourceDocuments[s.id].filter((d) => !sourceFilterQuery[s.id] || d.title.toLowerCase().includes(sourceFilterQuery[s.id].toLowerCase())) as doc (doc.id)}
-                            <div class="tray-doc-row" class:selected={selectedDocIds[doc.id]}>
+                          {#each generateStore.sourceDocuments[s.id].filter((d) => !generateStore.sourceFilterQuery[s.id] || d.title.toLowerCase().includes(generateStore.sourceFilterQuery[s.id].toLowerCase())) as doc (doc.id)}
+                            <div class="tray-doc-row" class:selected={generateStore.selectedDocIds[doc.id]}>
                               <label class="tray-doc-label">
                                 <input
                                   type="checkbox"
-                                  checked={!!selectedDocIds[doc.id]}
+                                  checked={!!generateStore.selectedDocIds[doc.id]}
                                   onchange={() => toggleDocCheck(doc, s.id)}
+                                  disabled={generateStore.isGenerating}
                                 />
                                 <span class="tray-doc-title" title={doc.title}>{doc.title}</span>
                               </label>
@@ -397,28 +394,28 @@
 
         <!-- 2-5. AI Engine, Pedagogy, Depth & Deck Configuration (Story 11.1) -->
         <GenerationConfigFields
-          bind:provider
-          bind:model
-          bind:apiKey
-          bind:persona
-          bind:difficulty
-          bind:depthMode
-          bind:chunkMultiplier
-          bind:limit
-          bind:targetDeck
-          bind:enforceGrounding
+          bind:provider={generateStore.provider}
+          bind:model={generateStore.model}
+          bind:apiKey={generateStore.apiKey}
+          bind:persona={generateStore.persona}
+          bind:difficulty={generateStore.difficulty}
+          bind:depthMode={generateStore.depthMode}
+          bind:chunkMultiplier={generateStore.chunkMultiplier}
+          bind:limit={generateStore.limit}
+          bind:targetDeck={generateStore.targetDeck}
+          bind:enforceGrounding={generateStore.enforceGrounding}
         />
 
-        {#if errorMessage}
-          <div class="error-banner">⚠️ {errorMessage}</div>
+        {#if generateStore.errorMessage}
+          <div class="error-banner">⚠️ {generateStore.errorMessage}</div>
         {/if}
 
         <button
           type="submit"
           class="btn btn-primary btn-generate"
-          disabled={isGenerating || sources.length === 0}
+          disabled={generateStore.isGenerating || sources.length === 0}
         >
-          {#if isGenerating}
+          {#if generateStore.isGenerating}
             <span class="spinner-inline"></span>
             Synthesizing Grounded Flashcards...
           {:else}
@@ -430,26 +427,26 @@
 
     <!-- Execution Results & Card Previews -->
     <div class="results-panel">
-      {#if isGenerating}
+      {#if generateStore.isGenerating}
         <div class="generating-state">
           <div class="pulse-spinner"></div>
           <h3>AI Engine Ingesting & Generating...</h3>
           <p>Chunking documents, running LLM inference, and verifying verbatim quote grounding.</p>
         </div>
-      {:else if generationResult}
+      {:else if generateStore.generationResult}
         <div class="result-card">
           <div class="result-header">
             <h3>🎉 Generation Completed</h3>
             <div class="result-metrics">
-              <span class="metric-pill success">+{generationResult.cardsCreated} Created</span>
-              <span class="metric-pill warning">-{generationResult.duplicatesSkipped} Duplicates Skipped</span>
+              <span class="metric-pill success">+{generateStore.generationResult.cardsCreated} Created</span>
+              <span class="metric-pill warning">-{generateStore.generationResult.duplicatesSkipped} Duplicates Skipped</span>
             </div>
           </div>
 
-          {#if generationResult.newCards && generationResult.newCards.length > 0}
+          {#if generateStore.generationResult.newCards && generateStore.generationResult.newCards.length > 0}
             <div class="cards-preview-list">
               <h4>Newly Generated Flashcards:</h4>
-              {#each generationResult.newCards as card}
+              {#each generateStore.generationResult.newCards as card}
                 <div class="preview-card-item">
                   <div class="preview-card-top">
                     <span class="badge difficulty {card.difficulty}">{card.difficulty}</span>

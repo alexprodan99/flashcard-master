@@ -312,3 +312,45 @@ export async function uploadSourceFile(file: File): Promise<{ path: string; file
 
   return res.json();
 }
+
+export async function fetchJobs(filter?: { status?: string; type?: string; limit?: number }): Promise<import('./types.js').Job[]> {
+  const params = new URLSearchParams();
+  if (filter?.status) params.set('status', filter.status);
+  if (filter?.type) params.set('type', filter.type);
+  if (filter?.limit) params.set('limit', String(filter.limit));
+  const query = params.toString() ? `?${params.toString()}` : '';
+  const res = await fetch(`/api/jobs${query}`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to fetch jobs');
+  }
+  return res.json();
+}
+
+export async function fetchJobDetails(jobId: string): Promise<{ job: import('./types.js').Job; logs: import('./types.js').JobLog[] }> {
+  const res = await fetch(`/api/jobs/${encodeURIComponent(jobId)}`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to fetch job details');
+  }
+  return res.json();
+}
+
+export async function cancelJobApi(jobId: string): Promise<{ success: boolean; cancelled: boolean; job: import('./types.js').Job }> {
+  const res = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/cancel`, { method: 'POST' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to cancel job');
+  }
+  return res.json();
+}
+
+export async function clearJobHistory(keepLastN?: number): Promise<{ success: boolean; deletedCount: number }> {
+  const query = typeof keepLastN === 'number' ? `?keepLastN=${keepLastN}` : '';
+  const res = await fetch(`/api/jobs/history${query}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to clear job history');
+  }
+  return res.json();
+}

@@ -62,3 +62,34 @@ export interface GenerationResult {
   duplicatesSkipped: number;
   newCards: Flashcard[];
 }
+
+export type JobType = 'generation' | 'sync_all' | 'sync_source' | 'export';
+export type JobStatus = 'queued' | 'running' | 'completed' | 'completed_with_warnings' | 'failed' | 'cancelled';
+export type JobLogLevel = 'info' | 'warn' | 'error' | 'success';
+
+export interface Job {
+  id: string;
+  type: JobType;
+  title: string;
+  status: JobStatus;
+  progressCurrent: number;
+  progressTotal: number;
+  currentStep?: string | null;
+  errorMessage?: string | null;
+  resultSummary?: Record<string, any> | null;
+  metadata?: Record<string, any> | null;
+  createdAt: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+}
+
+export interface JobLog {
+  id: string;
+  jobId: string;
+  stepNumber: number;
+  stepTitle: string;
+  level: JobLogLevel;
+  message: string;
+  details?: Record<string, any> | null;
+  timestamp: string;
+}

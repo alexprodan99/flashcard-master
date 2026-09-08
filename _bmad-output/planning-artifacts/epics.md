@@ -912,6 +912,97 @@ So that the interface naturally guides me from data ingestion to flashcard gener
 - **Then** 100% of tests pass across `core`, `adapters`, `cli`, and `web`.
 - **And** zero regressions or lint errors exist.
 
+---
+
+## Epic 14: Global State Management, Background Worker Concurrency & Resilient UX Flow
+
+**Goal:** Establish non-destructive cross-view navigation with decoupled Svelte 5 universal reactive stores, a high-performance multi-threaded background task queue with configurable concurrency limits and zero SQLite lock contention, persistent step-by-step logging sessions streamed via Server-Sent Events, an interactive Task Center slide-over drawer featuring Step Accordions and task cancellation, and hardened action triggers with anti-double-click protection and global toast notifications.
+
+### Story 14.1: SQLite Job & Log Schema, Concurrency Manager & CLI Flags
+**ID:** `14-1-job-queue-sqlite-schema-and-concurrency-manager`
+**Description:** Implement database migrations for `jobs` and `job_logs` tables with appropriate indices in `packages/core/src/storage/`. Implement `SqliteJobRepository` and domain models `Job` and `JobLog`. Create `JobManager` in `packages/web/src/jobs/` to manage task queues with bounded concurrency pools (generation: 3, sync: 2, export: 2). Add CLI arguments (`--max-generation-workers`, `--max-sync-workers`, `--max-export-workers`) in `packages/cli` and `packages/web` server options.
+**Acceptance Criteria:**
+- **Given** the database initialization and migrations
+- **When** the database opens
+- **Then** `jobs` and `job_logs` tables are created with proper indices and foreign keys.
+- **And** `JobRepository` provides atomic methods to insert jobs, update progress, append step logs, and query active/past tasks.
+- **And** `JobManager` enforces concurrency limits per pool, queueing overflow tasks in FIFO order.
+- **And** CLI arguments parse `--max-generation-workers`, `--max-sync-workers`, `--max-export-workers` and pass them to WebServer options.
+- **And** unit tests verify repository persistence and queue concurrency scheduling.
+
+### Story 14.2: Worker Thread Engine & Task Execution Pipeline
+**ID:** `14-2-worker-thread-engine-and-task-pipeline`
+**Description:** Implement Node.js `worker_threads` for heavy background tasks (`generation.worker.ts`, `sync.worker.ts`, and `export.worker.ts`) with a robust IPC messaging protocol. Worker threads execute LLM card synthesis, source scraping, and file exports, sending back progress updates, structured step logs, and result payloads (`COMMIT_CARDS`, `COMPLETE`). The main thread acts as the sole SQLite custodian, committing generated cards and sync states atomically to eliminate `SQLITE_BUSY` contention. Support user task cancellation (`worker.terminate()` and status transition to `cancelled`).
+**Acceptance Criteria:**
+- **Given** an enqueued background job
+- **When** `JobManager` dispatches a task to a worker thread
+- **Then** the worker thread runs the task without blocking the main event loop.
+- **And** the worker thread does NOT open direct writable SQLite connections; all persistence is executed by the main thread via IPC messages.
+- **And** individual step failures do not crash the entire batch (fault-tolerant partial success).
+- **And** requesting task cancellation terminates the worker thread and commits any completed items.
+- **And** integration tests verify worker thread execution, IPC communication, and graceful error handling.
+
+### Story 14.3: Real-Time Server-Sent Events (SSE) Streaming Endpoints & Step-by-Step Logging
+**ID:** `14-3-real-time-sse-streaming-and-logging-endpoints`
+**Description:** Implement Server-Sent Events (SSE) route `GET /api/jobs/stream` broadcasting real-time job status transitions (`queued`, `running`, `progress`, `completed`, `failed`, `cancelled`). Implement `GET /api/jobs/:id/logs/stream` for live step-by-step log streaming. Implement `GET /api/jobs` (list active and past jobs with optional status filter), `GET /api/jobs/:id` (full details with logs), `POST /api/jobs/:id/cancel`, and `DELETE /api/jobs/history` ("Clear History" action with automatic 7-day or 100-job pruning). Update `/api/generate`, `/api/sync`, and `/api/export` to enqueue jobs asynchronously and return `{ success: true, jobId }` in < 50ms.
+**Acceptance Criteria:**
+- **Given** a client triggering `/api/generate`, `/api/sync`, or export
+- **When** the request arrives
+- **Then** the endpoint enqueues the job and responds with `{ success: true, jobId }` in < 50 milliseconds.
+- **And** connected SSE clients receive live `job_progress`, `job_log`, and `job_status` events.
+- **And** `GET /api/jobs/:id/logs/stream` streams discrete step logs as they are recorded.
+- **And** `POST /api/jobs/:id/cancel` aborts the running job and notifies subscribers.
+- **And** `DELETE /api/jobs/history` purges completed jobs according to retention policy.
+- **And** integration tests verify SSE streams, endpoint response times, and history deletion.
+
+### Story 14.4: Svelte 5 Global Reactive Stores & LocalStorage Preference Retention
+**ID:** `14-4-svelte-global-stores-and-preference-retention`
+**Description:** Implement decoupled Svelte 5 shared state modules in `packages/web/client/src/stores/`: `generateStore.svelte.ts` (selected documents/sources, model, persona, difficulty, limits, draft results), `sourcesStore.svelte.ts` (expanded source IDs, filter query), `explorerStore.svelte.ts` (search, active deck/difficulty chips, selection), and `taskStore.svelte.ts` (connects to SSE stream, tracks active jobs, active job count, active job logs). Refactor views (`GenerateStudio.svelte`, `SourcesView.svelte`, `QuestionExplorer.svelte`) to consume and update these stores so tab switching never resets user input or in-flight progress. Synchronize user settings (provider, model, persona, difficulty, target deck) to `localStorage`.
+**Acceptance Criteria:**
+- **Given** user entering selections and configuration across views
+- **When** user navigates between Dashboard, Sources, Generate, Cards, and Export
+- **Then** 100% of user inputs, document selections, filters, and drafts remain intact.
+- **And** user settings persist across browser refreshes via `localStorage`.
+- **And** `taskStore` maintains active job states received from the SSE stream.
+- **And** unit tests verify store reactivity and state preservation across component mount/unmount lifecycles.
+
+### Story 14.5: Task Center Slide-Over Drawer with Step Accordion UI
+**ID:** `14-5-task-center-drawer-and-step-accordion-ui`
+**Description:** Create `<TaskCenterDrawer.svelte>` and `<StepAccordion.svelte>` components in `packages/web/client/src/components/`. Add a persistent task status badge in `<Navigation.svelte>` (e.g. `[⚡ Tasks (2)]` with an animated pulse/spin when active). The drawer features two tabs: "Active Tasks" and "History". Active tasks display live progress bars, elapsed duration, and a "Cancel" button. Each task contains an interactive **Step Accordion** displaying timestamped steps (Step 1 ✓, Step 2 ⟳, Step 3 ⏳) with expandable log message details and badge indicators (`info`, `warn`, `error`, `success`). The History tab displays past jobs and provides a "Clear History" button.
+**Acceptance Criteria:**
+- **Given** background tasks running in the application
+- **When** user inspects the navigation bar or clicks the Tasks button
+- **Then** a live badge displays the count of active jobs with active animation.
+- **And** clicking the button opens the slide-over Task Center drawer.
+- **And** the Step Accordion renders discrete execution steps with timestamps, durations, and level badges.
+- **And** expanding a step displays detailed log outputs and diagnostics.
+- **And** clicking "Cancel" halts execution and updates task status to cancelled.
+- **And** "Clear History" purges finished jobs from the drawer and backend.
+- **And** component tests verify accordion interactions, cancel actions, and live updates.
+
+### Story 14.6: Action Hardening, Double-Click Prevention & Resilient Navigation Sync
+**ID:** `14-6-action-hardening-and-resilient-navigation-sync`
+**Description:** Harden all action trigger buttons across the application (Generate Cards in `GenerateStudio`, Sync All in `SourcesView`/`DashboardView`, Export buttons in `ExportCenter`/modals). On click, the button immediately disables, enters a loading state with spinner, and locks conflicting inputs to prevent double-clicks. Once the job is queued, the button resets or indicates background processing. Implement global toast alerts (`toastStore.svelte.ts` and `<ToastContainer.svelte>`) notifying users when background jobs complete or encounter errors. Update `App.svelte` to implement full two-way URL and browser history sync (`window.history.pushState` and `popstate` event listener), allowing browser back/forward buttons to navigate between tabs seamlessly.
+**Acceptance Criteria:**
+- **Given** action triggers across the UI
+- **When** user clicks "Start AI Generation", "Sync All", or "Export"
+- **Then** the trigger button immediately enters a disabled loading state, preventing double-clicks.
+- **And** a toast alert confirms that the task has been queued with a link to open the Task Center.
+- **And** task completion or failure triggers a global toast alert across whatever tab is currently active.
+- **And** browser back/forward buttons navigate between application tabs smoothly without page refresh.
+- **And** E2E tests verify button disabling, toast alerts, and history navigation.
+
+### Story 14.7: Monorepo Verification & Automated End-to-End Test Suite
+**ID:** `14-7-monorepo-verification-and-e2e-test-suite`
+**Description:** Implement comprehensive end-to-end and integration test suites covering the entire multi-threaded background task pipeline, SQLite lock avoidance under concurrent load, SSE streaming, Svelte 5 store persistence, Task Center interactions, and URL navigation. Execute full monorepo build, linting, typechecking, and tests.
+**Acceptance Criteria:**
+- **Given** the complete monorepo
+- **When** `npm test` and `npm run build` are executed
+- **Then** 100% of tests pass across `core`, `adapters`, `cli`, and `web`.
+- **And** concurrency stress tests verify that multiple simultaneous generation and export tasks adhere to pool limits and commit without `SQLITE_BUSY` errors.
+- **And** `npm run lint` and `npm run typecheck` pass with zero errors.
+
+
 
 
 

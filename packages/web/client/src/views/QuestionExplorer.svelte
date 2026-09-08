@@ -3,24 +3,14 @@
   import { fetchCards, deleteCardsBulk } from '../lib/api';
   import type { Flashcard, DifficultyLevel } from '../lib/types';
   import CardEditorDrawer from '../components/CardEditorDrawer.svelte';
+  import { explorerStore, toastStore } from '../stores/index.js';
 
-  let cards = $state<Flashcard[]>([]);
-  let loading = $state(true);
-  let error = $state<string | null>(null);
-
-  let searchQuery = $state('');
-  let selectedDeck = $state<string>('all');
-  let selectedDifficulty = $state<string>('all');
+  let cards = $derived(explorerStore.cards);
+  let loading = $derived(explorerStore.loading);
+  let error = $derived(explorerStore.error);
 
   let editingCard = $state<Flashcard | null>(null);
   let isDrawerOpen = $state(false);
-  let revealedAnswers = $state<Record<string, boolean>>({});
-  let toastMessage = $state<string | null>(null);
-
-  // Bulk selection state
-  let selectedIds = $state<string[]>([]);
-  let isBulkDeleting = $state(false);
-  let showBulkDeleteConfirm = $state(false);
 
   // Derived filters
   let availableDecks = $derived(
@@ -29,14 +19,14 @@
 
   let filteredCards = $derived(
     cards.filter((c) => {
-      if (selectedDeck !== 'all' && (c.targetDeck || 'Default') !== selectedDeck) {
+      if (explorerStore.selectedDeck !== 'all' && (c.targetDeck || 'Default') !== explorerStore.selectedDeck) {
         return false;
       }
-      if (selectedDifficulty !== 'all' && c.difficulty !== selectedDifficulty) {
+      if (explorerStore.selectedDifficulty !== 'all' && c.difficulty !== explorerStore.selectedDifficulty) {
         return false;
       }
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
+      if (explorerStore.searchQuery.trim()) {
+        const q = explorerStore.searchQuery.toLowerCase();
         const inQuestion = c.question.toLowerCase().includes(q);
         const inAnswer = c.answer.toLowerCase().includes(q);
         const inQuote = (c.sourceQuote || '').toLowerCase().includes(q);
@@ -48,79 +38,76 @@
   );
 
   let allFilteredSelected = $derived(
-    filteredCards.length > 0 && filteredCards.every((c) => selectedIds.includes(c.id))
+    filteredCards.length > 0 && filteredCards.every((c) => explorerStore.selectedIds.includes(c.id))
   );
 
   function toggleSelectCard(id: string) {
-    if (selectedIds.includes(id)) {
-      selectedIds = selectedIds.filter((x) => x !== id);
-    } else {
-      selectedIds = [...selectedIds, id];
-    }
+    if (explorerStore.isBulkDeleting) return;
+    explorerStore.toggleSelect(id);
   }
 
   function toggleSelectAllFiltered() {
+    if (explorerStore.isBulkDeleting) return;
     if (allFilteredSelected) {
-      const filteredIdSet = new Set(filteredCards.map((c) => c.id));
-      selectedIds = selectedIds.filter((id) => !filteredIdSet.has(id));
+      explorerStore.deselectAll(filteredCards.map((c) => c.id));
     } else {
-      const combined = new Set([...selectedIds, ...filteredCards.map((c) => c.id)]);
-      selectedIds = Array.from(combined);
+      explorerStore.selectAll(filteredCards.map((c) => c.id));
     }
   }
 
   function clearSelection() {
-    selectedIds = [];
+    if (explorerStore.isBulkDeleting) return;
+    explorerStore.clearSelection();
   }
 
   async function handleBulkDelete() {
-    if (selectedIds.length === 0) return;
-    isBulkDeleting = true;
+    if (explorerStore.selectedIds.length === 0 || explorerStore.isBulkDeleting) return;
+    explorerStore.isBulkDeleting = true;
     try {
-      const res = await deleteCardsBulk(selectedIds);
-      const deletedSet = new Set(selectedIds);
-      cards = cards.filter((c) => !deletedSet.has(c.id));
-      toastMessage = `🗑️ Successfully deleted ${res.deletedCount} flashcard${res.deletedCount === 1 ? '' : 's'}.`;
-      selectedIds = [];
-      showBulkDeleteConfirm = false;
-      setTimeout(() => (toastMessage = null), 4000);
+      const idsToDelete = [...explorerStore.selectedIds];
+      const res = await deleteCardsBulk(idsToDelete);
+      const deletedSet = new Set(idsToDelete);
+      explorerStore.cards = explorerStore.cards.filter((c) => !deletedSet.has(c.id));
+      toastStore.success(`Successfully deleted ${res.deletedCount} flashcard${res.deletedCount === 1 ? '' : 's'}.`);
+      explorerStore.clearSelection();
+      explorerStore.showBulkDeleteConfirm = false;
     } catch (err: any) {
-      toastMessage = `⚠️ Failed to delete cards: ${err.message}`;
+      toastStore.error(`Failed to delete cards: ${err.message}`);
     } finally {
-      isBulkDeleting = false;
+      explorerStore.isBulkDeleting = false;
     }
   }
 
   async function loadCards(isUserRefresh = false) {
-    loading = true;
-    error = null;
+    if (explorerStore.cards.length === 0 || isUserRefresh) {
+      explorerStore.loading = true;
+    }
+    explorerStore.error = null;
     try {
       const fetched = await fetchCards();
-      cards = fetched;
+      explorerStore.setCards(fetched);
       const fetchedIdSet = new Set(fetched.map((c) => c.id));
-      selectedIds = selectedIds.filter((id) => fetchedIdSet.has(id));
+      explorerStore.selectedIds = explorerStore.selectedIds.filter((id) => fetchedIdSet.has(id));
       if (isUserRefresh) {
-        toastMessage = '⚡ Flashcards refreshed.';
-        setTimeout(() => (toastMessage = null), 3000);
+        toastStore.info('⚡ Flashcards refreshed.');
       }
     } catch (err: any) {
-      error = err.message || 'Failed to load cards';
+      explorerStore.error = err.message || 'Failed to load cards';
       if (isUserRefresh) {
-        toastMessage = `⚠️ Failed to refresh flashcards: ${err.message}`;
-        setTimeout(() => (toastMessage = null), 4000);
+        toastStore.error(`Failed to refresh flashcards: ${err.message}`);
       }
     } finally {
-      loading = false;
+      explorerStore.loading = false;
     }
   }
 
   async function handleRefresh() {
-    if (loading) return;
+    if (explorerStore.loading || explorerStore.isBulkDeleting) return;
     await loadCards(true);
   }
 
   function toggleReveal(id: string) {
-    revealedAnswers[id] = !revealedAnswers[id];
+    explorerStore.toggleReveal(id);
   }
 
   function openEdit(card: Flashcard) {
@@ -129,16 +116,13 @@
   }
 
   function handleCardUpdated(updated: Flashcard) {
-    cards = cards.map((c) => (c.id === updated.id ? updated : c));
-    toastMessage = '✅ Flashcard updated successfully.';
-    setTimeout(() => (toastMessage = null), 4000);
+    explorerStore.updateCard(updated);
+    toastStore.success('Flashcard updated successfully.');
   }
 
   function handleCardDeleted(id: string) {
-    cards = cards.filter((c) => c.id !== id);
-    selectedIds = selectedIds.filter((x) => x !== id);
-    toastMessage = '🗑️ Flashcard deleted.';
-    setTimeout(() => (toastMessage = null), 4000);
+    explorerStore.removeCard(id);
+    toastStore.info('Flashcard deleted.');
   }
 
   onMount(() => {
@@ -155,15 +139,11 @@
     <span class="count-badge">{filteredCards.length} Cards Found</span>
   </div>
 
-  {#if toastMessage}
-    <div class="toast-banner">{toastMessage}</div>
-  {/if}
-
   <!-- Bulk Selection Action Bar -->
-  {#if selectedIds.length > 0}
+  {#if explorerStore.selectedIds.length > 0}
     <div class="bulk-action-bar">
       <div class="bulk-info">
-        <span class="selection-pill">✓ {selectedIds.length} Selected</span>
+        <span class="selection-pill">✓ {explorerStore.selectedIds.length} Selected</span>
         <button type="button" class="btn-bulk-toggle" onclick={toggleSelectAllFiltered}>
           {allFilteredSelected ? 'Deselect Filtered' : `Select All Filtered (${filteredCards.length})`}
         </button>
@@ -173,10 +153,10 @@
         <button
           type="button"
           class="btn-bulk-delete"
-          onclick={() => (showBulkDeleteConfirm = true)}
-          disabled={isBulkDeleting}
+          onclick={() => (explorerStore.showBulkDeleteConfirm = true)}
+          disabled={explorerStore.isBulkDeleting}
         >
-          🗑️ Delete Selected ({selectedIds.length})
+          🗑️ Delete Selected ({explorerStore.selectedIds.length})
         </button>
       </div>
     </div>
@@ -190,10 +170,10 @@
         <input
           type="text"
           placeholder="Search questions, answers, tags, or source quotes..."
-          bind:value={searchQuery}
+          bind:value={explorerStore.searchQuery}
         />
-        {#if searchQuery}
-          <button class="clear-btn" onclick={() => (searchQuery = '')}>✕</button>
+        {#if explorerStore.searchQuery}
+          <button class="clear-btn" onclick={() => (explorerStore.searchQuery = '')}>✕</button>
         {/if}
       </div>
 
@@ -217,8 +197,8 @@
         <button
           type="button"
           class="chip"
-          class:active={selectedDeck === 'all'}
-          onclick={() => (selectedDeck = 'all')}
+          class:active={explorerStore.selectedDeck === 'all'}
+          onclick={() => (explorerStore.selectedDeck = 'all')}
         >
           All Decks ({cards.length})
         </button>
@@ -226,8 +206,8 @@
           <button
             type="button"
             class="chip"
-            class:active={selectedDeck === deck}
-            onclick={() => (selectedDeck = deck)}
+            class:active={explorerStore.selectedDeck === deck}
+            onclick={() => (explorerStore.selectedDeck = deck)}
           >
             {deck} ({cards.filter((c) => (c.targetDeck || 'Default') === deck).length})
           </button>
@@ -242,40 +222,40 @@
         <button
           type="button"
           class="chip"
-          class:active={selectedDifficulty === 'all'}
-          onclick={() => (selectedDifficulty = 'all')}
+          class:active={explorerStore.selectedDifficulty === 'all'}
+          onclick={() => (explorerStore.selectedDifficulty = 'all')}
         >
           All
         </button>
         <button
           type="button"
           class="chip beginner"
-          class:active={selectedDifficulty === 'beginner'}
-          onclick={() => (selectedDifficulty = 'beginner')}
+          class:active={explorerStore.selectedDifficulty === 'beginner'}
+          onclick={() => (explorerStore.selectedDifficulty = 'beginner')}
         >
           Beginner
         </button>
         <button
           type="button"
           class="chip intermediate"
-          class:active={selectedDifficulty === 'intermediate'}
-          onclick={() => (selectedDifficulty = 'intermediate')}
+          class:active={explorerStore.selectedDifficulty === 'intermediate'}
+          onclick={() => (explorerStore.selectedDifficulty = 'intermediate')}
         >
           Intermediate
         </button>
         <button
           type="button"
           class="chip expert"
-          class:active={selectedDifficulty === 'expert'}
-          onclick={() => (selectedDifficulty = 'expert')}
+          class:active={explorerStore.selectedDifficulty === 'expert'}
+          onclick={() => (explorerStore.selectedDifficulty = 'expert')}
         >
           Expert
         </button>
         <button
           type="button"
           class="chip mixed"
-          class:active={selectedDifficulty === 'mixed'}
-          onclick={() => (selectedDifficulty = 'mixed')}
+          class:active={explorerStore.selectedDifficulty === 'mixed'}
+          onclick={() => (explorerStore.selectedDifficulty = 'mixed')}
         >
           🌈 Mixed
         </button>
@@ -303,12 +283,12 @@
   {:else}
     <div class="cards-grid">
       {#each filteredCards as card}
-        <div class="card-item" class:selected={selectedIds.includes(card.id)}>
+        <div class="card-item" class:selected={explorerStore.selectedIds.includes(card.id)}>
           <div class="card-top-bar">
             <label class="card-checkbox-label" title="Select card for bulk actions">
               <input
                 type="checkbox"
-                checked={selectedIds.includes(card.id)}
+                checked={explorerStore.selectedIds.includes(card.id)}
                 onchange={() => toggleSelectCard(card.id)}
                 class="card-checkbox"
               />
@@ -325,7 +305,7 @@
           </div>
 
           <div class="card-answer-section">
-            {#if revealedAnswers[card.id]}
+            {#if explorerStore.revealedAnswers[card.id]}
               <div class="answer-revealed">
                 <span class="a-label">A</span>
                 <p>{card.answer}</p>
@@ -402,30 +382,30 @@
   onCardDeleted={handleCardDeleted}
 />
 
-{#if showBulkDeleteConfirm}
-  <div class="modal-backdrop" role="presentation" onclick={() => (showBulkDeleteConfirm = false)}>
+{#if explorerStore.showBulkDeleteConfirm}
+  <div class="modal-backdrop" role="presentation" onclick={() => (explorerStore.showBulkDeleteConfirm = false)}>
     <div
       class="modal-card"
       role="dialog"
       aria-modal="true"
       tabindex="-1"
       onclick={(e) => e.stopPropagation()}
-      onkeydown={(e) => { if (e.key === 'Escape') showBulkDeleteConfirm = false; }}
+      onkeydown={(e) => { if (e.key === 'Escape') explorerStore.showBulkDeleteConfirm = false; }}
     >
       <div class="modal-header">
         <h2>⚠️ Confirm Bulk Deletion</h2>
-        <button type="button" class="btn-close" onclick={() => (showBulkDeleteConfirm = false)}>✕</button>
+        <button type="button" class="btn-close" onclick={() => (explorerStore.showBulkDeleteConfirm = false)}>✕</button>
       </div>
       <div class="modal-body">
-        <p>Are you sure you want to permanently delete <strong>{selectedIds.length}</strong> flashcard{selectedIds.length === 1 ? '' : 's'}?</p>
+        <p>Are you sure you want to permanently delete <strong>{explorerStore.selectedIds.length}</strong> flashcard{explorerStore.selectedIds.length === 1 ? '' : 's'}?</p>
         <p class="modal-subtext">This action will remove these cards from your SQLite database and cannot be undone.</p>
       </div>
       <div class="modal-actions">
         <button
           type="button"
           class="btn-modal-cancel"
-          onclick={() => (showBulkDeleteConfirm = false)}
-          disabled={isBulkDeleting}
+          onclick={() => (explorerStore.showBulkDeleteConfirm = false)}
+          disabled={explorerStore.isBulkDeleting}
         >
           Cancel
         </button>
@@ -433,9 +413,9 @@
           type="button"
           class="btn-modal-delete"
           onclick={handleBulkDelete}
-          disabled={isBulkDeleting}
+          disabled={explorerStore.isBulkDeleting}
         >
-          {isBulkDeleting ? 'Deleting...' : `Confirm Delete (${selectedIds.length})`}
+          {explorerStore.isBulkDeleting ? 'Deleting...' : `Confirm Delete (${explorerStore.selectedIds.length})`}
         </button>
       </div>
     </div>

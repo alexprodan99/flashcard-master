@@ -143,3 +143,13 @@ development_status:
   13-5-interactive-local-file-picker-source: done
   13-6-monorepo-verification-and-test-suite: done
   epic-13-retrospective: optional
+
+  epic-14: done
+  14-1-job-queue-sqlite-schema-and-concurrency-manager: done
+  14-2-worker-thread-engine-and-task-pipeline: done
+  14-3-real-time-sse-streaming-and-logging-endpoints: done
+  14-4-svelte-global-stores-and-preference-retention: done
+  14-5-task-center-drawer-and-step-accordion-ui: done
+  14-6-action-hardening-and-resilient-navigation-sync: done
+  14-7-monorepo-verification-and-e2e-test-suite: done
+  epic-14-retrospective: optional

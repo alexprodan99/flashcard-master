@@ -62,3 +62,38 @@ CREATE INDEX IF NOT EXISTS idx_flashcards_source_id ON flashcards(source_id);
 CREATE INDEX IF NOT EXISTS idx_flashcards_target_deck ON flashcards(target_deck);
 CREATE INDEX IF NOT EXISTS idx_flashcards_difficulty ON flashcards(difficulty);
 CREATE INDEX IF NOT EXISTS idx_documents_source_id ON documents(source_id);
+
+-- Background Jobs Queue & Tracking
+CREATE TABLE IF NOT EXISTS jobs (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL CHECK(type IN ('generation', 'sync_all', 'sync_source', 'export')),
+    status TEXT NOT NULL CHECK(status IN ('queued', 'running', 'completed', 'completed_with_warnings', 'failed', 'cancelled')),
+    title TEXT NOT NULL,
+    total_steps INTEGER NOT NULL DEFAULT 1,
+    current_step INTEGER NOT NULL DEFAULT 0,
+    progress_percent REAL NOT NULL DEFAULT 0.0,
+    current_step_name TEXT,
+    metadata TEXT NOT NULL DEFAULT '{}',
+    result_summary TEXT,
+    error_message TEXT,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    started_at TEXT,
+    completed_at TEXT
+);
+
+-- Step-by-Step Job Logs
+CREATE TABLE IF NOT EXISTS job_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    step_number INTEGER NOT NULL,
+    step_title TEXT NOT NULL,
+    level TEXT NOT NULL CHECK(level IN ('info', 'warn', 'error', 'success')),
+    message TEXT NOT NULL,
+    details TEXT,
+    timestamp TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
+CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at);
+CREATE INDEX IF NOT EXISTS idx_job_logs_job_id ON job_logs(job_id);
+
