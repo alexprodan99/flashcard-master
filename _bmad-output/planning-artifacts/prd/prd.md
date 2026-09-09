@@ -2,7 +2,7 @@
 title: "Product Requirements Document: flashcard-master"
 status: "draft"
 created: "2026-08-30"
-updated: "2026-09-05"
+updated: "2026-09-08"
 ---
 
 # Product Requirements Document (PRD): flashcard-master
@@ -77,6 +77,14 @@ journey
 1. Alex wants to export all cleaned articles from a technical documentation source to read offline on an e-reader or Obsidian.
 2. Alex opens the Document Inspector, clicks **"📤 Export Documents"**, chooses **Markdown** format and **Merged (Single File)** mode.
 3. Alex downloads a formatted master `.md` file complete with an auto-generated Table of Contents, divider sections, word counts, and origin URL citations. Alternatively, Alex selects **Split (ZIP Archive)** to download individual slugified markdown files.
+
+#### UJ-8: Background Task Monitoring, Concurrency & Resilient Navigation
+1. Alex configures an intensive AI generation job across 4 lengthy technical documents in Generate Studio and clicks "Start AI Generation".
+2. The Generate button immediately disables with active spinner feedback, and within <50ms, a notification indicates the job is queued in the background.
+3. Alex clicks over to the Question Explorer to practice cards. The Generate Studio configuration, document selections, and draft states remain fully preserved in memory without reset.
+4. Alex notices a persistent Task Center badge in the top navigation showing `⚡ 1 Running Task`. Clicking it opens the Task Center drawer.
+5. In the Task Center, Alex watches the live **Step Accordion** unfold with real-time timestamps: Document 1 succeeds, Document 2 is actively querying Ollama. Alex can inspect detailed step logs or click "Cancel Task" if needed.
+6. When the job completes, a global toast alert notifies Alex, and generated cards automatically reflect in the catalog.
 
 ---
 
@@ -167,6 +175,20 @@ journey
 | **FR-428** | **Question Explorer Real-Time Refresh Action** | The Question Explorer MUST provide a dedicated "🔄 Refresh" action in its filter toolbar with active loading animation and disabled state, allowing users to reload flashcard catalog changes without reloading the web application or losing active filter parameters. | High |
 | **FR-429** | **Interactive Local File Picker & Drag-and-Drop** | The Web UI (Add/Edit Source Modal) MUST provide an interactive file chooser and drag-and-drop zone for local source configuration, uploading local files (`.md`, `.markdown`, `.txt`) directly to the local server, eliminating error-prone manual typing of absolute filesystem paths while preserving optional manual entry. | High |
 
+### 3.5 Global State Management, Background Task Queue & Resilient UX
+
+| Requirement ID | Title | Description | Priority |
+| :--- | :--- | :--- | :--- |
+| **FR-430** | **Svelte 5 Shared State Modules & LocalStorage Retention** | The Web UI MUST maintain cross-tab state (Generate Studio selections/inputs, Explorer filters/search, Sources inspector state) in decoupled Svelte 5 universal reactive stores (`.svelte.ts`) so navigation does not unmount or reset state, automatically retaining user preferences in `localStorage`. | Critical |
+| **FR-431** | **Two-Way URL & Browser History Navigation Sync** | The Web UI MUST synchronize the active tab and deep-link parameters (`?tab=...`, `?sourceId=...`, `?docId=...`) with the browser History API, supporting seamless browser back and forward navigation. | High |
+| **FR-432** | **Unified Worker Thread Task Queue with Concurrency Pools** | The backend MUST manage long-running background tasks (Card Generation, Source Synchronization, Document/Card Exports) in a unified task queue utilizing Node.js Worker Threads with strict concurrency pools (defaulting to max 3 concurrent generation workers, max 2 sync workers, max 2 export workers). | Critical |
+| **FR-433** | **Centralized SQLite Main-Thread Custodian** | To eliminate `SQLITE_BUSY` database lock contention, Worker Threads MUST NEVER execute uncoordinated SQLite writes directly; all database reads, writes, job status mutations, and log appends MUST be serialized through the main-thread `JobManager`. | Critical |
+| **FR-434** | **Persistent Step-by-Step Logging Sessions** | The system MUST persist every background job and its structured step-by-step execution session in SQLite (`jobs` and `job_logs` tables), recording step number, title, log level, detailed message, duration, and timestamps. | Critical |
+| **FR-435** | **Real-Time Server-Sent Events (SSE) Streaming Endpoints & Job Cancellation** | The backend MUST provide real-time Server-Sent Events (SSE) streams (`/api/jobs/stream` and `/api/jobs/:id/logs/stream`) for live job progress and step logs, and support immediate cancellation (`POST /api/jobs/:id/cancel`) that safely terminates worker threads and commits partial work. | High |
+| **FR-436** | **Task Center UI Drawer with Step Accordions & History** | The Web UI MUST provide a slide-over Task Center drawer accessible from the main navigation displaying active tasks, live progress bars, expandable **Step Accordion** logs with timestamps, a Cancel button, past job history, and a manual "Clear History" action. | High |
+| **FR-437** | **Action Hardening, Immediate Button Disabling & Global Toasts** | All action triggers (Generate Cards, Sync All, Export) MUST immediately disable upon submission, show inline loading indicators to prevent duplicate clicks, and broadcast global toast alerts upon background job completion or failure. | High |
+| **FR-438** | **CLI & Server Concurrency Pool Configuration Flags** | The CLI and Web server MUST accept runtime concurrency limits via flags (e.g. `--max-generation-workers`, `--max-sync-workers`, `--max-export-workers`) with graceful defaults and environment variable overrides. | Medium |
+
 ---
 
 ## 4. Non-Functional Requirements (NFRs)
@@ -174,6 +196,7 @@ journey
 ### 4.1 Performance & Latency
 - **NFR-101:** Reader-mode text extraction from standard web articles (< 3,000 words) MUST complete in **< 3 seconds**.
 - **NFR-102:** Local database queries (searching across 10,000+ flashcards) MUST return results in **< 100 milliseconds**.
+- **NFR-103:** Background task queue submission (`POST /api/generate`, `POST /api/sync`, `POST /api/export`) MUST acknowledge and return `{ jobId }` in **< 50 milliseconds**.
 
 ### 4.2 Privacy & Local-First Invariants
 - **NFR-201:** All configurations, source URLs, content caches, and generated cards MUST reside exclusively on the user's local disk in SQLite.
@@ -182,6 +205,8 @@ journey
 ### 4.3 Reliability & Resilience
 - **NFR-301:** Ingestion network failures (e.g. timeout on an RSS feed) MUST fail gracefully per-source without crashing the overall sync batch.
 - **NFR-302:** Database writes MUST be transactional to prevent orphaned or partially generated card records.
+- **NFR-303:** Worker threads and the main process MUST guarantee zero SQLite lock contention (`SQLITE_BUSY`) by routing all database transactions through the main thread JobManager.
+- **NFR-304:** Errors in individual document synthesis steps MUST NOT abort other pending items in a batch; the system MUST support fault-tolerant partial success, flagging the individual step as failed while committing successful cards.
 
 ### 4.4 Portability & Cross-Platform Support
 - **NFR-401:** The application (CLI and local Web UI) MUST operate consistently across Windows, macOS, and Linux environments.

@@ -20,10 +20,13 @@ import {
   type PersonaType,
   type CardDepthMode,
   type DiscoveredDocument,
+  type JobRepository,
   MediaService,
   CardGenerationService,
 } from "@flashcard-master/core";
 import { createLLMAdapter, DocumentExportService } from "@flashcard-master/adapters";
+import { JobManager, type ConcurrencyLimits } from "./jobs/index.js";
+import { WorkerExecutor } from "./workers/index.js";
 
 export type ExportFormat = "apkg" | "csv" | "tsv" | "markdown" | "html" | "pdf";
 
@@ -40,6 +43,10 @@ export interface WebServerOptions {
   syncRepo: SyncStateRepository;
   cardRepo: FlashcardRepository;
   documentRepo?: DocumentRepository;
+  jobRepo?: JobRepository;
+  jobManager?: JobManager;
+  workerExecutor?: WorkerExecutor;
+  concurrency?: ConcurrencyLimits;
   ingestionService?: IngestionService;
   exportService?: ExportService;
   strategyRegistry?: StrategyRegistry;
@@ -61,13 +68,43 @@ export class WebServer {
   private readonly host: string;
   private readonly mediaService: MediaService;
   private readonly localFilesDir: string;
+  private readonly jobManager: JobManager | null;
+  private readonly workerExecutor: WorkerExecutor;
 
   constructor(private readonly options: WebServerOptions) {
     this.port = options.port !== undefined ? options.port : 3000;
     this.host = options.host || "127.0.0.1";
     this.mediaService = options.mediaService || new MediaService();
     this.localFilesDir = options.localFilesDir || path.join(os.homedir(), ".flashcard-master", "local-files");
+    if (options.jobManager) {
+      this.jobManager = options.jobManager;
+    } else if (options.jobRepo) {
+      this.jobManager = new JobManager(options.jobRepo, options.concurrency);
+    } else {
+      this.jobManager = null;
+    }
+
+    if (options.workerExecutor) {
+      this.workerExecutor = options.workerExecutor;
+    } else {
+      this.workerExecutor = new WorkerExecutor({
+        cardRepo: options.cardRepo,
+        sourceRepo: options.sourceRepo,
+        dedupService: options.dedupService,
+        ingestionService: options.ingestionService,
+        documentRepo: options.documentRepo,
+      });
+    }
   }
+
+  getJobManager(): JobManager | null {
+    return this.jobManager;
+  }
+
+  getWorkerExecutor(): WorkerExecutor {
+    return this.workerExecutor;
+  }
+
 
   private getHtmlSpa(): string {
     return `<!DOCTYPE html>
@@ -1761,6 +1798,212 @@ export class WebServer {
             return;
           }
 
+          // =======================================================
+          // BACKGROUND JOBS & SSE REAL-TIME STREAMING
+          // =======================================================
+
+          // 2c. Global Job Events SSE Stream: GET /api/jobs/stream
+          if (pathname === "/api/jobs/stream" && method === "GET") {
+            if (!this.jobManager) {
+              this.sendJson(res, 503, { error: "JobManager not configured on this server" });
+              return;
+            }
+
+            res.writeHead(200, {
+              "Content-Type": "text/event-stream",
+              "Cache-Control": "no-cache, no-transform",
+              "Connection": "keep-alive",
+              "Access-Control-Allow-Origin": "*",
+              "X-Accel-Buffering": "no",
+            });
+
+            res.write(`event: connected\ndata: ${JSON.stringify({ status: "connected", timestamp: new Date().toISOString() })}\n\n`);
+
+            const onCreated = (job: any) => {
+              res.write(`event: job_created\ndata: ${JSON.stringify(job)}\n\n`);
+            };
+            const onStatus = (job: any) => {
+              res.write(`event: job_status\ndata: ${JSON.stringify(job)}\n\n`);
+            };
+            const onProgress = (data: any) => {
+              res.write(`event: job_progress\ndata: ${JSON.stringify(data)}\n\n`);
+            };
+            const onLog = (log: any) => {
+              res.write(`event: job_log\ndata: ${JSON.stringify(log)}\n\n`);
+            };
+            const onCompleted = (job: any) => {
+              res.write(`event: job_completed\ndata: ${JSON.stringify(job)}\n\n`);
+            };
+            const onFailed = (job: any) => {
+              res.write(`event: job_failed\ndata: ${JSON.stringify(job)}\n\n`);
+            };
+            const onCancelled = (job: any) => {
+              res.write(`event: job_cancelled\ndata: ${JSON.stringify(job)}\n\n`);
+            };
+
+            this.jobManager.on("job_created", onCreated);
+            this.jobManager.on("job_status", onStatus);
+            this.jobManager.on("job_progress", onProgress);
+            this.jobManager.on("job_log", onLog);
+            this.jobManager.on("job_completed", onCompleted);
+            this.jobManager.on("job_failed", onFailed);
+            this.jobManager.on("job_cancelled", onCancelled);
+
+            const heartbeat = setInterval(() => {
+              res.write(": ping\n\n");
+            }, 15000);
+
+            req.on("close", () => {
+              clearInterval(heartbeat);
+              if (this.jobManager) {
+                this.jobManager.off("job_created", onCreated);
+                this.jobManager.off("job_status", onStatus);
+                this.jobManager.off("job_progress", onProgress);
+                this.jobManager.off("job_log", onLog);
+                this.jobManager.off("job_completed", onCompleted);
+                this.jobManager.off("job_failed", onFailed);
+                this.jobManager.off("job_cancelled", onCancelled);
+              }
+            });
+            return;
+          }
+
+          // 2d. Step-by-Step Job Logs SSE Stream: GET /api/jobs/:id/logs/stream
+          const jobLogsStreamMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/logs\/stream$/);
+          if (jobLogsStreamMatch && method === "GET") {
+            const jobId = jobLogsStreamMatch[1];
+            if (!this.jobManager) {
+              this.sendJson(res, 503, { error: "JobManager not configured on this server" });
+              return;
+            }
+
+            const job = this.jobManager.getJob(jobId);
+            if (!job) {
+              this.sendJson(res, 404, { error: `Job with ID "${jobId}" not found` });
+              return;
+            }
+
+            res.writeHead(200, {
+              "Content-Type": "text/event-stream",
+              "Cache-Control": "no-cache, no-transform",
+              "Connection": "keep-alive",
+              "Access-Control-Allow-Origin": "*",
+              "X-Accel-Buffering": "no",
+            });
+
+            res.write(`event: connected\ndata: ${JSON.stringify({ jobId, status: job.status })}\n\n`);
+
+            // Replay existing logs
+            const existingLogs = this.jobManager.getJobLogs(jobId);
+            for (const log of existingLogs) {
+              res.write(`event: job_log\ndata: ${JSON.stringify(log)}\n\n`);
+            }
+
+            const onLog = (log: any) => {
+              if (log.jobId === jobId) {
+                res.write(`event: job_log\ndata: ${JSON.stringify(log)}\n\n`);
+              }
+            };
+            const onStatus = (j: any) => {
+              if (j.id === jobId) {
+                res.write(`event: job_status\ndata: ${JSON.stringify(j)}\n\n`);
+              }
+            };
+
+            this.jobManager.on("job_log", onLog);
+            this.jobManager.on("job_status", onStatus);
+
+            const heartbeat = setInterval(() => {
+              res.write(": ping\n\n");
+            }, 15000);
+
+            req.on("close", () => {
+              clearInterval(heartbeat);
+              if (this.jobManager) {
+                this.jobManager.off("job_log", onLog);
+                this.jobManager.off("job_status", onStatus);
+              }
+            });
+            return;
+          }
+
+          // 2e. Cancel Job: POST /api/jobs/:id/cancel
+          const jobCancelMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/cancel$/);
+          if (jobCancelMatch && method === "POST") {
+            const jobId = jobCancelMatch[1];
+            if (!this.jobManager) {
+              this.sendJson(res, 503, { error: "JobManager not configured" });
+              return;
+            }
+            const existing = this.jobManager.getJob(jobId);
+            if (!existing) {
+              this.sendJson(res, 404, { error: `Job with ID "${jobId}" not found` });
+              return;
+            }
+            const cancelled = this.jobManager.cancelJob(jobId);
+            const updated = this.jobManager.getJob(jobId);
+            this.sendJson(res, 200, { success: true, cancelled, job: updated });
+            return;
+          }
+
+          // 2f. Clear / Prune History: DELETE /api/jobs/history or POST /api/jobs/history
+          if (pathname === "/api/jobs/history" && (method === "DELETE" || method === "POST")) {
+            if (!this.jobManager) {
+              this.sendJson(res, 503, { error: "JobManager not configured" });
+              return;
+            }
+            const keepLastNStr = parsedUrl.query.keepLastN as string | undefined;
+            const keepLastN = keepLastNStr ? parseInt(keepLastNStr, 10) : undefined;
+
+            let deletedCount = 0;
+            if (typeof keepLastN === "number" && !isNaN(keepLastN)) {
+              deletedCount = this.jobManager.pruneJobs({ keepLastN });
+            } else {
+              deletedCount = this.jobManager.clearHistory();
+            }
+            this.sendJson(res, 200, { success: true, deletedCount });
+            return;
+          }
+
+          // 2g. List Jobs: GET /api/jobs
+          if (pathname === "/api/jobs" && method === "GET") {
+            if (!this.jobManager) {
+              this.sendJson(res, 200, []);
+              return;
+            }
+            const status = parsedUrl.query.status as any;
+            const type = parsedUrl.query.type as any;
+            const limitStr = parsedUrl.query.limit as string;
+            const limit = limitStr ? parseInt(limitStr, 10) : undefined;
+
+            const jobs = this.jobManager.listJobs({ status, type, limit });
+            this.sendJson(res, 200, jobs);
+            return;
+          }
+
+          // 2h. Get Single Job Details with Logs: GET /api/jobs/:id
+          const singleJobMatch = pathname.match(/^\/api\/jobs\/([^/]+)$/);
+          if (
+            singleJobMatch &&
+            method === "GET" &&
+            !pathname.endsWith("/stream") &&
+            !pathname.endsWith("/history")
+          ) {
+            const jobId = singleJobMatch[1];
+            if (!this.jobManager) {
+              this.sendJson(res, 404, { error: "JobManager not configured" });
+              return;
+            }
+            const job = this.jobManager.getJob(jobId);
+            if (!job) {
+              this.sendJson(res, 404, { error: `Job with ID "${jobId}" not found` });
+              return;
+            }
+            const logs = this.jobManager.getJobLogs(jobId);
+            this.sendJson(res, 200, { job, logs });
+            return;
+          }
+
           // 3. Stats Endpoint
           if (pathname === "/api/stats" && method === "GET") {
             const sources = this.options.sourceRepo.list();
@@ -1781,6 +2024,37 @@ export class WebServer {
           // 4. Single Source Sync Endpoint: POST /api/sync/:id
           if (pathname.startsWith("/api/sync/") && method === "POST") {
             const sourceId = pathname.slice("/api/sync/".length);
+            const source = this.options.sourceRepo.getById(sourceId);
+
+            if (this.jobManager && parsedUrl.query.sync !== "true") {
+              if (!source) {
+                this.sendJson(res, 404, { error: `Source "${sourceId}" not found` });
+                return;
+              }
+              const job = await this.jobManager.enqueueJob(
+                "sync_source",
+                `Sync source: ${source.name}`,
+                { sourceId, sourceName: source.name },
+                async (_j, ctx) => {
+                  return await this.workerExecutor.executeTask(
+                    {
+                      type: "sync_source",
+                      payload: { sources: [source] },
+                    },
+                    ctx
+                  );
+                },
+                1
+              );
+              this.sendJson(res, 202, {
+                success: true,
+                jobId: job.id,
+                status: job.status,
+                title: job.title,
+              });
+              return;
+            }
+
             if (this.options.ingestionService) {
               const syncRes = await this.options.ingestionService.syncSource(sourceId);
               this.sendJson(res, syncRes.error && syncRes.totalFetched === 0 ? 404 : 200, syncRes);
@@ -1792,6 +2066,33 @@ export class WebServer {
 
           // 5. Bulk Sync Endpoint: POST /api/sync
           if (pathname === "/api/sync" && method === "POST") {
+            const activeSources = this.options.sourceRepo.list().filter((s) => s.isActive);
+
+            if (this.jobManager && parsedUrl.query.sync !== "true") {
+              const job = await this.jobManager.enqueueJob(
+                "sync_all",
+                `Sync all sources (${activeSources.length} active)`,
+                { sourceCount: activeSources.length },
+                async (_j, ctx) => {
+                  return await this.workerExecutor.executeTask(
+                    {
+                      type: "sync_all",
+                      payload: { sources: activeSources },
+                    },
+                    ctx
+                  );
+                },
+                activeSources.length || 1
+              );
+              this.sendJson(res, 202, {
+                success: true,
+                jobId: job.id,
+                status: job.status,
+                title: job.title,
+              });
+              return;
+            }
+
             if (this.options.ingestionService) {
               const syncResults = await this.options.ingestionService.syncAllActive();
               this.sendJson(res, 200, syncResults);
@@ -1816,6 +2117,102 @@ export class WebServer {
             const targetDeckOverride = body.targetDeck || undefined;
             const limit = typeof body.limit === "number" ? body.limit : 5;
             const enforceGrounding = body.enforceGrounding !== false;
+
+            if (this.jobManager && parsedUrl.query.sync !== "true") {
+              const documents: Array<{
+                id: string;
+                sourceId: string;
+                title: string;
+                textContent: string;
+                originUrl?: string;
+              }> = [];
+
+              if (Array.isArray(body.documentIds) && body.documentIds.length > 0 && this.options.documentRepo) {
+                for (const docId of body.documentIds) {
+                  const doc = this.options.documentRepo.getById(docId);
+                  if (doc) {
+                    documents.push({
+                      id: doc.id,
+                      sourceId: doc.sourceId,
+                      title: doc.title,
+                      textContent: doc.textContent,
+                      originUrl: doc.url || undefined,
+                    });
+                  }
+                }
+              } else {
+                let sources: any[] = [];
+                if (Array.isArray(body.sourceIds) && body.sourceIds.length > 0) {
+                  sources = body.sourceIds.map((id: string) => this.options.sourceRepo.getById(id)).filter(Boolean);
+                } else if (body.sourceId) {
+                  const s = this.options.sourceRepo.getById(body.sourceId);
+                  if (s) sources = [s];
+                } else {
+                  sources = this.options.sourceRepo.list().filter((s) => s.isActive);
+                }
+
+                if (this.options.documentRepo) {
+                  for (const s of sources) {
+                    const docs = this.options.documentRepo.listBySourceId(s.id);
+                    for (const doc of docs) {
+                      documents.push({
+                        id: doc.id,
+                        sourceId: doc.sourceId,
+                        title: doc.title,
+                        textContent: doc.textContent,
+                        originUrl: doc.url || undefined,
+                      });
+                    }
+                  }
+                }
+              }
+
+              const docCount = documents.length || 1;
+              const job = await this.jobManager.enqueueJob(
+                "generation",
+                `Synthesize flashcards (${docCount} doc${docCount === 1 ? "" : "s"})`,
+                {
+                  documentCount: documents.length,
+                  provider,
+                  model,
+                  persona,
+                  difficulty,
+                  targetDeck: targetDeckOverride,
+                },
+                async (_j, ctx) => {
+                  return await this.workerExecutor.executeTask(
+                    {
+                      type: "generation",
+                      payload: {
+                        documents,
+                        provider,
+                        model,
+                        apiKey,
+                        endpoint: baseUrl,
+                        persona,
+                        difficulty,
+                        depthMode,
+                        chunkMultiplier,
+                        fullDocument,
+                        limit,
+                        targetDeckOverride,
+                        enforceGrounding,
+                      },
+                    },
+                    ctx
+                  );
+                },
+                docCount
+              );
+
+              this.sendJson(res, 202, {
+                success: true,
+                jobId: job.id,
+                status: job.status,
+                title: job.title,
+              });
+              return;
+            }
 
             try {
               const createLLMFn = this.options.createLLMAdapterFn || createLLMAdapter;
@@ -2136,6 +2533,7 @@ export class WebServer {
               return;
             }
 
+            let body: any = {};
             let sourceId: string | undefined;
             let ids: string[] | undefined;
             let format = "markdown";
@@ -2146,7 +2544,7 @@ export class WebServer {
             let grayscale = false;
 
             if (method === "POST") {
-              const body = await this.parseBody(req);
+              body = await this.parseBody(req);
               sourceId = body?.sourceId;
               ids = Array.isArray(body?.ids) ? body.ids : undefined;
               if (body?.format) format = body.format;
@@ -2198,6 +2596,37 @@ export class WebServer {
                 ? `No documents found to export for source "${sourceName}". Please sync the data source first to ingest articles.`
                 : "No documents found to export in the knowledge base.";
               this.sendJson(res, 404, { error: msg });
+              return;
+            }
+
+            if (this.jobManager && (method === "POST" ? (body?.async === true || parsedUrl.query.async === "true") : parsedUrl.query.async === "true")) {
+              const job = await this.jobManager.enqueueJob(
+                "export",
+                `Export ${targetDocs.length} document(s) (${format.toUpperCase()})`,
+                { format, documentCount: targetDocs.length, sourceName, mode },
+                async (_j, ctx) => {
+                  return await this.workerExecutor.executeTask(
+                    {
+                      type: "export",
+                      payload: {
+                        exportKind: "documents",
+                        format,
+                        mode: mode as any,
+                        sourceName,
+                        documents: targetDocs,
+                      },
+                    },
+                    ctx
+                  );
+                },
+                1
+              );
+              this.sendJson(res, 202, {
+                success: true,
+                jobId: job.id,
+                status: job.status,
+                title: job.title,
+              });
               return;
             }
 

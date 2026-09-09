@@ -1,11 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { fetchSources, fetchSourceDocuments, toggleSourceActive, deleteSource, syncSource, syncAllSources } from '../lib/api';
+  import { fetchSources, fetchSourceDocuments, toggleSourceActive, deleteSource, syncSource, syncAllSources, fetchJobDetails } from '../lib/api';
   import type { DataSource, DiscoveredDocument } from '../lib/types';
   import AddSourceModal from '../components/AddSourceModal.svelte';
   import EditSourceModal from '../components/EditSourceModal.svelte';
   import SourceDocumentInspector from '../components/SourceDocumentInspector.svelte';
   import DocumentExportModal from '../components/DocumentExportModal.svelte';
+  import { sourcesStore, toastStore, taskStore } from '../stores/index.js';
 
   interface Props {
     onNavigate?: (tab: string, queryParams?: Record<string, string>) => void;
@@ -13,9 +14,11 @@
 
   let { onNavigate }: Props = $props();
 
-  let sources = $state<DataSource[]>([]);
-  let loading = $state(true);
-  let error = $state<string | null>(null);
+  let sources = $derived(sourcesStore.sources);
+  let loading = $derived(sourcesStore.loading);
+  let error = $derived(sourcesStore.error);
+  let isSyncingAll = $derived(sourcesStore.isSyncingAll);
+
   let isAddModalOpen = $state(false);
   let editingSource = $state<DataSource | null>(null);
   let isEditModalOpen = $state(false);
@@ -25,102 +28,208 @@
   let isExportModalOpen = $state(false);
   let sourceDocsForExport = $state<DiscoveredDocument[]>([]);
   let syncingId = $state<string | null>(null);
-  let toastMessage = $state<string | null>(null);
-
-  let isSyncingAll = $state(false);
 
   async function handleOpenExport(source: DataSource) {
     try {
       const data = await fetchSourceDocuments(source.id);
       if (!data.documents || data.documents.length === 0) {
-        alert(`No discovered documents found for "${source.name}". Click "Sync" first to fetch and extract articles from this source.`);
+        toastStore.warning(`No discovered documents found for "${source.name}". Click "Sync" first.`);
         return;
       }
       exportingSource = source;
       sourceDocsForExport = data.documents;
       isExportModalOpen = true;
     } catch (err: any) {
-      alert('Failed to load documents for export: ' + err.message);
+      toastStore.error('Failed to load documents for export: ' + err.message);
     }
   }
 
-
   async function loadSources() {
-    loading = true;
-    error = null;
+    if (sourcesStore.sources.length === 0) {
+      sourcesStore.loading = true;
+    }
+    sourcesStore.error = null;
     try {
-      sources = await fetchSources();
+      const fetched = await fetchSources();
+      sourcesStore.setSources(fetched);
     } catch (err: any) {
-      error = err.message || 'Failed to load data sources';
+      sourcesStore.error = err.message || 'Failed to load data sources';
     } finally {
-      loading = false;
+      sourcesStore.loading = false;
     }
   }
 
   async function handleToggleActive(source: DataSource) {
+    if (isSyncingAll || syncingId === source.id) return;
     try {
       const updated = await toggleSourceActive(source.id, !source.isActive);
-      sources = sources.map((s) => (s.id === updated.id ? updated : s));
+      sourcesStore.updateSource(updated);
+      toastStore.info(`Source "${source.name}" is now ${updated.isActive ? 'active' : 'inactive'}.`);
     } catch (err: any) {
-      alert('Failed to toggle source: ' + err.message);
+      toastStore.error('Failed to toggle source: ' + err.message);
     }
   }
 
   async function handleDelete(source: DataSource) {
+    if (isSyncingAll || syncingId === source.id) return;
     if (!confirm(`Are you sure you want to delete source "${source.name}"?`)) return;
     try {
       await deleteSource(source.id);
-      sources = sources.filter((s) => s.id !== source.id);
+      sourcesStore.removeSource(source.id);
+      toastStore.info(`Source "${source.name}" deleted.`);
     } catch (err: any) {
-      alert('Failed to delete source: ' + err.message);
+      toastStore.error('Failed to delete source: ' + err.message);
     }
   }
 
   async function handleSync(source: DataSource) {
+    if (isSyncingAll || sourcesStore.syncingSourceIds[source.id]) return;
     syncingId = source.id;
-    toastMessage = null;
+    sourcesStore.setSyncing(source.id, true);
     try {
-      const result = await syncSource(source.id);
-      if (result.newCount > 0) {
-        toastMessage = `✅ Synced "${source.name}": ${result.newCount} new documents ingested (${result.totalFetched} total found).`;
+      const result: any = await syncSource(source.id);
+      if (result.jobId) {
+        sourcesStore.setSyncing(source.id, true, result.jobId);
+        toastStore.info(`⚡ Sync queued (#${result.jobId.slice(0, 8)}) for "${source.name}". Ingesting in background...`);
+        pollSyncJob(source.id, result.jobId, source.name);
       } else {
-        toastMessage = `✅ Synced "${source.name}": Up to date (0 new documents, ${result.totalFetched} total checked).`;
+        if (result.newCount > 0) {
+          toastStore.success(`Synced "${source.name}": ${result.newCount} new documents ingested (${result.totalFetched} total found).`);
+        } else {
+          toastStore.info(`Synced "${source.name}": Up to date (0 new documents, ${result.totalFetched} total checked).`);
+        }
+        await loadSources();
+        sourcesStore.setSyncing(source.id, false);
+        syncingId = null;
       }
-      setTimeout(() => (toastMessage = null), 5000);
-      await loadSources();
     } catch (err: any) {
-      alert('Sync failed: ' + err.message);
-    } finally {
+      toastStore.error('Sync failed: ' + err.message);
+      sourcesStore.setSyncing(source.id, false);
       syncingId = null;
     }
   }
 
+  async function pollSyncJob(sourceId: string, jobId: string, sourceName: string) {
+    const pollInterval = 1500;
+    const maxAttempts = 240;
+    let attempts = 0;
+
+    while (sourcesStore.syncingSourceIds[sourceId] && sourcesStore.activeSyncJobIds[sourceId] === jobId && attempts < maxAttempts) {
+      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+      if (!sourcesStore.syncingSourceIds[sourceId] || sourcesStore.activeSyncJobIds[sourceId] !== jobId) {
+        break;
+      }
+      try {
+        const { job } = await fetchJobDetails(jobId);
+        if (job.status === 'completed' || job.status === 'completed_with_warnings') {
+          if (sourcesStore.syncingSourceIds[sourceId] && sourcesStore.activeSyncJobIds[sourceId] === jobId) {
+            sourcesStore.setSyncing(sourceId, false);
+            syncingId = null;
+            const summary = job.resultSummary || {};
+            const newCount = summary.newCount ?? summary.totalNewDocuments ?? 0;
+            const totalFetched = summary.totalFetched ?? summary.totalFetchedDocuments ?? 0;
+            if (newCount > 0) {
+              toastStore.success(`🎉 Synced "${sourceName}": ${newCount} new document(s) ingested (${totalFetched} total checked).`);
+            } else {
+              toastStore.info(`Synced "${sourceName}": Up to date (0 new documents, ${totalFetched} total checked).`);
+            }
+            await loadSources();
+          }
+          break;
+        } else if (job.status === 'failed') {
+          if (sourcesStore.syncingSourceIds[sourceId] && sourcesStore.activeSyncJobIds[sourceId] === jobId) {
+            sourcesStore.setSyncing(sourceId, false);
+            syncingId = null;
+            const msg = job.errorMessage || 'Sync failed';
+            toastStore.error(`⚠️ Sync failed for "${sourceName}": ${msg}`);
+          }
+          break;
+        } else if (job.status === 'cancelled') {
+          if (sourcesStore.syncingSourceIds[sourceId] && sourcesStore.activeSyncJobIds[sourceId] === jobId) {
+            sourcesStore.setSyncing(sourceId, false);
+            syncingId = null;
+            toastStore.warn(`⏹️ Sync for "${sourceName}" was cancelled.`);
+          }
+          break;
+        }
+      } catch {}
+      attempts++;
+    }
+  }
+
   async function handleSyncAll() {
-    isSyncingAll = true;
-    toastMessage = null;
+    if (isSyncingAll || Object.values(sourcesStore.syncingSourceIds).some(Boolean)) return;
+    sourcesStore.setSyncingAll(true);
     try {
-      const results = await syncAllSources();
-      const totalNew = results.reduce((acc, r) => acc + (r.newCount || 0), 0);
-      toastMessage = `✅ Bulk sync completed: ${totalNew} new documents ingested across ${results.length} sources.`;
-      setTimeout(() => (toastMessage = null), 5000);
-      await loadSources();
+      const results: any = await syncAllSources();
+      if (results && results.jobId) {
+        sourcesStore.setSyncingAll(true, results.jobId);
+        toastStore.info(`⚡ Bulk sync queued (#${results.jobId.slice(0, 8)}). Ingesting in background...`);
+        pollSyncAllJob(results.jobId);
+      } else if (Array.isArray(results)) {
+        const totalNew = results.reduce((acc, r) => acc + (r.newCount || 0), 0);
+        toastStore.success(`Bulk sync completed: ${totalNew} new documents ingested across ${results.length} sources.`);
+        await loadSources();
+        sourcesStore.setSyncingAll(false);
+      } else {
+        await loadSources();
+        sourcesStore.setSyncingAll(false);
+      }
     } catch (err: any) {
-      alert('Bulk sync failed: ' + err.message);
-    } finally {
-      isSyncingAll = false;
+      toastStore.error('Bulk sync failed: ' + err.message);
+      sourcesStore.setSyncingAll(false);
+    }
+  }
+
+  async function pollSyncAllJob(jobId: string) {
+    const pollInterval = 1500;
+    const maxAttempts = 240;
+    let attempts = 0;
+
+    while (sourcesStore.isSyncingAll && sourcesStore.activeSyncAllJobId === jobId && attempts < maxAttempts) {
+      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+      if (!sourcesStore.isSyncingAll || sourcesStore.activeSyncAllJobId !== jobId) {
+        break;
+      }
+      try {
+        const { job } = await fetchJobDetails(jobId);
+        if (job.status === 'completed' || job.status === 'completed_with_warnings') {
+          if (sourcesStore.isSyncingAll && sourcesStore.activeSyncAllJobId === jobId) {
+            sourcesStore.setSyncingAll(false);
+            const summary = job.resultSummary || {};
+            const totalNew = summary.totalNewDocuments ?? summary.newCount ?? 0;
+            const totalSources = summary.totalSources ?? job.metadata?.sourceCount ?? 'all';
+            toastStore.success(`🎉 Bulk sync completed: ${totalNew} new document(s) ingested across ${totalSources} sources.`);
+            await loadSources();
+          }
+          break;
+        } else if (job.status === 'failed') {
+          if (sourcesStore.isSyncingAll && sourcesStore.activeSyncAllJobId === jobId) {
+            sourcesStore.setSyncingAll(false);
+            const msg = job.errorMessage || 'Bulk sync failed';
+            toastStore.error(`⚠️ Bulk sync failed: ${msg}`);
+          }
+          break;
+        } else if (job.status === 'cancelled') {
+          if (sourcesStore.isSyncingAll && sourcesStore.activeSyncAllJobId === jobId) {
+            sourcesStore.setSyncingAll(false);
+            toastStore.warn(`⏹️ Bulk sync was cancelled.`);
+          }
+          break;
+        }
+      } catch {}
+      attempts++;
     }
   }
 
   function handleSourceCreated(newSource: DataSource) {
-    sources = [newSource, ...sources];
-    toastMessage = `✅ Data source "${newSource.name}" added successfully.`;
-    setTimeout(() => (toastMessage = null), 4000);
+    sourcesStore.setSources([newSource, ...sourcesStore.sources]);
+    toastStore.success(`Data source "${newSource.name}" added successfully.`);
   }
 
   function handleSourceUpdated(updated: DataSource) {
-    sources = sources.map((s) => (s.id === updated.id ? updated : s));
-    toastMessage = `✅ Data source "${updated.name}" updated successfully.`;
-    setTimeout(() => (toastMessage = null), 4000);
+    sourcesStore.updateSource(updated);
+    toastStore.success(`Data source "${updated.name}" updated successfully.`);
   }
 
   function getUriSummary(source: DataSource): { displayUri: string; countBadge?: string } {
@@ -143,6 +252,15 @@
 
   onMount(() => {
     loadSources();
+    if (sourcesStore.isSyncingAll && sourcesStore.activeSyncAllJobId) {
+      pollSyncAllJob(sourcesStore.activeSyncAllJobId);
+    }
+    for (const [sourceId, jobId] of Object.entries(sourcesStore.activeSyncJobIds)) {
+      if (sourcesStore.syncingSourceIds[sourceId] && jobId) {
+        const source = sources.find((s) => s.id === sourceId);
+        pollSyncJob(sourceId, jobId, source ? source.name : 'Source');
+      }
+    }
   });
 </script>
 
@@ -153,22 +271,18 @@
       <p class="view-subtitle">Connect and synchronize RSS feeds, XML sitemaps, technical blogs, and local notes.</p>
     </div>
     <div class="header-actions">
-      <button class="btn btn-secondary" onclick={handleSyncAll} disabled={isSyncingAll || sources.length === 0}>
+      <button class="btn btn-secondary" onclick={handleSyncAll} disabled={isSyncingAll || Object.values(sourcesStore.syncingSourceIds).some(Boolean) || sources.length === 0}>
         {#if isSyncingAll}
           <span class="mini-spinner"></span> Syncing All...
         {:else}
           🔄 Sync All Sources
         {/if}
       </button>
-      <button class="btn btn-primary" onclick={() => (isAddModalOpen = true)}>
+      <button class="btn btn-primary" onclick={() => (isAddModalOpen = true)} disabled={isSyncingAll}>
         ➕ Add Ingestion Source
       </button>
     </div>
   </div>
-
-  {#if toastMessage}
-    <div class="toast-banner">{toastMessage}</div>
-  {/if}
 
   {#if loading && sources.length === 0}
     <div class="loading-state">
@@ -239,6 +353,7 @@
                   <input
                     type="checkbox"
                     checked={s.isActive}
+                    disabled={isSyncingAll || !!sourcesStore.syncingSourceIds[s.id]}
                     onchange={() => handleToggleActive(s)}
                   />
                   <span class="slider"></span>
@@ -248,6 +363,7 @@
                 <div class="actions-cell">
                   <button
                     class="action-btn edit-btn"
+                    disabled={isSyncingAll || !!sourcesStore.syncingSourceIds[s.id]}
                     onclick={() => {
                       editingSource = s;
                       isEditModalOpen = true;
@@ -268,6 +384,7 @@
                   </button>
                   <button
                     class="action-btn export-btn"
+                    disabled={isSyncingAll || !!sourcesStore.syncingSourceIds[s.id]}
                     onclick={() => handleOpenExport(s)}
                     title="Export Clean Document Knowledge Base"
                   >
@@ -275,18 +392,19 @@
                   </button>
                   <button
                     class="action-btn sync-btn"
-                    disabled={syncingId === s.id}
+                    disabled={isSyncingAll || !!sourcesStore.syncingSourceIds[s.id]}
                     onclick={() => handleSync(s)}
                     title="Trigger Ingestion & Extraction"
                   >
-                    {#if syncingId === s.id}
-                      <span class="mini-spinner"></span>
+                    {#if sourcesStore.syncingSourceIds[s.id]}
+                      <span class="mini-spinner"></span> Syncing...
                     {:else}
                       ⚡ Sync
                     {/if}
                   </button>
                   <button
                     class="action-btn delete-btn"
+                    disabled={isSyncingAll || !!sourcesStore.syncingSourceIds[s.id]}
                     onclick={() => handleDelete(s)}
                     title="Delete Source"
                   >
@@ -573,9 +691,10 @@
     border-color: rgba(239, 68, 68, 0.3);
   }
 
-  .delete-btn:hover {
-    background: #ef4444;
-    color: white;
+  .action-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    pointer-events: none;
   }
 
   /* Toggle Switch */
@@ -590,6 +709,11 @@
     opacity: 0;
     width: 0;
     height: 0;
+  }
+
+  .switch input:disabled + .slider {
+    opacity: 0.45;
+    cursor: not-allowed;
   }
 
   .slider {
@@ -631,12 +755,17 @@
     transition: all 0.15s;
   }
 
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
   .btn-primary {
     background: #6366f1;
     color: #ffffff;
   }
 
-  .btn-primary:hover {
+  .btn-primary:hover:not(:disabled) {
     background: #4f46e5;
   }
 

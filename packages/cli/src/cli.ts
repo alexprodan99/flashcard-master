@@ -31,9 +31,22 @@ export function createCli(providedContext?: AppContext): Command {
     .description("Launch local Web UI dashboard server")
     .option("-p, --port <port>", "Port to bind local Web UI to", "3000")
     .option("-h, --host <host>", "Host address to bind to", "127.0.0.1")
-    .action(async (options: { port: string; host: string }) => {
+    .option("--max-generation-workers <number>", "Max concurrent generation workers", "3")
+    .option("--max-sync-workers <number>", "Max concurrent sync workers", "2")
+    .option("--max-export-workers <number>", "Max concurrent export workers", "2")
+    .action(async (options: {
+      port: string;
+      host: string;
+      maxGenerationWorkers?: string;
+      maxSyncWorkers?: string;
+      maxExportWorkers?: string;
+    }) => {
       try {
         const port = parseInt(options.port, 10) || 3000;
+        const maxGenerationWorkers = options.maxGenerationWorkers ? Math.max(1, parseInt(options.maxGenerationWorkers, 10) || 1) : 3;
+        const maxSyncWorkers = options.maxSyncWorkers ? Math.max(1, parseInt(options.maxSyncWorkers, 10) || 1) : 2;
+        const maxExportWorkers = options.maxExportWorkers ? Math.max(1, parseInt(options.maxExportWorkers, 10) || 1) : 2;
+
         const server = createWebServer({
           port,
           host: options.host,
@@ -41,6 +54,12 @@ export function createCli(providedContext?: AppContext): Command {
           syncRepo: context.syncRepo,
           cardRepo: context.cardRepo,
           documentRepo: context.docRepo,
+          jobRepo: context.jobRepo,
+          concurrency: {
+            maxGenerationWorkers,
+            maxSyncWorkers,
+            maxExportWorkers,
+          },
           ingestionService: context.ingestionService,
           exportService: context.exportService,
           ankiConnectAdapter: context.ankiConnectAdapter,
@@ -52,6 +71,7 @@ export function createCli(providedContext?: AppContext): Command {
 
         const { url } = await server.listen(port);
         console.log(`\n🎴 Flashcard Master Web UI is running at: ${url}`);
+        console.log(`⚡ Background Task Concurrency: Generation=${maxGenerationWorkers}, Sync=${maxSyncWorkers}, Export=${maxExportWorkers}`);
         console.log("Press Ctrl+C to stop.\n");
       } catch (err: any) {
         console.error(`Failed to start Web UI server: ${err.message}`);
@@ -196,7 +216,7 @@ export function createCli(providedContext?: AppContext): Command {
           console.log(`• ${doc.title}`);
           console.log(`  ID:    ${doc.id}`);
           if (doc.url) console.log(`  URL:   ${doc.url}`);
-          console.log(`  Words: ${doc.wordCount.toLocaleString()} | Generated Cards: ${doc.cardCount}`);
+          console.log(`  Words: ${(doc.wordCount ?? 0).toLocaleString()} | Generated Cards: ${doc.cardCount}`);
           console.log("--------------------------------------------------------------------------------");
         }
       } catch (err: any) {

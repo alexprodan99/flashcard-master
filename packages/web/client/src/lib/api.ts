@@ -1,4 +1,4 @@
-import type { DashboardStats, DataSource, Flashcard, GenerationResult, DiscoveredDocument, DocumentExportFormat } from './types';
+import type { DashboardStats, DataSource, Flashcard, GenerationResult, DiscoveredDocument, DocumentExportFormat } from './types.js';
 
 export async function fetchStats(): Promise<DashboardStats> {
   const res = await fetch('/api/stats');
@@ -18,6 +18,7 @@ export async function createSource(payload: {
   uri: string;
   targetDeck?: string;
   tags?: string[];
+  config?: Record<string, unknown>;
 }): Promise<DataSource> {
   const res = await fetch('/api/sources', {
     method: 'POST',
@@ -49,6 +50,7 @@ export async function updateSource(
     targetDeck: string;
     tags: string[];
     isActive: boolean;
+    config: Record<string, unknown>;
   }>
 ): Promise<DataSource> {
   const res = await fetch(`/api/sources/${encodeURIComponent(id)}`, {
@@ -149,8 +151,10 @@ export async function generateCards(payload: {
   limit?: number;
   targetDeck?: string;
   enforceGrounding?: boolean;
+  sync?: boolean;
 }): Promise<GenerationResult> {
-  const res = await fetch('/api/generate', {
+  const url = payload.sync ? '/api/generate?sync=true' : '/api/generate';
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -312,3 +316,45 @@ export async function uploadSourceFile(file: File): Promise<{ path: string; file
 
   return res.json();
 }
+
+export async function fetchJobs(filter?: { status?: string; type?: string; limit?: number }): Promise<import('./types.js').Job[]> {
+  const params = new URLSearchParams();
+  if (filter?.status) params.set('status', filter.status);
+  if (filter?.type) params.set('type', filter.type);
+  if (filter?.limit) params.set('limit', String(filter.limit));
+  const query = params.toString() ? `?${params.toString()}` : '';
+  const res = await fetch(`/api/jobs${query}`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to fetch jobs');
+  }
+  return res.json();
+}
+
+export async function fetchJobDetails(jobId: string): Promise<{ job: import('./types.js').Job; logs: import('./types.js').JobLog[] }> {
+  const res = await fetch(`/api/jobs/${encodeURIComponent(jobId)}`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to fetch job details');
+  }
+  return res.json();
+}
+
+export async function cancelJobApi(jobId: string): Promise<{ success: boolean; cancelled: boolean; job: import('./types.js').Job }> {
+  const res = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/cancel`, { method: 'POST' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to cancel job');
+  }
+  return res.json();
+}
+
+export async function clearJobHistory(keepLastN?: number): Promise<{ success: boolean; deletedCount: number }> {
+  const query = typeof keepLastN === 'number' ? `?keepLastN=${keepLastN}` : '';
+  const res = await fetch(`/api/jobs/history${query}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to clear job history');
+  }
+  return res.json();
+}

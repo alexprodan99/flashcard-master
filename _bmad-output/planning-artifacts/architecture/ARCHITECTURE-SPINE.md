@@ -2,22 +2,41 @@
 title: "Technical Architecture Spine: flashcard-master"
 status: "draft"
 created: "2026-08-30"
-updated: "2026-09-05"
+updated: "2026-09-08"
 ---
 
 # Technical Architecture Spine: flashcard-master
 
 ## 1. Architectural Paradigm & System Overview
 
-`flashcard-master` is built on a **Ports & Adapters (Hexagonal) Architecture** combined with the **Strategy Pattern** for extensible data ingestion and export pipelines.
+`flashcard-master` is built on a **Ports & Adapters (Hexagonal) Architecture** combined with the **Strategy Pattern** for extensible data ingestion/export, a **Centralized Task Queue Manager** driving **Worker Threads** for concurrent background execution, and **Svelte 5 Universal Reactive Stores** with **Server-Sent Events (SSE)** for real-time client state synchronization.
 
 The core domain contains business logic for Q&A extraction, card validation, and grounding rules. All external dependencies (HTTP fetchers, LLMs, SQLite database, AnkiConnect, and file formatters) are driven through typed port interfaces.
 
 ```mermaid
 flowchart TD
-    subgraph DrivingAdapters ["Driving Adapters (Primary)"]
+    subgraph DrivingAdapters ["Driving Presentation Layer"]
         CLI[Interactive CLI Wizard & Commands]
-        UI[Local Web UI Dashboard - React / Vite]
+        UI[Local Web UI Dashboard - Svelte 5]
+        Stores[Svelte 5 Shared Stores .svelte.ts]
+        TaskCenter[Task Center Drawer & Step Accordion]
+        UI --> Stores
+        UI --> TaskCenter
+    end
+
+    subgraph HostServer ["WebServer & Background Job Engine (Main Thread)"]
+        REST[REST API Endpoints /api/*]
+        SSE[SSE Stream /api/jobs/stream]
+        JobMgr[JobManager - Single DB Custodian]
+        REST --> JobMgr
+        JobMgr --> SSE
+        SSE -.->|Real-time Events| TaskCenter
+    end
+
+    subgraph WorkerPool ["Worker Threads Pool (Node.js worker_threads)"]
+        GenWorker[Card Generation Worker - Max 3]
+        SyncWorker[Source Sync Worker - Max 2]
+        ExportWorker[Document/Card Export Worker - Max 2]
     end
 
     subgraph CoreDomain ["Core Domain Application"]
@@ -27,43 +46,29 @@ flowchart TD
         ExportService[Export Orchestrator]
     end
 
-    subgraph DrivenAdapters ["Driven Adapters (Secondary)"]
-        subgraph IngestionStrategies ["Ingestion Strategies"]
-            RSS[RSS / Atom Strategy]
-            Web[Web Reader-Mode Strategy]
-            Local[Local Markdown / Text Strategy]
-            Sitemap[XML Sitemap Strategy]
-            LLMsTxt[LLMs.txt Catalog Strategy]
+    subgraph DrivenAdapters ["Driven Adapters & Storage"]
+        subgraph StorageAdapters ["Persistence Layer (Main Thread Only)"]
+            SQLite[(SQLite Database - WAL Mode: cards, docs, sources, jobs, job_logs)]
         end
 
-        subgraph LLMAdapters ["LLM Provider Adapters"]
-            OpenAI[OpenAI / Gemini / Anthropic / Ollama]
-        end
-
-        subgraph StorageAdapters ["Persistence Adapter"]
-            SQLite[(SQLite Database - WAL Mode)]
-        end
-
-        subgraph ExportAdapters ["Export Adapters"]
-            AnkiPkg[Anki .apkg Generator]
-            AnkiConn[AnkiConnect HTTP Client]
-            MDExp[Collapsible Markdown Exporter]
-            PDFExp[PDF Study Guide Exporter]
+        subgraph ExternalPorts ["External Services & Exports"]
+            LLMAdapters[Ollama / Gemini / OpenAI / Anthropic]
+            AnkiAdapters[AnkiConnect / .apkg / EPUB / PDF / MD]
         end
     end
 
     CLI --> IngestService
     CLI --> ExportService
-    UI --> IngestService
-    UI --> ExportService
+    JobMgr -->|IPC Work Dispatch| WorkerPool
+    WorkerPool -->|IPC Progress & Card Drafts| JobMgr
+    JobMgr -->|Serialized DB Writes| SQLite
 
-    IngestService --> IngestionStrategies
-    IngestService --> QAEngine
+    GenWorker --> QAEngine
     QAEngine --> LLMAdapters
     QAEngine --> GroundingGuard
-    QAEngine --> SQLite
-    ExportService --> SQLite
-    ExportService --> ExportAdapters
+    SyncWorker --> IngestService
+    ExportWorker --> ExportService
+    ExportService --> AnkiAdapters
 ```
 
 ---
@@ -227,6 +232,49 @@ flowchart TD
   3. The source name is auto-derived from the file basename if not already provided.
   4. Advanced users retain the option to input directory paths or absolute filesystem paths via a toggle.
 
+### AD-18: Svelte 5 Universal Reactive State Modules & Two-Way URL Sync
+- **Binds:** Frontend cross-tab state in `packages/web/client/src/stores/` (`generateStore.svelte.ts`, `taskStore.svelte.ts`, `sourcesStore.svelte.ts`, `explorerStore.svelte.ts`) and `App.svelte` routing.
+- **Prevents:** Component unmount state loss, discarded form inputs/drafts, and fragmented client state across tabs.
+- **Rule:**
+  1. Transient UI state across tabs MUST be stored in `.svelte.ts` modules utilizing `$state()` runes rather than local component state.
+  2. Components read and mutate store state directly upon mount and interaction without relying on DOM keep-alive toggles.
+  3. User preferences (active LLM provider, default model, persona, difficulty, target deck) MUST automatically synchronize to `localStorage` on change.
+  4. Active tab and deep-link parameters (`?tab=...&sourceId=...&docId=...`) MUST synchronize two-way with the browser History API via `window.history.pushState` and `window.addEventListener('popstate')`.
+
+### AD-19: Centralized Main-Thread JobManager & Worker Thread Pool Architecture
+- **Binds:** `packages/web/src/jobs/` (`JobManager.ts`, `WorkerPool.ts`), `packages/core/src/domain/Job.ts`, and Node.js `worker_threads`.
+- **Prevents:** Unbounded execution latency in HTTP request handlers and `SQLITE_BUSY` lock contention from concurrent writes.
+- **Rule:**
+  1. Long-running tasks (Generation, Sync-All, Document/Card Exports) MUST execute as background jobs managed by the main-thread `JobManager`.
+  2. Concurrency pools are isolated: Generation pool (default max 3 workers), Sync pool (default max 2 workers), Export pool (default max 2 workers).
+  3. Concurrency caps MUST be configurable via CLI flags (`--max-generation-workers`, etc.) and server options.
+  4. All SQLite writes, repository mutations, job status changes, and log appends MUST occur exclusively on the main thread. Worker threads receive plain JSON task payloads and communicate progress, logs, and card drafts via IPC (`parentPort.postMessage`).
+
+### AD-20: Persistent Step-by-Step Logging Sessions (`jobs` and `job_logs` Schema)
+- **Binds:** SQLite schema migrations, `JobRepository`, and `JobLogRepository`.
+- **Prevents:** Opaque background execution, silent failures, and lost audit trails.
+- **Rule:**
+  1. Background tasks are tracked in the `jobs` table with step counts, percentages, status, and metadata.
+  2. Every discrete processing step (document chunking, LLM invocation, quote grounding validation, card deduplication, commit) appends a structured record to `job_logs` with `step_number`, `step_title`, `level`, `message`, duration, and timestamps.
+  3. Errors within an individual document step MUST be recorded as `level = 'error'`, continuing execution for remaining documents in a multi-document batch (fault-tolerant partial success).
+
+### AD-21: Server-Sent Events (SSE) Streaming Protocol & AbortSignal Task Cancellation
+- **Binds:** WebServer routes `GET /api/jobs/stream`, `GET /api/jobs/:id/logs/stream`, `POST /api/jobs/:id/cancel`.
+- **Prevents:** Polling overhead, stalled UI progress bars, and runaway background resource consumption.
+- **Rule:**
+  1. The WebServer exposes an SSE channel `GET /api/jobs/stream` broadcasting `job_created`, `job_progress`, `job_status`, and `job_completed` events.
+  2. A dedicated job log SSE stream `GET /api/jobs/:id/logs/stream` streams real-time step log lines to the client.
+  3. When a user requests `POST /api/jobs/:id/cancel`, the `JobManager` marks the job as `cancelled`, terminates the active worker thread, and commits any successful items processed up to that point.
+
+### AD-22: Task Center Slide-Over Drawer & Action Lockout Hardening
+- **Binds:** `TaskCenterDrawer.svelte`, `StepAccordion.svelte`, `Navigation.svelte`, and action trigger buttons across views.
+- **Prevents:** Double-submission race conditions, duplicate card generation, and unobserved background tasks.
+- **Rule:**
+  1. Action triggers (Generate Cards, Sync All, Export) MUST immediately disable, enter a loading state, and lock sibling controls upon submission.
+  2. Trigger endpoints respond with `{ jobId }` in < 50ms, unlocking the UI and queuing the task.
+  3. Main navigation displays a live badge: `[⚡ Tasks (N running)]`.
+  4. Clicking opens the Task Center drawer with an active tab (live progress, Step Accordion with timestamps and expandable logs, Cancel button) and a history tab (with manual "Clear History" and auto-pruning).
+
 ---
 
 ## 3. Database Schema Specification (SQLite)
@@ -285,6 +333,36 @@ CREATE TABLE IF NOT EXISTS flashcards (
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Background Jobs Queue & Tracking
+CREATE TABLE IF NOT EXISTS jobs (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL CHECK(type IN ('generation', 'sync_all', 'sync_source', 'export')),
+    status TEXT NOT NULL CHECK(status IN ('queued', 'running', 'completed', 'completed_with_warnings', 'failed', 'cancelled')),
+    title TEXT NOT NULL,
+    total_steps INTEGER NOT NULL DEFAULT 1,
+    current_step INTEGER NOT NULL DEFAULT 0,
+    progress_percent REAL NOT NULL DEFAULT 0.0,
+    current_step_name TEXT,
+    metadata TEXT NOT NULL DEFAULT '{}', -- JSON configuration payload
+    result_summary TEXT,                 -- JSON result metrics
+    error_message TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    started_at TEXT,
+    completed_at TEXT
+);
+
+-- Step-by-Step Job Logs
+CREATE TABLE IF NOT EXISTS job_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    step_number INTEGER NOT NULL,
+    step_title TEXT NOT NULL,
+    level TEXT NOT NULL CHECK(level IN ('info', 'warn', 'error', 'success')),
+    message TEXT NOT NULL,
+    details TEXT, -- Optional JSON metadata
+    timestamp TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Application Settings & LLM Config
 CREATE TABLE IF NOT EXISTS app_settings (
     key TEXT PRIMARY KEY,
@@ -297,6 +375,9 @@ CREATE INDEX IF NOT EXISTS idx_flashcards_source_id ON flashcards(source_id);
 CREATE INDEX IF NOT EXISTS idx_flashcards_target_deck ON flashcards(target_deck);
 CREATE INDEX IF NOT EXISTS idx_flashcards_difficulty ON flashcards(difficulty);
 CREATE INDEX IF NOT EXISTS idx_documents_source_id ON documents(source_id);
+CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
+CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at);
+CREATE INDEX IF NOT EXISTS idx_job_logs_job_id ON job_logs(job_id);
 ```
 
 ---
@@ -308,25 +389,32 @@ flashcard-master/
 ├── packages/
 │   ├── core/                          # Core domain, ports, and models
 │   │   ├── src/
-│   │   │   ├── domain/                # Flashcard, DataSource, Document, SyncState models
-│   │   │   ├── ports/                 # IngestionStrategy, LLMProviderPort, ExporterPort
+│   │   │   ├── domain/                # Flashcard, DataSource, Document, Job, JobLog models
+│   │   │   ├── ports/                 # IngestionStrategy, LLMProviderPort, ExporterPort, JobRepository
 │   │   │   ├── services/              # IngestionService, QAEngine, GroundingGuard, DocumentExportService
-│   │   │   └── storage/               # SQLite repositories & migrations
+│   │   │   └── storage/               # SQLite repositories (SqliteJobRepository, etc.) & migrations
 │   │   └── package.json
 │   ├── adapters/                      # Pluggable driven implementations
-│   │   ├── ingestion/                 # RssStrategy, WebReaderStrategy, LocalFileStrategy, SitemapStrategy, LlmsTxtStrategy
+│   │   ├── ingestion/                 # RssStrategy, WebReaderStrategy, LocalFileStrategy, SitemapStrategy
 │   │   ├── llm/                       # OpenAIAdapter, GeminiAdapter, AnthropicAdapter, OllamaAdapter
 │   │   └── exporters/                 # ApkgExporter, AnkiConnectAdapter, MarkdownExporter, PdfExporter, DocumentExporters
 │   ├── cli/                           # Driving adapter: Terminal CLI & wizard
 │   │   ├── src/
-│   │   │   ├── commands/              # source, sync, export, cards, config
+│   │   │   ├── commands/              # source, sync, export, cards, config, jobs
 │   │   │   └── wizard/                # Inquirer / Clack interactive wizard
 │   │   └── package.json
 │   └── web/                           # Driving adapter: Local Web UI & Node WebServer
 │       ├── client/                    # Svelte 5 Single-File Components + Vite
-│       │   ├── src/                   # App.svelte, components, views (Dashboard, Sources, Generate, Cards, Export & Anki)
+│       │   ├── src/                   # App.svelte, main.ts
+│       │   │   ├── components/        # Navigation, TaskCenterDrawer, StepAccordion, modals
+│       │   │   ├── stores/            # generateStore.svelte.ts, taskStore.svelte.ts, etc.
+│       │   │   ├── views/             # Dashboard, Sources, Generate, Cards, Export
+│       │   │   └── lib/               # api.ts, types.ts
 │       │   └── vite.config.ts
-│       ├── src/                       # Node.js WebServer (REST API + static asset delivery)
+│       ├── src/                       # Node.js WebServer
+│       │   ├── jobs/                  # JobManager.ts, WorkerPool.ts
+│       │   ├── workers/               # generation.worker.ts, sync.worker.ts, export.worker.ts
+│       │   └── server.ts              # REST controllers & SSE endpoints
 │       └── package.json
 └── package.json                       # Turborepo / npm workspaces root
 ```

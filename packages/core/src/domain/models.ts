@@ -92,7 +92,7 @@ export const DiscoveredDocumentSchema = z.object({
   createdAt: z.string().datetime().optional(),
   updatedAt: z.string().datetime().optional(),
 });
-export type DiscoveredDocument = z.infer<typeof DiscoveredDocumentSchema>;
+export type DiscoveredDocument = z.input<typeof DiscoveredDocumentSchema>;
 
 export const MediaAssetSchema = z.object({
   id: z.string(),
@@ -122,4 +122,51 @@ export interface CompactMediaOptions {
   effort?: number;
   grayscale?: boolean;
 }
+
+export const JobTypeSchema = z.enum(["generation", "sync_all", "sync_source", "export"]);
+export type JobType = z.infer<typeof JobTypeSchema>;
+
+export const JobStatusSchema = z.enum([
+  "queued",
+  "running",
+  "completed",
+  "completed_with_warnings",
+  "failed",
+  "cancelled",
+]);
+export type JobStatus = z.infer<typeof JobStatusSchema>;
+
+export const JobSchema = z.object({
+  id: z.string(),
+  type: JobTypeSchema,
+  status: JobStatusSchema,
+  title: z.string().min(1),
+  totalSteps: z.number().int().nonnegative().default(1),
+  currentStep: z.number().int().nonnegative().default(0),
+  progressPercent: z.number().min(0).max(100).default(0),
+  currentStepName: z.string().nullable().optional(),
+  metadata: z.record(z.any()).default({}),
+  resultSummary: z.record(z.any()).nullable().optional(),
+  errorMessage: z.string().nullable().optional(),
+  createdAt: z.string().optional(),
+  startedAt: z.string().nullable().optional(),
+  completedAt: z.string().nullable().optional(),
+});
+export type Job = z.infer<typeof JobSchema>;
+
+export const JobLogLevelSchema = z.enum(["info", "warn", "error", "success"]);
+export type JobLogLevel = z.infer<typeof JobLogLevelSchema>;
+
+export const JobLogSchema = z.object({
+  id: z.number().int().optional(),
+  jobId: z.string(),
+  stepNumber: z.number().int().nonnegative(),
+  stepTitle: z.string().min(1),
+  level: JobLogLevelSchema,
+  message: z.string().min(1),
+  details: z.record(z.any()).nullable().optional(),
+  timestamp: z.string().optional(),
+});
+export type JobLog = z.infer<typeof JobLogSchema>;
+
 

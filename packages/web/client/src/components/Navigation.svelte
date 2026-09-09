@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { taskStore } from '../stores/index.js';
+
   interface Props {
     activeTab: string;
     onSelectTab: (tab: string) => void;
@@ -37,6 +39,28 @@
         <span class="label">{item.label}</span>
       </button>
     {/each}
+
+    <div class="nav-divider"></div>
+
+    <button
+      type="button"
+      id="nav-task-center"
+      class="nav-btn task-center-btn"
+      class:drawer-open={taskStore.isDrawerOpen}
+      class:has-active={taskStore.activeCount > 0}
+      onclick={() => taskStore.toggleDrawer()}
+      title="Open Background Task Center"
+    >
+      <span class="icon" class:spinning={taskStore.activeCount > 0}>
+        {taskStore.activeCount > 0 ? '🔄' : '⚡'}
+      </span>
+      <span class="label">Task Center</span>
+      {#if taskStore.activeCount > 0}
+        <span class="task-badge active-pulsing">{taskStore.activeCount} active</span>
+      {:else if taskStore.jobs.length > 0}
+        <span class="task-badge">{taskStore.jobs.length}</span>
+      {/if}
+    </button>
   </nav>
 
   <div class="sidebar-footer">
@@ -126,6 +150,59 @@
     color: #818cf8;
     border-color: rgba(99, 102, 241, 0.3);
     font-weight: 600;
+  }
+
+  .nav-divider {
+    height: 1px;
+    background: #1e293b;
+    margin: 8px 4px;
+  }
+
+  .task-center-btn {
+    position: relative;
+  }
+
+  .task-center-btn.drawer-open {
+    background: #1e293b;
+    border-color: #334155;
+    color: #f1f5f9;
+  }
+
+  .task-center-btn.has-active {
+    border-color: rgba(99, 102, 241, 0.4);
+    background: rgba(99, 102, 241, 0.1);
+  }
+
+  .task-badge {
+    margin-left: auto;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 10px;
+    background: #334155;
+    color: #94a3b8;
+  }
+
+  .active-pulsing {
+    background: #6366f1;
+    color: #ffffff;
+    box-shadow: 0 0 8px rgba(99, 102, 241, 0.8);
+    animation: pulse 1.8s infinite;
+  }
+
+  .spinning {
+    display: inline-block;
+    animation: spin 1.5s linear infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.85; transform: scale(1.05); }
+  }
+
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
   }
 
   .icon {

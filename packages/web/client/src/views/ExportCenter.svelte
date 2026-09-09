@@ -3,29 +3,32 @@
   import { checkAnkiStatus, pushToAnki, fetchCards, fetchSources, fetchDocuments, exportDocuments } from '../lib/api';
   import type { DataSource, DiscoveredDocument } from '../lib/types';
   import DocumentExportModal from '../components/DocumentExportModal.svelte';
+  import { exportStore, toastStore } from '../stores/index.js';
 
   let isAnkiConnected = $state(false);
   let isCheckingAnki = $state(true);
-  let isPushing = $state(false);
-  let pushMessage = $state<string | null>(null);
 
   // Flashcards state
-  let selectedDeck = $state('all');
   let availableDecks = $state<string[]>([]);
   let totalCardsCount = $state(0);
 
   // Knowledge Base Documents state
   let sources = $state<DataSource[]>([]);
-  let selectedSourceId = $state('all');
   let totalDocsCount = $state(0);
-  let isKnowledgeExporting = $state(false);
-  let knowledgeNotice = $state<string | null>(null);
 
   // Advanced Export Modal state
   let isExportModalOpen = $state(false);
   let modalDocuments = $state<DiscoveredDocument[]>([]);
   let modalSourceName = $state('Knowledge Base');
   let modalSourceId = $state<string | undefined>(undefined);
+
+  let activeDownloadFormat = $state<string | null>(null);
+  let activeKbFormat = $state<string | null>(null);
+
+  let isKnowledgeExporting = $derived(exportStore.isKnowledgeExporting);
+  let isPushing = $derived(exportStore.isPushing);
+  let pushMessage = $derived(exportStore.pushMessage);
+  let knowledgeNotice = $derived(exportStore.knowledgeNotice);
 
   async function checkAnki() {
     isCheckingAnki = true;
@@ -40,79 +43,101 @@
   }
 
   async function handlePush() {
-    isPushing = true;
-    pushMessage = null;
+    if (!isAnkiConnected || isPushing || isKnowledgeExporting || activeDownloadFormat !== null) return;
+    exportStore.isPushing = true;
+    exportStore.pushMessage = null;
     try {
-      const res = await pushToAnki(selectedDeck !== 'all' ? selectedDeck : undefined);
-      pushMessage = `✅ ${res.message || `Successfully pushed ${res.cardsPushed} cards to Anki Desktop!`}`;
+      const res = await pushToAnki(exportStore.selectedDeck !== 'all' ? exportStore.selectedDeck : undefined);
+      const msg = res.message || `Successfully pushed ${res.cardsPushed} cards to Anki Desktop!`;
+      exportStore.pushMessage = `✅ ${msg}`;
+      toastStore.success(msg);
     } catch (err: any) {
-      pushMessage = '⚠️ Push failed: ' + err.message;
+      exportStore.pushMessage = '⚠️ Push failed: ' + err.message;
+      toastStore.error('Push failed: ' + err.message);
     } finally {
-      isPushing = false;
+      exportStore.isPushing = false;
     }
   }
 
   function downloadFormat(format: 'apkg' | 'markdown' | 'pdf' | 'csv' | 'tsv') {
+    if (activeDownloadFormat !== null || isPushing || isKnowledgeExporting) return;
+    activeDownloadFormat = format;
+    toastStore.info(`Preparing ${format.toUpperCase()} export download...`);
     const query = new URLSearchParams();
-    if (selectedDeck !== 'all') {
-      query.set('deck', selectedDeck);
+    if (exportStore.selectedDeck !== 'all') {
+      query.set('deck', exportStore.selectedDeck);
     }
     const url = `/api/export/${format}?${query.toString()}`;
     window.location.href = url;
+    setTimeout(() => {
+      activeDownloadFormat = null;
+    }, 2000);
   }
 
   async function downloadKnowledgeBase(format: 'markdown' | 'html' | 'txt' | 'json', mode: 'merged' | 'split' = 'merged') {
-    isKnowledgeExporting = true;
-    knowledgeNotice = null;
+    if (isKnowledgeExporting || isPushing || activeDownloadFormat !== null) return;
+    activeKbFormat = `${format}-${mode}`;
+    exportStore.isKnowledgeExporting = true;
+    exportStore.knowledgeNotice = null;
 
     try {
       // Pre-flight check
-      const docRes = await fetchDocuments(selectedSourceId !== 'all' ? selectedSourceId : undefined);
+      const docRes = await fetchDocuments(exportStore.selectedSourceId !== 'all' ? exportStore.selectedSourceId : undefined);
       if (!docRes.documents || docRes.documents.length === 0) {
-        const selectedSrc = sources.find((s) => s.id === selectedSourceId);
+        const selectedSrc = sources.find((s) => s.id === exportStore.selectedSourceId);
         const name = selectedSrc ? selectedSrc.name : 'knowledge base';
-        knowledgeNotice = `⚠️ No documents found in "${name}". Please sync the data source first before exporting.`;
+        const notice = `⚠️ No documents found in "${name}". Please sync the data source first before exporting.`;
+        exportStore.knowledgeNotice = notice;
+        toastStore.warning(notice);
         return;
       }
 
+      toastStore.info(`Synthesizing ${format.toUpperCase()} ${mode} knowledge export...`);
       const result = await exportDocuments({
-        sourceId: selectedSourceId !== 'all' ? selectedSourceId : undefined,
+        sourceId: exportStore.selectedSourceId !== 'all' ? exportStore.selectedSourceId : undefined,
         format,
         mode,
         includeTableOfContents: true,
         includeCitations: true,
       });
 
-      knowledgeNotice = `✅ Downloaded ${result.filename}!`;
-      setTimeout(() => (knowledgeNotice = null), 5000);
+      exportStore.knowledgeNotice = `✅ Downloaded ${result.filename}!`;
+      toastStore.success(`Downloaded ${result.filename}!`);
+      setTimeout(() => (exportStore.knowledgeNotice = null), 5000);
     } catch (err: any) {
-      knowledgeNotice = `⚠️ Export failed: ${err.message}`;
+      exportStore.knowledgeNotice = `⚠️ Export failed: ${err.message}`;
+      toastStore.error(`Export failed: ${err.message}`);
     } finally {
-      isKnowledgeExporting = false;
+      exportStore.isKnowledgeExporting = false;
+      activeKbFormat = null;
     }
   }
 
   async function openAdvancedExportModal() {
-    isKnowledgeExporting = true;
-    knowledgeNotice = null;
+    if (isKnowledgeExporting || isPushing || activeDownloadFormat !== null) return;
+    exportStore.isKnowledgeExporting = true;
+    exportStore.knowledgeNotice = null;
     try {
-      const docRes = await fetchDocuments(selectedSourceId !== 'all' ? selectedSourceId : undefined);
+      const docRes = await fetchDocuments(exportStore.selectedSourceId !== 'all' ? exportStore.selectedSourceId : undefined);
       if (!docRes.documents || docRes.documents.length === 0) {
-        const selectedSrc = sources.find((s) => s.id === selectedSourceId);
+        const selectedSrc = sources.find((s) => s.id === exportStore.selectedSourceId);
         const name = selectedSrc ? selectedSrc.name : 'knowledge base';
-        knowledgeNotice = `⚠️ No documents found in "${name}". Please sync the data source first before exporting.`;
+        const notice = `⚠️ No documents found in "${name}". Please sync the data source first before exporting.`;
+        exportStore.knowledgeNotice = notice;
+        toastStore.warning(notice);
         return;
       }
 
-      const selectedSrc = sources.find((s) => s.id === selectedSourceId);
+      const selectedSrc = sources.find((s) => s.id === exportStore.selectedSourceId);
       modalSourceName = selectedSrc ? selectedSrc.name : 'All Knowledge Base';
-      modalSourceId = selectedSourceId !== 'all' ? selectedSourceId : undefined;
+      modalSourceId = exportStore.selectedSourceId !== 'all' ? exportStore.selectedSourceId : undefined;
       modalDocuments = docRes.documents;
       isExportModalOpen = true;
     } catch (err: any) {
-      knowledgeNotice = `⚠️ Could not prepare export: ${err.message}`;
+      exportStore.knowledgeNotice = `⚠️ Could not prepare export: ${err.message}`;
+      toastStore.error(`Could not prepare export: ${err.message}`);
     } finally {
-      isKnowledgeExporting = false;
+      exportStore.isKnowledgeExporting = false;
     }
   }
 
@@ -147,7 +172,7 @@
     </div>
     <div class="deck-filter-wrapper">
       <label for="export-deck-select">Filter Deck Scope:</label>
-      <select id="export-deck-select" bind:value={selectedDeck}>
+      <select id="export-deck-select" bind:value={exportStore.selectedDeck}>
         <option value="all">All Decks ({totalCardsCount} cards)</option>
         {#each availableDecks as deck}
           <option value={deck}>{deck}</option>
@@ -186,7 +211,7 @@
         type="button"
         class="btn btn-secondary"
         onclick={checkAnki}
-        disabled={isCheckingAnki}
+        disabled={isCheckingAnki || isPushing}
       >
         🔄 Check Status
       </button>
@@ -194,7 +219,7 @@
         type="button"
         class="btn btn-primary"
         onclick={handlePush}
-        disabled={!isAnkiConnected || isPushing}
+        disabled={!isAnkiConnected || isPushing || isKnowledgeExporting || activeDownloadFormat !== null}
       >
         {#if isPushing}
           <span class="spinner-inline"></span> Pushing to Anki...
@@ -217,8 +242,17 @@
         </div>
         <h3>Anki Native Package</h3>
         <p>Complete deck archive with tags, styling, and metadata ready for direct import into Anki / AnkiMobile.</p>
-        <button type="button" class="btn btn-primary btn-full" onclick={() => downloadFormat('apkg')}>
-          ⬇️ Download .apkg
+        <button
+          type="button"
+          class="btn btn-primary btn-full"
+          disabled={activeDownloadFormat !== null || isPushing || isKnowledgeExporting}
+          onclick={() => downloadFormat('apkg')}
+        >
+          {#if activeDownloadFormat === 'apkg'}
+            <span class="spinner-inline"></span> Exporting...
+          {:else}
+            ⬇️ Download .apkg
+          {/if}
         </button>
       </div>
 
@@ -230,8 +264,17 @@
         </div>
         <h3>Active Recall Markdown</h3>
         <p>Collapsible HTML &lt;details&gt; questions and answers optimized for Obsidian, Notion, and Logseq.</p>
-        <button type="button" class="btn btn-secondary btn-full" onclick={() => downloadFormat('markdown')}>
-          ⬇️ Download Markdown
+        <button
+          type="button"
+          class="btn btn-secondary btn-full"
+          disabled={activeDownloadFormat !== null || isPushing || isKnowledgeExporting}
+          onclick={() => downloadFormat('markdown')}
+        >
+          {#if activeDownloadFormat === 'markdown'}
+            <span class="spinner-inline"></span> Exporting...
+          {:else}
+            ⬇️ Download Markdown
+          {/if}
         </button>
       </div>
 
@@ -243,8 +286,17 @@
         </div>
         <h3>Printable PDF Study Guide</h3>
         <p>Two-column foldable study sheet with folding guide lines and verified source quotes for offline study.</p>
-        <button type="button" class="btn btn-secondary btn-full" onclick={() => downloadFormat('pdf')}>
-          ⬇️ Download PDF
+        <button
+          type="button"
+          class="btn btn-secondary btn-full"
+          disabled={activeDownloadFormat !== null || isPushing || isKnowledgeExporting}
+          onclick={() => downloadFormat('pdf')}
+        >
+          {#if activeDownloadFormat === 'pdf'}
+            <span class="spinner-inline"></span> Exporting...
+          {:else}
+            ⬇️ Download PDF
+          {/if}
         </button>
       </div>
 
@@ -256,8 +308,17 @@
         </div>
         <h3>CSV Spreadsheet</h3>
         <p>Standard comma-separated value spreadsheet format for Excel, Google Sheets, or custom scripts.</p>
-        <button type="button" class="btn btn-secondary btn-full" onclick={() => downloadFormat('csv')}>
-          ⬇️ Download CSV
+        <button
+          type="button"
+          class="btn btn-secondary btn-full"
+          disabled={activeDownloadFormat !== null || isPushing || isKnowledgeExporting}
+          onclick={() => downloadFormat('csv')}
+        >
+          {#if activeDownloadFormat === 'csv'}
+            <span class="spinner-inline"></span> Exporting...
+          {:else}
+            ⬇️ Download CSV
+          {/if}
         </button>
       </div>
 
@@ -269,8 +330,17 @@
         </div>
         <h3>Tab-Separated Values</h3>
         <p>Tab-delimited text format for manual import into Quizlet, Brainscape, and Anki desktop wizard.</p>
-        <button type="button" class="btn btn-secondary btn-full" onclick={() => downloadFormat('tsv')}>
-          ⬇️ Download TSV
+        <button
+          type="button"
+          class="btn btn-secondary btn-full"
+          disabled={activeDownloadFormat !== null || isPushing || isKnowledgeExporting}
+          onclick={() => downloadFormat('tsv')}
+        >
+          {#if activeDownloadFormat === 'tsv'}
+            <span class="spinner-inline"></span> Exporting...
+          {:else}
+            ⬇️ Download TSV
+          {/if}
         </button>
       </div>
     </div>
@@ -285,7 +355,7 @@
       </div>
       <div class="source-filter-wrapper">
         <label for="kb-source-select">Filter Source Scope:</label>
-        <select id="kb-source-select" bind:value={selectedSourceId}>
+        <select id="kb-source-select" bind:value={exportStore.selectedSourceId}>
           <option value="all">All Sources ({totalDocsCount} docs)</option>
           {#each sources as src}
             <option value={src.id}>{src.name} ({src.type.toUpperCase()})</option>
@@ -312,10 +382,14 @@
         <button
           type="button"
           class="btn btn-primary btn-full"
-          disabled={isKnowledgeExporting}
+          disabled={isKnowledgeExporting || isPushing || activeDownloadFormat !== null}
           onclick={() => downloadKnowledgeBase('markdown', 'merged')}
         >
-          ⬇️ Download Merged .md
+          {#if activeKbFormat === 'markdown-merged'}
+            <span class="spinner-inline"></span> Exporting...
+          {:else}
+            ⬇️ Download Merged .md
+          {/if}
         </button>
       </div>
 
@@ -330,10 +404,14 @@
         <button
           type="button"
           class="btn btn-secondary btn-full"
-          disabled={isKnowledgeExporting}
+          disabled={isKnowledgeExporting || isPushing || activeDownloadFormat !== null}
           onclick={() => downloadKnowledgeBase('html', 'merged')}
         >
-          ⬇️ Download .html
+          {#if activeKbFormat === 'html-merged'}
+            <span class="spinner-inline"></span> Exporting...
+          {:else}
+            ⬇️ Download .html
+          {/if}
         </button>
       </div>
 
@@ -348,10 +426,14 @@
         <button
           type="button"
           class="btn btn-secondary btn-full"
-          disabled={isKnowledgeExporting}
+          disabled={isKnowledgeExporting || isPushing || activeDownloadFormat !== null}
           onclick={() => downloadKnowledgeBase('txt', 'merged')}
         >
-          ⬇️ Download .txt
+          {#if activeKbFormat === 'txt-merged'}
+            <span class="spinner-inline"></span> Exporting...
+          {:else}
+            ⬇️ Download .txt
+          {/if}
         </button>
       </div>
 
@@ -366,10 +448,14 @@
         <button
           type="button"
           class="btn btn-secondary btn-full"
-          disabled={isKnowledgeExporting}
+          disabled={isKnowledgeExporting || isPushing || activeDownloadFormat !== null}
           onclick={() => downloadKnowledgeBase('json', 'merged')}
         >
-          ⬇️ Download .json
+          {#if activeKbFormat === 'json-merged'}
+            <span class="spinner-inline"></span> Exporting...
+          {:else}
+            ⬇️ Download .json
+          {/if}
         </button>
       </div>
 
@@ -384,10 +470,14 @@
         <button
           type="button"
           class="btn btn-secondary btn-full"
-          disabled={isKnowledgeExporting}
+          disabled={isKnowledgeExporting || isPushing || activeDownloadFormat !== null}
           onclick={() => downloadKnowledgeBase('markdown', 'split')}
         >
-          ⬇️ Download Split .zip
+          {#if activeKbFormat === 'markdown-split'}
+            <span class="spinner-inline"></span> Exporting...
+          {:else}
+            ⬇️ Download Split .zip
+          {/if}
         </button>
       </div>
 
@@ -402,7 +492,7 @@
         <button
           type="button"
           class="btn btn-primary btn-full"
-          disabled={isKnowledgeExporting}
+          disabled={isKnowledgeExporting || isPushing || activeDownloadFormat !== null}
           onclick={openAdvancedExportModal}
         >
           ⚙️ Open Advanced Exporter
