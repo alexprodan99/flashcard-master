@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 08-30-2026 20:47
-last_updated: 09-05-2026 20:26
+last_updated: 09-09-2026 19:02
 project: flashcard-master
 project_key: NOKEY
 tracking_system: file-system
@@ -80,7 +80,8 @@ development_status:
   epic-6: done
   6-1-svelte-vite-build-pipeline-setup: done
   6-2-migrate-dashboard-and-sources-views-to-svelte: done
-  6-3-migrate-generate-studio-question-explorer-and-export-center-to-svelte: done
+  6-3-migrate-generate-studio-question-explorer-and-export-center-to-svelte: 
+    done
   6-4-web-server-static-asset-delivery-and-e2e-tests: done
   epic-6-retrospective: done
 
@@ -152,4 +153,19 @@ development_status:
   14-5-task-center-drawer-and-step-accordion-ui: done
   14-6-action-hardening-and-resilient-navigation-sync: done
   14-7-monorepo-verification-and-e2e-test-suite: done
-  epic-14-retrospective: optional
+  epic-14-retrospective: done
+action_items:
+  - id: "epic-14-retro-item-1-add-progressive-exponential-backoff-and"
+    epic: 14
+    action: "Add progressive exponential backoff and jitter to client EventSource
+      reconnection handler"
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-14-retro-2026-09-09.md"
+  - id: "epic-14-retro-item-2-allow-worker-pool-concurrency-limits-to"
+    epic: 14
+    action: "Allow worker pool concurrency limits to optionally auto-detect host CPU
+      core count"
+    owner: "architect"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-14-retro-2026-09-09.md"
