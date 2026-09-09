@@ -123,6 +123,8 @@ export type WorkerOutboundMessage =
       documentTitle?: string;
       originUrl?: string;
       cards: GeneratedCardDraftPayload[];
+      persona?: string;
+      tags?: string[];
     }
   | {
       type: "COMMIT_SYNC_RESULT";

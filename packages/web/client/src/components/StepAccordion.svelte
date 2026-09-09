@@ -20,15 +20,17 @@
   let isCancelling = $state(false);
 
   function getJobTitle(j: Job): string {
-    if (j.type === 'generate') {
-      const model = j.payload?.model || 'AI Model';
+    if (j.title) return j.title;
+    if (j.type === 'generation' || (j.type as any) === 'generate') {
+      const model = j.metadata?.model || (j as any).payload?.model || 'AI Model';
       return `AI Flashcard Generation (${model})`;
     }
-    if (j.type === 'sync') {
-      return j.payload?.sourceId ? `Data Source Ingestion (${j.payload.sourceId})` : 'Bulk Sources Ingestion';
+    if (j.type === 'sync_source' || j.type === 'sync_all' || (j.type as any) === 'sync') {
+      const srcName = j.metadata?.sourceName || j.metadata?.sourceId || (j as any).payload?.sourceId;
+      return srcName ? `Data Source Ingestion (${srcName})` : 'Bulk Sources Ingestion';
     }
     if (j.type === 'export') {
-      const format = (j.payload?.format || 'Archive').toUpperCase();
+      const format = (j.metadata?.format || (j as any).payload?.format || 'Archive').toUpperCase();
       return `Document Export (${format})`;
     }
     return `Background Task (${j.type})`;
@@ -70,7 +72,8 @@
 
   // Calculate percentage
   let progressPercent = $derived.by(() => {
-    if (job.status === 'completed') return 100;
+    if (job.status === 'completed' || job.status === 'completed_with_warnings') return 100;
+    if (job.progressPercent !== undefined && job.progressPercent !== null) return job.progressPercent;
     if (job.progress !== undefined && job.progress !== null) return job.progress;
     if (job.progressCurrent !== undefined && job.progressTotal && job.progressTotal > 0) {
       return Math.min(100, Math.round((job.progressCurrent / job.progressTotal) * 100));
@@ -86,7 +89,7 @@
     if (!logs || logs.length === 0) return [];
     const stepsMap: Record<string, JobLog[]> = {};
     for (const l of logs) {
-      const key = l.step || 'General';
+      const key = (l as any).stepTitle || (l as any).step || 'General';
       if (!stepsMap[key]) stepsMap[key] = [];
       stepsMap[key].push(l);
     }
@@ -116,6 +119,8 @@
             ⏳
           {:else if job.status === 'completed'}
             ✅
+          {:else if job.status === 'completed_with_warnings'}
+            ⚠️
           {:else if job.status === 'failed'}
             ❌
           {:else if job.status === 'cancelled'}
@@ -130,8 +135,8 @@
           </div>
 
           <div class="meta-row-sub">
-            {#if job.currentStep || job.stepName}
-              <span class="current-step-msg">📍 {job.currentStep || job.stepName}</span>
+            {#if job.currentStepName || job.stepName || (typeof job.currentStep === 'string' && job.currentStep)}
+              <span class="current-step-msg">📍 {job.currentStepName || job.stepName || job.currentStep}</span>
             {/if}
             <span class="time-stamp">Started: {formatTime(job.createdAt)}</span>
             <span class="duration-badge">⏱️ {getDuration(job.createdAt, job.completedAt)}</span>
@@ -173,29 +178,30 @@
   <!-- Expanded Step Details & Logs -->
   {#if expanded}
     <div class="accordion-body">
-      {#if job.error}
+      {#if job.errorMessage || (job as any).error}
         <div class="job-error-box">
           <strong>⚠️ Task Error:</strong>
-          <pre>{job.error}</pre>
+          <pre>{job.errorMessage || (job as any).error}</pre>
         </div>
       {/if}
 
-      {#if job.status === 'completed' && job.result}
+      {#if (job.status === 'completed' || job.status === 'completed_with_warnings') && (job.resultSummary || (job as any).result)}
+        {@const summary = job.resultSummary || (job as any).result || {}}
         <div class="job-result-box">
           <strong>🎉 Task Completed Successfully</strong>
-          {#if job.type === 'generate'}
+          {#if job.type === 'generation' || (job.type as any) === 'generate'}
             <div class="result-stats">
-              <span>+{job.result.cardsCreated || 0} cards generated</span>
-              <span>• {job.result.duplicatesSkipped || 0} duplicates skipped</span>
+              <span>+{summary.cardsCreated || 0} cards generated</span>
+              <span>• {summary.duplicatesSkipped || 0} duplicates skipped</span>
             </div>
-          {:else if job.type === 'sync'}
+          {:else if job.type === 'sync_source' || job.type === 'sync_all' || (job.type as any) === 'sync'}
             <div class="result-stats">
-              <span>+{job.result.newCount || 0} documents ingested</span>
-              <span>• {job.result.totalFetched || 0} total fetched</span>
+              <span>+{summary.newCount ?? summary.totalNewDocuments ?? 0} documents ingested</span>
+              <span>• {summary.totalFetched ?? summary.totalFetchedDocuments ?? 0} total fetched</span>
             </div>
           {:else if job.type === 'export'}
             <div class="result-stats">
-              <span>Saved file: {job.result.filename || 'Export file ready'}</span>
+              <span>Saved file: {summary.filename || 'Export file ready'}</span>
             </div>
           {/if}
         </div>
@@ -224,8 +230,8 @@
                       <span class="log-time">{formatTime(log.timestamp)}</span>
                       <span class="log-badge {log.level}">{log.level.toUpperCase()}</span>
                       <span class="log-message">{log.message}</span>
-                      {#if log.metadata}
-                        <pre class="log-meta">{JSON.stringify(log.metadata, null, 2)}</pre>
+                      {#if log.details || (log as any).metadata}
+                        <pre class="log-meta">{JSON.stringify(log.details || (log as any).metadata, null, 2)}</pre>
                       {/if}
                     </div>
                   {/each}

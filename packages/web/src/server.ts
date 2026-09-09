@@ -89,6 +89,7 @@ export class WebServer {
     } else {
       this.workerExecutor = new WorkerExecutor({
         cardRepo: options.cardRepo,
+        sourceRepo: options.sourceRepo,
         dedupService: options.dedupService,
         ingestionService: options.ingestionService,
         documentRepo: options.documentRepo,

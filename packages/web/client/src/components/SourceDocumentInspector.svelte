@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { fetchSourceDocuments, fetchDocumentDetails, generateCards, deleteDocument, deleteDocumentsBulk } from '../lib/api';
+  import { toastStore } from '../stores/index.js';
   import type { DataSource, DiscoveredDocument, PersonaType, DifficultyLevel, CardDepthMode } from '../lib/types';
   import GenerationConfigFields from './GenerationConfigFields.svelte';
   import DocumentPreviewModal from './DocumentPreviewModal.svelte';
@@ -246,14 +247,17 @@
         limit,
         targetDeck: targetDeck.trim() || source.targetDeck || undefined,
         enforceGrounding,
+        sync: true,
       });
 
-      successNotice = `🎉 Generated ${result.cardsCreated} grounded flashcards from "${configDoc.title}"!`;
+      const cardsCreated = result.cardsCreated ?? (result.cards ? result.cards.length : 0);
+      successNotice = `🎉 Generated ${cardsCreated} grounded flashcards from "${configDoc.title}"!`;
+      toastStore.success(successNotice);
       isConfigModalOpen = false;
       configDoc = null;
       await loadDocuments(); // Refresh card counts
     } catch (err: any) {
-      alert('Generation failed: ' + err.message);
+      toastStore.error('Generation failed: ' + err.message);
     } finally {
       isGenerating = false;
     }

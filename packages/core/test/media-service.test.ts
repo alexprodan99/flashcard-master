@@ -178,6 +178,7 @@ describe("MediaService", () => {
         width: 250,
         height: 250,
         channels: 3,
+        background: { r: 0, g: 0, b: 0 },
         noise: {
           type: "gaussian",
           mean: 128,

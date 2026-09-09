@@ -1,4 +1,4 @@
-import type { DataSource } from '../lib/types';
+import type { DataSource } from '../lib/types.js';
 
 export class SourcesStore {
   sources = $state<DataSource[]>([]);

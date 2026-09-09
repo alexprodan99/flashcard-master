@@ -99,7 +99,9 @@ describe("WorkerExecutor", () => {
         progressUpdates.push({ current, total, step });
       },
       log: (stepNumber, stepTitle, level, message, details) => {
-        logEntries.push({ stepNumber, stepTitle, level, message, details });
+        const entry = { id: logEntries.length + 1, jobId: "test-job-123", stepNumber, stepTitle, level, message, details, timestamp: new Date().toISOString() };
+        logEntries.push(entry);
+        return entry as any;
       },
       setResultSummary: (res) => {
         summary = res;
@@ -185,7 +187,7 @@ describe("WorkerExecutor", () => {
       jobId: "sync-job-1",
       signal: new AbortController().signal,
       updateProgress: () => {},
-      log: () => {},
+      log: () => ({} as any),
       setResultSummary: () => {},
     };
 
@@ -230,7 +232,7 @@ describe("WorkerExecutor", () => {
       jobId: "abort-job-1",
       signal: abortController.signal,
       updateProgress: () => {},
-      log: () => {},
+      log: () => ({} as any),
       setResultSummary: () => {},
     };
 
@@ -272,7 +274,7 @@ describe("WorkerExecutor", () => {
       jobId: "error-job-1",
       signal: new AbortController().signal,
       updateProgress: () => {},
-      log: () => {},
+      log: () => ({} as any),
       setResultSummary: () => {},
     };
 
@@ -304,6 +306,7 @@ describe("WorkerExecutor", () => {
       updateProgress: () => {},
       log: (_step, _title, level, message) => {
         logs.push({ level, message });
+        return {} as any;
       },
       setResultSummary: (res) => {
         summary = res;

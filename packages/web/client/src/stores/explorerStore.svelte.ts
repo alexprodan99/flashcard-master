@@ -1,5 +1,5 @@
-import type { Flashcard } from '../lib/types';
-import { fetchCards } from '../lib/api';
+import type { Flashcard } from '../lib/types.js';
+import { fetchCards } from '../lib/api.js';
 
 export class ExplorerStore {
   cards = $state<Flashcard[]>([]);

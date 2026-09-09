@@ -320,16 +320,15 @@ export class JobManager extends EventEmitter {
     const idx = queue.findIndex((q) => q.jobId === id);
     if (idx !== -1) {
       queue.splice(idx, 1);
-      const updated = this.jobRepo.update(id, {
-        status: "cancelled",
-        completedAt: new Date().toISOString(),
-      });
-      this.emit("job_status", updated);
-      this.emit("job_cancelled", updated);
-      return true;
     }
 
-    return false;
+    const updated = this.jobRepo.update(id, {
+      status: "cancelled",
+      completedAt: new Date().toISOString(),
+    });
+    this.emit("job_status", updated);
+    this.emit("job_cancelled", updated);
+    return true;
   }
 
   getJob(id: string): Job | null {

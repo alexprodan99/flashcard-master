@@ -1,5 +1,5 @@
-import type { Job, JobLog, JobStatus } from '../lib/types';
-import { fetchJobs, fetchJobDetails, cancelJobApi, clearJobHistory } from '../lib/api';
+import type { Job, JobLog, JobStatus } from '../lib/types.js';
+import { fetchJobs, fetchJobDetails, cancelJobApi, clearJobHistory } from '../lib/api.js';
 import { toastStore } from './toastStore.svelte.js';
 import { generateStore } from './generateStore.svelte.js';
 import { sourcesStore } from './sourcesStore.svelte.js';
@@ -65,10 +65,14 @@ export class TaskStore {
       this.eventSource.addEventListener('job_progress', (e) => {
         try {
           const data = JSON.parse(e.data);
-          const job = this.jobs.find((j) => j.id === data.jobId);
+          const job = this.jobs.find((j) => j.id === (data.jobId || data.id));
           if (job) {
-            job.progressCurrent = data.current;
-            job.progressTotal = data.total;
+            if (data.progressPercent !== undefined) job.progressPercent = data.progressPercent;
+            if (data.currentStep !== undefined) job.currentStep = data.currentStep;
+            if (data.totalSteps !== undefined) job.totalSteps = data.totalSteps;
+            if (data.currentStepName !== undefined) job.currentStepName = data.currentStepName;
+            job.progressCurrent = data.current ?? data.currentStep ?? job.progressCurrent;
+            job.progressTotal = data.total ?? data.totalSteps ?? job.progressTotal;
             if (data.step) job.currentStep = data.step;
           }
         } catch {}
@@ -287,6 +291,14 @@ export class TaskStore {
     try {
       const res = await clearJobHistory();
       await this.fetchJobs();
+      // Clean up in-memory cached logs and expanded states for pruned jobs
+      const activeIds = new Set(this.jobs.map((j) => j.id));
+      for (const id of Object.keys(this.jobLogs)) {
+        if (!activeIds.has(id)) delete this.jobLogs[id];
+      }
+      for (const id of Object.keys(this.expandedJobIds)) {
+        if (!activeIds.has(id)) delete this.expandedJobIds[id];
+      }
       return res.deletedCount;
     } catch {
       return 0;

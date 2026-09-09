@@ -141,6 +141,8 @@ export class JobRepository {
           const placeholders = filter.status.map(() => "?").join(", ");
           conditions.push(`status IN (${placeholders})`);
           params.push(...filter.status);
+        } else {
+          conditions.push("1 = 0");
         }
       } else {
         conditions.push("status = ?");

@@ -11,7 +11,7 @@ export const CreateSourceInputSchema = z.object({
   tags: z.array(z.string()).default([]),
   isActive: z.boolean().default(true),
 });
-export type CreateSourceInput = z.infer<typeof CreateSourceInputSchema>;
+export type CreateSourceInput = z.input<typeof CreateSourceInputSchema>;
 
 export const UpdateSourceInputSchema = z.object({
   name: z.string().min(1).optional(),

@@ -1,6 +1,21 @@
 import type Database from "better-sqlite3";
 import crypto from "node:crypto";
-import { type Flashcard, type DifficultyLevel, FlashcardSchema } from "../domain/models.js";
+import { type Flashcard, type DifficultyLevel, FlashcardSchema, DifficultyLevelSchema } from "../domain/models.js";
+import { z } from "zod";
+
+export const CreateFlashcardInputSchema = z.object({
+  sourceId: z.string().uuid().nullable().optional(),
+  question: z.string().min(1),
+  answer: z.string().min(1),
+  sourceQuote: z.string().min(1),
+  sourceOriginUrl: z.string().nullable().optional(),
+  documentTitle: z.string().nullable().optional(),
+  difficulty: DifficultyLevelSchema.default("intermediate"),
+  personaUsed: z.string().default("socratic-mentor"),
+  targetDeck: z.string().default("Default"),
+  tags: z.array(z.string()).default([]),
+});
+export type CreateFlashcardInput = z.input<typeof CreateFlashcardInputSchema>;
 
 export interface CardFilter {
   targetDeck?: string;
@@ -31,7 +46,8 @@ export class FlashcardRepository {
     });
   }
 
-  create(card: Omit<Flashcard, "id" | "createdAt" | "updatedAt">): Flashcard {
+  create(rawCard: CreateFlashcardInput): Flashcard {
+    const card = CreateFlashcardInputSchema.parse(rawCard);
     const id = crypto.randomUUID();
     const tagsJson = JSON.stringify(card.tags || []);
 
@@ -59,7 +75,7 @@ export class FlashcardRepository {
     return this.getById(id)!;
   }
 
-  createBatch(cards: Array<Omit<Flashcard, "id" | "createdAt" | "updatedAt">>): Flashcard[] {
+  createBatch(cards: CreateFlashcardInput[]): Flashcard[] {
     if (!cards || cards.length === 0) {
       return [];
     }
@@ -73,7 +89,7 @@ export class FlashcardRepository {
 
     const createdIds: string[] = [];
 
-    const insertMany = this.db.transaction((items: Array<Omit<Flashcard, "id" | "createdAt" | "updatedAt">>) => {
+    const insertMany = this.db.transaction((items: CreateFlashcardInput[]) => {
       for (const card of items) {
         const id = crypto.randomUUID();
         const tagsJson = JSON.stringify(card.tags || []);

@@ -92,6 +92,8 @@ describe("Job Queue, Streaming SSE & Logging Endpoints", () => {
       type: "local",
       uri: "/tmp/docs",
       targetDeck: "Default",
+      tags: [],
+      isActive: true,
     });
 
     docRepo.upsert({

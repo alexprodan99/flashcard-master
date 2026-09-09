@@ -54,7 +54,7 @@ export type DocumentExportMode = "merged" | "split";
 
 export interface DocumentExportOptions {
   format: DocumentExportFormat;
-  mode: DocumentExportMode;
+  mode?: DocumentExportMode;
   sourceName?: string;
   includeTableOfContents?: boolean;
   includeCitations?: boolean;

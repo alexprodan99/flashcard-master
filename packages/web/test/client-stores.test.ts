@@ -84,10 +84,13 @@ describe('Svelte 5 Universal Client Stores (Epic 14.4)', () => {
       const mockResult: GenerationResult = {
         cardsCreated: 2,
         duplicatesSkipped: 0,
-        errorsCount: 0,
         newCards: [
           {
             id: 'card-1',
+            sourceId: 's1',
+            sourceQuote: 'Write-Ahead Logging mode for concurrency.',
+            personaUsed: 'socratic-mentor',
+            targetDeck: 'Default',
             question: 'What is SQLite WAL?',
             answer: 'Write-Ahead Logging mode for concurrency.',
             difficulty: 'intermediate',
@@ -115,6 +118,8 @@ describe('Svelte 5 Universal Client Stores (Epic 14.4)', () => {
           name: 'Tech Blog',
           type: 'web',
           uri: 'https://example.com',
+          targetDeck: 'Default',
+          tags: [],
           isActive: true,
           createdAt: '',
           updatedAt: '',
@@ -152,6 +157,10 @@ describe('Svelte 5 Universal Client Stores (Epic 14.4)', () => {
       const mockCards: Flashcard[] = [
         {
           id: 'c1',
+          sourceId: 's1',
+          sourceQuote: 'Quote 1',
+          personaUsed: 'socratic-mentor',
+          targetDeck: 'Default',
           question: 'Q1',
           answer: 'A1',
           difficulty: 'beginner',
@@ -161,6 +170,10 @@ describe('Svelte 5 Universal Client Stores (Epic 14.4)', () => {
         },
         {
           id: 'c2',
+          sourceId: 's1',
+          sourceQuote: 'Quote 2',
+          personaUsed: 'socratic-mentor',
+          targetDeck: 'Default',
           question: 'Q2',
           answer: 'A2',
           difficulty: 'expert',
@@ -227,7 +240,8 @@ describe('Svelte 5 Universal Client Stores (Epic 14.4)', () => {
 
       const mockJob: Job = {
         id: 'job-task-1',
-        type: 'generate',
+        type: 'generation',
+        title: 'Generate Cards',
         status: 'running',
         priority: 0,
         progress: 25,
@@ -249,7 +263,7 @@ describe('Svelte 5 Universal Client Stores (Epic 14.4)', () => {
 
       // Add log
       store.addJobLog({
-        id: 1,
+        id: '1',
         jobId: 'job-task-1',
         level: 'info',
         step: 'Extraction',

@@ -1,4 +1,4 @@
-import type { DashboardStats, DataSource, Flashcard, GenerationResult, DiscoveredDocument, DocumentExportFormat } from './types';
+import type { DashboardStats, DataSource, Flashcard, GenerationResult, DiscoveredDocument, DocumentExportFormat } from './types.js';
 
 export async function fetchStats(): Promise<DashboardStats> {
   const res = await fetch('/api/stats');
@@ -18,6 +18,7 @@ export async function createSource(payload: {
   uri: string;
   targetDeck?: string;
   tags?: string[];
+  config?: Record<string, unknown>;
 }): Promise<DataSource> {
   const res = await fetch('/api/sources', {
     method: 'POST',
@@ -49,6 +50,7 @@ export async function updateSource(
     targetDeck: string;
     tags: string[];
     isActive: boolean;
+    config: Record<string, unknown>;
   }>
 ): Promise<DataSource> {
   const res = await fetch(`/api/sources/${encodeURIComponent(id)}`, {
@@ -149,8 +151,10 @@ export async function generateCards(payload: {
   limit?: number;
   targetDeck?: string;
   enforceGrounding?: boolean;
+  sync?: boolean;
 }): Promise<GenerationResult> {
-  const res = await fetch('/api/generate', {
+  const url = payload.sync ? '/api/generate?sync=true' : '/api/generate';
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),

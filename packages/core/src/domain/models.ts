@@ -92,7 +92,7 @@ export const DiscoveredDocumentSchema = z.object({
   createdAt: z.string().datetime().optional(),
   updatedAt: z.string().datetime().optional(),
 });
-export type DiscoveredDocument = z.infer<typeof DiscoveredDocumentSchema>;
+export type DiscoveredDocument = z.input<typeof DiscoveredDocumentSchema>;
 
 export const MediaAssetSchema = z.object({
   id: z.string(),

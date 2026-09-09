@@ -37,6 +37,8 @@
   }
 
   function handleKeyDown(e: KeyboardEvent) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+
     // Ignore keybindings if user is typing in an input or textarea
     const target = e.target as HTMLElement;
     if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {

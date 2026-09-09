@@ -56,38 +56,52 @@ export interface DashboardStats {
 }
 
 export interface GenerationResult {
-  success: boolean;
+  success?: boolean;
   cardsCreated: number;
-  totalDraftsGenerated: number;
+  totalDraftsGenerated?: number;
   duplicatesSkipped: number;
   newCards: Flashcard[];
+  errorsCount?: number;
 }
 
-export type JobType = 'generation' | 'sync_all' | 'sync_source' | 'export';
+export type JobType = 'generation' | 'sync_all' | 'sync_source' | 'export' | 'generate' | 'sync';
 export type JobStatus = 'queued' | 'running' | 'completed' | 'completed_with_warnings' | 'failed' | 'cancelled';
 export type JobLogLevel = 'info' | 'warn' | 'error' | 'success';
 
 export interface Job {
   id: string;
   type: JobType;
-  title: string;
+  title?: string;
   status: JobStatus;
-  progressCurrent: number;
-  progressTotal: number;
-  currentStep?: string | null;
-  errorMessage?: string | null;
-  resultSummary?: Record<string, any> | null;
+  totalSteps?: number;
+  currentStep?: number | string | null;
+  progressPercent?: number;
+  currentStepName?: string | null;
   metadata?: Record<string, any> | null;
+  resultSummary?: Record<string, any> | null;
+  errorMessage?: string | null;
   createdAt: string;
   startedAt?: string | null;
   completedAt?: string | null;
+  updatedAt?: string | null;
+  // UI computed and legacy fallback fields
+  progressCurrent?: number;
+  progressTotal?: number;
+  progress?: number;
+  stepName?: string;
+  payload?: any;
+  result?: any;
+  error?: any;
+  workerPid?: number;
+  priority?: number;
 }
 
 export interface JobLog {
-  id: string;
+  id: string | number;
   jobId: string;
-  stepNumber: number;
-  stepTitle: string;
+  stepNumber?: number;
+  stepTitle?: string;
+  step?: string;
   level: JobLogLevel;
   message: string;
   details?: Record<string, any> | null;

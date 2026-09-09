@@ -43,9 +43,9 @@ export function createCli(providedContext?: AppContext): Command {
     }) => {
       try {
         const port = parseInt(options.port, 10) || 3000;
-        const maxGenerationWorkers = options.maxGenerationWorkers ? parseInt(options.maxGenerationWorkers, 10) : 3;
-        const maxSyncWorkers = options.maxSyncWorkers ? parseInt(options.maxSyncWorkers, 10) : 2;
-        const maxExportWorkers = options.maxExportWorkers ? parseInt(options.maxExportWorkers, 10) : 2;
+        const maxGenerationWorkers = options.maxGenerationWorkers ? Math.max(1, parseInt(options.maxGenerationWorkers, 10) || 1) : 3;
+        const maxSyncWorkers = options.maxSyncWorkers ? Math.max(1, parseInt(options.maxSyncWorkers, 10) || 1) : 2;
+        const maxExportWorkers = options.maxExportWorkers ? Math.max(1, parseInt(options.maxExportWorkers, 10) || 1) : 2;
 
         const server = createWebServer({
           port,
@@ -216,7 +216,7 @@ export function createCli(providedContext?: AppContext): Command {
           console.log(`• ${doc.title}`);
           console.log(`  ID:    ${doc.id}`);
           if (doc.url) console.log(`  URL:   ${doc.url}`);
-          console.log(`  Words: ${doc.wordCount.toLocaleString()} | Generated Cards: ${doc.cardCount}`);
+          console.log(`  Words: ${(doc.wordCount ?? 0).toLocaleString()} | Generated Cards: ${doc.cardCount}`);
           console.log("--------------------------------------------------------------------------------");
         }
       } catch (err: any) {

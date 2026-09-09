@@ -4,7 +4,7 @@ import type {
   CardDepthMode,
   GenerationResult,
   Flashcard,
-} from '../lib/types';
+} from '../lib/types.js';
 
 const STORAGE_KEY = 'fc_generation_settings';
 const LEGACY_STORAGE_KEY = 'fcm_generator_settings';

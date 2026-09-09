@@ -31,9 +31,10 @@ import {
 } from "@flashcard-master/adapters";
 import { createWebServer, WebServer } from "../src/server.js";
 import type Database from "better-sqlite3";
-import type { IngestionStrategyPort, RawDocument, CleanTextDocument, DataSource } from "@flashcard-master/core";
+import type { IngestionStrategy, RawDocument, CleanTextDocument, DataSource } from "@flashcard-master/core";
 
 class MockLLM implements LLMProviderPort {
+  readonly providerName = "mock";
   async generateQAPairs(text: string, options: any): Promise<any[]> {
     const quote = text.slice(0, 17);
     return [
@@ -47,7 +48,7 @@ class MockLLM implements LLMProviderPort {
   }
 }
 
-class MockStrategy implements IngestionStrategyPort {
+class MockStrategy implements IngestionStrategy {
   readonly type = "rss" as const;
   async fetch(source: DataSource): Promise<RawDocument[]> {
     return [{
@@ -117,6 +118,8 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       type: "rss",
       uri: "https://example.com/rss",
       targetDeck: "Engineering",
+      tags: [],
+      isActive: true,
     });
 
     cardRepo.create({
@@ -693,6 +696,7 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       uri: "https://example.com/systems",
       targetDeck: "Systems",
       tags: ["distributed"],
+      isActive: true,
     });
 
     const doc1 = docRepo.upsert({
@@ -838,6 +842,8 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
         type: "web",
         uri: "https://example.com/cloud",
         targetDeck: "Cloud",
+        tags: [],
+        isActive: true,
       });
 
       const docA = docRepo.upsert({
@@ -884,6 +890,8 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
         type: "web",
         uri: "https://example.com/db",
         targetDeck: "DB",
+        tags: [],
+        isActive: true,
       });
 
       const doc1 = docRepo.upsert({
@@ -917,6 +925,8 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
         type: "web",
         uri: "https://example.com/sec",
         targetDeck: "Sec",
+        tags: [],
+        isActive: true,
       });
 
       const doc1 = docRepo.upsert({
@@ -957,6 +967,8 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
         type: "web",
         uri: "https://example.com/k8s",
         targetDeck: "K8s",
+        tags: [],
+        isActive: true,
       });
 
       const doc1 = docRepo.upsert({
@@ -1019,6 +1031,8 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
         type: "web",
         uri: "https://example.com/get-export",
         targetDeck: "Test",
+        tags: [],
+        isActive: true,
       });
       const doc = docRepo.upsert({
         sourceId: source.id,
@@ -1040,6 +1054,8 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
         type: "web",
         uri: "https://example.com/list-all",
         targetDeck: "Test",
+        tags: [],
+        isActive: true,
       });
       docRepo.upsert({
         sourceId: source.id,
@@ -1095,6 +1111,8 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
         type: "web",
         uri: "https://example.com/media-export",
         targetDeck: "Test",
+        tags: [],
+        isActive: true,
       });
 
       const doc = docRepo.upsert({
@@ -1144,6 +1162,8 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
         type: "web",
         uri: "https://example.com/gray",
         targetDeck: "Test",
+        tags: [],
+        isActive: true,
       });
 
       const doc = docRepo.upsert({
@@ -1187,6 +1207,8 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
         type: "web",
         uri: "https://example.com/split-zip-media",
         targetDeck: "Test",
+        tags: [],
+        isActive: true,
       });
 
       const doc = docRepo.upsert({

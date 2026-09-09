@@ -80,6 +80,12 @@ export class WorkerExecutor {
         }
       };
 
+      if (ctx.signal.aborted) {
+        const err = new Error("Task aborted by user");
+        err.name = "AbortError";
+        return reject(err);
+      }
+
       try {
         const isTs = this.workerScriptPath.endsWith(".ts");
         const execArgv = isTs
@@ -137,7 +143,10 @@ export class WorkerExecutor {
                 duplicatesCount = dedupResult.duplicates.length;
 
                 let targetSourceId: string | null = msg.sourceId || null;
-                if (targetSourceId && this.options.sourceRepo) {
+                const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+                if (targetSourceId && !uuidRegex.test(targetSourceId)) {
+                  targetSourceId = null;
+                } else if (targetSourceId && this.options.sourceRepo) {
                   try {
                     const found = this.options.sourceRepo.getById(targetSourceId);
                     if (!found) targetSourceId = null;
@@ -162,8 +171,8 @@ export class WorkerExecutor {
                       documentTitle: msg.documentTitle,
                       difficulty: normalizedDifficulty,
                       targetDeck: msg.targetDeck,
-                      personaUsed: "socratic-mentor",
-                      tags: [],
+                      personaUsed: msg.persona || "socratic-mentor",
+                      tags: msg.tags || [],
                     });
                     if (created) {
                       committedCards.push(created);
@@ -181,8 +190,8 @@ export class WorkerExecutor {
                         documentTitle: msg.documentTitle,
                         difficulty: normalizedDifficulty,
                         targetDeck: msg.targetDeck,
-                        personaUsed: "socratic-mentor",
-                        tags: [],
+                        personaUsed: msg.persona || "socratic-mentor",
+                        tags: msg.tags || [],
                       });
                       if (created) {
                         committedCards.push(created);
@@ -207,15 +216,19 @@ export class WorkerExecutor {
             } else if (msg.type === "COMMIT_SYNC_RESULT") {
               let syncResult: any = { newCount: 0, totalFetched: 0 };
               if (this.options.ingestionService) {
-                syncResult = await this.options.ingestionService.syncSource(msg.sourceId);
+                try {
+                  syncResult = await this.options.ingestionService.syncSource(msg.sourceId);
+                } catch (syncErr: any) {
+                  ctx.log(msg.stepNumber || 0, "Sync Error", "warn", `Custodial sync failed for source ${msg.sourceId}: ${syncErr.message}`);
+                }
               }
 
               const ackMsg: WorkerInboundMessage = {
                 action: "COMMIT_SYNC_ACK",
                 jobId: msg.jobId,
                 sourceId: msg.sourceId,
-                newCount: syncResult.newCount || 0,
-                totalFetched: syncResult.totalFetched || 0,
+                newCount: syncResult?.newCount || 0,
+                totalFetched: syncResult?.totalFetched || 0,
               };
               worker.postMessage(ackMsg);
             } else if (msg.type === "TASK_COMPLETE") {

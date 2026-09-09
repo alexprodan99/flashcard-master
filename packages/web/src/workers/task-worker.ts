@@ -186,6 +186,8 @@ if (parentPort) {
           sourceId: doc.sourceId,
           documentTitle: doc.title,
           originUrl: doc.originUrl,
+          persona: persona || "socratic-mentor",
+          tags: (doc as any).tags || [],
           cards: drafts.map((d) => ({
             question: d.question,
             answer: d.answer,

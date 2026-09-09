@@ -260,6 +260,8 @@ describe("E2E Multi-Processing Flow & Concurrency Verification", () => {
                 sourceQuote: `Quote for card ${i}-${step}`,
                 difficulty: "beginner",
                 targetDeck: "Default",
+                personaUsed: "socratic-mentor",
+                tags: [],
               });
               await new Promise((r) => setTimeout(r, 20));
             }
