@@ -362,6 +362,24 @@
     border: 1px solid rgba(168, 85, 247, 0.3);
   }
 
+  .type-badge.sitemap {
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+  }
+
+  .type-badge.llms-txt {
+    background: rgba(236, 72, 153, 0.15);
+    color: #f472b6;
+    border: 1px solid rgba(236, 72, 153, 0.3);
+  }
+
+  .type-badge.notion {
+    background: rgba(14, 165, 233, 0.15);
+    color: #38bdf8;
+    border: 1px solid rgba(14, 165, 233, 0.3);
+  }
+
   .source-meta {
     display: flex;
     align-items: center;

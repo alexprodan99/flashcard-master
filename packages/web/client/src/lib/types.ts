@@ -1,4 +1,4 @@
-export type DataSourceType = 'rss' | 'web' | 'local' | 'sitemap' | 'llms-txt';
+export type DataSourceType = 'rss' | 'web' | 'local' | 'sitemap' | 'llms-txt' | 'notion';
 export type DifficultyLevel = 'beginner' | 'intermediate' | 'expert' | 'mixed';
 export type PersonaType = 'socratic-mentor' | 'strict-examiner' | 'analogy-builder';
 export type CardDepthMode = 'atomic' | 'deep-dive' | 'scenario';

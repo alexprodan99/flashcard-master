@@ -918,6 +918,7 @@
   .type-badge.local { background: rgba(168, 85, 247, 0.15); color: #c084fc; }
   .type-badge.sitemap { background: rgba(16, 185, 129, 0.15); color: #34d399; }
   .type-badge.llms-txt { background: rgba(236, 72, 153, 0.15); color: #f472b6; }
+  .type-badge.notion { background: rgba(14, 165, 233, 0.15); color: #38bdf8; }
 
   .deck-badge {
     font-size: 11px;

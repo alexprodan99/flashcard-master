@@ -6,6 +6,7 @@
   import EditSourceModal from '../components/EditSourceModal.svelte';
   import SourceDocumentInspector from '../components/SourceDocumentInspector.svelte';
   import DocumentExportModal from '../components/DocumentExportModal.svelte';
+  import { parseNotionUri } from '../lib/notion-uri.js';
   import { sourcesStore, toastStore, taskStore } from '../stores/index.js';
 
   interface Props {
@@ -246,6 +247,12 @@
           }
         } catch {}
       }
+    } else if (source.type === 'notion') {
+      const parsed = parseNotionUri(source.uri || '', source.tags || []);
+      return {
+        displayUri: parsed.cleanUri || source.uri,
+        countBadge: parsed.isRecursive ? '🔄 Recursive' : undefined,
+      };
     }
     return { displayUri: source.uri };
   }
@@ -424,6 +431,7 @@
   isOpen={isAddModalOpen}
   onClose={() => (isAddModalOpen = false)}
   onSourceCreated={handleSourceCreated}
+  {onNavigate}
 />
 
 <EditSourceModal
@@ -431,6 +439,7 @@
   source={editingSource}
   onClose={() => (isEditModalOpen = false)}
   onSourceUpdated={handleSourceUpdated}
+  {onNavigate}
 />
 
 <SourceDocumentInspector
@@ -605,6 +614,12 @@
     background: rgba(236, 72, 153, 0.15);
     color: #f472b6;
     border: 1px solid rgba(236, 72, 153, 0.3);
+  }
+
+  .type-badge.notion {
+    background: rgba(14, 165, 233, 0.15);
+    color: #38bdf8;
+    border: 1px solid rgba(14, 165, 233, 0.3);
   }
 
   .deck-badge {
