@@ -1,4 +1,4 @@
-import { Client, isNotionClientError, APIErrorCode } from "@notionhq/client";
+import { Client, LogLevel, isNotionClientError, APIErrorCode } from "@notionhq/client";
 import type {
   ProviderVerifierPort,
   ProviderVerificationResult,
@@ -96,6 +96,7 @@ export class ProviderVerifier implements ProviderVerifierPort {
         auth: key,
         baseUrl: endpoint || undefined,
         timeoutMs,
+        logLevel: LogLevel.ERROR,
         fetch: (url, init) => this.fetchFn(url, { ...init, signal: controller.signal }),
       });
 

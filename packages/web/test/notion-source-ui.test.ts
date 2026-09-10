@@ -29,6 +29,7 @@ describe('Interactive Notion Source UI & End-to-End Workflows (Story 15.6)', () 
       expect(isValidNotionInput('https://www.notion.so/workspace/Page-Title-2b13c749e7b243468be1f60572dc1404')).toBe(true);
       expect(isValidNotionInput('https://notion.so/2b13c749e7b243468be1f60572dc1404')).toBe(true);
       expect(isValidNotionInput('https://workspace.notion.site/Page-Title-2b13c749e7b243468be1f60572dc1404')).toBe(true);
+      expect(isValidNotionInput('https://app.notion.com/p/AI-Notes-23ee54f4007c80de87b1fd9e0be45824')).toBe(true);
       expect(isValidNotionInput('https://notion.so/workspace/database-id?v=9a8b7c6d5e4f')).toBe(true);
       expect(isValidNotionInput('https://notion.so/workspace/view?p=2b13c749e7b243468be1f60572dc1404')).toBe(true);
 

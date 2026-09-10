@@ -1,4 +1,4 @@
-import { Client } from "@notionhq/client";
+import { Client, LogLevel } from "@notionhq/client";
 import type {
   IngestionStrategy,
   DataSource,
@@ -232,6 +232,7 @@ export class NotionStrategy implements IngestionStrategy {
     return new Client({
       auth: token,
       timeoutMs: this.timeoutMs,
+      logLevel: LogLevel.ERROR,
       fetch: this.customFetch
         ? (url, init) => this.customFetch!(url as any, init as any)
         : undefined,

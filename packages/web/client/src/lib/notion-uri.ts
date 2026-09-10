@@ -25,7 +25,9 @@ export function isValidNotionInput(input: string): boolean {
         host === 'notion.so' ||
         host.endsWith('.notion.so') ||
         host === 'notion.site' ||
-        host.endsWith('.notion.site')
+        host.endsWith('.notion.site') ||
+        host === 'notion.com' ||
+        host.endsWith('.notion.com')
       ) {
         return true;
       }
