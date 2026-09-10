@@ -22,6 +22,7 @@ import {
   type DiscoveredDocument,
   type JobRepository,
   type SettingsRepository,
+  type ProviderVerifierPort,
   SqliteSettingsRepository,
   SettingsService,
   SUPPORTED_PROVIDERS,
@@ -29,7 +30,7 @@ import {
   MediaService,
   CardGenerationService,
 } from "@flashcard-master/core";
-import { createLLMAdapter, DocumentExportService } from "@flashcard-master/adapters";
+import { createLLMAdapter, DocumentExportService, ProviderVerifier } from "@flashcard-master/adapters";
 import { JobManager, type ConcurrencyLimits } from "./jobs/index.js";
 import { WorkerExecutor } from "./workers/index.js";
 
@@ -53,6 +54,7 @@ export interface WebServerOptions {
   workerExecutor?: WorkerExecutor;
   settingsRepo?: SettingsRepository;
   settingsService?: SettingsService;
+  providerVerifier?: ProviderVerifierPort;
   concurrency?: ConcurrencyLimits;
   ingestionService?: IngestionService;
   exportService?: ExportService;
@@ -79,6 +81,7 @@ export class WebServer {
   private readonly workerExecutor: WorkerExecutor;
   private readonly settingsRepo: SettingsRepository | null;
   private readonly settingsService: SettingsService;
+  private readonly providerVerifier: ProviderVerifierPort;
 
   constructor(private readonly options: WebServerOptions) {
     this.port = options.port !== undefined ? options.port : 3000;
@@ -104,6 +107,12 @@ export class WebServer {
       this.jobManager = new JobManager(options.jobRepo, options.concurrency);
     } else {
       this.jobManager = null;
+    }
+
+    if (options.providerVerifier) {
+      this.providerVerifier = options.providerVerifier;
+    } else {
+      this.providerVerifier = new ProviderVerifier();
     }
 
     if (options.workerExecutor) {
@@ -134,6 +143,11 @@ export class WebServer {
   getSettingsRepo(): SettingsRepository | null {
     return this.settingsRepo;
   }
+
+  getProviderVerifier(): ProviderVerifierPort {
+    return this.providerVerifier;
+  }
+
 
 
   private getHtmlSpa(): string {
@@ -2898,6 +2912,65 @@ export class WebServer {
             const keys = this.settingsService.getAllKeyStatuses();
             const providers = this.settingsService.listProviderStatuses();
             this.sendJson(res, 200, { keys, providers });
+            return;
+          }
+
+          // 15d. POST /api/settings/keys/test
+          if (pathname === "/api/settings/keys/test" && method === "POST") {
+            const body = await this.parseBody(req);
+            if (!body || typeof body !== "object" || !body.provider || typeof body.provider !== "string") {
+              this.sendJson(res, 400, { error: "Field 'provider' is required and must be a string." });
+              return;
+            }
+
+            const provider = body.provider.trim().toLowerCase();
+            if (!SUPPORTED_PROVIDERS.includes(provider as any)) {
+              this.sendJson(res, 400, {
+                error: `Unsupported provider "${body.provider}". Supported providers: ${SUPPORTED_PROVIDERS.join(", ")}`,
+              });
+              return;
+            }
+
+            if (("key" in body && typeof body.key !== "string" && body.key !== null) ||
+                ("endpoint" in body && typeof body.endpoint !== "string" && body.endpoint !== null)) {
+              this.sendJson(res, 400, { error: "'key' and 'endpoint' must be strings or null." });
+              return;
+            }
+
+            const candidateKey = typeof body.key === "string" && body.key.trim().length > 0 ? body.key.trim() : null;
+            const candidateEndpoint = typeof body.endpoint === "string" && body.endpoint.trim().length > 0 ? body.endpoint.trim() : null;
+
+            const keyToTest = candidateKey || this.settingsService.getSecret(provider);
+            const endpointToTest = candidateEndpoint || this.settingsService.getEndpoint(provider);
+
+            const isLocalOpenAI = provider === "openai" && endpointToTest && (endpointToTest.includes("localhost") || endpointToTest.includes("127.0.0.1"));
+
+            if (["openai", "anthropic", "gemini", "notion"].includes(provider) && !keyToTest && !isLocalOpenAI) {
+              this.sendJson(res, 200, {
+                success: false,
+                message: `No API key configured for ${provider}. Please enter a key to test.`,
+              });
+              return;
+            }
+
+            const timeoutMs = typeof body.timeoutMs === "number" && body.timeoutMs > 0
+              ? Math.min(Math.max(body.timeoutMs, 500), 10000)
+              : 3000;
+
+            try {
+              const result = await this.providerVerifier.verify({
+                provider,
+                key: keyToTest,
+                endpoint: endpointToTest,
+                timeoutMs,
+              });
+              this.sendJson(res, 200, result);
+            } catch (err: any) {
+              this.sendJson(res, 200, {
+                success: false,
+                message: `Verification failed: ${err?.message || String(err)}`,
+              });
+            }
             return;
           }
 

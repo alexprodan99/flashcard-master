@@ -191,3 +191,11 @@ export const ProviderKeyStatusSchema = z.object({
   updatedAt: z.string().optional(),
 });
 export type ProviderKeyStatus = z.infer<typeof ProviderKeyStatusSchema>;
+
+export const ProviderVerificationResultSchema = z.object({
+  success: z.boolean(),
+  message: z.string(),
+  details: z.record(z.any()).optional(),
+});
+export type ProviderVerificationResult = z.infer<typeof ProviderVerificationResultSchema>;
+

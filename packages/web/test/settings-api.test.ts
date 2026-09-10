@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   createDatabaseClient,
   DataSourceRepository,
@@ -6,6 +6,7 @@ import {
   FlashcardRepository,
   SqliteSettingsRepository,
   SettingsService,
+  type ProviderVerifierPort,
 } from "@flashcard-master/core";
 import { createWebServer, WebServer } from "../src/server.js";
 import type Database from "better-sqlite3";
@@ -17,6 +18,7 @@ describe("Settings Keys REST API (/api/settings/keys)", () => {
   let cardRepo: FlashcardRepository;
   let settingsRepo: SqliteSettingsRepository;
   let settingsService: SettingsService;
+  let mockVerifier: ProviderVerifierPort;
   let server: WebServer;
   let serverUrl: string;
   let mockEnv: NodeJS.ProcessEnv;
@@ -30,12 +32,23 @@ describe("Settings Keys REST API (/api/settings/keys)", () => {
     settingsRepo = new SqliteSettingsRepository(db);
     settingsService = new SettingsService(settingsRepo, mockEnv);
 
+    mockVerifier = {
+      verify: vi.fn().mockImplementation(async (opts) => {
+        return {
+          success: true,
+          message: `Connected to ${opts.provider} successfully.`,
+          details: { verifiedKey: opts.key ? "provided" : "none" },
+        };
+      }),
+    };
+
     server = createWebServer({
       sourceRepo,
       syncRepo,
       cardRepo,
       settingsRepo,
       settingsService,
+      providerVerifier: mockVerifier,
     });
 
     const info = await server.listen(0);
@@ -272,6 +285,198 @@ describe("Settings Keys REST API (/api/settings/keys)", () => {
         method: "DELETE",
       });
       expect(res.status).toBe(400);
+    });
+  });
+
+  describe("POST /api/settings/keys/test", () => {
+    it("rejects missing provider with 400 Bad Request", async () => {
+      const res = await fetch(`${serverUrl}/api/settings/keys/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+
+      expect(res.status).toBe(400);
+      const data = await res.json();
+      expect(data.error).toContain("provider");
+    });
+
+    it("rejects unsupported provider with 400 Bad Request", async () => {
+      const res = await fetch(`${serverUrl}/api/settings/keys/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: "deepseek" }),
+      });
+
+      expect(res.status).toBe(400);
+      const data = await res.json();
+      expect(data.error).toContain('Unsupported provider "deepseek"');
+    });
+
+    it("rejects non-string key or endpoint with 400 Bad Request", async () => {
+      const res = await fetch(`${serverUrl}/api/settings/keys/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: "openai", key: 12345 }),
+      });
+
+      expect(res.status).toBe(400);
+    });
+
+    it("returns friendly failure when testing unconfigured key-required provider", async () => {
+      const res = await fetch(`${serverUrl}/api/settings/keys/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: "openai" }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.success).toBe(false);
+      expect(data.message).toContain("No API key configured for openai. Please enter a key to test.");
+    });
+
+    it("probes candidate key supplied in body", async () => {
+      const res = await fetch(`${serverUrl}/api/settings/keys/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: "openai",
+          key: "sk-candidate-test-key",
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.success).toBe(true);
+      expect(data.message).toContain("Connected to openai successfully.");
+      expect(mockVerifier.verify).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: "openai",
+          key: "sk-candidate-test-key",
+          timeoutMs: 3000,
+        })
+      );
+    });
+
+    it("falls back to stored database secret when key is omitted in body", async () => {
+      settingsService.setProviderSecret("anthropic", "sk-ant-database-saved-key");
+
+      const res = await fetch(`${serverUrl}/api/settings/keys/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: "anthropic" }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.success).toBe(true);
+      expect(mockVerifier.verify).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: "anthropic",
+          key: "sk-ant-database-saved-key",
+        })
+      );
+    });
+
+    it("falls back to environment variable secret when DB key is absent", async () => {
+      mockEnv.NOTION_API_KEY = "secret_notion_env_key";
+
+      const res = await fetch(`${serverUrl}/api/settings/keys/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: "notion" }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.success).toBe(true);
+      expect(mockVerifier.verify).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: "notion",
+          key: "secret_notion_env_key",
+        })
+      );
+    });
+
+    it("allows testing Ollama endpoint without requiring an API key", async () => {
+      const res = await fetch(`${serverUrl}/api/settings/keys/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: "ollama",
+          endpoint: "http://localhost:11434",
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.success).toBe(true);
+      expect(mockVerifier.verify).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: "ollama",
+          endpoint: "http://localhost:11434",
+        })
+      );
+    });
+
+    it("falls back to stored database endpoint when endpoint is omitted in body", async () => {
+      settingsService.setProviderSecret("ollama", null, "http://my-remote-ollama:11434");
+
+      const res = await fetch(`${serverUrl}/api/settings/keys/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: "ollama" }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.success).toBe(true);
+      expect(mockVerifier.verify).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: "ollama",
+          endpoint: "http://my-remote-ollama:11434",
+        })
+      );
+    });
+
+    it("allows keyless testing for local OpenAI endpoint when configured", async () => {
+      settingsService.setProviderSecret("openai", null, "http://localhost:8080/v1");
+
+      const res = await fetch(`${serverUrl}/api/settings/keys/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: "openai" }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.success).toBe(true);
+      expect(mockVerifier.verify).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: "openai",
+          key: null,
+          endpoint: "http://localhost:8080/v1",
+        })
+      );
+    });
+
+    it("catches unexpected exceptions from verifier and returns 200 with error message", async () => {
+      vi.mocked(mockVerifier.verify).mockRejectedValueOnce(new Error("Unexpected internal fault"));
+
+      const res = await fetch(`${serverUrl}/api/settings/keys/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: "openai",
+          key: "sk-test",
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.success).toBe(false);
+      expect(data.message).toContain("Verification failed: Unexpected internal fault");
     });
   });
 });

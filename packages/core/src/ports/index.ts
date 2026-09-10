@@ -1,4 +1,4 @@
-import type { DataSource, RawDocument, CleanTextDocument, SyncState, Flashcard, DifficultyLevel, ImageQuality, Setting } from "../domain/models.js";
+import type { DataSource, RawDocument, CleanTextDocument, SyncState, Flashcard, DifficultyLevel, ImageQuality, Setting, ProviderVerificationResult, SecretProvider } from "../domain/models.js";
 
 export interface IngestionStrategy {
   readonly type: DataSource["type"];
@@ -78,4 +78,14 @@ export interface SettingsRepository {
   list(): Record<string, string>;
   getAll(): Setting[];
 }
+
+export interface ProviderVerifierPort {
+  verify(options: {
+    provider: SecretProvider | string;
+    key?: string | null;
+    endpoint?: string | null;
+    timeoutMs?: number;
+  }): Promise<ProviderVerificationResult>;
+}
+
 

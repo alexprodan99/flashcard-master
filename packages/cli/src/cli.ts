@@ -57,6 +57,7 @@ export function createCli(providedContext?: AppContext): Command {
           jobRepo: context.jobRepo,
           settingsRepo: context.settingsRepo,
           settingsService: context.settingsService,
+          providerVerifier: context.providerVerifier,
           concurrency: {
             maxGenerationWorkers,
             maxSyncWorkers,

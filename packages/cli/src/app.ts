@@ -9,6 +9,7 @@ import {
   DocumentRepository,
   JobRepository,
   type SettingsRepository,
+  type ProviderVerifierPort,
   SqliteSettingsRepository,
   SettingsService,
   StrategyRegistry,
@@ -36,6 +37,7 @@ import {
   MarkdownExporter,
   HtmlStudyGuideExporter,
   PdfStudyGuideExporter,
+  ProviderVerifier,
 } from "@flashcard-master/adapters";
 import type Database from "better-sqlite3";
 
@@ -48,6 +50,7 @@ export interface AppContext {
   jobRepo: JobRepository;
   settingsRepo: SettingsRepository;
   settingsService: SettingsService;
+  providerVerifier: ProviderVerifierPort;
   mediaService: MediaService;
   strategyRegistry: StrategyRegistry;
   ingestionService: IngestionService;
@@ -86,6 +89,7 @@ export function createAppContext(options: AppOptions = {}): AppContext {
   const jobRepo = new JobRepository(db);
   const settingsRepo = new SqliteSettingsRepository(db);
   const settingsService = new SettingsService(settingsRepo);
+  const providerVerifier = new ProviderVerifier();
   const mediaService = new MediaService();
 
   // Ingestion strategies
@@ -126,6 +130,7 @@ export function createAppContext(options: AppOptions = {}): AppContext {
     jobRepo,
     settingsRepo,
     settingsService,
+    providerVerifier,
     mediaService,
     strategyRegistry,
     ingestionService,
