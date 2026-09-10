@@ -4,3 +4,4 @@ export * from './explorerStore.svelte.js';
 export * from './taskStore.svelte.js';
 export * from './exportStore.svelte.js';
 export * from './toastStore.svelte.js';
+export * from './settingsStore.svelte.js';

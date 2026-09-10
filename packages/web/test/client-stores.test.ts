@@ -4,6 +4,7 @@ import { SourcesStore, sourcesStore } from '../client/src/stores/sourcesStore.sv
 import { ExplorerStore } from '../client/src/stores/explorerStore.svelte.js';
 import { ExportStore } from '../client/src/stores/exportStore.svelte.js';
 import { TaskStore } from '../client/src/stores/taskStore.svelte.js';
+import { SettingsStore, settingsStore } from '../client/src/stores/settingsStore.svelte.js';
 import type { DataSource, Flashcard, GenerationResult, Job } from '../client/src/lib/types.js';
 
 describe('Svelte 5 Universal Client Stores (Epic 14.4)', () => {
@@ -443,6 +444,255 @@ describe('Svelte 5 Universal Client Stores (Epic 14.4)', () => {
 
       expect(sourcesStore.isSyncingAll).toBe(false);
       expect(sourcesStore.activeSyncAllJobId).toBe(null);
+    });
+  });
+
+  describe('SettingsStore (Story 15.3)', () => {
+    let originalFetch: typeof global.fetch;
+
+    beforeEach(() => {
+      originalFetch = global.fetch;
+    });
+
+    afterEach(() => {
+      global.fetch = originalFetch;
+    });
+
+    it('initializes with all 5 supported providers and default unconfigured state', () => {
+      const store = new SettingsStore();
+      expect(Object.keys(store.keys)).toEqual(['openai', 'anthropic', 'gemini', 'ollama', 'notion']);
+      expect(store.loading).toBe(false);
+      expect(store.error).toBe(null);
+
+      expect(store.keys.openai).toEqual({
+        provider: 'openai',
+        isConfigured: false,
+        maskedValue: '',
+        source: 'none',
+        endpoint: null,
+      });
+      expect(store.keys.notion.isConfigured).toBe(false);
+      expect(store.testResults.openai).toBe(null);
+      expect(store.testingProvider.openai).toBe(false);
+      expect(store.savingProvider.openai).toBe(false);
+    });
+
+    it('loadKeys populates provider key statuses from API', async () => {
+      const store = new SettingsStore();
+      const mockApiResponse = {
+        providers: [
+          { provider: 'openai', isConfigured: true, maskedValue: 'sk-...1234', source: 'database', endpoint: null },
+          { provider: 'notion', isConfigured: true, maskedValue: 'sec...5678', source: 'environment', endpoint: null },
+        ],
+        keys: {
+          openai: { provider: 'openai', isConfigured: true, maskedValue: 'sk-...1234', source: 'database', endpoint: null },
+          anthropic: { provider: 'anthropic', isConfigured: false, maskedValue: '', source: 'none', endpoint: null },
+          gemini: { provider: 'gemini', isConfigured: false, maskedValue: '', source: 'none', endpoint: null },
+          ollama: { provider: 'ollama', isConfigured: false, maskedValue: '', source: 'none', endpoint: 'http://localhost:11434' },
+          notion: { provider: 'notion', isConfigured: true, maskedValue: 'sec...5678', source: 'environment', endpoint: null },
+        },
+      };
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => mockApiResponse,
+      });
+
+      await store.loadKeys();
+
+      expect(global.fetch).toHaveBeenCalledWith('/api/settings/keys');
+      expect(store.loading).toBe(false);
+      expect(store.error).toBe(null);
+      expect(store.keys.openai.isConfigured).toBe(true);
+      expect(store.keys.openai.maskedValue).toBe('sk-...1234');
+      expect(store.keys.openai.source).toBe('database');
+      expect(store.keys.notion.isConfigured).toBe(true);
+      expect(store.keys.notion.source).toBe('environment');
+      expect(store.keys.ollama.endpoint).toBe('http://localhost:11434');
+    });
+
+    it('loadKeys handles API failure gracefully', async () => {
+      const store = new SettingsStore();
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        json: async () => ({ error: 'Database locked' }),
+      });
+
+      await store.loadKeys();
+
+      expect(store.loading).toBe(false);
+      expect(store.error).toBe('Database locked');
+    });
+
+    it('saveKey persists credential and updates local store state', async () => {
+      const store = new SettingsStore();
+      // Pre-populate diagnostic result to verify it gets cleared upon save
+      store.testResults.openai = { success: false, message: 'Prior connection error' };
+
+      const mockSavedResponse = {
+        success: true,
+        provider: 'openai',
+        isConfigured: true,
+        maskedValue: 'sk-...9999',
+        source: 'database',
+        endpoint: 'https://api.openai.com/v1',
+      };
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => mockSavedResponse,
+      });
+
+      const res = await store.saveKey({
+        provider: 'openai',
+        key: 'sk-new-secret-key-1234567890',
+        endpoint: 'https://api.openai.com/v1',
+      });
+
+      expect(global.fetch).toHaveBeenCalledWith('/api/settings/keys', expect.objectContaining({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: 'openai',
+          key: 'sk-new-secret-key-1234567890',
+          endpoint: 'https://api.openai.com/v1',
+        }),
+      }));
+
+      expect(res.success).toBe(true);
+      expect(store.keys.openai.isConfigured).toBe(true);
+      expect(store.keys.openai.maskedValue).toBe('sk-...9999');
+      expect(store.keys.openai.source).toBe('database');
+      expect(store.keys.openai.endpoint).toBe('https://api.openai.com/v1');
+      expect(store.savingProvider.openai).toBe(false);
+      // Verify clearing of prior diagnostic result
+      expect(store.testResults.openai).toBe(null);
+    });
+
+    it('saveKey resets savingProvider flag and throws on failure', async () => {
+      const store = new SettingsStore();
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        json: async () => ({ error: 'Database write conflict' }),
+      });
+
+      await expect(
+        store.saveKey({ provider: 'openai', key: 'sk-fail' })
+      ).rejects.toThrow('Database write conflict');
+
+      expect(store.savingProvider.openai).toBe(false);
+      expect(store.keys.openai.isConfigured).toBe(false);
+    });
+
+    it('deleteKey clears stored secret and updates state', async () => {
+      const store = new SettingsStore();
+      store.keys.notion = {
+        provider: 'notion',
+        isConfigured: true,
+        maskedValue: 'sec...1234',
+        source: 'database',
+      };
+      // Pre-populate diagnostic result to verify it gets cleared upon delete
+      store.testResults.notion = { success: true, message: 'Prior success' };
+
+      const mockDeleteResponse = {
+        success: true,
+        provider: 'notion',
+        isConfigured: false,
+        maskedValue: '',
+        source: 'none',
+        endpoint: null,
+      };
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => mockDeleteResponse,
+      });
+
+      const res = await store.deleteKey('notion');
+
+      expect(global.fetch).toHaveBeenCalledWith('/api/settings/keys/notion', { method: 'DELETE' });
+      expect(res.isConfigured).toBe(false);
+      expect(store.keys.notion.isConfigured).toBe(false);
+      expect(store.keys.notion.source).toBe('none');
+      expect(store.deletingProvider.notion).toBe(false);
+      // Verify clearing of prior diagnostic result
+      expect(store.testResults.notion).toBe(null);
+    });
+
+    it('deleteKey resets deletingProvider flag and throws on failure', async () => {
+      const store = new SettingsStore();
+      global.fetch = vi.fn().mockRejectedValue(new Error('Network disconnected'));
+
+      await expect(store.deleteKey('notion')).rejects.toThrow('Network disconnected');
+      expect(store.deletingProvider.notion).toBe(false);
+    });
+
+    it('testKey verifies credentials and stores live diagnostic result', async () => {
+      const store = new SettingsStore();
+      const mockVerifyResponse = {
+        success: true,
+        message: 'Successfully connected to Notion workspace "Research Hub".',
+        details: { botName: 'StudyBot', workspaceName: 'Research Hub', latencyMs: 0 },
+      };
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => mockVerifyResponse,
+      });
+
+      const result = await store.testKey({ provider: 'notion', key: 'secret_candidate' });
+
+      expect(global.fetch).toHaveBeenCalledWith('/api/settings/keys/test', expect.objectContaining({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: 'notion', key: 'secret_candidate' }),
+      }));
+
+      expect(result.success).toBe(true);
+      expect(store.testingProvider.notion).toBe(false);
+      expect(store.testResults.notion).toEqual(mockVerifyResponse);
+    });
+
+    it('testKey handles 200 OK verification failures and updates diagnostic state', async () => {
+      const store = new SettingsStore();
+      const mockFailureResponse = {
+        success: false,
+        message: 'API key is invalid or unauthorized.',
+      };
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => mockFailureResponse,
+      });
+
+      const result = await store.testKey({ provider: 'openai', key: 'sk-invalid' });
+
+      expect(result.success).toBe(false);
+      expect(store.testingProvider.openai).toBe(false);
+      expect(store.testResults.openai?.success).toBe(false);
+      expect(store.testResults.openai?.message).toBe('API key is invalid or unauthorized.');
+    });
+
+    it('testKey catches network failures safely without crashing', async () => {
+      const store = new SettingsStore();
+      global.fetch = vi.fn().mockRejectedValue(new Error('Failed to fetch (network error)'));
+
+      const result = await store.testKey({ provider: 'gemini' });
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain('network error');
+      expect(store.testingProvider.gemini).toBe(false);
+      expect(store.testResults.gemini?.success).toBe(false);
+    });
+
+    it('clearTestResult resets test outcome for provider', () => {
+      const store = new SettingsStore();
+      store.testResults.anthropic = { success: true, message: 'All good' };
+      expect(store.testResults.anthropic).not.toBeNull();
+
+      store.clearTestResult('anthropic');
+      expect(store.testResults.anthropic).toBeNull();
     });
   });
 });

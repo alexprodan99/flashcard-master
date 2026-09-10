@@ -106,4 +106,22 @@ export interface JobLog {
   message: string;
   details?: Record<string, any> | null;
   timestamp: string;
+}
+
+export type SecretProvider = 'openai' | 'anthropic' | 'gemini' | 'ollama' | 'notion';
+export type KeySource = 'database' | 'environment' | 'none';
+
+export interface ProviderKeyStatus {
+  provider: SecretProvider;
+  isConfigured: boolean;
+  maskedValue: string;
+  source: KeySource;
+  endpoint?: string | null;
+  updatedAt?: string;
+}
+
+export interface ProviderVerificationResult {
+  success: boolean;
+  message: string;
+  details?: Record<string, any>;
 }

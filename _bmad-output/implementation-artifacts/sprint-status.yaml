@@ -158,8 +158,8 @@ development_status:
   epic-15: in-progress
   15-1-sqlite-settings-repository-and-secrets-api: done
   15-2-live-provider-credential-verification-endpoints: done
-  15-3-integrations-and-secrets-ui-dashboard: ready-for-dev
-  15-4-automatic-credential-injection-in-generation-studio-and-workers: backlog
+  15-3-integrations-and-secrets-ui-dashboard: done
+  15-4-automatic-credential-injection-in-generation-studio-and-workers: ready-for-dev
   15-5-notion-ingestion-strategy: backlog
   15-6-interactive-notion-source-ui-and-monorepo-verification: backlog
   epic-15-retrospective: optional
