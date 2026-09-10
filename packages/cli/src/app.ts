@@ -29,6 +29,7 @@ import {
   LocalFileStrategy,
   SitemapIngestionStrategy,
   LlmsTxtIngestionStrategy,
+  NotionStrategy,
   createLLMAdapter,
   AnkiPackageExporter,
   AnkiConnectAdapter,
@@ -99,6 +100,7 @@ export function createAppContext(options: AppOptions = {}): AppContext {
   strategyRegistry.register(new LocalFileStrategy());
   strategyRegistry.register(new SitemapIngestionStrategy());
   strategyRegistry.register(new LlmsTxtIngestionStrategy({ mediaService }));
+  strategyRegistry.register(new NotionStrategy({ settingsService, mediaService }));
 
   const ingestionService = new IngestionService(sourceRepo, syncRepo, strategyRegistry, docRepo);
 

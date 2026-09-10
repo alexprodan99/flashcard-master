@@ -160,8 +160,8 @@ development_status:
   15-2-live-provider-credential-verification-endpoints: done
   15-3-integrations-and-secrets-ui-dashboard: done
   15-4-automatic-credential-injection-in-generation-studio-and-workers: done
-  15-5-notion-ingestion-strategy: ready-for-dev
-  15-6-interactive-notion-source-ui-and-monorepo-verification: backlog
+  15-5-notion-ingestion-strategy: done
+  15-6-interactive-notion-source-ui-and-monorepo-verification: ready-for-dev
   epic-15-retrospective: optional
 action_items:
   - id: "epic-14-retro-item-1-add-progressive-exponential-backoff-and"

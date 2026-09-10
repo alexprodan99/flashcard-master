@@ -84,10 +84,27 @@ describe("CLI Application", () => {
     ]);
     expect(logs.some((l) => l.includes("Tech LLMs Catalog"))).toBe(true);
 
+    // Add Notion Workspace Source
+    await cli.parseAsync([
+      "node",
+      "flashcard-master",
+      "sources",
+      "add",
+      "Biology Workspace",
+      "notion",
+      "https://www.notion.so/workspace/Bio-Notes-123456781234123412341234567890ab",
+      "--deck",
+      "Biology",
+      "--tags",
+      "notion,biology",
+    ]);
+    expect(logs.some((l) => l.includes("Biology Workspace"))).toBe(true);
+
     const allSources = context.sourceRepo.list();
-    expect(allSources.length).toBe(3);
+    expect(allSources.length).toBe(4);
     expect(allSources.find((s) => s.type === "sitemap")?.name).toBe("Tech Sitemap");
     expect(allSources.find((s) => s.type === "llms-txt")?.name).toBe("Tech LLMs Catalog");
+    expect(allSources.find((s) => s.type === "notion")?.name).toBe("Biology Workspace");
   });
 
   it("removes data sources through CLI", async () => {

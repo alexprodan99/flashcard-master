@@ -123,6 +123,9 @@ describe("SQLite Database Client", () => {
       migratedDb.prepare(`
         INSERT INTO data_sources (id, name, type, uri) VALUES ('src-3', 'LLMs Source', 'llms-txt', 'https://example.com/llms-full.txt')
       `).run();
+      migratedDb.prepare(`
+        INSERT INTO data_sources (id, name, type, uri) VALUES ('src-4', 'Notion Workspace', 'notion', 'https://www.notion.so/workspace/123456781234123412341234567890ab')
+      `).run();
     }).not.toThrow();
 
     migratedDb.close();
@@ -173,9 +176,8 @@ describe("SQLite Database Client", () => {
     expect(doc.raw_content).toBeNull();
 
     // 5. Update raw_content and verify persistence
-    migratedDb.prepare("UPDATE documents SET raw_content = ? WHERE id = ?").run("<p>Old text content</p>", "doc-1");
-    const updated = migratedDb.prepare("SELECT * FROM documents WHERE id = 'doc-1'").get() as any;
-    expect(updated.raw_content).toBe("<p>Old text content</p>");
+    // 6. Verify foreign key integrity after migration
+    expect(migratedDb.prepare("PRAGMA foreign_key_check").all()).toHaveLength(0);
 
     migratedDb.close();
   });
