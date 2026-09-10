@@ -441,6 +441,7 @@
     isInspectorOpen = false;
     onNavigate?.('generate', { docId: doc.id });
   }}
+  {onNavigate}
 />
 
 <DocumentExportModal

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import type { DifficultyLevel, PersonaType, CardDepthMode } from '../lib/types';
+  import type { DifficultyLevel, PersonaType, CardDepthMode, SecretProvider } from '../lib/types';
+  import { settingsStore } from '../stores/index.js';
 
   interface Props {
     provider?: string;
@@ -14,6 +15,7 @@
     targetDeck?: string;
     enforceGrounding?: boolean;
     compact?: boolean;
+    onNavigate?: (tab: string) => void;
   }
 
   let {
@@ -28,7 +30,18 @@
     targetDeck = $bindable(''),
     enforceGrounding = $bindable(true),
     compact = false,
+    onNavigate,
   }: Props = $props();
+
+  let showApiKey = $state(false);
+
+  let normalizedProvider = $derived((provider || 'ollama').trim().toLowerCase());
+
+  let providerStatus = $derived(
+    ['openai', 'anthropic', 'gemini', 'ollama'].includes(normalizedProvider)
+      ? settingsStore.keys[normalizedProvider as SecretProvider]
+      : undefined
+  );
 
   const providerDefaults: Record<string, { model: string; showApiKey: boolean }> = {
     ollama: { model: 'phi4-mini', showApiKey: false },
@@ -80,14 +93,19 @@
 
   function handleProviderChange(newProvider: string) {
     provider = newProvider;
-    if (providerDefaults[newProvider]) {
-      model = providerDefaults[newProvider].model;
+    apiKey = ''; // Reset one-time key override on provider switch
+    const normalized = newProvider.trim().toLowerCase();
+    if (providerDefaults[normalized]) {
+      model = providerDefaults[normalized].model;
     }
     savePreferences();
   }
 
   onMount(() => {
     loadPreferences();
+    if (!settingsStore.hasLoaded && !settingsStore.loading) {
+      settingsStore.loadKeys().catch(() => {});
+    }
   });
 </script>
 
@@ -123,15 +141,72 @@
       </div>
     </div>
 
-    {#if providerDefaults[provider]?.showApiKey}
+    {#if providerDefaults[normalizedProvider]?.showApiKey}
       <div class="form-group">
-        <label for="api-key-input">API Key (Optional if set in environment)</label>
-        <input
-          id="api-key-input"
-          type="password"
-          bind:value={apiKey}
-          placeholder="sk-..."
-        />
+        {#if providerStatus?.isConfigured}
+          <div class="saved-credential-badge" class:has-override={Boolean(apiKey && apiKey.trim().length > 0)}>
+            <span class="badge-icon">{apiKey && apiKey.trim().length > 0 ? '⚡' : '✓'}</span>
+            <span class="badge-text">
+              {#if apiKey && apiKey.trim().length > 0}
+                <strong>One-time key override active</strong> (ignoring saved key)
+              {:else}
+                Using saved API key {#if providerStatus.maskedValue}<code class="masked-key">{providerStatus.maskedValue}</code>{/if} ({providerStatus.source === 'database' ? 'Settings' : 'Environment'})
+              {/if}
+            </span>
+            {#if onNavigate}
+              <button
+                type="button"
+                class="btn-inline-link"
+                onclick={() => onNavigate('settings')}
+                title="Manage API credentials in Settings"
+              >
+                ⚙️ Manage
+              </button>
+            {/if}
+          </div>
+          <label for="api-key-input">{apiKey && apiKey.trim().length > 0 ? 'One-Time Key Override' : 'API Key Override (Optional)'}</label>
+        {:else}
+          <div class="missing-credential-notice">
+            <span class="notice-icon">⚠️</span>
+            <span class="notice-text">
+              No saved key for {normalizedProvider}. Enter below or
+            </span>
+            {#if onNavigate}
+              <button
+                type="button"
+                class="btn-inline-link"
+                onclick={() => onNavigate('settings')}
+              >
+                configure in Settings ↗
+              </button>
+            {/if}
+          </div>
+          <label for="api-key-input">API Key (Required for {normalizedProvider})</label>
+        {/if}
+        <div class="input-with-action">
+          <input
+            id="api-key-input"
+            type={showApiKey ? 'text' : 'password'}
+            bind:value={apiKey}
+            placeholder={providerStatus?.isConfigured
+              ? 'Leave blank to use saved key, or enter one-time override...'
+              : (normalizedProvider === 'gemini' ? 'AIzaSy...' : normalizedProvider === 'anthropic' ? 'sk-ant-...' : 'sk-...')}
+            class="text-input font-mono"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          {#if apiKey}
+            <button
+              type="button"
+              class="reveal-btn"
+              onclick={() => (showApiKey = !showApiKey)}
+              aria-label={showApiKey ? 'Hide key' : 'Reveal key'}
+              title={showApiKey ? 'Hide key' : 'Reveal key'}
+            >
+              {showApiKey ? '🔒' : '👁️'}
+            </button>
+          {/if}
+        </div>
       </div>
     {/if}
   </div>
@@ -474,5 +549,98 @@
     font-size: 12px;
     color: #cbd5e1;
     cursor: pointer;
+  }
+
+  .saved-credential-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    background: rgba(16, 185, 129, 0.12);
+    border: 1px solid rgba(16, 185, 129, 0.25);
+    color: #34d399;
+    padding: 6px 10px;
+    border-radius: 6px;
+    margin-bottom: 6px;
+  }
+
+  .missing-credential-notice {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    background: rgba(245, 158, 11, 0.12);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+    color: #fbbf24;
+    padding: 6px 10px;
+    border-radius: 6px;
+    margin-bottom: 6px;
+  }
+
+  .badge-icon,
+  .notice-icon {
+    font-size: 12px;
+    flex-shrink: 0;
+  }
+
+  .badge-text,
+  .notice-text {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+
+  .masked-key {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    background: rgba(0, 0, 0, 0.25);
+    padding: 1px 5px;
+    border-radius: 4px;
+    color: #f1f5f9;
+    font-size: 11px;
+  }
+
+  .btn-inline-link {
+    background: transparent;
+    border: none;
+    color: #818cf8;
+    text-decoration: underline;
+    font-size: 11px;
+    cursor: pointer;
+    padding: 0;
+    margin-left: auto;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .btn-inline-link:hover {
+    color: #a5b4fc;
+  }
+
+  .input-with-action {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+  }
+
+  .font-mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+
+  .reveal-btn {
+    position: absolute;
+    right: 8px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 13px;
+    padding: 2px 4px;
+    color: #94a3b8;
+  }
+
+  .reveal-btn:hover {
+    color: #f8fafc;
   }
 </style>

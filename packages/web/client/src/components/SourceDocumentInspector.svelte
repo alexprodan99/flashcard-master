@@ -12,9 +12,10 @@
     source: DataSource | null;
     onClose: () => void;
     onOpenInStudio?: (doc: DiscoveredDocument) => void;
+    onNavigate?: (tab: string) => void;
   }
 
-  let { isOpen, source, onClose, onOpenInStudio }: Props = $props();
+  let { isOpen, source, onClose, onOpenInStudio, onNavigate }: Props = $props();
 
   let documents = $state<DiscoveredDocument[]>([]);
   let isLoading = $state(false);
@@ -510,6 +511,11 @@
           bind:limit
           bind:targetDeck
           bind:enforceGrounding
+          onNavigate={(tab) => {
+            handleCloseConfigModal();
+            onClose();
+            onNavigate?.(tab);
+          }}
         />
       </div>
 

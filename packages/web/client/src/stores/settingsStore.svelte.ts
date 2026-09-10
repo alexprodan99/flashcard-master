@@ -58,6 +58,7 @@ export class SettingsStore {
   deletingProvider = $state<Record<SecretProvider, boolean>>(createInitialBooleans());
   testingProvider = $state<Record<SecretProvider, boolean>>(createInitialBooleans());
   testResults = $state<Record<SecretProvider, ProviderVerificationResult | null>>(createInitialResults());
+  hasLoaded = $state(false);
 
   async loadKeys(): Promise<void> {
     this.loading = true;
@@ -71,6 +72,7 @@ export class SettingsStore {
       this.error = err.message || 'Failed to load settings';
     } finally {
       this.loading = false;
+      this.hasLoaded = true;
     }
   }
 

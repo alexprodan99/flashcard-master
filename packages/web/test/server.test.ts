@@ -481,6 +481,7 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       body: JSON.stringify({
         provider: "gemini",
         model: "gemini-2.0-flash",
+        apiKey: "mock-gemini-key",
         targetDeck: "Custom Generation Deck",
         limit: 2,
       }),

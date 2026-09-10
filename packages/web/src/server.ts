@@ -2149,10 +2149,25 @@ export class WebServer {
           // 6. Generation Endpoint: POST /api/generate
           if (pathname === "/api/generate" && method === "POST") {
             const body = await this.parseBody(req);
-            const provider = body.provider || "ollama";
+            const provider = typeof body.provider === "string" && body.provider.trim().length > 0 ? body.provider.trim().toLowerCase() : "ollama";
             const model = body.model || undefined;
-            const apiKey = body.apiKey || (provider === "openai" ? process.env.OPENAI_API_KEY : provider === "gemini" ? process.env.GEMINI_API_KEY : provider === "anthropic" ? process.env.ANTHROPIC_API_KEY : undefined);
-            const baseUrl = body.endpoint || undefined;
+
+            // Resolve credentials: manual body override > SettingsService (DB > Env)
+            const rawKey = typeof body.apiKey === "string" && body.apiKey.trim().length > 0 ? body.apiKey.trim() : undefined;
+            const apiKey = rawKey || this.settingsService.getSecret(provider as any) || undefined;
+
+            const rawEndpoint = typeof body.endpoint === "string" && body.endpoint.trim().length > 0 ? body.endpoint.trim() : undefined;
+            const baseUrl = rawEndpoint || this.settingsService.getEndpoint(provider as any) || undefined;
+
+            // Enforce credential requirements for cloud LLM providers (exempting local endpoints)
+            const isLocalOpenAI = provider === "openai" && typeof baseUrl === "string" && (baseUrl.includes("localhost") || baseUrl.includes("127.0.0.1") || baseUrl.includes("::1"));
+            if (["openai", "anthropic", "gemini"].includes(provider) && !apiKey && !isLocalOpenAI) {
+              this.sendJson(res, 400, {
+                error: `No API key configured for ${provider}. Please provide an API key or configure it in Settings.`,
+              });
+              return;
+            }
+
             const persona = (body.persona as PersonaType) || "socratic-mentor";
             const difficulty = (body.difficulty as DifficultyLevel) || "intermediate";
             const depthMode = (body.depthMode as CardDepthMode) || "atomic";

@@ -476,6 +476,7 @@
           bind:limit={generateStore.limit}
           bind:targetDeck={generateStore.targetDeck}
           bind:enforceGrounding={generateStore.enforceGrounding}
+          onNavigate={onNavigate}
         />
 
         {#if generateStore.errorMessage}

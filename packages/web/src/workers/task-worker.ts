@@ -91,6 +91,20 @@ if (parentPort) {
       enforceGrounding = true,
     } = payload;
 
+    const isLocalOpenAI = provider === "openai" && typeof endpoint === "string" && (endpoint.includes("localhost") || endpoint.includes("127.0.0.1") || endpoint.includes("::1"));
+
+    // Fall back to environment variable if apiKey is omitted in worker task payload
+    let resolvedKey = apiKey;
+    if (!resolvedKey) {
+      if (provider === "openai") resolvedKey = process.env.OPENAI_API_KEY;
+      else if (provider === "anthropic") resolvedKey = process.env.ANTHROPIC_API_KEY;
+      else if (provider === "gemini") resolvedKey = process.env.GEMINI_API_KEY;
+    }
+
+    if (["openai", "anthropic", "gemini"].includes(provider) && !resolvedKey && !isLocalOpenAI) {
+      throw new Error(`No API key provided for ${provider}. Please configure credentials in Settings or provide a key.`);
+    }
+
     const personaStudio = new PersonaStudioService();
     const promptBuilder = new PromptBuilder(personaStudio);
     const groundingGuard = new GroundingGuard();
@@ -98,7 +112,7 @@ if (parentPort) {
     const llm = createLLMAdapter({
       provider: provider as any,
       model,
-      apiKey,
+      apiKey: resolvedKey,
       baseUrl: endpoint,
     });
 
