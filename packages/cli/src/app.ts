@@ -8,6 +8,9 @@ import {
   FlashcardRepository,
   DocumentRepository,
   JobRepository,
+  type SettingsRepository,
+  SqliteSettingsRepository,
+  SettingsService,
   StrategyRegistry,
   IngestionService,
   PersonaStudioService,
@@ -43,6 +46,8 @@ export interface AppContext {
   cardRepo: FlashcardRepository;
   docRepo: DocumentRepository;
   jobRepo: JobRepository;
+  settingsRepo: SettingsRepository;
+  settingsService: SettingsService;
   mediaService: MediaService;
   strategyRegistry: StrategyRegistry;
   ingestionService: IngestionService;
@@ -79,6 +84,8 @@ export function createAppContext(options: AppOptions = {}): AppContext {
   const cardRepo = new FlashcardRepository(db);
   const docRepo = new DocumentRepository(db);
   const jobRepo = new JobRepository(db);
+  const settingsRepo = new SqliteSettingsRepository(db);
+  const settingsService = new SettingsService(settingsRepo);
   const mediaService = new MediaService();
 
   // Ingestion strategies
@@ -117,6 +124,8 @@ export function createAppContext(options: AppOptions = {}): AppContext {
     cardRepo,
     docRepo,
     jobRepo,
+    settingsRepo,
+    settingsService,
     mediaService,
     strategyRegistry,
     ingestionService,

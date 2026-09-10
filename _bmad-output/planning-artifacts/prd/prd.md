@@ -2,16 +2,18 @@
 title: "Product Requirements Document: flashcard-master"
 status: "draft"
 created: "2026-08-30"
-updated: "2026-09-08"
+updated: "2026-09-09"
 ---
 
 # Product Requirements Document (PRD): flashcard-master
 
 ## 1. Product Overview & Strategic Vision
 
-`flashcard-master` is a local-first, AI-powered knowledge extraction and spaced-repetition acceleration tool. It bridges the gap between passive consumption (reading blogs, newsletters, and documentation) and active retention by automatically transforming dynamic text streams into high-yield, atomic flashcards.
+`flashcard-master` is a local-first, AI-powered knowledge extraction and spaced-repetition acceleration tool. It bridges the gap between passive consumption (reading blogs, newsletters, documentation, and Notion workspaces) and active retention by automatically transforming dynamic text streams into high-yield, atomic flashcards.
 
 Every generated flashcard is strictly tethered to the source text via mandatory **verbatim quote citations**, completely eliminating AI hallucination and enabling rapid verification. Cards are persisted to an embedded local database and exported seamlessly to Anki (`.apkg`, AnkiConnect), active-recall Markdown, and PDF study guides.
+
+With the addition of **Notion API Data Ingestion** and a **Centralized Secrets & Integrations Dashboard**, `flashcard-master` empowers users to securely manage their LLM and third-party API credentials in one place with live connection testing, and systematically convert their personal Notion pages, subpages, and databases into actionable spaced-repetition material with automatic local image asset preservation.
 
 ### Success Metrics & Target SLAs
 - **Onboarding & Source Setup Velocity:** A user can configure a new data source via the interactive CLI wizard or Web UI in **< 60 seconds**.
@@ -86,6 +88,22 @@ journey
 5. In the Task Center, Alex watches the live **Step Accordion** unfold with real-time timestamps: Document 1 succeeds, Document 2 is actively querying Ollama. Alex can inspect detailed step logs or click "Cancel Task" if needed.
 6. When the job completes, a global toast alert notifies Alex, and generated cards automatically reflect in the catalog.
 
+#### UJ-9: Centralized API Key & Token Management via Integrations Dashboard
+1. Alex launches the Web UI and navigates to the **⚙️ Settings & Integrations** view.
+2. Alex enters his Notion Internal Integration Secret, OpenAI API Key, and Anthropic API Key.
+3. Alex clicks "Test Connection" on each provider card:
+   - The Notion card confirms connectivity (`✓ Connected to Notion: Bot 'Flashcard Master'`).
+   - The OpenAI card validates the key (`✓ Connected to OpenAI: 4 models available`).
+4. Alex views the masked keys (`secret_...9a2f`, `sk-...4b12`) and knows that credentials are saved securely in local SQLite.
+5. When Alex navigates to Generate Studio, the OpenAI key is already active and pre-populated—zero manual re-entry required.
+
+#### UJ-10: Notion Workspace, Database & Subpage Ingestion
+1. Alex navigates to **🌐 Data Sources** and clicks **"Add Source"**, selecting **Notion**.
+2. The modal displays a green badge indicating that the Notion Integration Token is configured and ready.
+3. Alex pastes the URL to a Notion Database containing System Design articles (`https://www.notion.so/myorg/0123456789abcdef...`).
+4. Alex clicks "Save & Sync": the Notion strategy queries the database, maps the Title property to document titles and database tags to card tags, downloads embedded AWS S3 images locally via `MediaService` before their 1-hour presigned URL expiration, and registers each row as a `DiscoveredDocument`.
+5. Later, Alex adds a Notion Page with nested subpages and checks `Include subpages as separate documents`. The sync engine crawls the page tree, creating discrete documents for each subpage ready for targeted, atomic flashcard generation in Generate Studio.
+
 ---
 
 ## 3. Functional Requirements (FRs)
@@ -109,6 +127,10 @@ journey
 | **FR-113** | **Concurrent Multi-URL Reader Ingestion** | `WebReaderStrategy` MUST ingest all configured URLs in parallel (concurrency limit = 3–5) with isolated error handling per URL, creating or updating a `Document` record per unique URL under that source. | High |
 | **FR-114** | **Single & Batch Document Deletion API** | The backend MUST expose `DELETE /api/documents/:id` and `POST /api/documents/bulk-delete` (`{ documentIds: string[] }`) to permanently prune unwanted document records from the `documents` table. | High |
 | **FR-115** | **Non-Destructive Flashcard & Study Preservation** | Deleting documents MUST NOT delete or corrupt associated flashcards; flashcards MUST retain their `documentTitle`, `sourceOriginUrl`, `sourceQuote`, and `targetDeck` references so study decks and Anki notes remain 100% operational. | Critical |
+| **FR-116** | **Notion Ingestion Strategy & Resource Detection** | The system MUST implement a `NotionStrategy` utilizing the official `@notionhq/client` SDK, auto-detecting whether a given Notion URL or 32-character UUID corresponds to a Notion Database (`object: "database"`) or a Notion Page (`object: "page"`). | Critical |
+| **FR-117** | **Notion Database Ingestion & Metadata Mapping** | For Notion databases, the strategy MUST query rows incrementally filtered by `last_edited_time > lastSyncedAt`, mapping the Title property to document title, multi-select/select tags to document tags, and row body blocks to document content. | High |
+| **FR-118** | **Notion Page Block Conversion & Configurable Subpage Scope** | The strategy MUST parse Notion blocks into clean Markdown (paragraphs, H1-H3, bullet/numbered lists, code blocks with languages, tables, callouts, quotes) and support a configurable subpage setting (`recursive=true/false`) allowing users to either ingest only the target root page or recursively discover and ingest child subpages as individual `DiscoveredDocument` records. | High |
+| **FR-119** | **Notion S3 Presigned Image Localization** | The Notion strategy MUST intercept all image blocks (`block.type === 'image'`) and immediately download the external/S3 files via `MediaService` to local storage (`.flashcard-master/media/`), replacing expiring 60-minute presigned URLs with persistent local `/api/media/<id>` references in the generated Markdown. | Critical |
 
 ### 3.2 Grounded Q&A Generation Engine
 
@@ -189,6 +211,17 @@ journey
 | **FR-437** | **Action Hardening, Immediate Button Disabling & Global Toasts** | All action triggers (Generate Cards, Sync All, Export) MUST immediately disable upon submission, show inline loading indicators to prevent duplicate clicks, and broadcast global toast alerts upon background job completion or failure. | High |
 | **FR-438** | **CLI & Server Concurrency Pool Configuration Flags** | The CLI and Web server MUST accept runtime concurrency limits via flags (e.g. `--max-generation-workers`, `--max-sync-workers`, `--max-export-workers`) with graceful defaults and environment variable overrides. | Medium |
 
+### 3.6 Centralized Secrets & Integrations Manager
+
+| Requirement ID | Title | Description | Priority |
+| :--- | :--- | :--- | :--- |
+| **FR-439** | **Persistent SQLite Settings & Secrets Store** | The system MUST persist application settings and provider secrets in a dedicated SQLite `settings` table (`key`, `value`, `updated_at`), with an environment variable fallback chain (`Settings -> process.env`). | Critical |
+| **FR-440** | **Secrets Management REST API with Value Masking** | The backend MUST expose REST endpoints (`GET /api/settings/keys`, `POST /api/settings/keys`, `DELETE /api/settings/keys/:provider`) returning masked strings (e.g. `sk-...4a12`, `secret_...9a2f`) and connection status metadata, preventing raw credentials from exposure in client responses. | Critical |
+| **FR-441** | **Live Provider Connection Verification Endpoints** | The backend MUST expose `POST /api/settings/keys/test` allowing on-demand credential verification for Notion (verifying bot profile and workspace access) and LLM providers (pinging model endpoints for OpenAI, Anthropic, Gemini, Ollama) returning actionable diagnostic messages. | High |
+| **FR-442** | **Integrations & Secrets Dashboard UI** | The Web UI MUST provide a dedicated "⚙️ Settings & Integrations" view/tab displaying categorized provider cards (Notion, OpenAI, Anthropic, Google Gemini, Ollama), connection status badges (Configured / Missing / Connected), input fields with reveal/hide controls, and "Test Connection" buttons. | High |
+| **FR-443** | **Zero-Friction Token Auto-Injection** | Generate Studio, Document Inspector configuration modals, and Background Worker threads MUST automatically retrieve active credentials from the centralized Settings store, removing the requirement for users to repeatedly type API keys in modal forms while retaining optional overrides. | High |
+| **FR-444** | **Interactive Notion Source Configuration UI** | The Add/Edit Source modal MUST support the "Notion" source type, displaying an active token indicator (with direct link to Settings if unconfigured), Notion URL validation, and a checkbox toggle to `Include subpages as separate documents`. | High |
+
 ---
 
 ## 4. Non-Functional Requirements (NFRs)
@@ -197,13 +230,15 @@ journey
 - **NFR-101:** Reader-mode text extraction from standard web articles (< 3,000 words) MUST complete in **< 3 seconds**.
 - **NFR-102:** Local database queries (searching across 10,000+ flashcards) MUST return results in **< 100 milliseconds**.
 - **NFR-103:** Background task queue submission (`POST /api/generate`, `POST /api/sync`, `POST /api/export`) MUST acknowledge and return `{ jobId }` in **< 50 milliseconds**.
+- **NFR-104:** Provider connection verification pings (`POST /api/settings/keys/test`) MUST respond in **< 3 seconds** under normal network conditions.
 
 ### 4.2 Privacy & Local-First Invariants
 - **NFR-201:** All configurations, source URLs, content caches, and generated cards MUST reside exclusively on the user's local disk in SQLite.
 - **NFR-202:** No telemetry, tracking, or user content MUST ever be transmitted to external servers (except direct user-configured LLM API calls).
+- **NFR-203:** All third-party secrets, API tokens, and integration keys MUST reside exclusively in the local SQLite database; secrets MUST never be transmitted to external telemetry or exposed unmasked in client responses.
 
 ### 4.3 Reliability & Resilience
-- **NFR-301:** Ingestion network failures (e.g. timeout on an RSS feed) MUST fail gracefully per-source without crashing the overall sync batch.
+- **NFR-301:** Ingestion network failures (e.g. timeout on an RSS feed or Notion API error) MUST fail gracefully per-source without crashing the overall sync batch.
 - **NFR-302:** Database writes MUST be transactional to prevent orphaned or partially generated card records.
 - **NFR-303:** Worker threads and the main process MUST guarantee zero SQLite lock contention (`SQLITE_BUSY`) by routing all database transactions through the main thread JobManager.
 - **NFR-304:** Errors in individual document synthesis steps MUST NOT abort other pending items in a batch; the system MUST support fault-tolerant partial success, flagging the individual step as failed while committing successful cards.
@@ -219,6 +254,7 @@ journey
 2. **No Multimodal Data Ingestion:** Audio, video, and image OCR ingestion are excluded from v1 (text-only focus).
 3. **No Complex Card Types in v1:** Cloze deletions and Multiple-Choice cards are deferred to future roadmap releases.
 4. **No Multi-Tenant Cloud SaaS:** The architecture is strictly single-user, local-first.
+5. **No SVG / Dynamic Canvas Scraping in Epic 15:** Client-side canvas and complex vector diagram scraping are deferred to a dedicated future media pipeline release.
 
 ---
 
@@ -230,4 +266,6 @@ journey
 | **Feed / Web Scraping Breakages** | Medium | Medium | **Modular Ingestion Strategy:** Robust fallback parsers (Readability algorithm) and clear error reporting per source. |
 | **AnkiConnect Inavailability** | Low | Medium | **Graceful Fallback:** If Anki desktop is not running, UI/CLI clearly alerts user and provides immediate `.apkg` file download instead. |
 | **Duplicate Card Proliferation** | Medium | Medium | **Incremental Delta Sync (FR-105):** GUID and content hash checks prevent re-ingesting unmodified posts. |
+| **Notion Rate Limits & Expiring Images** | Medium | Low | **Rate-Limited Throttling & MediaService Pre-Fetch (FR-119):** Throttle block tree requests to adhere to ~3 req/sec Notion limit; download AWS S3 image assets immediately before the 60-minute presigned URL expiration. |
+
 

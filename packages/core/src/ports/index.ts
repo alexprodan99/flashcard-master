@@ -1,4 +1,4 @@
-import type { DataSource, RawDocument, CleanTextDocument, SyncState, Flashcard, DifficultyLevel, ImageQuality } from "../domain/models.js";
+import type { DataSource, RawDocument, CleanTextDocument, SyncState, Flashcard, DifficultyLevel, ImageQuality, Setting } from "../domain/models.js";
 
 export interface IngestionStrategy {
   readonly type: DataSource["type"];
@@ -68,5 +68,14 @@ export interface DocumentExportResult {
   mimeType: string;
   content: string | Buffer | Uint8Array;
   documentCount: number;
+}
+
+export interface SettingsRepository {
+  get(key: string): string | null;
+  getWithMetadata(key: string): Setting | null;
+  set(key: string, value: string): void;
+  delete(key: string): boolean;
+  list(): Record<string, string>;
+  getAll(): Setting[];
 }
 

@@ -6,6 +6,7 @@ export * from "./storage/sync-state-repository.js";
 export * from "./storage/card-repository.js";
 export * from "./storage/document-repository.js";
 export * from "./storage/job-repository.js";
+export * from "./storage/settings-repository.js";
 export * from "./services/strategy-registry.js";
 export * from "./services/ingestion-service.js";
 export * from "./services/text-chunker.js";
@@ -17,3 +18,5 @@ export * from "./services/card-deduplication-service.js";
 export * from "./services/exporter-registry.js";
 export * from "./services/export-service.js";
 export * from "./services/media-service.js";
+export * from "./services/settings-service.js";
+

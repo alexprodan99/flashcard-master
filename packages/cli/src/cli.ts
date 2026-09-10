@@ -55,6 +55,8 @@ export function createCli(providedContext?: AppContext): Command {
           cardRepo: context.cardRepo,
           documentRepo: context.docRepo,
           jobRepo: context.jobRepo,
+          settingsRepo: context.settingsRepo,
+          settingsService: context.settingsService,
           concurrency: {
             maxGenerationWorkers,
             maxSyncWorkers,

@@ -2,16 +2,16 @@
 title: "Technical Architecture Spine: flashcard-master"
 status: "draft"
 created: "2026-08-30"
-updated: "2026-09-08"
+updated: "2026-09-09"
 ---
 
 # Technical Architecture Spine: flashcard-master
 
 ## 1. Architectural Paradigm & System Overview
 
-`flashcard-master` is built on a **Ports & Adapters (Hexagonal) Architecture** combined with the **Strategy Pattern** for extensible data ingestion/export, a **Centralized Task Queue Manager** driving **Worker Threads** for concurrent background execution, and **Svelte 5 Universal Reactive Stores** with **Server-Sent Events (SSE)** for real-time client state synchronization.
+`flashcard-master` is built on a **Ports & Adapters (Hexagonal) Architecture** combined with the **Strategy Pattern** for extensible data ingestion/export (including native **Notion API** synchronization), a **Centralized Task Queue Manager** driving **Worker Threads** for concurrent background execution, a **Centralized Secrets & Settings Architecture** with live connection verification, and **Svelte 5 Universal Reactive Stores** with **Server-Sent Events (SSE)** for real-time client state synchronization.
 
-The core domain contains business logic for Q&A extraction, card validation, and grounding rules. All external dependencies (HTTP fetchers, LLMs, SQLite database, AnkiConnect, and file formatters) are driven through typed port interfaces.
+The core domain contains business logic for Q&A extraction, card validation, and grounding rules. All external dependencies (HTTP fetchers, Notion API, LLMs, SQLite database, AnkiConnect, and file formatters) are driven through typed port interfaces.
 
 ```mermaid
 flowchart TD
@@ -20,15 +20,19 @@ flowchart TD
         UI[Local Web UI Dashboard - Svelte 5]
         Stores[Svelte 5 Shared Stores .svelte.ts]
         TaskCenter[Task Center Drawer & Step Accordion]
+        SettingsUI[Settings & Integrations View]
         UI --> Stores
         UI --> TaskCenter
+        UI --> SettingsUI
     end
 
     subgraph HostServer ["WebServer & Background Job Engine (Main Thread)"]
         REST[REST API Endpoints /api/*]
         SSE[SSE Stream /api/jobs/stream]
         JobMgr[JobManager - Single DB Custodian]
+        SettingsService[Settings & Secrets Service]
         REST --> JobMgr
+        REST --> SettingsService
         JobMgr --> SSE
         SSE -.->|Real-time Events| TaskCenter
     end
@@ -44,15 +48,18 @@ flowchart TD
         QAEngine[Grounded Q&A Generation Engine]
         GroundingGuard[Verbatim Quote Validator]
         ExportService[Export Orchestrator]
+        MediaService[Media Asset Downloader & Localizer]
     end
 
     subgraph DrivenAdapters ["Driven Adapters & Storage"]
         subgraph StorageAdapters ["Persistence Layer (Main Thread Only)"]
-            SQLite[(SQLite Database - WAL Mode: cards, docs, sources, jobs, job_logs)]
+            SQLite[(SQLite DB: cards, docs, sources, sync_state, jobs, job_logs, app_settings)]
         end
 
-        subgraph ExternalPorts ["External Services & Exports"]
+        subgraph ExternalPorts ["External Services & Ingestion"]
             LLMAdapters[Ollama / Gemini / OpenAI / Anthropic]
+            NotionAdapter[Notion Ingestion Strategy - @notionhq/client]
+            WebAdapters[WebReader / RSS / Sitemap / LLMsTxt]
             AnkiAdapters[AnkiConnect / .apkg / EPUB / PDF / MD]
         end
     end
@@ -62,11 +69,15 @@ flowchart TD
     JobMgr -->|IPC Work Dispatch| WorkerPool
     WorkerPool -->|IPC Progress & Card Drafts| JobMgr
     JobMgr -->|Serialized DB Writes| SQLite
+    SettingsService --> SQLite
 
     GenWorker --> QAEngine
     QAEngine --> LLMAdapters
     QAEngine --> GroundingGuard
     SyncWorker --> IngestService
+    IngestService --> NotionAdapter
+    IngestService --> WebAdapters
+    NotionAdapter --> MediaService
     ExportWorker --> ExportService
     ExportService --> AnkiAdapters
 ```
@@ -275,6 +286,38 @@ flowchart TD
   3. Main navigation displays a live badge: `[⚡ Tasks (N running)]`.
   4. Clicking opens the Task Center drawer with an active tab (live progress, Step Accordion with timestamps and expandable logs, Cancel button) and a history tab (with manual "Clear History" and auto-pruning).
 
+### AD-23: Centralized Secrets & Settings Architecture with Env Fallback & UI Masking
+- **Binds:** `SqliteSettingsRepository`, `SettingsService`, WebServer REST endpoints (`GET /api/settings/keys`, `POST /api/settings/keys`, `DELETE /api/settings/keys/:provider`), and the `app_settings` SQLite table.
+- **Prevents:** Insecure key persistence across client HTTP payloads, repeated manual API key typing in modals, and lost credentials between restarts.
+- **Rule:**
+  1. Secrets (OpenAI, Anthropic, Gemini, Ollama, Notion) are stored in the SQLite `app_settings` table.
+  2. Fallback resolution chain: `SettingsRepository.get(key) ?? process.env[ENV_KEY] ?? null`. (Keys saved in UI take precedence over environment variables).
+  3. Client responses NEVER expose raw secrets; `GET /api/settings/keys` returns masked strings (e.g. `sk-...4a12`, `secret_...9a2f`) and boolean `isConfigured: true/false`.
+  4. Card generation and sync workers automatically read active provider credentials directly from the settings service.
+
+### AD-24: Notion Ingestion Strategy Architecture (`NotionStrategy`)
+- **Binds:** `NotionStrategy` implementing `IngestionStrategy` in `packages/adapters/src/ingestion/notion-strategy.ts` using `@notionhq/client`.
+- **Prevents:** Monolithic scraping code, unhandled S3 signed URL expiration, and failure to support both Notion databases and hierarchical pages.
+- **Rule:**
+  1. Registered in `StrategyRegistry` under `type = 'notion'`.
+  2. URI parser accepts Notion URLs (`https://notion.so/...`) or raw 32-char UUIDs, extracting the canonical ID.
+  3. Calls Notion API to auto-detect resource type (`database` vs `page`).
+  4. **Databases**: Queries items incrementally with `filter: { timestamp: "last_edited_time", last_edited_time: { after: lastSyncedAt } }`. Maps Title property to document title, select/multi-select tags to document tags, and page body blocks to Markdown.
+  5. **Pages**: Ingests page blocks into Markdown. Supports configurable subpage traversal via `recursive=true/false` query parameter on the source URI (`?recursive=true`). When recursive is true, child pages are traversed (bounded to max depth 3) and registered as discrete `DiscoveredDocument` rows.
+  6. **S3 Presigned Media Localization**: Every `image` block URL is immediately passed to `MediaService.downloadAndSave(url, originUrl)`. S3 URLs (which expire in 60 minutes) are replaced with local `/api/media/<id>` paths in the stored Markdown.
+
+### AD-25: Live Provider Credential Verification Protocol (`POST /api/settings/keys/test`)
+- **Binds:** Diagnostic validation endpoints across all supported providers (Notion, OpenAI, Anthropic, Gemini, Ollama).
+- **Prevents:** Silent authentication failures when running async background generation or sync batches.
+- **Rule:**
+  1. Dedicated validation handler per provider executing a lightweight ping:
+     - Notion: `notion.users.me()` verifies integration token validity and returns bot name.
+     - OpenAI: `models.list()` verifies key and returns model availability.
+     - Anthropic: Minimal probe query verifies key.
+     - Gemini: `getGenerativeModel` probe verifies key.
+     - Ollama: `/api/tags` verifies endpoint accessibility and returns installed models.
+  2. Responds with `{ success: boolean, message: string, details?: any }` within < 3 seconds.
+
 ---
 
 ## 3. Database Schema Specification (SQLite)
@@ -284,7 +327,7 @@ flowchart TD
 CREATE TABLE IF NOT EXISTS data_sources (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    type TEXT NOT NULL CHECK(type IN ('rss', 'web', 'local', 'sitemap', 'llms-txt')),
+    type TEXT NOT NULL CHECK(type IN ('rss', 'web', 'local', 'sitemap', 'llms-txt', 'notion')),
     uri TEXT NOT NULL,
     target_deck TEXT NOT NULL DEFAULT 'Default',
     tags TEXT NOT NULL DEFAULT '[]', -- JSON array of strings
@@ -389,13 +432,13 @@ flashcard-master/
 ├── packages/
 │   ├── core/                          # Core domain, ports, and models
 │   │   ├── src/
-│   │   │   ├── domain/                # Flashcard, DataSource, Document, Job, JobLog models
-│   │   │   ├── ports/                 # IngestionStrategy, LLMProviderPort, ExporterPort, JobRepository
-│   │   │   ├── services/              # IngestionService, QAEngine, GroundingGuard, DocumentExportService
-│   │   │   └── storage/               # SQLite repositories (SqliteJobRepository, etc.) & migrations
+│   │   │   ├── domain/                # Flashcard, DataSource, Document, Job, JobLog, Settings models
+│   │   │   ├── ports/                 # IngestionStrategy, LLMProviderPort, ExporterPort, JobRepository, SettingsRepository
+│   │   │   ├── services/              # IngestionService, QAEngine, GroundingGuard, DocumentExportService, SettingsService, MediaService
+│   │   │   └── storage/               # SQLite repositories (SqliteJobRepository, SqliteSettingsRepository) & migrations
 │   │   └── package.json
 │   ├── adapters/                      # Pluggable driven implementations
-│   │   ├── ingestion/                 # RssStrategy, WebReaderStrategy, LocalFileStrategy, SitemapStrategy
+│   │   ├── ingestion/                 # RssStrategy, WebReaderStrategy, LocalFileStrategy, SitemapStrategy, NotionStrategy
 │   │   ├── llm/                       # OpenAIAdapter, GeminiAdapter, AnthropicAdapter, OllamaAdapter
 │   │   └── exporters/                 # ApkgExporter, AnkiConnectAdapter, MarkdownExporter, PdfExporter, DocumentExporters
 │   ├── cli/                           # Driving adapter: Terminal CLI & wizard
@@ -407,14 +450,14 @@ flashcard-master/
 │       ├── client/                    # Svelte 5 Single-File Components + Vite
 │       │   ├── src/                   # App.svelte, main.ts
 │       │   │   ├── components/        # Navigation, TaskCenterDrawer, StepAccordion, modals
-│       │   │   ├── stores/            # generateStore.svelte.ts, taskStore.svelte.ts, etc.
-│       │   │   ├── views/             # Dashboard, Sources, Generate, Cards, Export
+│       │   │   ├── stores/            # generateStore.svelte.ts, taskStore.svelte.ts, settingsStore.svelte.ts, etc.
+│       │   │   ├── views/             # Dashboard, Sources, Generate, Cards, Export, SettingsView
 │       │   │   └── lib/               # api.ts, types.ts
 │       │   └── vite.config.ts
 │       ├── src/                       # Node.js WebServer
 │       │   ├── jobs/                  # JobManager.ts, WorkerPool.ts
 │       │   ├── workers/               # generation.worker.ts, sync.worker.ts, export.worker.ts
-│       │   └── server.ts              # REST controllers & SSE endpoints
+│       │   └── server.ts              # REST controllers (/api/settings, /api/jobs, etc.) & SSE endpoints
 │       └── package.json
 └── package.json                       # Turborepo / npm workspaces root
 ```
@@ -426,3 +469,4 @@ flashcard-master/
 1. **Vector Embedding Storage:** Deferring local vector database (e.g. `sqlite-vec` or `chromadb`) to v2 for semantic similarity deduplication.
 2. **Audio / Video Transcription Pipeline:** Deferring Whisper / FFmpeg bindings to v2 (focusing on text-only stability in v1).
 3. **Cloud Multi-Device Sync:** Deferring P2P / encrypted CRDT synchronization to future iterations.
+4. **Complex SVG / Canvas Client Diagram Extraction:** Deferring dynamic headless or canvas-parsing pipelines to a dedicated future media pipeline release.
