@@ -80,7 +80,10 @@ export async function deleteSource(id: string): Promise<void> {
   const res = await fetch(`/api/sources/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   });
-  if (!res.ok) throw new Error('Failed to delete source');
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to delete source');
+  }
 }
 
 export async function syncSource(id: string): Promise<{ success: boolean; sourceId: string; newCount: number; totalFetched: number; error?: string }> {

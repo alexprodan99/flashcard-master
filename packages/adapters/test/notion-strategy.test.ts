@@ -737,12 +737,195 @@ describe("NotionStrategy Ingestion", () => {
       expect(docs[0].rawContent).toContain("Welcome to Root.");
 
       expect(docs[1].title).toBe("Child Chapter 1");
+      expect(docs[1].rawContent).toContain("*Parent Hierarchy: [Root Document]");
       expect(docs[1].rawContent).toContain("*Parent: [Root Document]");
       expect(docs[1].rawContent).toContain("Chapter 1 content.");
 
       expect(docs[2].title).toBe("Grandchild Section 1.1");
+      expect(docs[2].rawContent).toContain("*Parent Hierarchy: [Root Document]");
+      expect(docs[2].rawContent).toContain("➔ [Child Chapter 1]");
       expect(docs[2].rawContent).toContain("*Parent: [Child Chapter 1]");
       expect(docs[2].rawContent).toContain("Grandchild leaf content.");
+    });
+
+    it("recursively crawls deep hierarchies up to 5 levels with parent lineage trail", async () => {
+      const deepSource: DataSource = {
+        id: "source-deep-1",
+        name: "Deep Hierarchy Source",
+        type: "notion",
+        uri: "https://www.notion.so/workspace/p1-a1b2c3d4e5f60718293a4b5c6d7e8f90?recursive=true&depth=5",
+        targetDeck: "AI",
+        isActive: true,
+        createdAt: "2026-03-01T00:00:00.000Z",
+        updatedAt: "2026-03-01T00:00:00.000Z",
+      };
+
+      const mockDatabaseRetrieve = vi.fn().mockRejectedValue(new Error("Not db"));
+      const mockPageRetrieve = vi.fn().mockImplementation(async ({ page_id }) => {
+        return {
+          id: page_id,
+          properties: { title: { title: [{ plain_text: `Page Level ${page_id}` }] } },
+        };
+      });
+
+      const mockBlocksChildrenList = vi.fn().mockImplementation(async ({ block_id }) => {
+        if (block_id === "a1b2c3d4-e5f6-0718-293a-4b5c6d7e8f90") {
+          return {
+            results: [
+              { type: "paragraph", paragraph: { rich_text: [{ plain_text: "Root Content" }] } },
+              { id: "level-1", type: "child_page", child_page: { title: "Page Level level-1" } },
+            ],
+            has_more: false,
+          };
+        }
+        if (block_id === "level-1") {
+          return {
+            results: [
+              { type: "paragraph", paragraph: { rich_text: [{ plain_text: "Level 1 Content" }] } },
+              { id: "level-2", type: "child_page", child_page: { title: "Page Level level-2" } },
+            ],
+            has_more: false,
+          };
+        }
+        if (block_id === "level-2") {
+          return {
+            results: [
+              { type: "paragraph", paragraph: { rich_text: [{ plain_text: "Level 2 Content" }] } },
+              { id: "level-3", type: "child_page", child_page: { title: "Page Level level-3" } },
+            ],
+            has_more: false,
+          };
+        }
+        if (block_id === "level-3") {
+          return {
+            results: [
+              { type: "paragraph", paragraph: { rich_text: [{ plain_text: "Level 3 Content" }] } },
+              { id: "level-4", type: "child_page", child_page: { title: "Page Level level-4" } },
+            ],
+            has_more: false,
+          };
+        }
+        if (block_id === "level-4") {
+          return {
+            results: [
+              { type: "paragraph", paragraph: { rich_text: [{ plain_text: "Level 4 Leaf Content" }] } },
+            ],
+            has_more: false,
+          };
+        }
+        return { results: [], has_more: false };
+      });
+
+      const mockClient: any = {
+        databases: { retrieve: mockDatabaseRetrieve },
+        pages: { retrieve: mockPageRetrieve },
+        blocks: { children: { list: mockBlocksChildrenList } },
+      };
+
+      const strategy = new NotionStrategy({
+        settingsService: { getSecret: () => "test_secret" },
+        notionClient: mockClient,
+      });
+
+      const docs = await strategy.fetch(deepSource);
+      expect(docs).toHaveLength(5);
+      expect(docs[4].title).toBe("Page Level level-4");
+      expect(docs[4].rawContent).toContain(
+        "*Parent Hierarchy: [Page Level a1b2c3d4-e5f6-0718-293a-4b5c6d7e8f90](https://www.notion.so/a1b2c3d4e5f60718293a4b5c6d7e8f90) ➔ [Page Level level-1](https://www.notion.so/level1) ➔ [Page Level level-2](https://www.notion.so/level2) ➔ [Page Level level-3](https://www.notion.so/level3)*"
+      );
+      expect(docs[4].rawContent).toContain("*Parent: [Page Level level-3]");
+      expect(docs[4].rawContent).toContain("Level 4 Leaf Content");
+    });
+
+    it("crawls child database blocks embedded inside a page and attaches parent hierarchy", async () => {
+      const dbSource: DataSource = {
+        id: "source-child-db-1",
+        name: "Source with Child DB",
+        type: "notion",
+        uri: "https://www.notion.so/workspace/p1-a1b2c3d4e5f60718293a4b5c6d7e8f90?recursive=true",
+        targetDeck: "AI",
+        isActive: true,
+        createdAt: "2026-03-01T00:00:00.000Z",
+        updatedAt: "2026-03-01T00:00:00.000Z",
+      };
+
+      const mockDatabaseRetrieve = vi.fn().mockImplementation(async ({ database_id }) => {
+        if (database_id === "a1b2c3d4-e5f6-0718-293a-4b5c6d7e8f90") {
+          throw new Error("Root is page, not database");
+        }
+        if (database_id === "child-db-1") {
+          return { id: "child-db-1", title: [{ plain_text: "Embedded Course Exercises" }] };
+        }
+        throw new Error("Not found");
+      });
+
+      const mockDatabaseQuery = vi.fn().mockImplementation(async ({ database_id }) => {
+        if (database_id === "child-db-1") {
+          return {
+            results: [
+              {
+                id: "exercise-page-1",
+                properties: { title: { title: [{ plain_text: "Exercise 1: Backprop" }] } },
+                created_time: "2026-03-01T00:00:00.000Z",
+              },
+            ],
+            has_more: false,
+          };
+        }
+        return { results: [], has_more: false };
+      });
+
+      const mockPageRetrieve = vi.fn().mockImplementation(async ({ page_id }) => {
+        if (page_id === "a1b2c3d4-e5f6-0718-293a-4b5c6d7e8f90") {
+          return {
+            id: page_id,
+            properties: { title: { title: [{ plain_text: "Deep Learning Course" }] } },
+          };
+        }
+        return { id: page_id, properties: { title: { title: [{ plain_text: "Page" }] } } };
+      });
+
+      const mockBlocksChildrenList = vi.fn().mockImplementation(async ({ block_id }) => {
+        if (block_id === "a1b2c3d4-e5f6-0718-293a-4b5c6d7e8f90") {
+          return {
+            results: [
+              { type: "paragraph", paragraph: { rich_text: [{ plain_text: "Welcome to Deep Learning." }] } },
+              { id: "child-db-1", type: "child_database", child_database: { title: "Embedded Course Exercises" } },
+            ],
+            has_more: false,
+          };
+        }
+        if (block_id === "exercise-page-1") {
+          return {
+            results: [
+              { type: "paragraph", paragraph: { rich_text: [{ plain_text: "Implement gradient descent from scratch." }] } },
+            ],
+            has_more: false,
+          };
+        }
+        return { results: [], has_more: false };
+      });
+
+      const mockClient: any = {
+        databases: { retrieve: mockDatabaseRetrieve, query: mockDatabaseQuery },
+        pages: { retrieve: mockPageRetrieve },
+        blocks: { children: { list: mockBlocksChildrenList } },
+      };
+
+      const strategy = new NotionStrategy({
+        settingsService: { getSecret: () => "test_secret" },
+        notionClient: mockClient,
+      });
+
+      const docs = await strategy.fetch(dbSource);
+      expect(docs).toHaveLength(2);
+      expect(docs[0].title).toBe("Deep Learning Course");
+      expect(docs[0].rawContent).toContain("🗄️ [Embedded Course Exercises]");
+
+      expect(docs[1].title).toBe("Exercise 1: Backprop");
+      expect(docs[1].rawContent).toContain("*Parent Hierarchy: [Deep Learning Course]");
+      expect(docs[1].rawContent).toContain("*Parent: [Deep Learning Course]");
+      expect(docs[1].rawContent).toContain("Implement gradient descent from scratch.");
     });
   });
 

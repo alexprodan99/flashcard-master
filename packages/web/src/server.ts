@@ -2747,18 +2747,29 @@ export class WebServer {
 
           // 7. Single Source Update (PATCH) / Delete (DELETE): /api/sources/:id
           if (pathname.startsWith("/api/sources/") && pathname !== "/api/sources/upload") {
-            const id = pathname.slice("/api/sources/".length);
+            let id = pathname.slice("/api/sources/".length);
+            try {
+              id = decodeURIComponent(id);
+            } catch {}
 
             if (method === "DELETE") {
-              const deleted = this.options.sourceRepo.delete(id);
-              this.sendJson(res, deleted ? 200 : 404, { success: deleted });
+              try {
+                const deleted = this.options.sourceRepo.delete(id);
+                this.sendJson(res, deleted ? 200 : 404, { success: deleted });
+              } catch (err: any) {
+                this.sendJson(res, 500, { error: err.message || "Failed to delete source" });
+              }
               return;
             }
 
             if (method === "PATCH" || method === "PUT") {
-              const body = await this.parseBody(req);
-              const updated = this.options.sourceRepo.update(id, body);
-              this.sendJson(res, updated ? 200 : 404, updated || { error: "Source not found" });
+              try {
+                const body = await this.parseBody(req);
+                const updated = this.options.sourceRepo.update(id, body);
+                this.sendJson(res, updated ? 200 : 404, updated || { error: "Source not found" });
+              } catch (err: any) {
+                this.sendJson(res, 500, { error: err.message || "Failed to update source" });
+              }
               return;
             }
           }

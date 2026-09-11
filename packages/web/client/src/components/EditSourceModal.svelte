@@ -270,7 +270,7 @@
                 <input type="checkbox" bind:checked={notionRecursive} />
                 <span class="checkbox-text">
                   <strong>Include subpages as separate documents</strong>
-                  <small>Recursively crawls child pages (up to 3 levels deep) and ingests each as a discrete document.</small>
+                  <small>Recursively crawls child pages (up to 6 levels deep) and ingests each as a discrete document.</small>
                 </span>
               </label>
             </div>

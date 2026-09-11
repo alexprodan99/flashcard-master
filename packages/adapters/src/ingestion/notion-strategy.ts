@@ -188,7 +188,7 @@ export class NotionStrategy implements IngestionStrategy {
     this.notionClient = options.notionClient;
     this.timeoutMs = options.timeoutMs ?? 10000;
     this.customFetch = options.customFetch;
-    this.defaultRecursiveDepth = options.defaultRecursiveDepth ?? 3;
+    this.defaultRecursiveDepth = options.defaultRecursiveDepth ?? 6;
   }
 
   /**
@@ -254,11 +254,23 @@ export class NotionStrategy implements IngestionStrategy {
 
     // Determine if recursive subpage crawl is requested via URI parameter or tag
     let isRecursive = Array.isArray(source.tags) && source.tags.includes("recursive");
+    let maxDepthLimit = this.defaultRecursiveDepth;
+
     try {
       if (/^https?:\/\//i.test(source.uri)) {
         const parsed = new URL(source.uri);
-        if (parsed.searchParams.get("recursive") === "true" || parsed.searchParams.get("recursive") === "1") {
+        const recParam = parsed.searchParams.get("recursive");
+        if (recParam === "true" || recParam === "1") {
           isRecursive = true;
+        } else if (recParam && !isNaN(parseInt(recParam, 10)) && parseInt(recParam, 10) > 0) {
+          isRecursive = true;
+          maxDepthLimit = Math.max(1, Math.min(10, parseInt(recParam, 10)));
+        }
+
+        const depthParam = parsed.searchParams.get("depth") || parsed.searchParams.get("max_depth");
+        if (depthParam && !isNaN(parseInt(depthParam, 10)) && parseInt(depthParam, 10) > 0) {
+          isRecursive = true;
+          maxDepthLimit = Math.max(1, Math.min(10, parseInt(depthParam, 10)));
         }
       }
     } catch {}
@@ -298,7 +310,7 @@ export class NotionStrategy implements IngestionStrategy {
       );
     }
 
-    return this.fetchPage(client, source, canonicalId, pageMeta, isRecursive);
+    return this.fetchPage(client, source, canonicalId, pageMeta, isRecursive, maxDepthLimit);
   }
 
   /**
@@ -411,11 +423,12 @@ export class NotionStrategy implements IngestionStrategy {
     source: DataSource,
     pageId: string,
     pageMeta: any,
-    isRecursive: boolean
+    isRecursive: boolean,
+    maxDepthLimit?: number
   ): Promise<RawDocument[]> {
-    const maxDepth = isRecursive ? this.defaultRecursiveDepth : 0;
+    const maxDepth = isRecursive ? (maxDepthLimit ?? this.defaultRecursiveDepth) : 0;
     const visited = new Set<string>();
-    return this.crawlPageAndSubpages(client, source, pageId, pageMeta, maxDepth, 0, visited);
+    return this.crawlPageAndSubpages(client, source, pageId, pageMeta, maxDepth, 0, visited, []);
   }
 
   private async crawlPageAndSubpages(
@@ -426,8 +439,7 @@ export class NotionStrategy implements IngestionStrategy {
     maxDepth: number,
     currentDepth: number,
     visited: Set<string>,
-    parentTitle?: string,
-    parentUrl?: string
+    breadcrumbs: Array<{ title: string; url: string; id: string }> = []
   ): Promise<RawDocument[]> {
     if (!pageMeta || typeof pageMeta !== "object") return [];
 
@@ -441,12 +453,14 @@ export class NotionStrategy implements IngestionStrategy {
     const pageUrl = pageMeta.url || `https://www.notion.so/${pageId.replace(/-/g, "")}`;
     const publishedAt = safeIsoDate(pageMeta.last_edited_time || pageMeta.created_time);
 
-    const { markdown: renderedMarkdown, childPageIds } = await this.renderPageBlocksToMarkdown(client, pageId, pageUrl);
+    const { markdown: renderedMarkdown, childPageIds, childDatabaseIds } = await this.renderPageBlocksToMarkdown(client, pageId, pageUrl);
 
-    // Prepend parent provenance breadcrumb when available
+    // Prepend multi-level parent provenance breadcrumbs when available
     let markdown = renderedMarkdown;
-    if (parentTitle && parentUrl) {
-      markdown = `*Parent: [${parentTitle}](${parentUrl})*\n\n${markdown}`;
+    if (breadcrumbs.length > 0) {
+      const parentBreadcrumb = breadcrumbs[breadcrumbs.length - 1];
+      const hierarchyTrail = breadcrumbs.map((b) => `[${b.title}](${b.url})`).join(" ➔ ");
+      markdown = `*Parent Hierarchy: ${hierarchyTrail}*\n*Parent: [${parentBreadcrumb.title}](${parentBreadcrumb.url})*\n\n${markdown}`;
     }
 
     const docId = crypto
@@ -467,27 +481,51 @@ export class NotionStrategy implements IngestionStrategy {
       },
     ];
 
-    if (currentDepth < maxDepth && childPageIds.length > 0) {
-      for (const childId of childPageIds) {
-        const childKey = childId.replace(/-/g, "").toLowerCase();
-        if (visited.has(childKey)) continue;
+    if (currentDepth < maxDepth) {
+      const nextBreadcrumbs = [...breadcrumbs, { title, url: pageUrl, id: pageId }];
 
-        try {
-          const childMeta = await client.pages.retrieve({ page_id: childId });
-          const subDocs = await this.crawlPageAndSubpages(
-            client,
-            source,
-            childId,
-            childMeta,
-            maxDepth,
-            currentDepth + 1,
-            visited,
-            title,
-            pageUrl
-          );
-          docs.push(...subDocs);
-        } catch {
-          // Gracefully skip inaccessible or deleted child pages
+      // 1. Crawl child pages
+      if (childPageIds.length > 0) {
+        for (const childId of childPageIds) {
+          const childKey = childId.replace(/-/g, "").toLowerCase();
+          if (visited.has(childKey)) continue;
+
+          try {
+            const childMeta = await client.pages.retrieve({ page_id: childId });
+            const subDocs = await this.crawlPageAndSubpages(
+              client,
+              source,
+              childId,
+              childMeta,
+              maxDepth,
+              currentDepth + 1,
+              visited,
+              nextBreadcrumbs
+            );
+            docs.push(...subDocs);
+          } catch {
+            // Gracefully skip inaccessible or deleted child pages
+          }
+        }
+      }
+
+      // 2. Crawl child databases if any
+      if (childDatabaseIds && childDatabaseIds.length > 0) {
+        for (const dbId of childDatabaseIds) {
+          const dbKey = dbId.replace(/-/g, "").toLowerCase();
+          if (visited.has(dbKey)) continue;
+          visited.add(dbKey);
+
+          try {
+            const dbDocs = await this.fetchDatabase(client, source, dbId);
+            for (const dbDoc of dbDocs) {
+              const hierarchyTrail = nextBreadcrumbs.map((b) => `[${b.title}](${b.url})`).join(" ➔ ");
+              dbDoc.rawContent = `*Parent Hierarchy: ${hierarchyTrail}*\n*Parent: [${title}](${pageUrl})*\n\n${dbDoc.rawContent}`;
+              docs.push(dbDoc);
+            }
+          } catch {
+            // Gracefully skip inaccessible child databases
+          }
         }
       }
     }
@@ -558,15 +596,19 @@ export class NotionStrategy implements IngestionStrategy {
     client: Client,
     pageId: string,
     originUrl: string
-  ): Promise<{ markdown: string; childPageIds: string[] }> {
+  ): Promise<{ markdown: string; childPageIds: string[]; childDatabaseIds: string[] }> {
     const blocks = await this.fetchAllChildBlocks(client, pageId);
     const childPageIds: string[] = [];
+    const childDatabaseIds: string[] = [];
     const renderedParts: string[] = [];
 
     for (const block of blocks) {
-      const { text, childPageIds: ids } = await this.renderBlock(client, block, originUrl);
+      const { text, childPageIds: ids, childDatabaseIds: dbIds } = await this.renderBlock(client, block, originUrl);
       if (ids && ids.length > 0) {
         childPageIds.push(...ids);
+      }
+      if (dbIds && dbIds.length > 0) {
+        childDatabaseIds.push(...dbIds);
       }
       if (text && text.trim().length > 0) {
         renderedParts.push(text);
@@ -576,6 +618,7 @@ export class NotionStrategy implements IngestionStrategy {
     return {
       markdown: renderedParts.join("\n\n"),
       childPageIds,
+      childDatabaseIds,
     };
   }
 
@@ -588,7 +631,7 @@ export class NotionStrategy implements IngestionStrategy {
     client: Client,
     block: any,
     originUrl: string
-  ): Promise<{ text: string; childPageIds?: string[] }> {
+  ): Promise<{ text: string; childPageIds?: string[]; childDatabaseIds?: string[] }> {
     if (!block || !block.type) {
       return { text: "" };
     }
@@ -607,6 +650,7 @@ export class NotionStrategy implements IngestionStrategy {
         const headingText = renderRichText(content?.rich_text);
         let fullText = `${level} ${headingText}`;
         const childPageIds: string[] = [];
+        const childDatabaseIds: string[] = [];
 
         if (content?.is_toggleable && block.has_children) {
           try {
@@ -614,47 +658,52 @@ export class NotionStrategy implements IngestionStrategy {
             for (const child of children) {
               const res = await this.renderBlock(client, child, originUrl);
               if (res.childPageIds) childPageIds.push(...res.childPageIds);
+              if (res.childDatabaseIds) childDatabaseIds.push(...res.childDatabaseIds);
               if (res.text) fullText += `\n> ${res.text.replace(/\n/g, "\n> ")}`;
             }
           } catch {}
         }
-        return { text: fullText, childPageIds };
+        return { text: fullText, childPageIds, childDatabaseIds };
       }
 
       case "bulleted_list_item": {
         let text = `- ${renderRichText(block.bulleted_list_item?.rich_text)}`;
         const childPageIds: string[] = [];
+        const childDatabaseIds: string[] = [];
         if (block.has_children) {
           try {
             const children = await this.fetchAllChildBlocks(client, block.id);
             for (const child of children) {
               const res = await this.renderBlock(client, child, originUrl);
               if (res.childPageIds) childPageIds.push(...res.childPageIds);
+              if (res.childDatabaseIds) childDatabaseIds.push(...res.childDatabaseIds);
               if (res.text) {
                 text += `\n  ${res.text.replace(/\n/g, "\n  ")}`;
               }
             }
           } catch {}
         }
-        return { text, childPageIds };
+        return { text, childPageIds, childDatabaseIds };
       }
 
       case "numbered_list_item": {
         let text = `1. ${renderRichText(block.numbered_list_item?.rich_text)}`;
         const childPageIds: string[] = [];
+        const childDatabaseIds: string[] = [];
         if (block.has_children) {
           try {
             const children = await this.fetchAllChildBlocks(client, block.id);
             for (const child of children) {
               const res = await this.renderBlock(client, child, originUrl);
               if (res.childPageIds) childPageIds.push(...res.childPageIds);
+              if (res.childDatabaseIds) childDatabaseIds.push(...res.childDatabaseIds);
               if (res.text) {
                 text += `\n   ${res.text.replace(/\n/g, "\n   ")}`;
               }
             }
           } catch {}
         }
-        return { text, childPageIds };
+        return { text, childPageIds, childDatabaseIds };
       }
 
       case "to_do": {
@@ -667,6 +716,7 @@ export class NotionStrategy implements IngestionStrategy {
         const summary = renderRichText(block.toggle?.rich_text);
         let innerText = "";
         const childPageIds: string[] = [];
+        const childDatabaseIds: string[] = [];
         if (block.has_children) {
           try {
             const children = await this.fetchAllChildBlocks(client, block.id);
@@ -674,6 +724,7 @@ export class NotionStrategy implements IngestionStrategy {
             for (const child of children) {
               const res = await this.renderBlock(client, child, originUrl);
               if (res.childPageIds) childPageIds.push(...res.childPageIds);
+              if (res.childDatabaseIds) childDatabaseIds.push(...res.childDatabaseIds);
               if (res.text) childTexts.push(res.text);
             }
             innerText = childTexts.join("\n");
@@ -682,6 +733,7 @@ export class NotionStrategy implements IngestionStrategy {
         return {
           text: innerText ? `> **${summary}**\n> ${innerText.replace(/\n/g, "\n> ")}` : `> **${summary}**`,
           childPageIds,
+          childDatabaseIds,
         };
       }
 
@@ -770,6 +822,15 @@ export class NotionStrategy implements IngestionStrategy {
         };
       }
 
+      case "child_database": {
+        const title = block.child_database?.title || "Untitled Database";
+        const link = `https://www.notion.so/${block.id.replace(/-/g, "")}`;
+        return {
+          text: `🗄️ [${title}](${link})`,
+          childDatabaseIds: [block.id],
+        };
+      }
+
       case "bookmark": {
         const url = block.bookmark?.url || "";
         return { text: url ? `[${url}](${url})` : "" };
@@ -785,6 +846,7 @@ export class NotionStrategy implements IngestionStrategy {
       case "column":
       case "synced_block": {
         const childPageIds: string[] = [];
+        const childDatabaseIds: string[] = [];
         const renderedTexts: string[] = [];
         if (block.has_children) {
           try {
@@ -792,11 +854,12 @@ export class NotionStrategy implements IngestionStrategy {
             for (const child of children) {
               const res = await this.renderBlock(client, child, originUrl);
               if (res.childPageIds) childPageIds.push(...res.childPageIds);
+              if (res.childDatabaseIds) childDatabaseIds.push(...res.childDatabaseIds);
               if (res.text) renderedTexts.push(res.text);
             }
           } catch {}
         }
-        return { text: renderedTexts.join("\n\n"), childPageIds };
+        return { text: renderedTexts.join("\n\n"), childPageIds, childDatabaseIds };
       }
 
       default: {
