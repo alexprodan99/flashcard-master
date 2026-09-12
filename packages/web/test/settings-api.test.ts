@@ -479,4 +479,63 @@ describe("Settings Keys REST API (/api/settings/keys)", () => {
       expect(data.message).toContain("Verification failed: Unexpected internal fault");
     });
   });
+
+  describe("Logging & Diagnostics Settings REST API (/api/settings/logging)", () => {
+    it("returns default logging settings on GET /api/settings/logging", async () => {
+      const res = await fetch(`${serverUrl}/api/settings/logging`);
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.verbose).toBe(false);
+      expect(data.logLevel).toBe("info");
+    });
+
+    it("updates verbosity to true on PUT /api/settings/logging", async () => {
+      const res = await fetch(`${serverUrl}/api/settings/logging`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ verbose: true }),
+      });
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.success).toBe(true);
+      expect(data.verbose).toBe(true);
+      expect(data.logLevel).toBe("debug");
+
+      // Verify persisted in service
+      expect(settingsService.isVerboseLogging()).toBe(true);
+      expect(settingsService.getLogLevel()).toBe("debug");
+
+      // Verify GET returns updated settings
+      const getRes = await fetch(`${serverUrl}/api/settings/logging`);
+      const getData = await getRes.json();
+      expect(getData.verbose).toBe(true);
+      expect(getData.logLevel).toBe("debug");
+    });
+
+    it("updates logLevel to 'warn' and disables verbose mode", async () => {
+      settingsService.setVerboseLogging(true);
+
+      const res = await fetch(`${serverUrl}/api/settings/logging`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ logLevel: "warn" }),
+      });
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.success).toBe(true);
+      expect(data.logLevel).toBe("warn");
+      expect(data.verbose).toBe(false);
+    });
+
+    it("rejects invalid log level with 400 Bad Request", async () => {
+      const res = await fetch(`${serverUrl}/api/settings/logging`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ logLevel: "invalid-level" }),
+      });
+      expect(res.status).toBe(400);
+      const data = await res.json();
+      expect(data.error).toContain("Field 'logLevel' must be one of: debug, info, warn, error");
+    });
+  });
 });

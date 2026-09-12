@@ -200,4 +200,50 @@ export class SettingsService {
   deleteSetting(key: string): boolean {
     return this.settingsRepo.delete(key);
   }
+
+  isVerboseLogging(): boolean {
+    const dbVal = this.settingsRepo.get("verbose_logging");
+    if (dbVal !== null) {
+      return dbVal === "true" || dbVal === "1";
+    }
+    const envVal = this.env.VERBOSE || this.env.DEBUG || this.env.LOG_LEVEL;
+    return (
+      envVal === "true" ||
+      envVal === "1" ||
+      envVal === "*" ||
+      (typeof envVal === "string" && envVal.toLowerCase() === "debug")
+    );
+  }
+
+  setVerboseLogging(enabled: boolean): void {
+    this.settingsRepo.set("verbose_logging", enabled ? "true" : "false");
+    if (enabled) {
+      this.settingsRepo.set("log_level", "debug");
+    } else if (this.settingsRepo.get("log_level") === "debug") {
+      this.settingsRepo.set("log_level", "info");
+    }
+  }
+
+  getLogLevel(): "debug" | "info" | "warn" | "error" {
+    const dbVal = this.settingsRepo.get("log_level");
+    if (dbVal && ["debug", "info", "warn", "error"].includes(dbVal.toLowerCase())) {
+      return dbVal.toLowerCase() as "debug" | "info" | "warn" | "error";
+    }
+    if (this.isVerboseLogging()) {
+      return "debug";
+    }
+    return "info";
+  }
+
+  setLogLevel(level: string): void {
+    const norm = (level || "").trim().toLowerCase();
+    if (["debug", "info", "warn", "error"].includes(norm)) {
+      this.settingsRepo.set("log_level", norm);
+      if (norm === "debug") {
+        this.settingsRepo.set("verbose_logging", "true");
+      } else {
+        this.settingsRepo.set("verbose_logging", "false");
+      }
+    }
+  }
 }

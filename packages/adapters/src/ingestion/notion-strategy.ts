@@ -1,6 +1,7 @@
 import { Client, LogLevel } from "@notionhq/client";
 import type {
   IngestionStrategy,
+  IngestionOptions,
   DataSource,
   RawDocument,
   CleanTextDocument,
@@ -242,13 +243,14 @@ export class NotionStrategy implements IngestionStrategy {
   /**
    * Fetches Notion resources, auto-detecting Databases vs Pages.
    */
-  async fetch(source: DataSource, lastSync?: SyncState): Promise<RawDocument[]> {
+  async fetch(source: DataSource, lastSync?: SyncState, options?: IngestionOptions): Promise<RawDocument[]> {
     const rawId = extractNotionId(source.uri);
     if (!rawId) {
       throw new Error(`Could not extract a valid Notion ID from source URI: "${sanitizeUri(source.uri)}"`);
     }
 
     const canonicalId = formatNotionUuid(rawId);
+    options?.onLog?.("info", `[Notion] Resolving source "${source.name}" (ID: ${canonicalId})...`);
     const token = this.resolveToken(source);
     const client = this.getClient(token);
 
@@ -278,11 +280,18 @@ export class NotionStrategy implements IngestionStrategy {
       isRecursive = true;
     }
 
+    options?.onLog?.(
+      "debug",
+      `[Notion] Recursive crawl mode: ${isRecursive} (max depth limit: ${maxDepthLimit})`
+    );
+
     // Step 1: Auto-detection - Try Database retrieval first
     let isDatabase = false;
+    options?.onLog?.("debug", `[Notion] Checking if resource ${canonicalId} is a Database...`);
     try {
       await client.databases.retrieve({ database_id: canonicalId });
       isDatabase = true;
+      options?.onLog?.("info", `[Notion] Resource identified as Database`);
     } catch (err: any) {
       // Fast-fail on authentication or rate limit errors
       if (
@@ -297,10 +306,11 @@ export class NotionStrategy implements IngestionStrategy {
     }
 
     if (isDatabase) {
-      return this.fetchDatabase(client, source, canonicalId, lastSync);
+      return this.fetchDatabase(client, source, canonicalId, lastSync, options);
     }
 
     // Step 2: Retrieve Page
+    options?.onLog?.("debug", `[Notion] Retrieving page metadata for ${canonicalId}...`);
     let pageMeta: any = null;
     try {
       pageMeta = await client.pages.retrieve({ page_id: canonicalId });
@@ -310,7 +320,10 @@ export class NotionStrategy implements IngestionStrategy {
       );
     }
 
-    return this.fetchPage(client, source, canonicalId, pageMeta, isRecursive, maxDepthLimit);
+    const pageTitle = this.extractTitleFromProperties(pageMeta?.properties) || "Untitled Notion Document";
+    options?.onLog?.("info", `[Notion] Target root page identified: "${pageTitle}"`);
+
+    return this.fetchPage(client, source, canonicalId, pageMeta, isRecursive, maxDepthLimit, options);
   }
 
   /**
@@ -320,7 +333,8 @@ export class NotionStrategy implements IngestionStrategy {
     client: Client,
     source: DataSource,
     databaseId: string,
-    lastSync?: SyncState
+    lastSync?: SyncState,
+    options?: IngestionOptions
   ): Promise<RawDocument[]> {
     let filter: any = undefined;
     if (lastSync?.lastSyncedAt && !isNaN(Date.parse(lastSync.lastSyncedAt))) {
@@ -373,6 +387,8 @@ export class NotionStrategy implements IngestionStrategy {
       cursor = response?.has_more && response?.next_cursor ? response.next_cursor : undefined;
     } while (cursor);
 
+    options?.onLog?.("info", `[Notion] Database query returned ${results.length} total item(s)`);
+
     const documents: RawDocument[] = [];
 
     for (const page of results) {
@@ -382,6 +398,8 @@ export class NotionStrategy implements IngestionStrategy {
       const tags = extractTagsFromProperties(page.properties);
       const pageUrl = page.url || `https://www.notion.so/${page.id.replace(/-/g, "")}`;
       const publishedAt = safeIsoDate(page.last_edited_time || page.created_time);
+
+      options?.onLog?.("debug", `[Notion] Ingesting database item: "${title}"`);
 
       let markdown = "";
       try {
@@ -424,11 +442,12 @@ export class NotionStrategy implements IngestionStrategy {
     pageId: string,
     pageMeta: any,
     isRecursive: boolean,
-    maxDepthLimit?: number
+    maxDepthLimit?: number,
+    options?: IngestionOptions
   ): Promise<RawDocument[]> {
     const maxDepth = isRecursive ? (maxDepthLimit ?? this.defaultRecursiveDepth) : 0;
     const visited = new Set<string>();
-    return this.crawlPageAndSubpages(client, source, pageId, pageMeta, maxDepth, 0, visited, []);
+    return this.crawlPageAndSubpages(client, source, pageId, pageMeta, maxDepth, 0, visited, [], options);
   }
 
   private async crawlPageAndSubpages(
@@ -439,7 +458,8 @@ export class NotionStrategy implements IngestionStrategy {
     maxDepth: number,
     currentDepth: number,
     visited: Set<string>,
-    breadcrumbs: Array<{ title: string; url: string; id: string }> = []
+    breadcrumbs: Array<{ title: string; url: string; id: string }> = [],
+    options?: IngestionOptions
   ): Promise<RawDocument[]> {
     if (!pageMeta || typeof pageMeta !== "object") return [];
 
@@ -453,7 +473,14 @@ export class NotionStrategy implements IngestionStrategy {
     const pageUrl = pageMeta.url || `https://www.notion.so/${pageId.replace(/-/g, "")}`;
     const publishedAt = safeIsoDate(pageMeta.last_edited_time || pageMeta.created_time);
 
+    options?.onLog?.("info", `[Notion] Crawling page "${title}" (depth ${currentDepth}/${maxDepth})`);
+
     const { markdown: renderedMarkdown, childPageIds, childDatabaseIds } = await this.renderPageBlocksToMarkdown(client, pageId, pageUrl);
+
+    options?.onLog?.(
+      "debug",
+      `[Notion] "${title}": found ${childPageIds.length} child page(s), ${childDatabaseIds?.length || 0} child database(s)`
+    );
 
     // Prepend multi-level parent provenance breadcrumbs when available
     let markdown = renderedMarkdown;
@@ -461,6 +488,7 @@ export class NotionStrategy implements IngestionStrategy {
       const parentBreadcrumb = breadcrumbs[breadcrumbs.length - 1];
       const hierarchyTrail = breadcrumbs.map((b) => `[${b.title}](${b.url})`).join(" ➔ ");
       markdown = `*Parent Hierarchy: ${hierarchyTrail}*\n*Parent: [${parentBreadcrumb.title}](${parentBreadcrumb.url})*\n\n${markdown}`;
+      options?.onLog?.("debug", `[Notion] Hierarchy trail for "${title}": ${hierarchyTrail}`);
     }
 
     const docId = crypto
@@ -500,11 +528,13 @@ export class NotionStrategy implements IngestionStrategy {
               maxDepth,
               currentDepth + 1,
               visited,
-              nextBreadcrumbs
+              nextBreadcrumbs,
+              options
             );
             docs.push(...subDocs);
           } catch {
             // Gracefully skip inaccessible or deleted child pages
+            options?.onLog?.("warn", `[Notion] Inaccessible or deleted child page: ${childId}`);
           }
         }
       }
@@ -517,7 +547,8 @@ export class NotionStrategy implements IngestionStrategy {
           visited.add(dbKey);
 
           try {
-            const dbDocs = await this.fetchDatabase(client, source, dbId);
+            options?.onLog?.("info", `[Notion] Crawling child database ${dbId} inside "${title}"`);
+            const dbDocs = await this.fetchDatabase(client, source, dbId, undefined, options);
             for (const dbDoc of dbDocs) {
               const hierarchyTrail = nextBreadcrumbs.map((b) => `[${b.title}](${b.url})`).join(" ➔ ");
               dbDoc.rawContent = `*Parent Hierarchy: ${hierarchyTrail}*\n*Parent: [${title}](${pageUrl})*\n\n${dbDoc.rawContent}`;
@@ -525,6 +556,7 @@ export class NotionStrategy implements IngestionStrategy {
             }
           } catch {
             // Gracefully skip inaccessible child databases
+            options?.onLog?.("warn", `[Notion] Inaccessible or deleted child database: ${dbId}`);
           }
         }
       }

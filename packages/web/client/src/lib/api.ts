@@ -9,6 +9,7 @@ import type {
   ProviderVerificationResult,
   SecretProvider,
   KeySource,
+  LoggingSettings,
 } from './types.js';
 
 export async function fetchStats(): Promise<DashboardStats> {
@@ -440,6 +441,31 @@ export async function testSettingsKey(payload: {
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || 'Connection test failed');
+  }
+  return res.json();
+}
+
+export async function fetchLoggingSettings(): Promise<LoggingSettings> {
+  const res = await fetch('/api/settings/logging');
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to fetch logging settings');
+  }
+  return res.json();
+}
+
+export async function updateLoggingSettings(payload: {
+  verbose?: boolean;
+  logLevel?: 'debug' | 'info' | 'warn' | 'error';
+}): Promise<{ success: boolean; verbose: boolean; logLevel: 'debug' | 'info' | 'warn' | 'error' }> {
+  const res = await fetch('/api/settings/logging', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to update logging settings');
   }
   return res.json();
 }

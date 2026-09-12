@@ -1,8 +1,14 @@
-import type { DataSource, RawDocument, CleanTextDocument, SyncState, Flashcard, DifficultyLevel, ImageQuality, Setting, ProviderVerificationResult, SecretProvider } from "../domain/models.js";
+import type { DataSource, RawDocument, CleanTextDocument, SyncState, Flashcard, DifficultyLevel, ImageQuality, Setting, ProviderVerificationResult, SecretProvider, JobLogLevel } from "../domain/models.js";
+
+export interface IngestionOptions {
+  onLog?: (level: JobLogLevel, message: string, details?: Record<string, any>) => void;
+  signal?: AbortSignal;
+  verbose?: boolean;
+}
 
 export interface IngestionStrategy {
   readonly type: DataSource["type"];
-  fetch(source: DataSource, lastSync?: SyncState): Promise<RawDocument[]>;
+  fetch(source: DataSource, lastSync?: SyncState, options?: IngestionOptions): Promise<RawDocument[]>;
   extractCleanText(raw: RawDocument): CleanTextDocument;
 }
 

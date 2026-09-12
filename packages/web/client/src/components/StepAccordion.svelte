@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Job, JobLog } from '../lib/types';
+  import { taskStore, toastStore } from '../stores/index.js';
 
   interface Props {
     job: Job;
@@ -70,6 +71,33 @@
     }
   }
 
+  function copyJobLogs(e: MouseEvent) {
+    e.stopPropagation();
+    const payload = {
+      jobId: job.id,
+      title: getJobTitle(job),
+      type: job.type,
+      status: job.status,
+      startedAt: job.createdAt,
+      completedAt: job.completedAt,
+      logs: logs.map((l) => ({
+        timestamp: l.timestamp,
+        level: l.level,
+        step: l.stepTitle || (l as any).step,
+        message: l.message,
+        details: l.details,
+      })),
+    };
+    navigator.clipboard
+      .writeText(JSON.stringify(payload, null, 2))
+      .then(() => {
+        toastStore.success(`📋 Copied logs for "${getJobTitle(job)}"`);
+      })
+      .catch(() => {
+        toastStore.error('Failed to copy logs to clipboard');
+      });
+  }
+
   // Calculate percentage
   let progressPercent = $derived.by(() => {
     if (job.status === 'completed' || job.status === 'completed_with_warnings') return 100;
@@ -84,11 +112,23 @@
     return job.status === 'running' ? 25 : 0;
   });
 
+  // Filter logs based on verbosity: when isVerbose is false, debug logs are hidden
+  let visibleLogs = $derived.by(() => {
+    if (!logs || logs.length === 0) return [];
+    if (taskStore.isVerbose) return logs;
+    return logs.filter((l) => l.level !== 'debug');
+  });
+
+  let hiddenDebugCount = $derived.by(() => {
+    if (!logs || logs.length === 0 || taskStore.isVerbose) return 0;
+    return logs.filter((l) => l.level === 'debug').length;
+  });
+
   // Group logs into unique chronological steps or fallback to sequential logs
   let groupedSteps = $derived.by(() => {
-    if (!logs || logs.length === 0) return [];
+    if (visibleLogs.length === 0) return [];
     const stepsMap: Record<string, JobLog[]> = {};
-    for (const l of logs) {
+    for (const l of visibleLogs) {
       const key = (l as any).stepTitle || (l as any).step || 'General';
       if (!stepsMap[key]) stepsMap[key] = [];
       stepsMap[key].push(l);
@@ -208,7 +248,36 @@
       {/if}
 
       <div class="pipeline-section">
-        <h4 class="section-title">Execution Pipeline Logs ({logs.length} events)</h4>
+        <div class="pipeline-header-row">
+          <h4 class="section-title">
+            Execution Pipeline Logs ({visibleLogs.length} visible / {logs.length} total)
+          </h4>
+          {#if logs.length > 0}
+            <button
+              type="button"
+              class="btn-copy-logs"
+              onclick={copyJobLogs}
+              title="Copy all logs for this task"
+            >
+              📋 Copy Job Logs
+            </button>
+          {/if}
+        </div>
+
+        {#if hiddenDebugCount > 0}
+          <div class="debug-hidden-notice">
+            <span class="debug-notice-text">
+              🐞 {hiddenDebugCount} low-level debug trace{hiddenDebugCount === 1 ? '' : 's'} hidden
+            </span>
+            <button
+              type="button"
+              class="btn-inline-verbose"
+              onclick={() => taskStore.toggleVerbose()}
+            >
+              Reveal Debug Logs
+            </button>
+          </div>
+        {/if}
 
         {#if groupedSteps.length === 0}
           <div class="empty-logs">
@@ -599,8 +668,71 @@
   }
 
   .log-badge.debug {
-    background: rgba(148, 163, 184, 0.2);
+    background: rgba(99, 102, 241, 0.25);
+    color: #a5b4fc;
+    border: 1px solid rgba(99, 102, 241, 0.4);
+  }
+
+  .log-badge.success {
+    background: rgba(16, 185, 129, 0.2);
+    color: #34d399;
+  }
+
+  .pipeline-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+
+  .btn-copy-logs {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
     color: #94a3b8;
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-copy-logs:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: #f1f5f9;
+  }
+
+  .debug-hidden-notice {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    background: rgba(99, 102, 241, 0.08);
+    border: 1px dashed rgba(99, 102, 241, 0.3);
+    border-radius: 6px;
+    padding: 6px 10px;
+    margin-bottom: 10px;
+    font-size: 11px;
+  }
+
+  .debug-notice-text {
+    color: #a5b4fc;
+  }
+
+  .btn-inline-verbose {
+    background: rgba(99, 102, 241, 0.2);
+    border: 1px solid rgba(99, 102, 241, 0.4);
+    color: #c7d2fe;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-inline-verbose:hover {
+    background: rgba(99, 102, 241, 0.4);
+    color: #ffffff;
   }
 
   .log-message {

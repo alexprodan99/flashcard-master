@@ -9,6 +9,8 @@ import {
   saveSettingsKey,
   deleteSettingsKey,
   testSettingsKey,
+  fetchLoggingSettings,
+  updateLoggingSettings,
 } from '../lib/api.js';
 import { toastStore } from './toastStore.svelte.js';
 
@@ -59,6 +61,9 @@ export class SettingsStore {
   testingProvider = $state<Record<SecretProvider, boolean>>(createInitialBooleans());
   testResults = $state<Record<SecretProvider, ProviderVerificationResult | null>>(createInitialResults());
   hasLoaded = $state(false);
+  verbose = $state(false);
+  logLevel = $state<'debug' | 'info' | 'warn' | 'error'>('info');
+  savingLogging = $state(false);
 
   async loadKeys(): Promise<void> {
     this.loading = true;
@@ -68,11 +73,37 @@ export class SettingsStore {
       if (data && data.keys) {
         this.keys = { ...createInitialKeys(), ...data.keys };
       }
+      await this.loadLogging();
     } catch (err: any) {
       this.error = err.message || 'Failed to load settings';
     } finally {
       this.loading = false;
       this.hasLoaded = true;
+    }
+  }
+
+  async loadLogging(): Promise<void> {
+    try {
+      const data = await fetchLoggingSettings();
+      if (data) {
+        this.verbose = data.verbose;
+        this.logLevel = data.logLevel;
+      }
+    } catch {}
+  }
+
+  async updateLogging(payload: { verbose?: boolean; logLevel?: 'debug' | 'info' | 'warn' | 'error' }): Promise<void> {
+    this.savingLogging = true;
+    try {
+      const res = await updateLoggingSettings(payload);
+      this.verbose = res.verbose;
+      this.logLevel = res.logLevel;
+      toastStore.success(`Logging settings updated: Verbose ${res.verbose ? 'ON' : 'OFF'}, Level ${res.logLevel.toUpperCase()}`);
+    } catch (err: any) {
+      toastStore.error(err.message || 'Failed to update logging settings');
+      throw err;
+    } finally {
+      this.savingLogging = false;
     }
   }
 

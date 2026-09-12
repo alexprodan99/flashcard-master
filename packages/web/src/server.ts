@@ -31,7 +31,7 @@ import {
   CardGenerationService,
 } from "@flashcard-master/core";
 import { createLLMAdapter, DocumentExportService, ProviderVerifier } from "@flashcard-master/adapters";
-import { JobManager, type ConcurrencyLimits } from "./jobs/index.js";
+import { JobManager, type ConcurrencyLimits, type JobManagerOptions } from "./jobs/index.js";
 import { WorkerExecutor } from "./workers/index.js";
 
 export type ExportFormat = "apkg" | "csv" | "tsv" | "markdown" | "html" | "pdf";
@@ -55,7 +55,7 @@ export interface WebServerOptions {
   settingsRepo?: SettingsRepository;
   settingsService?: SettingsService;
   providerVerifier?: ProviderVerifierPort;
-  concurrency?: ConcurrencyLimits;
+  concurrency?: JobManagerOptions;
   ingestionService?: IngestionService;
   exportService?: ExportService;
   strategyRegistry?: StrategyRegistry;
@@ -104,7 +104,11 @@ export class WebServer {
     if (options.jobManager) {
       this.jobManager = options.jobManager;
     } else if (options.jobRepo) {
-      this.jobManager = new JobManager(options.jobRepo, options.concurrency);
+      this.jobManager = new JobManager(options.jobRepo, {
+        ...options.concurrency,
+        isVerbose: options.concurrency?.isVerbose ?? (() => this.settingsService.isVerboseLogging()),
+        logToConsole: options.concurrency?.logToConsole,
+      });
     } else {
       this.jobManager = null;
     }
@@ -3055,6 +3059,41 @@ export class WebServer {
             this.settingsService.deleteProviderSecret(provider);
             const status = this.settingsService.getKeyStatus(provider);
             this.sendJson(res, 200, { success: true, ...status });
+            return;
+          }
+
+          // 15e. GET /api/settings/logging
+          if (pathname === "/api/settings/logging" && method === "GET") {
+            const verbose = this.settingsService.isVerboseLogging();
+            const logLevel = this.settingsService.getLogLevel();
+            this.sendJson(res, 200, { verbose, logLevel });
+            return;
+          }
+
+          // 15f. PUT /api/settings/logging
+          if (pathname === "/api/settings/logging" && (method === "PUT" || method === "POST")) {
+            const body = await this.parseBody(req);
+            if (!body || typeof body !== "object") {
+              this.sendJson(res, 400, { error: "Request body must be an object." });
+              return;
+            }
+
+            if ("verbose" in body && typeof body.verbose === "boolean") {
+              this.settingsService.setVerboseLogging(body.verbose);
+            }
+
+            if ("logLevel" in body && typeof body.logLevel === "string") {
+              const level = body.logLevel.trim().toLowerCase();
+              if (!["debug", "info", "warn", "error"].includes(level)) {
+                this.sendJson(res, 400, { error: "Field 'logLevel' must be one of: debug, info, warn, error" });
+                return;
+              }
+              this.settingsService.setLogLevel(level);
+            }
+
+            const verbose = this.settingsService.isVerboseLogging();
+            const logLevel = this.settingsService.getLogLevel();
+            this.sendJson(res, 200, { success: true, verbose, logLevel });
             return;
           }
 

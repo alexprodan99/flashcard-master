@@ -248,6 +248,21 @@
     }
   }
 
+  async function handleToggleVerboseLogging() {
+    const nextVal = !settingsStore.verbose;
+    try {
+      await settingsStore.updateLogging({ verbose: nextVal });
+    } catch {}
+  }
+
+  async function handleLogLevelChange(e: Event) {
+    const select = e.target as HTMLSelectElement;
+    const nextLevel = select.value as 'debug' | 'info' | 'warn' | 'error';
+    try {
+      await settingsStore.updateLogging({ logLevel: nextLevel });
+    } catch {}
+  }
+
   async function handleTest(provider: SecretProvider) {
     const candidateKey = candidateKeys[provider].trim() || undefined;
     const candidateEndpoint = candidateEndpoints[provider].trim() || undefined;
@@ -689,6 +704,78 @@
             {/if}
           </div>
         {/each}
+      </div>
+    </section>
+
+    <!-- Logging & Diagnostics Section -->
+    <section class="settings-section" id="section-logging">
+      <div class="section-header">
+        <div class="section-title-wrap">
+          <h2 class="section-title">Terminal & Task Center Logging</h2>
+          <span class="badge badge-configured">Live Diagnostics</span>
+        </div>
+        <p class="section-desc">
+          Configure real-time log streaming for background jobs (Notion page crawling, database row inspection, card generation chunking, deduplication).
+        </p>
+      </div>
+
+      <div class="card logging-card">
+        <div class="logging-row">
+          <div class="logging-info">
+            <div class="logging-title-wrap">
+              <span class="logging-icon">🐞</span>
+              <strong class="logging-item-title">Verbose Diagnostic Mode</strong>
+            </div>
+            <p class="logging-description">
+              Emits low-level execution traces (Notion subpage recursion depth, raw block counts, local image caching, LLM generation chunks) to both the terminal console and the Task Center.
+            </p>
+          </div>
+          <div class="logging-control">
+            <button
+              type="button"
+              class="btn-toggle-switch"
+              class:checked={settingsStore.verbose}
+              onclick={handleToggleVerboseLogging}
+              disabled={settingsStore.savingLogging}
+              role="switch"
+              aria-checked={settingsStore.verbose}
+              aria-label="Toggle verbose diagnostic logging"
+            >
+              <span class="switch-handle"></span>
+            </button>
+            <span class="toggle-status-text" class:status-active={settingsStore.verbose}>
+              {settingsStore.verbose ? 'Active' : 'Off'}
+            </span>
+          </div>
+        </div>
+
+        <div class="logging-divider"></div>
+
+        <div class="logging-row">
+          <div class="logging-info">
+            <div class="logging-title-wrap">
+              <span class="logging-icon">📊</span>
+              <strong class="logging-item-title">Server Log Level</strong>
+            </div>
+            <p class="logging-description">
+              Sets the minimum severity threshold printed to the server terminal console.
+            </p>
+          </div>
+          <div class="logging-control">
+            <select
+              class="log-level-select"
+              value={settingsStore.logLevel}
+              onchange={handleLogLevelChange}
+              disabled={settingsStore.savingLogging}
+              aria-label="Select server log level"
+            >
+              <option value="debug">DEBUG (Everything / Full Traces)</option>
+              <option value="info">INFO (Standard Steps & Progress)</option>
+              <option value="warn">WARN (Warnings & Errors Only)</option>
+              <option value="error">ERROR (Errors Only)</option>
+            </select>
+          </div>
+        </div>
       </div>
     </section>
   {/if}
@@ -1299,5 +1386,131 @@
       opacity: 1;
       transform: translateY(0);
     }
+  }
+
+  .logging-card {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 20px 24px;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 12px;
+  }
+
+  .logging-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 24px;
+  }
+
+  .logging-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+  }
+
+  .logging-title-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .logging-icon {
+    font-size: 16px;
+  }
+
+  .logging-item-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #f8fafc;
+  }
+
+  .logging-description {
+    margin: 0;
+    font-size: 13px;
+    color: #94a3b8;
+    line-height: 1.4;
+  }
+
+  .logging-divider {
+    height: 1px;
+    background: #334155;
+  }
+
+  .logging-control {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+
+  .btn-toggle-switch {
+    width: 44px;
+    height: 24px;
+    border-radius: 12px;
+    background: #334155;
+    border: none;
+    cursor: pointer;
+    position: relative;
+    padding: 2px;
+    transition: background 0.2s;
+  }
+
+  .btn-toggle-switch.checked {
+    background: #6366f1;
+  }
+
+  .btn-toggle-switch:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .switch-handle {
+    display: block;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #ffffff;
+    transition: transform 0.2s;
+  }
+
+  .btn-toggle-switch.checked .switch-handle {
+    transform: translateX(20px);
+  }
+
+  .toggle-status-text {
+    font-size: 12px;
+    font-weight: 600;
+    color: #64748b;
+    min-width: 40px;
+  }
+
+  .toggle-status-text.status-active {
+    color: #a5b4fc;
+  }
+
+  .log-level-select {
+    background: #0f172a;
+    border: 1px solid #334155;
+    color: #f8fafc;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  .log-level-select:focus {
+    border-color: #6366f1;
+  }
+
+  .log-level-select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 </style>

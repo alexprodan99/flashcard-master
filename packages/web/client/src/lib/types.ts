@@ -66,7 +66,7 @@ export interface GenerationResult {
 
 export type JobType = 'generation' | 'sync_all' | 'sync_source' | 'export' | 'generate' | 'sync';
 export type JobStatus = 'queued' | 'running' | 'completed' | 'completed_with_warnings' | 'failed' | 'cancelled';
-export type JobLogLevel = 'info' | 'warn' | 'error' | 'success';
+export type JobLogLevel = 'debug' | 'info' | 'warn' | 'error' | 'success';
 
 export interface Job {
   id: string;
@@ -124,4 +124,9 @@ export interface ProviderVerificationResult {
   success: boolean;
   message: string;
   details?: Record<string, any>;
+}
+
+export interface LoggingSettings {
+  verbose: boolean;
+  logLevel: 'debug' | 'info' | 'warn' | 'error';
 }

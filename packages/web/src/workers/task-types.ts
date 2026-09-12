@@ -131,6 +131,7 @@ export type WorkerOutboundMessage =
       jobId: string;
       sourceId: string;
       stepNumber: number;
+      stepTitle?: string;
       documents: Array<{
         title: string;
         url?: string;

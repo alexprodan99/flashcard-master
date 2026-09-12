@@ -1,5 +1,5 @@
 import type { Job, JobLog, JobStatus } from '../lib/types.js';
-import { fetchJobs, fetchJobDetails, cancelJobApi, clearJobHistory } from '../lib/api.js';
+import { fetchJobs, fetchJobDetails, cancelJobApi, clearJobHistory, fetchLoggingSettings, updateLoggingSettings } from '../lib/api.js';
 import { toastStore } from './toastStore.svelte.js';
 import { generateStore } from './generateStore.svelte.js';
 import { sourcesStore } from './sourcesStore.svelte.js';
@@ -11,6 +11,7 @@ export class TaskStore {
   isDrawerOpen = $state(false);
   activeDrawerTab = $state<'active' | 'history'>('active');
   expandedJobIds = $state<Record<string, boolean>>({});
+  isVerbose = $state(false);
 
   private eventSource: EventSource | null = null;
   private reconnectTimer: any = null;
@@ -27,6 +28,20 @@ export class TaskStore {
 
   init() {
     if (typeof window === 'undefined') return;
+    if (typeof localStorage !== 'undefined') {
+      const saved = localStorage.getItem('fm_verbose_logging');
+      if (saved !== null) {
+        this.isVerbose = saved === 'true';
+      }
+    }
+    fetchLoggingSettings()
+      .then((settings) => {
+        this.isVerbose = settings.verbose;
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem('fm_verbose_logging', settings.verbose ? 'true' : 'false');
+        }
+      })
+      .catch(() => {});
     this.fetchJobs();
     this.connectSse();
   }
@@ -87,6 +102,7 @@ export class TaskStore {
           if (!this.jobLogs[log.jobId].some((l) => l.id === log.id)) {
             this.jobLogs[log.jobId] = [...this.jobLogs[log.jobId], log];
           }
+          this.logToBrowserConsole(log);
         } catch {}
       });
 
@@ -338,6 +354,49 @@ export class TaskStore {
     }
     if (!this.jobLogs[log.jobId].some((l) => l.id === log.id)) {
       this.jobLogs[log.jobId] = [...this.jobLogs[log.jobId], log];
+    }
+    this.logToBrowserConsole(log);
+  }
+
+  async toggleVerbose(): Promise<boolean> {
+    this.isVerbose = !this.isVerbose;
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('fm_verbose_logging', this.isVerbose ? 'true' : 'false');
+    }
+    try {
+      await updateLoggingSettings({ verbose: this.isVerbose });
+    } catch {}
+    return this.isVerbose;
+  }
+
+  setVerbose(enabled: boolean) {
+    this.isVerbose = enabled;
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('fm_verbose_logging', enabled ? 'true' : 'false');
+    }
+  }
+
+  private logToBrowserConsole(log: JobLog) {
+    if (typeof window === 'undefined') return;
+    if (log.level === 'debug' && !this.isVerbose) return;
+
+    const time = log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
+    const badgeStyles: Record<string, string> = {
+      debug: 'background: #6366f1; color: white; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 10px;',
+      info: 'background: #0284c7; color: white; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 10px;',
+      warn: 'background: #eab308; color: black; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 10px;',
+      error: 'background: #ef4444; color: white; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 10px;',
+      success: 'background: #22c55e; color: white; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 10px;',
+    };
+
+    const style = badgeStyles[log.level] || 'background: #64748b; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px;';
+    const metaStyle = 'color: #94a3b8; font-family: monospace; font-size: 11px;';
+    const stepInfo = log.stepTitle ? ` (${log.stepTitle})` : '';
+
+    if (log.details && Object.keys(log.details).length > 0) {
+      console.log(`%c${log.level.toUpperCase()}%c [${time}] [${log.jobId.slice(0, 8)}]${stepInfo} ${log.message}`, style, metaStyle, log.details);
+    } else {
+      console.log(`%c${log.level.toUpperCase()}%c [${time}] [${log.jobId.slice(0, 8)}]${stepInfo} ${log.message}`, style, metaStyle);
     }
   }
 

@@ -154,7 +154,7 @@ export const JobSchema = z.object({
 });
 export type Job = z.infer<typeof JobSchema>;
 
-export const JobLogLevelSchema = z.enum(["info", "warn", "error", "success"]);
+export const JobLogLevelSchema = z.enum(["debug", "info", "warn", "error", "success"]);
 export type JobLogLevel = z.infer<typeof JobLogLevelSchema>;
 
 export const JobLogSchema = z.object({

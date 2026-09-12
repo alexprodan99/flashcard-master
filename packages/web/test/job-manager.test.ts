@@ -276,4 +276,66 @@ describe("JobManager", () => {
     expect(remaining.length).toBe(1);
     expect(remaining[0].title).toBe("Active");
   });
+
+  it("supports verbose mode and console logging with debug level filtering", async () => {
+    let isVerboseActive = false;
+    const verboseManager = new JobManager(jobRepo, {
+      isVerbose: () => isVerboseActive,
+      logToConsole: true,
+    });
+
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    try {
+      let done1: () => void;
+      const p1 = new Promise<void>((r) => { done1 = r; });
+      verboseManager.once("job_completed", () => done1());
+
+      await verboseManager.enqueueJob(
+        "sync_source",
+        "Test Notion Sync",
+        { sourceId: "notion-1" },
+        async (_j, ctx) => {
+          ctx.log(1, "Inspection", "debug", "Crawling subpage depth 2");
+          ctx.log(1, "Inspection", "info", "Found 12 blocks");
+          return { success: true };
+        }
+      );
+
+      await p1;
+
+      // When isVerboseActive is false, debug log should not be printed
+      const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("[START]");
+      expect(output).toContain("[INFO]");
+      expect(output).toContain("Found 12 blocks");
+      expect(output).not.toContain("Crawling subpage depth 2");
+
+      // Now enable verbose mode
+      isVerboseActive = true;
+      consoleSpy.mockClear();
+
+      let done2: () => void;
+      const p2 = new Promise<void>((r) => { done2 = r; });
+      verboseManager.once("job_completed", () => done2());
+
+      await verboseManager.enqueueJob(
+        "sync_source",
+        "Test Notion Sync 2",
+        { sourceId: "notion-2" },
+        async (_j, ctx) => {
+          ctx.log(1, "Inspection", "debug", "Crawling subpage depth 2");
+          return { success: true };
+        }
+      );
+
+      await p2;
+
+      const output2 = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output2).toContain("[DEBUG]");
+      expect(output2).toContain("Crawling subpage depth 2");
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
 });

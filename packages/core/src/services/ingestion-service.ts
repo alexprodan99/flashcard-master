@@ -3,6 +3,7 @@ import type { DataSourceRepository } from "../storage/source-repository.js";
 import type { SyncStateRepository } from "../storage/sync-state-repository.js";
 import type { DocumentRepository } from "../storage/document-repository.js";
 import type { StrategyRegistry } from "./strategy-registry.js";
+import type { IngestionOptions } from "../ports/index.js";
 import crypto from "node:crypto";
 
 export interface SyncResult {
@@ -24,7 +25,7 @@ export class IngestionService {
     private readonly docRepo?: DocumentRepository
   ) {}
 
-  async syncSource(sourceId: string): Promise<SyncResult> {
+  async syncSource(sourceId: string, options?: IngestionOptions): Promise<SyncResult> {
     const startTime = Date.now();
     const source = this.sourceRepo.getById(sourceId);
 
@@ -55,11 +56,13 @@ export class IngestionService {
     }
 
     try {
+      options?.onLog?.("info", `Starting synchronization for "${source.name}" (${source.type})...`);
       const strategy = this.strategyRegistry.getStrategy(source.type);
       const lastSync = this.syncRepo.get(source.id) ?? undefined;
 
-      const rawDocs = await strategy.fetch(source, lastSync);
+      const rawDocs = await strategy.fetch(source, lastSync, options);
       const totalFetched = rawDocs.length;
+      options?.onLog?.("info", `Retrieved ${totalFetched} raw document(s) from "${source.name}"`);
 
       const newDocuments: CleanTextDocument[] = [];
       let latestGuid = lastSync?.lastGuid ?? null;
@@ -125,6 +128,11 @@ export class IngestionService {
         itemCount: newDocuments.length,
       });
 
+      options?.onLog?.(
+        "info",
+        `Sync finished for "${source.name}": ${newDocuments.length} new/updated document(s), ${totalFetched - newDocuments.length} unchanged`
+      );
+
       return {
         sourceId: source.id,
         sourceName: source.name,
@@ -135,6 +143,7 @@ export class IngestionService {
         durationMs: Date.now() - startTime,
       };
     } catch (err: any) {
+      options?.onLog?.("error", `Sync error for "${source.name}": ${err.message}`);
       return {
         sourceId: source.id,
         sourceName: source.name,
@@ -148,13 +157,13 @@ export class IngestionService {
     }
   }
 
-  async syncAllActive(): Promise<SyncResult[]> {
+  async syncAllActive(options?: IngestionOptions): Promise<SyncResult[]> {
     const activeSources = this.sourceRepo.list({ isActive: true });
     const results: SyncResult[] = [];
 
     for (const source of activeSources) {
       // Execute each source with isolated error handling (NFR-301)
-      const result = await this.syncSource(source.id);
+      const result = await this.syncSource(source.id, options);
       results.push(result);
     }
 

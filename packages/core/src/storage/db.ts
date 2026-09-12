@@ -86,7 +86,7 @@ CREATE TABLE IF NOT EXISTS job_logs (
     job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
     step_number INTEGER NOT NULL,
     step_title TEXT NOT NULL,
-    level TEXT NOT NULL CHECK(level IN ('info', 'warn', 'error', 'success')),
+    level TEXT NOT NULL CHECK(level IN ('debug', 'info', 'warn', 'error', 'success')),
     message TEXT NOT NULL,
     details TEXT,
     timestamp TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
@@ -388,7 +388,7 @@ export function runMigrations(db: Database.Database): void {
         job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
         step_number INTEGER NOT NULL,
         step_title TEXT NOT NULL,
-        level TEXT NOT NULL CHECK(level IN ('info', 'warn', 'error', 'success')),
+        level TEXT NOT NULL CHECK(level IN ('debug', 'info', 'warn', 'error', 'success')),
         message TEXT NOT NULL,
         details TEXT,
         timestamp TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
@@ -398,6 +398,28 @@ export function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at);
     CREATE INDEX IF NOT EXISTS idx_job_logs_job_id ON job_logs(job_id);
   `);
+
+  // Migrate job_logs table check constraint if created before 'debug' level was added
+  const jobLogsTable = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='job_logs'").get() as { sql?: string } | undefined;
+  if (jobLogsTable?.sql && !jobLogsTable.sql.includes("'debug'")) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS job_logs_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+        step_number INTEGER NOT NULL,
+        step_title TEXT NOT NULL,
+        level TEXT NOT NULL CHECK(level IN ('debug', 'info', 'warn', 'error', 'success')),
+        message TEXT NOT NULL,
+        details TEXT,
+        timestamp TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+      );
+      INSERT INTO job_logs_new (id, job_id, step_number, step_title, level, message, details, timestamp)
+        SELECT id, job_id, step_number, step_title, level, message, details, timestamp FROM job_logs;
+      DROP TABLE job_logs;
+      ALTER TABLE job_logs_new RENAME TO job_logs;
+      CREATE INDEX IF NOT EXISTS idx_job_logs_job_id ON job_logs(job_id);
+    `);
+  }
 
   // 7. Ensure app_settings table exists
   db.exec(`
