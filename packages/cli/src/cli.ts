@@ -319,7 +319,7 @@ export function createCli(providedContext?: AppContext): Command {
     .description("Generate grounded flashcards from ingested source documents")
     .option("-p, --provider <provider>", "LLM Provider (openai, gemini, anthropic, ollama)", "ollama")
     .option("-k, --api-key <key>", "Provider API Key")
-    .option("-m, --model <model>", "Model identifier (e.g. gpt-4o-mini, gemini-2.5-flash, claude-3-5-haiku-latest, phi4-mini)")
+    .option("-m, --model <model>", "Model identifier (e.g. gpt-4o-mini, gemini-3.6-flash, claude-3-5-haiku-latest, phi4-mini)")
     .option("--endpoint <endpoint>", "Custom API endpoint (e.g. for Ollama / LocalAI)")
     .option("--difficulty <level>", "Difficulty level: beginner, intermediate, expert, mixed", "intermediate")
     .option("--persona <persona>", "Prompt persona: socratic-mentor, strict-examiner, executive-synthesizer", "socratic-mentor")

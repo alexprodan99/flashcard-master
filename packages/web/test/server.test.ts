@@ -480,7 +480,7 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         provider: "gemini",
-        model: "gemini-2.5-flash",
+        model: "gemini-3.6-flash",
         apiKey: "mock-gemini-key",
         targetDeck: "Custom Generation Deck",
         limit: 2,
