@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { fetchSources, fetchSourceDocuments, fetchDocumentDetails, syncSource, generateCards, fetchJobDetails } from '../lib/api';
+  import { fetchSources, fetchSourceDocuments, fetchDocuments, fetchDocumentDetails, syncSource, generateCards, fetchJobDetails } from '../lib/api';
   import type { DataSource, DiscoveredDocument, Flashcard, GenerationResult, DifficultyLevel, PersonaType, CardDepthMode } from '../lib/types';
   import GenerationConfigFields from '../components/GenerationConfigFields.svelte';
   import DocumentPreviewModal from '../components/DocumentPreviewModal.svelte';
@@ -84,6 +84,13 @@
           generateStore.selectedSourceIds = sources.map((s) => s.id);
         }
       }
+
+      // If any sources are currently marked as expanded, ensure their documents are loaded and up to date
+      for (const s of sources) {
+        if (generateStore.expandedSources[s.id]) {
+          loadDocumentsForSource(s.id);
+        }
+      }
     } catch (err: any) {
       generateStore.errorMessage = 'Failed to load active data sources: ' + err.message;
     }
@@ -101,14 +108,24 @@
     }
   }
 
+  async function handleRefreshSourceDocuments(sourceId: string) {
+    await loadDocumentsForSource(sourceId);
+    toastStore.info(`Refreshed documents (${generateStore.sourceDocuments[sourceId]?.length || 0} found).`);
+  }
+
   async function handleToggleExpand(sourceId: string) {
     generateStore.expandedSources[sourceId] = !generateStore.expandedSources[sourceId];
-    if (generateStore.expandedSources[sourceId] && !generateStore.sourceDocuments[sourceId]) {
-      await loadDocumentsForSource(sourceId);
-      if (generateStore.selectedSourceIds.includes(sourceId) && generateStore.sourceDocuments[sourceId]) {
-        generateStore.sourceDocuments[sourceId].forEach((doc) => {
-          generateStore.selectedDocIds[doc.id] = true;
-        });
+    if (generateStore.expandedSources[sourceId]) {
+      // Reload if not loaded or if previously recorded as empty
+      if (!generateStore.sourceDocuments[sourceId] || generateStore.sourceDocuments[sourceId].length === 0) {
+        await loadDocumentsForSource(sourceId);
+        if (generateStore.selectedSourceIds.includes(sourceId) && generateStore.sourceDocuments[sourceId]) {
+          generateStore.sourceDocuments[sourceId].forEach((doc) => {
+            if (generateStore.selectedDocIds[doc.id] === undefined) {
+              generateStore.selectedDocIds[doc.id] = true;
+            }
+          });
+        }
       }
     }
   }
@@ -192,15 +209,169 @@
 
   let lastCheckedDocId = $state<string | null>(null);
 
+  // Global Scope Search across all sources & documents
+  let globalSearchQuery = $state('');
+  let globalSearchDebounce: ReturnType<typeof setTimeout> | null = null;
+  let isGlobalSearching = $state(false);
+
+  function normalizeSearchText(str: string | null | undefined): string {
+    if (!str) return '';
+    return str
+      .normalize('NFKD')
+      .replace(/[\u00a0\s]+/g, ' ')
+      .trim()
+      .toLowerCase();
+  }
+
+  const SEARCH_STOP_WORDS = new Set(['article', 'articles', 'the', 'a', 'an', 'post', 'posts', 'doc', 'docs']);
+
+  function matchesDocQuery(doc: DiscoveredDocument, rawQuery: string): boolean {
+    const q = normalizeSearchText(rawQuery);
+    if (!q) return true;
+    const allTokens = q.split(' ').filter(Boolean);
+    const nonStop = allTokens.filter((t) => !SEARCH_STOP_WORDS.has(t));
+    const tokens = nonStop.length > 0 ? nonStop : allTokens;
+
+    const titleNorm = normalizeSearchText(doc.title);
+    const urlNorm = normalizeSearchText(doc.url);
+    const textNorm = doc.textContent ? normalizeSearchText(doc.textContent.slice(0, 4000)) : '';
+
+    return tokens.every((token) => {
+      if (titleNorm.includes(token) || urlNorm.includes(token) || textNorm.includes(token)) {
+        return true;
+      }
+      // Plural/singular tolerance (e.g. 'slices' vs 'slice', 'articles' vs 'article')
+      if (token.length > 3 && token.endsWith('s')) {
+        const singular = token.slice(0, -1);
+        if (titleNorm.includes(singular) || urlNorm.includes(singular) || textNorm.includes(singular)) {
+          return true;
+        }
+      } else if (token.length > 3) {
+        const plural = token + 's';
+        if (titleNorm.includes(plural) || urlNorm.includes(plural) || textNorm.includes(plural)) {
+          return true;
+        }
+      }
+      return false;
+    });
+  }
+
+  let totalGlobalMatches = $derived.by(() => {
+    const q = globalSearchQuery.trim();
+    if (!q) return 0;
+    let count = 0;
+    for (const s of sources) {
+      const docs = generateStore.sourceDocuments[s.id] || [];
+      count += docs.filter((d) => matchesDocQuery(d, q)).length;
+    }
+    return count;
+  });
+
+  let matchingSourcesCount = $derived.by(() => {
+    const q = globalSearchQuery.trim();
+    if (!q) return 0;
+    let count = 0;
+    for (const s of sources) {
+      const docs = generateStore.sourceDocuments[s.id] || [];
+      if (docs.some((d) => matchesDocQuery(d, q)) || normalizeSearchText(s.name).includes(normalizeSearchText(q))) {
+        count++;
+      }
+    }
+    return count;
+  });
+
+  async function handleGlobalSearchInput(e: Event) {
+    globalSearchQuery = (e.target as HTMLInputElement).value;
+    if (globalSearchDebounce) clearTimeout(globalSearchDebounce);
+    const q = globalSearchQuery.trim();
+    if (!q) return;
+
+    globalSearchDebounce = setTimeout(async () => {
+      isGlobalSearching = true;
+      try {
+        const res = await fetchDocuments(undefined, q);
+        if (res.documents && res.documents.length > 0) {
+          const bySource: Record<string, DiscoveredDocument[]> = {};
+          res.documents.forEach((d) => {
+            if (!bySource[d.sourceId]) bySource[d.sourceId] = [];
+            bySource[d.sourceId].push(d);
+          });
+          for (const sId of Object.keys(bySource)) {
+            generateStore.expandedSources[sId] = true;
+            if (!generateStore.sourceDocuments[sId] || generateStore.sourceDocuments[sId].length === 0) {
+              await loadDocumentsForSource(sId);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Global search error:', err);
+      } finally {
+        isGlobalSearching = false;
+      }
+    }, 250);
+  }
+
+  function clearGlobalSearch() {
+    globalSearchQuery = '';
+    if (globalSearchDebounce) clearTimeout(globalSearchDebounce);
+  }
+
+  let traySearching = $state<Record<string, boolean>>({});
+  let traySearchDebounce: Record<string, ReturnType<typeof setTimeout>> = {};
+
+  function handleTrayFilterInput(sourceId: string, e: Event) {
+    const val = (e.target as HTMLInputElement).value;
+    generateStore.sourceFilterQuery[sourceId] = val;
+
+    if (traySearchDebounce[sourceId]) clearTimeout(traySearchDebounce[sourceId]);
+
+    const q = val.trim();
+    traySearching[sourceId] = true;
+    // Query the server directly so backend SQLite search is used as live backing (parity with Data Sources dashboard)
+    traySearchDebounce[sourceId] = setTimeout(async () => {
+      try {
+        const res = await fetchSourceDocuments(sourceId, q || undefined);
+        if (res.documents) {
+          if (q) {
+            const existing = generateStore.sourceDocuments[sourceId] || [];
+            const map = new Map(existing.map((d) => [d.id, d]));
+            res.documents.forEach((d) => map.set(d.id, d));
+            generateStore.sourceDocuments[sourceId] = Array.from(map.values());
+          } else {
+            generateStore.sourceDocuments[sourceId] = res.documents;
+          }
+        }
+      } catch (err) {
+        console.error(`Error querying documents for source ${sourceId}:`, err);
+      } finally {
+        traySearching[sourceId] = false;
+      }
+    }, 150);
+  }
+
+  function handleClearTrayFilter(sourceId: string) {
+    generateStore.sourceFilterQuery[sourceId] = '';
+    if (traySearchDebounce[sourceId]) clearTimeout(traySearchDebounce[sourceId]);
+    traySearching[sourceId] = false;
+    loadDocumentsForSource(sourceId);
+  }
+
   function getFilteredDocs(sourceId: string): DiscoveredDocument[] {
     const docs = generateStore.sourceDocuments[sourceId] || [];
-    const query = (generateStore.sourceFilterQuery[sourceId] || '').trim().toLowerCase();
+    const localQuery = (generateStore.sourceFilterQuery[sourceId] || '').trim();
+    const query = localQuery || globalSearchQuery.trim();
     if (!query) return docs;
-    return docs.filter(
-      (d) =>
-        d.title.toLowerCase().includes(query) ||
-        (d.url && d.url.toLowerCase().includes(query))
-    );
+
+    const filtered = docs.filter((d) => matchesDocQuery(d, query));
+    const qNorm = normalizeSearchText(query);
+    return filtered.sort((a, b) => {
+      const aTitle = normalizeSearchText(a.title);
+      const bTitle = normalizeSearchText(b.title);
+      const aRank = aTitle === qNorm ? 0 : aTitle.includes(qNorm) ? 1 : 2;
+      const bRank = bTitle === qNorm ? 0 : bTitle.includes(qNorm) ? 1 : 2;
+      if (aRank !== bRank) return aRank - bRank;
+      return 0;
+    });
   }
 
   function getSelectedCountForSource(sourceId: string): number {
@@ -438,9 +609,53 @@
               <span>⚠️ No active data sources found. Please add or enable a data source first.</span>
             </div>
           {:else}
+            <!-- Top-Level Global Search across all sources & documents -->
+            <div class="scope-global-search">
+              <div class="search-box-wrapper">
+                <span class="search-icon">🔍</span>
+                <input
+                  type="text"
+                  placeholder="Search across all sources & documents (by title, topic, URL)..."
+                  value={globalSearchQuery}
+                  oninput={handleGlobalSearchInput}
+                  class="scope-global-input"
+                  disabled={generateStore.isGenerating}
+                />
+                {#if isGlobalSearching}
+                  <span class="spinner-inline global-spinner"></span>
+                {/if}
+                {#if globalSearchQuery}
+                  <button
+                    type="button"
+                    class="search-clear-btn"
+                    onclick={clearGlobalSearch}
+                    title="Clear search"
+                  >
+                    ✕
+                  </button>
+                {/if}
+              </div>
+              {#if globalSearchQuery}
+                <div class="global-search-status">
+                  {#if isGlobalSearching}
+                    <span class="search-status-text">Searching database...</span>
+                  {:else if totalGlobalMatches > 0}
+                    <span class="search-status-text highlight">
+                      Found <strong>{totalGlobalMatches}</strong> matching doc{totalGlobalMatches === 1 ? '' : 's'} across <strong>{matchingSourcesCount}</strong> source{matchingSourcesCount === 1 ? '' : 's'}
+                    </span>
+                  {:else}
+                    <span class="search-status-text muted">
+                      No documents match "<em>{globalSearchQuery}</em>"
+                    </span>
+                  {/if}
+                </div>
+              {/if}
+            </div>
+
             <div class="scope-tree-container">
               {#each sources as s (s.id)}
-                <div class="source-node" class:expanded={generateStore.expandedSources[s.id]}>
+                {@const isSourceMatch = !globalSearchQuery || normalizeSearchText(s.name).includes(normalizeSearchText(globalSearchQuery)) || (generateStore.sourceDocuments[s.id] && generateStore.sourceDocuments[s.id].some((d) => matchesDocQuery(d, globalSearchQuery)))}
+                <div class="source-node" class:expanded={generateStore.expandedSources[s.id]} class:dimmed={!!globalSearchQuery && !isSourceMatch}>
                   <div class="source-node-header">
                     <label class="checkbox-container">
                       <input
@@ -460,6 +675,12 @@
                       <span class="toggle-icon">{generateStore.expandedSources[s.id] ? '▼' : '▶'}</span>
                       <span class="type-badge {s.type}">{s.type}</span>
                       <span class="source-title">{s.name}</span>
+                      {#if globalSearchQuery && generateStore.sourceDocuments[s.id]}
+                        {@const matchCount = generateStore.sourceDocuments[s.id].filter((d) => matchesDocQuery(d, globalSearchQuery)).length}
+                        {#if matchCount > 0}
+                          <span class="match-pill">🎯 {matchCount} match{matchCount === 1 ? '' : 'es'}</span>
+                        {/if}
+                      {/if}
                       {#if generateStore.sourceDocuments[s.id]}
                         {@const selCount = getSelectedCountForSource(s.id)}
                         {#if selCount > 0}
@@ -505,16 +726,20 @@
                             <span class="search-icon">🔍</span>
                             <input
                               type="text"
-                              placeholder="Filter by title or URL..."
-                              bind:value={generateStore.sourceFilterQuery[s.id]}
+                              placeholder="Filter by title, URL or text..."
+                              value={generateStore.sourceFilterQuery[s.id] || ''}
+                              oninput={(e) => handleTrayFilterInput(s.id, e)}
                               class="tray-filter-input"
                               disabled={generateStore.isGenerating}
                             />
+                            {#if traySearching[s.id]}
+                              <span class="spinner-inline tray-spinner"></span>
+                            {/if}
                             {#if generateStore.sourceFilterQuery[s.id]}
                               <button
                                 type="button"
                                 class="tray-filter-clear"
-                                onclick={() => (generateStore.sourceFilterQuery[s.id] = '')}
+                                onclick={() => handleClearTrayFilter(s.id)}
                                 title="Clear filter"
                               >
                                 ✕
@@ -530,6 +755,19 @@
                               {/if}
                             </div>
                             <div class="tray-bulk-buttons">
+                              <button
+                                type="button"
+                                class="btn-tray-action"
+                                onclick={() => handleRefreshSourceDocuments(s.id)}
+                                disabled={generateStore.loadingDocs[s.id] || generateStore.isGenerating}
+                                title="Reload latest documents from database"
+                              >
+                                {#if generateStore.loadingDocs[s.id]}
+                                  <span class="spinner-inline"></span>
+                                {:else}
+                                  🔄 Refresh
+                                {/if}
+                              </button>
                               <button
                                 type="button"
                                 class="btn-tray-action"
@@ -554,14 +792,23 @@
 
                         {#if filteredDocs.length === 0}
                           <div class="tray-no-match">
-                            <span>No documents match "<em>{generateStore.sourceFilterQuery[s.id]}</em>"</span>
-                            <button
-                              type="button"
-                              class="btn-clear-filter"
-                              onclick={() => (generateStore.sourceFilterQuery[s.id] = '')}
-                            >
-                              Reset Filter
-                            </button>
+                            <span>No documents match "<em>{generateStore.sourceFilterQuery[s.id] || globalSearchQuery}</em>"</span>
+                            <div class="no-match-actions">
+                              <button
+                                type="button"
+                                class="btn-clear-filter"
+                                onclick={() => { handleClearTrayFilter(s.id); globalSearchQuery = ''; }}
+                              >
+                                Reset Filter
+                              </button>
+                              <button
+                                type="button"
+                                class="btn-clear-filter"
+                                onclick={() => handleRefreshSourceDocuments(s.id)}
+                              >
+                                🔄 Reload Docs
+                              </button>
+                            </div>
                           </div>
                         {:else}
                           <div class="tray-doc-list">
@@ -850,6 +1097,87 @@
     font-weight: 600;
   }
 
+  /* Global Scope Search */
+  .scope-global-search {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .search-box-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+  }
+
+  .scope-global-input {
+    width: 100%;
+    background: #0b0f19;
+    border: 1px solid #334155;
+    color: #f8fafc;
+    padding: 8px 36px 8px 34px;
+    border-radius: 6px;
+    font-size: 12.5px;
+    box-sizing: border-box;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+
+  .scope-global-input:focus {
+    outline: none;
+    border-color: #6366f1;
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25);
+  }
+
+  .global-spinner {
+    position: absolute;
+    right: 32px;
+  }
+
+  .search-clear-btn {
+    position: absolute;
+    right: 8px;
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    font-size: 13px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+
+  .search-clear-btn:hover {
+    color: #f8fafc;
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .global-search-status {
+    font-size: 11.5px;
+    padding-left: 2px;
+  }
+
+  .search-status-text.highlight {
+    color: #818cf8;
+  }
+
+  .search-status-text.muted {
+    color: #94a3b8;
+  }
+
+  .match-pill {
+    font-size: 10.5px;
+    background: rgba(16, 185, 129, 0.18);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.35);
+    padding: 1px 7px;
+    border-radius: 9999px;
+    font-weight: 600;
+  }
+
+  .source-node.dimmed {
+    opacity: 0.45;
+  }
+
   /* Scope Tree */
   .scope-tree-container {
     display: flex;
@@ -1015,6 +1343,13 @@
     background: rgba(255, 255, 255, 0.1);
   }
 
+  .tray-spinner {
+    position: absolute;
+    right: 28px;
+    width: 12px;
+    height: 12px;
+  }
+
   .tray-actions-row {
     display: flex;
     justify-content: space-between;
@@ -1071,6 +1406,12 @@
     flex-direction: column;
     align-items: center;
     gap: 8px;
+  }
+
+  .no-match-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
   }
 
   .btn-clear-filter {

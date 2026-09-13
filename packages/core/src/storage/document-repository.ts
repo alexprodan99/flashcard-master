@@ -190,13 +190,8 @@ export class DocumentRepository {
     let query = "SELECT * FROM documents WHERE 1=1";
     const params: any[] = [];
 
-    if (options.search && options.search.trim().length > 0) {
-      query += " AND (title LIKE ? OR url LIKE ? OR text_content LIKE ?)";
-      const pattern = `%${options.search.trim()}%`;
-      params.push(pattern, pattern, pattern);
-    }
-
-    query += " ORDER BY created_at DESC";
+    const { whereClause, orderClause } = this.buildSearchClause(options.search, params);
+    query += whereClause + " " + orderClause;
 
     if (options.limit !== undefined) {
       query += " LIMIT ?";
@@ -215,13 +210,8 @@ export class DocumentRepository {
     let query = "SELECT * FROM documents WHERE source_id = ?";
     const params: any[] = [sourceId];
 
-    if (options.search && options.search.trim().length > 0) {
-      query += " AND (title LIKE ? OR url LIKE ? OR text_content LIKE ?)";
-      const pattern = `%${options.search.trim()}%`;
-      params.push(pattern, pattern, pattern);
-    }
-
-    query += " ORDER BY created_at DESC";
+    const { whereClause, orderClause } = this.buildSearchClause(options.search, params);
+    query += whereClause + " " + orderClause;
 
     if (options.limit !== undefined) {
       query += " LIMIT ?";
@@ -234,6 +224,46 @@ export class DocumentRepository {
 
     const rows = this.db.prepare(query).all(...params);
     return rows.map((row) => this.mapRowToDocument(row));
+  }
+
+  private buildSearchClause(rawSearch: string | undefined, params: any[]): { whereClause: string; orderClause: string } {
+    if (!rawSearch || rawSearch.trim().length === 0) {
+      return { whereClause: "", orderClause: "ORDER BY created_at DESC" };
+    }
+
+    const rawTrimmed = rawSearch.trim();
+    const stopWords = new Set(["article", "articles", "the", "a", "an", "post", "posts", "doc", "docs"]);
+    const allTokens = rawTrimmed.toLowerCase().split(/\s+/).filter(Boolean);
+    const nonStopTokens = allTokens.filter((t) => !stopWords.has(t));
+    const tokens = nonStopTokens.length > 0 ? nonStopTokens : allTokens;
+
+    let whereClause = "";
+    for (const token of tokens) {
+      let altToken: string | null = null;
+      if (token.length > 3 && token.endsWith("s")) {
+        altToken = token.slice(0, -1);
+      } else if (token.length > 3) {
+        altToken = token + "s";
+      }
+
+      if (altToken) {
+        whereClause += " AND (title LIKE ? OR url LIKE ? OR text_content LIKE ? OR title LIKE ? OR url LIKE ? OR text_content LIKE ?)";
+        const p1 = `%${token}%`;
+        const p2 = `%${altToken}%`;
+        params.push(p1, p1, p1, p2, p2, p2);
+      } else {
+        whereClause += " AND (title LIKE ? OR url LIKE ? OR text_content LIKE ?)";
+        const p = `%${token}%`;
+        params.push(p, p, p);
+      }
+    }
+
+    const cleanSearch = tokens.join(" ");
+    const singularCleanSearch = tokens.map((t) => (t.length > 3 && t.endsWith("s") ? t.slice(0, -1) : t)).join(" ");
+    const orderClause = "ORDER BY CASE WHEN lower(title) = lower(?) OR lower(title) = lower(?) THEN 1 WHEN lower(title) LIKE ? OR lower(title) LIKE ? THEN 2 ELSE 3 END, created_at DESC";
+    params.push(cleanSearch, singularCleanSearch, `%${cleanSearch}%`, `%${singularCleanSearch}%`);
+
+    return { whereClause, orderClause };
   }
 
   getDocumentCount(sourceId?: string): number {

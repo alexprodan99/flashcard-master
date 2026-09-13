@@ -2542,6 +2542,7 @@ export class WebServer {
               ).length;
               return {
                 ...doc,
+                textContent: doc.textContent && doc.textContent.length > 2000 ? doc.textContent.slice(0, 2000) : (doc.textContent || ""),
                 cardCount,
               };
             });
@@ -2569,6 +2570,7 @@ export class WebServer {
               ).length;
               return {
                 ...doc,
+                textContent: doc.textContent && doc.textContent.length > 2000 ? doc.textContent.slice(0, 2000) : (doc.textContent || ""),
                 cardCount,
               };
             });

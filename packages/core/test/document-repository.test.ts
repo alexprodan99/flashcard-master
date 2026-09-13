@@ -99,6 +99,28 @@ describe("DocumentRepository", () => {
     const textResults = docRepo.listBySourceId(testSourceId, { search: "SWIM" });
     expect(textResults.length).toBe(1);
     expect(textResults[0].title).toBe("Gossip Membership Protocols");
+
+    // Tokenized search with stop word ("article") and plural tolerance ("protocols" -> "protocol")
+    const tokenizedResults = docRepo.listBySourceId(testSourceId, { search: "paxos protocols article" });
+    expect(tokenizedResults.length).toBe(1);
+    expect(tokenizedResults[0].title).toBe("Paxos Protocol Explained");
+
+    // Exact title ranking
+    docRepo.upsert({
+      id: "doc-exact",
+      sourceId: testSourceId,
+      title: "Consensus",
+      textContent: "Short note on consensus.",
+    });
+    docRepo.upsert({
+      id: "doc-longer",
+      sourceId: testSourceId,
+      title: "Consensus in Distributed Systems: The Complete Guide",
+      textContent: "Deep dive on consensus.",
+    });
+
+    const ranked = docRepo.listBySourceId(testSourceId, { search: "Consensus" });
+    expect(ranked[0].title).toBe("Consensus");
   });
 
   it("cascades deletion when parent data source is removed", () => {
