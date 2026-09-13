@@ -658,7 +658,7 @@ export class WebServer {
 
             <div class="form-group">
               <label>2. Model Identifier (or type custom model)</label>
-              <input class="form-input" id="gen-model" value="phi4-mini" placeholder="e.g. phi4-mini, gemini-2.0-flash, gpt-4o-mini" required />
+              <input class="form-input" id="gen-model" value="phi4-mini" placeholder="e.g. phi4-mini, gemini-2.5-flash, gpt-4o-mini" required />
             </div>
 
             <div class="form-group" id="gen-apikey-container" style="display: none;">
@@ -1412,7 +1412,7 @@ export class WebServer {
         modelInput.value = 'phi4-mini';
         apiKeyContainer.style.display = 'none';
       } else if (provider === 'gemini') {
-        modelInput.value = 'gemini-2.0-flash';
+        modelInput.value = 'gemini-2.5-flash';
         apiKeyContainer.style.display = 'flex';
       } else if (provider === 'openai') {
         modelInput.value = 'gpt-4o-mini';

@@ -103,7 +103,7 @@ export class GenerateStore {
     if (newProvider === 'ollama') {
       this.model = 'phi4-mini';
     } else if (newProvider === 'gemini') {
-      this.model = 'gemini-2.0-flash';
+      this.model = 'gemini-2.5-flash';
     } else if (newProvider === 'openai') {
       this.model = 'gpt-4o-mini';
     } else if (newProvider === 'anthropic') {

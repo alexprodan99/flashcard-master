@@ -45,7 +45,7 @@
 
   const providerDefaults: Record<string, { model: string; showApiKey: boolean }> = {
     ollama: { model: 'phi4-mini', showApiKey: false },
-    gemini: { model: 'gemini-2.0-flash', showApiKey: true },
+    gemini: { model: 'gemini-2.5-flash', showApiKey: true },
     openai: { model: 'gpt-4o-mini', showApiKey: true },
     anthropic: { model: 'claude-haiku-4-5-20251001', showApiKey: true },
   };
@@ -135,7 +135,7 @@
           type="text"
           bind:value={model}
           onchange={savePreferences}
-          placeholder="e.g. phi4-mini, gpt-4o-mini, gemini-2.0-flash"
+          placeholder="e.g. phi4-mini, gpt-4o-mini, gemini-2.5-flash"
           required
         />
       </div>
