@@ -64,7 +64,7 @@ ${text}`;
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
             responseMimeType: "application/json",
-            maxOutputTokens: 4096,
+            maxOutputTokens: 8192,
             temperature: 0.2,
           },
         }),
@@ -82,9 +82,31 @@ ${text}`;
       }
 
       const json = await response.json();
-      const rawText = json.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!rawText) {
+      const candidate = json.candidates?.[0];
+      if (!candidate) {
+        throw new LLMResponseParsingError(this.providerName, "No candidate response returned from Gemini.");
+      }
+
+      if (candidate.finishReason === "SAFETY") {
+        throw new LLMResponseParsingError(this.providerName, "Generation blocked by Gemini safety filters.");
+      }
+      if (candidate.finishReason === "RECITATION") {
+        throw new LLMResponseParsingError(this.providerName, "Generation blocked by Gemini recitation check.");
+      }
+
+      const parts = candidate.content?.parts;
+      if (!parts || !Array.isArray(parts) || parts.length === 0) {
         throw new LLMResponseParsingError(this.providerName, "Empty content response from Gemini.");
+      }
+
+      // Filter out internal reasoning/thought parts (which have thought: true in newer models)
+      const textParts = parts.filter((p: any) => !p.thought && typeof p.text === "string");
+      const fallbackParts = parts.filter((p: any) => typeof p.text === "string");
+      const targetParts = textParts.length > 0 ? textParts : fallbackParts;
+
+      const rawText = targetParts.map((p: any) => p.text).join("").trim();
+      if (!rawText) {
+        throw new LLMResponseParsingError(this.providerName, "Empty text content in Gemini response.");
       }
 
       return parseCardDraftsFromJson(rawText, this.providerName);

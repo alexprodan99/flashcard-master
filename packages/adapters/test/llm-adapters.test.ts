@@ -121,6 +121,61 @@ describe("LLM Provider Adapters", () => {
       expect(drafts.length).toBe(1);
       expect(drafts[0].answer).toBe("Write-Ahead Logging");
     });
+
+    it("filters out internal thought parts from thinking models and preserves the JSON draft", async () => {
+      const mockFetch = async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          candidates: [
+            {
+              content: {
+                parts: [
+                  { thought: true, text: "Let's think step by step. We need to create flashcards about WAL." },
+                  { text: SAMPLE_DRAFT_RESPONSE },
+                ],
+              },
+            },
+          ],
+        }),
+      }) as any;
+
+      const adapter = new GeminiAdapter({ apiKey: "gemini-key", customFetch: mockFetch });
+      const drafts = await adapter.generateQAPairs("sample text", {
+        difficulty: "intermediate",
+        personaPrompt: "test",
+      });
+
+      expect(drafts.length).toBe(1);
+      expect(drafts[0].question).toBe("What does WAL stand for in SQLite?");
+    });
+
+    it("concatenates multiple candidate text parts into unified JSON", async () => {
+      const part1 = '[{"question": "What is WAL?", "answer": "Write-';
+      const part2 = 'Ahead Logging", "sourceQuote": "SQLite utilizes WAL.", "difficulty": "intermediate"}]';
+      const mockFetch = async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          candidates: [
+            {
+              content: {
+                parts: [{ text: part1 }, { text: part2 }],
+              },
+            },
+          ],
+        }),
+      }) as any;
+
+      const adapter = new GeminiAdapter({ apiKey: "gemini-key", customFetch: mockFetch });
+      const drafts = await adapter.generateQAPairs("sample text", {
+        difficulty: "intermediate",
+        personaPrompt: "test",
+      });
+
+      expect(drafts.length).toBe(1);
+      expect(drafts[0].answer).toBe("Write-Ahead Logging");
+    });
   });
 
   describe("AnthropicAdapter", () => {
@@ -241,6 +296,24 @@ describe("LLM Provider Adapters", () => {
       expect(drafts[0].question).toBe("How to run the CLI?");
       expect(drafts[0].sourceQuote).toContain('agy --model="claude-3-5"');
       expect(drafts[0].difficulty).toBe("expert");
+    });
+
+    it("extracts cards containing C# code snippets with nested curly braces, raw newlines, and unescaped quotes", async () => {
+      const { parseCardDraftsFromJson } = await import("../src/llm/types.js");
+      const csharpJson = `[
+        {
+          "question": "How do you check if a user has the "admin" role in claims?",
+          "answer": "You define a transformation:\\npublic class MyTransformation : IClaimsTransformation {\\n    public Task<ClaimsPrincipal> TransformAsync(ClaimsPrincipal principal) {\\n        if (principal.HasClaim(c => c.Type == \\"role\\")) {\\n            return Task.FromResult(principal);\\n        }\\n    }\\n}",
+          "sourceQuote": "public class MyTransformation : IClaimsTransformation { }",
+          "difficulty": "intermediate"
+        }
+      ]`;
+
+      const drafts = parseCardDraftsFromJson(csharpJson, "gemini");
+      expect(drafts.length).toBe(1);
+      expect(drafts[0].question).toContain('the "admin" role');
+      expect(drafts[0].answer).toContain("IClaimsTransformation");
+      expect(drafts[0].answer).toContain("TransformAsync");
     });
 
     it("extracts cards formatted as Claude XML tags", async () => {
