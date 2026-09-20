@@ -171,7 +171,7 @@ development_status:
   16-4-progressive-sse-streaming-and-token-limit-retention: done
   16-5-legacy-sanitizer-deprecation-and-monorepo-test-suite: done
   16-6-question-explorer-keywords-and-anki-export-integration: done
-  epic-16-retrospective: optional
+  epic-16-retrospective: done
 action_items:
   - id: "epic-14-retro-item-1-add-progressive-exponential-backoff-and"
     epic: 14
