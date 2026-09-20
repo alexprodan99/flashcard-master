@@ -75,7 +75,14 @@ describe("AnkiPackageExporter", () => {
       expect(notes[0].flds).toContain("What is WAL mode in SQLite?");
       expect(notes[0].flds).toContain("Write-Ahead Logging provides");
       expect(notes[0].flds).toContain("Source Citation");
-      expect(notes[0].tags).toBe("sqlite databases");
+      expect(notes[0].flds).toContain("<em>(WAL Docs)</em>");
+      expect(notes[0].flds).toContain("Keywords:");
+      expect(notes[0].flds).toContain('<span class="keyword-badge">wal</span>');
+      expect(notes[0].tags).toBe("sqlite databases wal");
+
+      // Verify second note keywords with hyphenation if any
+      expect(notes[1].tags).toBe("raft consensus");
+      expect(notes[1].flds).toContain("<em>(Raft Paper Section 1)</em>");
 
       const cards = db.prepare("SELECT * FROM cards").all() as any[];
       expect(cards.length).toBe(2);

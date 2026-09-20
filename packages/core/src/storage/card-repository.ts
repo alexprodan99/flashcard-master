@@ -184,8 +184,8 @@ export class FlashcardRepository {
       params.push(filter.difficulty);
     }
     if (filter.search) {
-      conditions.push("(question LIKE ? OR answer LIKE ?)");
-      params.push(`%${filter.search}%`, `%${filter.search}%`);
+      conditions.push("(question LIKE ? OR answer LIKE ? OR keywords LIKE ? OR source_locator LIKE ?)");
+      params.push(`%${filter.search}%`, `%${filter.search}%`, `%${filter.search}%`, `%${filter.search}%`);
     }
 
     let sql = "SELECT * FROM flashcards";

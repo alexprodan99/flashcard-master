@@ -160,6 +160,21 @@ export class AnkiPackageExporter implements ExporterPort {
             border-left: 3px solid #2563eb;
             padding-left: 12px;
             font-style: italic;
+          }
+          .keywords {
+            margin-top: 14px;
+            font-size: 12px;
+            color: #475569;
+            text-align: left;
+          }
+          .keyword-badge {
+            background-color: #e0e7ff;
+            color: #3730a3;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+            display: inline-block;
+            margin: 2px 2px 2px 0;
           }`,
           req: [[0, "all", [0]]],
         },
@@ -221,13 +236,24 @@ export class AnkiPackageExporter implements ExporterPort {
           let backHtml = this.escapeHtml(c.answer);
 
           if (includeCitation && c.sourceQuote) {
-            backHtml += `<div class="citation"><strong>Source Citation:</strong> "${this.escapeHtml(c.sourceQuote)}"</div>`;
+            const locatorHtml = c.sourceLocator ? ` <em>(${this.escapeHtml(c.sourceLocator)})</em>` : "";
+            backHtml += `<div class="citation"><strong>Source Citation:</strong> "${this.escapeHtml(c.sourceQuote)}"${locatorHtml}</div>`;
+          }
+
+          if (c.keywords && c.keywords.length > 0) {
+            const kwBadges = c.keywords.map((k) => `<span class="keyword-badge">${this.escapeHtml(k)}</span>`).join(" ");
+            backHtml += `<div class="keywords"><strong>Keywords:</strong> ${kwBadges}</div>`;
           }
 
           const flds = `${frontHtml}\x1f${backHtml}`;
           const sfld = c.question;
           const csum = this.computeFieldChecksum(sfld);
-          const tagsStr = (c.tags || []).join(" ");
+
+          const keywordTags = (c.keywords || [])
+            .map((k) => k.trim().replace(/\s+/g, "-"))
+            .filter(Boolean);
+          const allTags = Array.from(new Set([...(c.tags || []), ...keywordTags]));
+          const tagsStr = allTags.join(" ");
 
           insertNote.run(
             noteId,

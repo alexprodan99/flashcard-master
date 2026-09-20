@@ -415,4 +415,38 @@ describe("FlashcardRepository", () => {
       })
     ).toThrow();
   });
+
+  it("searches and updates cards with keywords and sourceLocator", () => {
+    const card = cardRepo.create({
+      question: "What is Raft?",
+      answer: "A consensus protocol.",
+      sourceQuote: "Raft is a consensus protocol designed for understandability.",
+      keywords: ["raft", "consensus", "state machine"],
+      sourceLocator: "Section 5.2",
+      targetDeck: "Distributed",
+      tags: ["distributed-systems"],
+    });
+
+    // Search by keyword
+    const byKeyword = cardRepo.list({ search: "consensus" });
+    expect(byKeyword.length).toBe(1);
+    expect(byKeyword[0].id).toBe(card.id);
+
+    // Search by locator
+    const byLocator = cardRepo.list({ search: "Section 5.2" });
+    expect(byLocator.length).toBe(1);
+    expect(byLocator[0].id).toBe(card.id);
+
+    // Update keywords and locator
+    const updated = cardRepo.update(card.id, {
+      keywords: ["paxos", "consensus"],
+      sourceLocator: "Chapter 7",
+    });
+    expect(updated?.keywords).toEqual(["paxos", "consensus"]);
+    expect(updated?.sourceLocator).toBe("Chapter 7");
+
+    const reloaded = cardRepo.getById(card.id);
+    expect(reloaded?.keywords).toEqual(["paxos", "consensus"]);
+    expect(reloaded?.sourceLocator).toBe("Chapter 7");
+  });
 });

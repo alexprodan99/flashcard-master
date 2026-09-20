@@ -210,6 +210,47 @@ describe('Svelte 5 Universal Client Stores (Epic 14.4)', () => {
       expect(store.cards.length).toBe(1);
       expect(store.selectedIds).not.toContain('c1');
     });
+
+    it('supports keywords and sourceLocator in card updates and search filtering', () => {
+      const store = new ExplorerStore();
+      const mockCard: Flashcard = {
+        id: 'card-kw-1',
+        sourceId: 's1',
+        question: 'What is Raft algorithm?',
+        answer: 'A consensus algorithm.',
+        sourceQuote: 'Raft manages replicated logs.',
+        keywords: ['consensus', 'replicated log', 'leader election'],
+        sourceLocator: 'Section 5.1',
+        difficulty: 'intermediate',
+        personaUsed: 'socratic-mentor',
+        targetDeck: 'Distributed Systems',
+        tags: ['systems'],
+        createdAt: '',
+        updatedAt: '',
+      };
+
+      store.setCards([mockCard]);
+      expect(store.cards[0].keywords).toEqual(['consensus', 'replicated log', 'leader election']);
+      expect(store.cards[0].sourceLocator).toBe('Section 5.1');
+
+      // Update card with new keywords and locator
+      store.updateCard({
+        ...mockCard,
+        keywords: ['consensus', 'heartbeat'],
+        sourceLocator: 'Section 5.2',
+      });
+      expect(store.cards[0].keywords).toEqual(['consensus', 'heartbeat']);
+      expect(store.cards[0].sourceLocator).toBe('Section 5.2');
+
+      // Filter simulation logic (matching QuestionExplorer.svelte)
+      const q1 = 'heartbeat';
+      const matchKeywords = (store.cards[0].keywords || []).some((k) => k.toLowerCase().includes(q1));
+      expect(matchKeywords).toBe(true);
+
+      const q2 = 'section 5.2';
+      const matchLocator = (store.cards[0].sourceLocator || '').toLowerCase().includes(q2);
+      expect(matchLocator).toBe(true);
+    });
   });
 
   describe('ExportStore', () => {
