@@ -166,8 +166,8 @@ development_status:
 
   epic-16: in-progress
   16-1-enriched-flashcard-schema-and-sqlite-migration: done
-  16-2-central-zod-to-provider-dialect-compiler: ready-for-dev
-  16-3-provider-adapters-native-structured-output-migration: backlog
+  16-2-central-zod-to-provider-dialect-compiler: done
+  16-3-provider-adapters-native-structured-output-migration: ready-for-dev
   16-4-progressive-sse-streaming-and-token-limit-retention: backlog
   16-5-legacy-sanitizer-deprecation-and-monorepo-test-suite: backlog
   epic-16-retrospective: optional
