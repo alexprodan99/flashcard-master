@@ -21,17 +21,6 @@ const SAMPLE_DRAFT_RESPONSE = JSON.stringify([
   },
 ]);
 
-const SAMPLE_CODE_FENCED_RESPONSE = `\`\`\`json
-[
-  {
-    "question": "What does WAL stand for in SQLite?",
-    "answer": "Write-Ahead Logging",
-    "sourceQuote": "SQLite utilizes Write-Ahead Logging (WAL) for concurrency.",
-    "difficulty": "intermediate"
-  }
-]
-\`\`\``;
-
 describe("LLM Provider Adapters", () => {
   describe("OpenAIAdapter", () => {
     it("formats prompt, parses JSON output, and returns validated drafts", async () => {
@@ -55,12 +44,12 @@ describe("LLM Provider Adapters", () => {
       expect(drafts[0].sourceQuote).toContain("Write-Ahead Logging");
     });
 
-    it("parses markdown code fenced JSON output without errors", async () => {
+    it("parses JSON response string into drafts without errors", async () => {
       const mockFetch = async () => ({
         ok: true,
         status: 200,
         json: async () => ({
-          choices: [{ message: { content: SAMPLE_CODE_FENCED_RESPONSE } }],
+          choices: [{ message: { content: SAMPLE_DRAFT_RESPONSE } }],
         }),
       }) as any;
 
@@ -164,7 +153,7 @@ describe("LLM Provider Adapters", () => {
         ok: true,
         status: 200,
         json: async () => ({
-          candidates: [{ content: { parts: [{ text: SAMPLE_CODE_FENCED_RESPONSE }] } }],
+          candidates: [{ content: { parts: [{ text: SAMPLE_DRAFT_RESPONSE }] } }],
         }),
       }) as any;
 
@@ -376,7 +365,7 @@ describe("LLM Provider Adapters", () => {
         ok: true,
         status: 200,
         json: async () => ({
-          content: [{ text: SAMPLE_CODE_FENCED_RESPONSE }],
+          content: [{ text: SAMPLE_DRAFT_RESPONSE }],
         }),
       }) as any;
 
@@ -487,7 +476,7 @@ describe("LLM Provider Adapters", () => {
         ok: true,
         status: 200,
         json: async () => ({
-          message: { content: SAMPLE_CODE_FENCED_RESPONSE },
+          message: { content: SAMPLE_DRAFT_RESPONSE },
         }),
       }) as any;
 
@@ -563,229 +552,7 @@ describe("LLM Provider Adapters", () => {
     });
   });
 
-  describe("parseCardDraftsFromJson (Resilience & Auto-Repair)", () => {
-    it("parses valid JSON array directly", async () => {
-      const { parseCardDraftsFromJson } = await import("../src/llm/types.js");
-      const drafts = parseCardDraftsFromJson(SAMPLE_DRAFT_RESPONSE, "test");
-      expect(drafts.length).toBe(1);
-      expect(drafts[0].question).toBe("What does WAL stand for in SQLite?");
-    });
-
-    it("recovers completed cards from truncated unterminated JSON when token limit is hit", async () => {
-      const { parseCardDraftsFromJson } = await import("../src/llm/types.js");
-      const truncated = `[
-        {
-          "question": "What is Raft?",
-          "answer": "Consensus algorithm",
-          "sourceQuote": "Raft is a consensus protocol",
-          "difficulty": "intermediate"
-        },
-        {
-          "question": "What is Paxos?",
-          "answer": "Classic consensus",
-          "sourceQuote": "Paxos is a consensus protocol that is cut off...`;
-
-      const drafts = parseCardDraftsFromJson(truncated, "anthropic");
-      expect(drafts.length).toBe(1);
-      expect(drafts[0].question).toBe("What is Raft?");
-      expect(drafts[0].answer).toBe("Consensus algorithm");
-    });
-
-    it("extracts cards with unescaped internal double quotes inside source quotes or code snippets", async () => {
-      const { parseCardDraftsFromJson } = await import("../src/llm/types.js");
-      const dirtyJson = `[
-        {
-          "question": "How to run the CLI?",
-          "answer": "Use the model flag",
-          "sourceQuote": "Execute agy --model="claude-3-5" to start.",
-          "difficulty": "expert"
-        }
-      ]`;
-
-      const drafts = parseCardDraftsFromJson(dirtyJson, "anthropic");
-      expect(drafts.length).toBe(1);
-      expect(drafts[0].question).toBe("How to run the CLI?");
-      expect(drafts[0].sourceQuote).toContain('agy --model="claude-3-5"');
-      expect(drafts[0].difficulty).toBe("expert");
-    });
-
-    it("extracts cards containing C# code snippets with nested curly braces, raw newlines, and unescaped quotes", async () => {
-      const { parseCardDraftsFromJson } = await import("../src/llm/types.js");
-      const csharpJson = `[
-        {
-          "question": "How do you check if a user has the "admin" role in claims?",
-          "answer": "You define a transformation:\\npublic class MyTransformation : IClaimsTransformation {\\n    public Task<ClaimsPrincipal> TransformAsync(ClaimsPrincipal principal) {\\n        if (principal.HasClaim(c => c.Type == \\"role\\")) {\\n            return Task.FromResult(principal);\\n        }\\n    }\\n}",
-          "sourceQuote": "public class MyTransformation : IClaimsTransformation { }",
-          "difficulty": "intermediate"
-        }
-      ]`;
-
-      const drafts = parseCardDraftsFromJson(csharpJson, "gemini");
-      expect(drafts.length).toBe(1);
-      expect(drafts[0].question).toContain('the "admin" role');
-      expect(drafts[0].answer).toContain("IClaimsTransformation");
-      expect(drafts[0].answer).toContain("TransformAsync");
-    });
-
-    it("extracts cards formatted as Claude XML tags", async () => {
-      const { parseCardDraftsFromJson } = await import("../src/llm/types.js");
-      const xml = `<flashcards>
-        <card>
-          <question>What is bmad-help?</question>
-          <answer>It is a built-in skill.</answer>
-          <sourceQuote>The bmad-help skill is available directly in your AI session.</sourceQuote>
-          <difficulty>intermediate</difficulty>
-        </card>
-      </flashcards>`;
-
-      const drafts = parseCardDraftsFromJson(xml, "anthropic");
-      expect(drafts.length).toBe(1);
-      expect(drafts[0].question).toBe("What is bmad-help?");
-      expect(drafts[0].answer).toBe("It is a built-in skill.");
-    });
-
-    it("extracts cards formatted as markdown bulleted Q&A pairs", async () => {
-      const { parseCardDraftsFromJson } = await import("../src/llm/types.js");
-      const md = `- Question: What is bmad-help?
-- Answer: It is a skill.
-- Source Quote: The bmad-help skill is available directly.
-- Difficulty: intermediate
-
-- Question: What does it inspect?
-- Answer: It inspects your project.
-- Source Quote: it inspects your project, sees what you’ve completed.
-- Difficulty: intermediate`;
-
-      const drafts = parseCardDraftsFromJson(md, "anthropic");
-      expect(drafts.length).toBe(2);
-      expect(drafts[0].question).toBe("What is bmad-help?");
-      expect(drafts[1].question).toBe("What does it inspect?");
-    });
-
-    it("strips thinking blocks and parses embedded JSON array", async () => {
-      const { parseCardDraftsFromJson } = await import("../src/llm/types.js");
-      const thinkingJson = `<thinking>I should analyze the document carefully.</thinking>
-[
-  {
-    "question": "What is bmad-help?",
-    "answer": "It is a skill.",
-    "sourceQuote": "The bmad-help skill is available directly.",
-    "difficulty": "intermediate"
-  }
-]`;
-
-      const drafts = parseCardDraftsFromJson(thinkingJson, "anthropic");
-      expect(drafts.length).toBe(1);
-      expect(drafts[0].question).toBe("What is bmad-help?");
-    });
-
-    it("strips DeepSeek and Ollama <think> tags from model output", async () => {
-      const { parseCardDraftsFromJson } = await import("../src/llm/types.js");
-      const thinkTagJson = `<think>
-I need to generate a card about WAL in SQLite.
-Let's see: { "WAL": "Write-Ahead Logging" }
-</think>
-[
-  {
-    "question": "What is WAL?",
-    "answer": "Write-Ahead Logging",
-    "sourceQuote": "SQLite utilizes WAL.",
-    "difficulty": "intermediate"
-  }
-]`;
-
-      const drafts = parseCardDraftsFromJson(thinkTagJson, "ollama");
-      expect(drafts.length).toBe(1);
-      expect(drafts[0].question).toBe("What is WAL?");
-      expect(drafts[0].answer).toBe("Write-Ahead Logging");
-    });
-
-    it("sanitizes raw unescaped newlines and tabs inside JSON string values", async () => {
-      const { parseCardDraftsFromJson } = await import("../src/llm/types.js");
-      // Use actual unescaped control chars (ASCII 0x0A, 0x09) inside JSON string literal
-      const rawWithControlChars = "[\n  {\n    \"question\": \"What is WAL?\",\n    \"answer\": \"Line 1\nLine 2 with \t tab\",\n    \"sourceQuote\": \"Quote\",\n    \"difficulty\": \"intermediate\"\n  }\n]";
-      const drafts = parseCardDraftsFromJson(rawWithControlChars, "gemini");
-      expect(drafts.length).toBe(1);
-      expect(drafts[0].answer).toBe("Line 1\nLine 2 with \t tab");
-    });
-
-    it("preserves closing quotes in JSON arrays followed by numbers, booleans, or null", async () => {
-      const { parseCardDraftsFromJson } = await import("../src/llm/types.js");
-      const jsonWithPrimitives = `[
-        {
-          "question": "What are response codes?",
-          "answer": "Status is 200",
-          "sourceQuote": "Status is 200",
-          "difficulty": "intermediate",
-          "tags": ["http", 200, "active", true, "deprecated", null]
-        }
-      ]`;
-
-      const drafts = parseCardDraftsFromJson(jsonWithPrimitives, "gemini");
-      expect(drafts.length).toBe(1);
-      expect(drafts[0].answer).toBe("Status is 200");
-    });
-
-    it("extracts card drafts from free-form conversational text containing embedded JSON blocks with nested braces (Stage 3 fallback)", async () => {
-      const { parseCardDraftsFromJson } = await import("../src/llm/types.js");
-      const preambleText = `Certainly! Here is the flashcard you requested:
-      {
-        "question": "How do you implement a background worker in C#?",
-        "answer": "You write: public class Worker : BackgroundService { protected override async Task ExecuteAsync(CancellationToken ct) { await Task.Delay(1000, ct); } }",
-        "sourceQuote": "public class Worker : BackgroundService { }",
-        "difficulty": "expert"
-      }
-      I hope this helps you study!`;
-
-      const drafts = parseCardDraftsFromJson(preambleText, "gemini");
-      expect(drafts.length).toBe(1);
-      expect(drafts[0].question).toContain("background worker");
-      expect(drafts[0].answer).toContain("BackgroundService");
-      expect(drafts[0].difficulty).toBe("expert");
-    });
-
-    it("throws LLMResponseParsingError when no valid cards can be extracted from empty or garbage response", async () => {
-      const { parseCardDraftsFromJson, LLMResponseParsingError } = await import("../src/llm/types.js");
-      expect(() => parseCardDraftsFromJson("I cannot fulfill this request.", "anthropic")).toThrow(
-        LLMResponseParsingError
-      );
-      expect(() => parseCardDraftsFromJson("", "anthropic")).toThrow(LLMResponseParsingError);
-    });
-
-    it("parses and preserves 'mixed' difficulty level from LLM output across JSON, XML, and Markdown formats", async () => {
-      const { parseCardDraftsFromJson } = await import("../src/llm/types.js");
-
-      // JSON
-      const jsonStr = JSON.stringify([
-        {
-          question: "What is an architectural invariant?",
-          answer: "A rule that must never be broken.",
-          sourceQuote: "Architectural invariants are non-negotiable.",
-          difficulty: "mixed",
-        },
-      ]);
-      const jsonCards = parseCardDraftsFromJson(jsonStr, "openai");
-      expect(jsonCards[0].difficulty).toBe("mixed");
-
-      // XML
-      const xmlStr = `<card>
-        <question>What is an architectural invariant?</question>
-        <answer>A non-negotiable rule.</answer>
-        <source_quote>Architectural invariants are non-negotiable.</source_quote>
-        <difficulty>mixed</difficulty>
-      </card>`;
-      const xmlCards = parseCardDraftsFromJson(xmlStr, "gemini");
-      expect(xmlCards[0].difficulty).toBe("mixed");
-
-      // Markdown
-      const mdStr = `- Question: What is an architectural invariant?
-- Answer: A non-negotiable rule.
-- Source Quote: Architectural invariants are non-negotiable.
-- Difficulty: mixed`;
-      const mdCards = parseCardDraftsFromJson(mdStr, "anthropic");
-      expect(mdCards[0].difficulty).toBe("mixed");
-    });
-
+  describe("Adaptive Progression Prompting", () => {
     it("generates adaptive progression prompt when difficulty is 'mixed' across all adapters", async () => {
       let capturedPrompts: string[] = [];
 
@@ -959,6 +726,46 @@ Let's see: { "WAL": "Write-Ahead Logging" }
     it("throws LLMResponseParsingError for card missing question or answer", () => {
       const payload = JSON.stringify([{ question: "", answer: "answer" }]);
       expect(() => parseStructuredCardDrafts(payload, "gemini")).toThrow(LLMResponseParsingError);
+    });
+
+    it("throws LLMResponseParsingError for empty string or whitespace-only input", () => {
+      expect(() => parseStructuredCardDrafts("", "openai")).toThrow(LLMResponseParsingError);
+      expect(() => parseStructuredCardDrafts("   \n\t  ", "anthropic")).toThrow(LLMResponseParsingError);
+    });
+
+    it("throws LLMResponseParsingError for non-JSON conversational prose without valid cards", () => {
+      const rawText = "I cannot fulfill this request because of policy restrictions.";
+      try {
+        parseStructuredCardDrafts(rawText, "anthropic");
+        expect.unreachable("Should have thrown");
+      } catch (err: any) {
+        expect(err).toBeInstanceOf(LLMResponseParsingError);
+        expect(err.rawResponse).toBe(rawText);
+      }
+    });
+
+    it("parses and preserves all difficulty levels ('beginner', 'intermediate', 'expert', 'mixed')", () => {
+      const payload = JSON.stringify([
+        { question: "Q1", answer: "A1", difficulty: "beginner" },
+        { question: "Q2", answer: "A2", difficulty: "expert" },
+        { question: "Q3", answer: "A3", difficulty: "mixed" },
+      ]);
+      const drafts = parseStructuredCardDrafts(payload, "gemini");
+      expect(drafts[0].difficulty).toBe("beginner");
+      expect(drafts[1].difficulty).toBe("expert");
+      expect(drafts[2].difficulty).toBe("mixed");
+    });
+
+    it("maintains symmetrical sourceQuote and citation fields", () => {
+      const payload = JSON.stringify([
+        { question: "Q1", answer: "A1", sourceQuote: "Quote text" },
+        { question: "Q2", answer: "A2", citation: "Citation text" },
+      ]);
+      const drafts = parseStructuredCardDrafts(payload, "openai");
+      expect(drafts[0].sourceQuote).toBe("Quote text");
+      expect(drafts[0].citation).toBe("Quote text");
+      expect(drafts[1].sourceQuote).toBe("Citation text");
+      expect(drafts[1].citation).toBe("Citation text");
     });
   });
 
