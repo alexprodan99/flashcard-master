@@ -90,6 +90,7 @@ if (parentPort) {
       limit = 5,
       targetDeckOverride,
       enforceGrounding = true,
+      timeoutMs,
     } = payload;
 
     const isLocalOpenAI = provider === "openai" && typeof endpoint === "string" && (endpoint.includes("localhost") || endpoint.includes("127.0.0.1") || endpoint.includes("::1"));
@@ -115,6 +116,7 @@ if (parentPort) {
       model,
       apiKey: resolvedKey,
       baseUrl: endpoint,
+      timeoutMs: typeof timeoutMs === "number" && timeoutMs > 0 ? timeoutMs : undefined,
     });
 
     const genService = new CardGenerationService(

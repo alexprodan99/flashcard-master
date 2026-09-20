@@ -34,6 +34,7 @@ export interface GenerationTaskPayload {
   limit?: number;
   targetDeckOverride?: string;
   enforceGrounding?: boolean;
+  timeoutMs?: number;
 }
 
 export interface SyncTaskPayload {

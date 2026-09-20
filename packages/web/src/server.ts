@@ -2272,6 +2272,7 @@ export class WebServer {
                         limit,
                         targetDeckOverride,
                         enforceGrounding,
+                        timeoutMs: typeof body?.timeoutMs === "number" && body.timeoutMs > 0 ? body.timeoutMs : undefined,
                       },
                     },
                     ctx
@@ -2291,7 +2292,13 @@ export class WebServer {
 
             try {
               const createLLMFn = this.options.createLLMAdapterFn || createLLMAdapter;
-              const llm = createLLMFn({ provider, model, apiKey, baseUrl });
+              const llm = createLLMFn({
+                provider,
+                model,
+                apiKey,
+                baseUrl,
+                timeoutMs: typeof body?.timeoutMs === "number" && body.timeoutMs > 0 ? body.timeoutMs : undefined,
+              });
               const genService = new CardGenerationService(
                 llm,
                 undefined,

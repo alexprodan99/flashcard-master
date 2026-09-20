@@ -26,7 +26,7 @@ export class GeminiAdapter implements LLMProviderPort {
     this.apiKey = config.apiKey;
     this.model = config.model || "gemini-3.6-flash";
     this.baseUrl = config.baseUrl || "https://generativelanguage.googleapis.com/v1beta";
-    this.timeoutMs = config.timeoutMs ?? 30000;
+    this.timeoutMs = config.timeoutMs ?? 120000;
     this.fetchFn = config.customFetch ?? globalThis.fetch;
   }
 

@@ -26,7 +26,7 @@ export class OpenAIAdapter implements LLMProviderPort {
     this.apiKey = config.apiKey;
     this.model = config.model || "gpt-4o-mini";
     this.baseUrl = config.baseUrl || "https://api.openai.com/v1";
-    this.timeoutMs = config.timeoutMs ?? 30000;
+    this.timeoutMs = config.timeoutMs ?? 120000;
     this.fetchFn = config.customFetch ?? globalThis.fetch;
   }
 
