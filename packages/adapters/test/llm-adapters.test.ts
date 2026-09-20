@@ -4,7 +4,13 @@ import { GeminiAdapter } from "../src/llm/gemini-adapter.js";
 import { AnthropicAdapter } from "../src/llm/anthropic-adapter.js";
 import { OllamaAdapter } from "../src/llm/ollama-adapter.js";
 import { createLLMAdapter } from "../src/llm/llm-factory.js";
-import { LLMAuthenticationError, LLMRateLimitError } from "../src/llm/types.js";
+import {
+  LLMAuthenticationError,
+  LLMRateLimitError,
+  LLMNetworkError,
+  LLMResponseParsingError,
+  parseStructuredCardDrafts,
+} from "../src/llm/types.js";
 
 const SAMPLE_DRAFT_RESPONSE = JSON.stringify([
   {
@@ -67,6 +73,56 @@ describe("LLM Provider Adapters", () => {
 
       expect(drafts.length).toBe(1);
       expect(drafts[0].answer).toBe("Write-Ahead Logging");
+    });
+
+    it("transmits strict json_schema response_format and extracts cards with enriched fields", async () => {
+      let capturedBody: any;
+      const mockFetch = async (_url: string, init: any) => {
+        capturedBody = JSON.parse(init.body);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    cards: [
+                      {
+                        question: "What is an inverted index in search engines?",
+                        answer: "A database index storing mapping from words to their document locations.",
+                        citation: "An inverted index is an index data structure storing a mapping from content.",
+                        keywords: ["search", "inverted index", "retrieval"],
+                        sourceLocator: "Chapter 4, Section 2",
+                        difficulty: "intermediate",
+                      },
+                    ],
+                  }),
+                },
+              },
+            ],
+          }),
+        };
+      };
+
+      const adapter = new OpenAIAdapter({ apiKey: "sk-test", customFetch: mockFetch as any });
+      const drafts = await adapter.generateQAPairs("Sample search document", {
+        difficulty: "intermediate",
+        personaPrompt: "You are a search systems expert.",
+        targetCount: 1,
+      });
+
+      expect(capturedBody.response_format.type).toBe("json_schema");
+      expect(capturedBody.response_format.json_schema.name).toBe("flashcards");
+      expect(capturedBody.response_format.json_schema.strict).toBe(true);
+      expect(capturedBody.response_format.json_schema.schema.properties.cards.type).toBe("array");
+
+      expect(drafts.length).toBe(1);
+      expect(drafts[0].question).toContain("inverted index");
+      expect(drafts[0].keywords).toEqual(["search", "inverted index", "retrieval"]);
+      expect(drafts[0].sourceLocator).toBe("Chapter 4, Section 2");
+      expect(drafts[0].citation).toContain("mapping from content");
+      expect(drafts[0].sourceQuote).toContain("mapping from content");
     });
 
     it("maps HTTP 401 to LLMAuthenticationError", async () => {
@@ -175,6 +231,59 @@ describe("LLM Provider Adapters", () => {
 
       expect(drafts.length).toBe(1);
       expect(drafts[0].answer).toBe("Write-Ahead Logging");
+    });
+
+    it("transmits responseSchema in generationConfig and extracts drafts with enriched fields", async () => {
+      let capturedBody: any;
+      const mockFetch = async (_url: string, init: any) => {
+        capturedBody = JSON.parse(init.body);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            candidates: [
+              {
+                content: {
+                  parts: [
+                    {
+                      text: JSON.stringify([
+                        {
+                          question: "What is self-attention in Transformer architectures?",
+                          answer: "An attention mechanism relating different positions of a single sequence to compute a representation.",
+                          citation: "Self-attention is an attention mechanism relating different positions of a single sequence.",
+                          keywords: ["transformer", "self-attention", "nlp"],
+                          sourceLocator: "Section 3.2, Page 4",
+                          difficulty: "expert",
+                        },
+                      ]),
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+        };
+      };
+
+      const adapter = new GeminiAdapter({ apiKey: "gemini-key", customFetch: mockFetch as any });
+      const drafts = await adapter.generateQAPairs("Attention Is All You Need paper text", {
+        difficulty: "expert",
+        personaPrompt: "You are a machine learning researcher.",
+        targetCount: 1,
+      });
+
+      expect(capturedBody.generationConfig.responseMimeType).toBe("application/json");
+      expect(capturedBody.generationConfig.responseSchema.type).toBe("ARRAY");
+      expect(capturedBody.generationConfig.responseSchema.items.type).toBe("OBJECT");
+      expect(capturedBody.generationConfig.responseSchema.items.properties.keywords.type).toBe("ARRAY");
+
+      expect(drafts.length).toBe(1);
+      expect(drafts[0].question).toContain("self-attention");
+      expect(drafts[0].keywords).toEqual(["transformer", "self-attention", "nlp"]);
+      expect(drafts[0].sourceLocator).toBe("Section 3.2, Page 4");
+      expect(drafts[0].citation).toContain("relating different positions");
+      expect(drafts[0].sourceQuote).toContain("relating different positions");
+      expect(drafts[0].difficulty).toBe("expert");
     });
 
     it("defaults to gemini-3.6-flash when model is omitted", () => {
@@ -304,6 +413,57 @@ describe("LLM Provider Adapters", () => {
       expect(drafts[0].answer).toBe("Consensus algorithm");
     });
 
+    it("transmits forced tool calling schema and extracts drafts from tool_use.input.cards", async () => {
+      let capturedBody: any;
+      const mockFetch = async (_url: string, init: any) => {
+        capturedBody = JSON.parse(init.body);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            content: [
+              {
+                type: "tool_use",
+                id: "call_abc123",
+                name: "emit_flashcards",
+                input: {
+                  cards: [
+                    {
+                      question: "How does Raft elect a new cluster leader?",
+                      answer: "Candidates request votes from peers; a candidate winning a majority of votes becomes the leader.",
+                      citation: "A candidate wins an election if it receives votes from a majority of the servers in the full cluster.",
+                      keywords: ["raft", "consensus", "leader election"],
+                      sourceLocator: "Section 5.2, Leader election",
+                      difficulty: "intermediate",
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+        };
+      };
+
+      const adapter = new AnthropicAdapter({ apiKey: "claude-key", customFetch: mockFetch as any });
+      const drafts = await adapter.generateQAPairs("Raft consensus algorithm paper text", {
+        difficulty: "intermediate",
+        personaPrompt: "You are a distributed systems architect.",
+        targetCount: 1,
+      });
+
+      expect(capturedBody.tools).toBeDefined();
+      expect(capturedBody.tools[0].name).toBe("emit_flashcards");
+      expect(capturedBody.tool_choice).toEqual({ type: "tool", name: "emit_flashcards" });
+      expect(capturedBody.tools[0].input_schema.properties.cards.type).toBe("array");
+
+      expect(drafts.length).toBe(1);
+      expect(drafts[0].question).toContain("Raft elect");
+      expect(drafts[0].keywords).toEqual(["raft", "consensus", "leader election"]);
+      expect(drafts[0].sourceLocator).toBe("Section 5.2, Leader election");
+      expect(drafts[0].citation).toContain("majority of the servers");
+      expect(drafts[0].sourceQuote).toContain("majority of the servers");
+    });
+
     it("maps HTTP error response to LLMNetworkError preserving exact status and body", async () => {
       const mockFetch = async () => ({
         ok: false,
@@ -339,6 +499,51 @@ describe("LLM Provider Adapters", () => {
 
       expect(drafts.length).toBe(1);
       expect(drafts[0].question).toContain("WAL");
+    });
+
+    it("transmits batch JSON schema in format option and extracts structured response", async () => {
+      let capturedBody: any;
+      const mockFetch = async (_url: string, init: any) => {
+        capturedBody = JSON.parse(init.body);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            message: {
+              content: JSON.stringify([
+                {
+                  question: "What is the primary trade-off of LSM trees compared to B-trees?",
+                  answer: "LSM trees optimize for high-throughput write performance at the cost of slower point lookups.",
+                  citation: "Log-Structured Merge-trees provide write optimization by buffering in memory.",
+                  keywords: ["lsm-tree", "b-tree", "storage engine"],
+                  sourceLocator: "Chapter 3, Storage Engines",
+                  difficulty: "expert",
+                },
+              ]),
+            },
+          }),
+        };
+      };
+
+      const adapter = new OllamaAdapter({ baseUrl: "http://localhost:11434", customFetch: mockFetch as any });
+      const drafts = await adapter.generateQAPairs("Designing Data-Intensive Applications chapter", {
+        difficulty: "expert",
+        personaPrompt: "You are a database engine developer.",
+        targetCount: 1,
+      });
+
+      expect(capturedBody.format).toBeDefined();
+      expect(capturedBody.format.type).toBe("array");
+      expect(capturedBody.format.items.type).toBe("object");
+      expect(capturedBody.format.items.properties.keywords.type).toBe("array");
+
+      expect(drafts.length).toBe(1);
+      expect(drafts[0].question).toContain("LSM trees");
+      expect(drafts[0].keywords).toEqual(["lsm-tree", "b-tree", "storage engine"]);
+      expect(drafts[0].sourceLocator).toBe("Chapter 3, Storage Engines");
+      expect(drafts[0].citation).toContain("Log-Structured Merge-trees");
+      expect(drafts[0].sourceQuote).toContain("Log-Structured Merge-trees");
+      expect(drafts[0].difficulty).toBe("expert");
     });
   });
 
@@ -639,6 +844,126 @@ Let's see: { "WAL": "Write-Ahead Logging" }
         expect(prompt).toContain("beginner fundamentals");
         expect(prompt).toContain("expert trade-offs");
       }
+    });
+  });
+
+  describe("parseStructuredCardDrafts (Native Structured Output Parsing)", () => {
+    it("parses valid JSON array directly", () => {
+      const drafts = parseStructuredCardDrafts(SAMPLE_DRAFT_RESPONSE, "openai");
+      expect(drafts.length).toBe(1);
+      expect(drafts[0].question).toBe("What does WAL stand for in SQLite?");
+      expect(drafts[0].sourceQuote).toContain("Write-Ahead Logging");
+      expect(drafts[0].citation).toContain("Write-Ahead Logging");
+      expect(drafts[0].keywords).toEqual([]);
+      expect(drafts[0].sourceLocator).toBe("");
+    });
+
+    it("parses OpenAI wrapped { cards: [...] } object", () => {
+      const payload = JSON.stringify({
+        cards: [
+          {
+            question: "What is WAL?",
+            answer: "Write-Ahead Logging",
+            citation: "WAL is Write-Ahead Logging",
+            keywords: ["wal", "sqlite"],
+            sourceLocator: "Sec 1",
+            difficulty: "intermediate",
+          },
+        ],
+      });
+      const drafts = parseStructuredCardDrafts(payload, "openai");
+      expect(drafts.length).toBe(1);
+      expect(drafts[0].keywords).toEqual(["wal", "sqlite"]);
+      expect(drafts[0].sourceLocator).toBe("Sec 1");
+    });
+
+    it("parses Anthropic pre-parsed tool_use object directly", () => {
+      const toolInput = {
+        cards: [
+          {
+            question: "What is Raft?",
+            answer: "Consensus algorithm",
+            citation: "Raft is consensus",
+            keywords: ["raft"],
+            sourceLocator: "p. 1",
+            difficulty: "Expert",
+          },
+        ],
+      };
+      const drafts = parseStructuredCardDrafts(toolInput, "anthropic");
+      expect(drafts.length).toBe(1);
+      expect(drafts[0].difficulty).toBe("expert");
+      expect(drafts[0].keywords).toEqual(["raft"]);
+    });
+
+    it("normalizes keywords by stringifying, trimming, and filtering nulls/empty strings", () => {
+      const toolInput = {
+        cards: [
+          {
+            question: "Question text here?",
+            answer: "Answer text here.",
+            citation: "Citation text.",
+            keywords: [" valid ", null, undefined, "", "  tag  "],
+            sourceLocator: "Loc",
+          },
+        ],
+      };
+      const drafts = parseStructuredCardDrafts(toolInput, "test");
+      expect(drafts[0].keywords).toEqual(["valid", "tag"]);
+    });
+
+    it("throws LLMResponseParsingError for empty object {}", () => {
+      expect(() => parseStructuredCardDrafts("{}", "openai")).toThrow(LLMResponseParsingError);
+      expect(() => parseStructuredCardDrafts({}, "anthropic")).toThrow(LLMResponseParsingError);
+    });
+
+    it("throws LLMResponseParsingError for empty array [] or empty cards { cards: [] }", () => {
+      expect(() => parseStructuredCardDrafts("[]", "gemini")).toThrow(LLMResponseParsingError);
+      expect(() => parseStructuredCardDrafts({ cards: [] }, "anthropic")).toThrow(LLMResponseParsingError);
+    });
+
+    it("throws LLMResponseParsingError for malformed JSON string attaching raw text", () => {
+      const malformed = '{"cards": [{"question": "cut off...';
+      try {
+        parseStructuredCardDrafts(malformed, "gemini");
+        expect.unreachable("Should have thrown");
+      } catch (err: any) {
+        expect(err).toBeInstanceOf(LLMResponseParsingError);
+        expect(err.rawResponse).toBe(malformed);
+      }
+    });
+
+    it("throws LLMResponseParsingError for card missing question or answer", () => {
+      const payload = JSON.stringify([{ question: "", answer: "answer" }]);
+      expect(() => parseStructuredCardDrafts(payload, "gemini")).toThrow(LLMResponseParsingError);
+    });
+  });
+
+  describe("Network and Connection Error Resilience", () => {
+    it("maps TypeError fetch failed to LLMNetworkError across all adapters", async () => {
+      const mockFailingFetch = async () => {
+        throw new TypeError("fetch failed");
+      };
+
+      const openai = new OpenAIAdapter({ apiKey: "key", customFetch: mockFailingFetch as any });
+      await expect(
+        openai.generateQAPairs("text", { difficulty: "beginner", personaPrompt: "p" })
+      ).rejects.toThrow(LLMNetworkError);
+
+      const gemini = new GeminiAdapter({ apiKey: "key", customFetch: mockFailingFetch as any });
+      await expect(
+        gemini.generateQAPairs("text", { difficulty: "beginner", personaPrompt: "p" })
+      ).rejects.toThrow(LLMNetworkError);
+
+      const anthropic = new AnthropicAdapter({ apiKey: "key", customFetch: mockFailingFetch as any });
+      await expect(
+        anthropic.generateQAPairs("text", { difficulty: "beginner", personaPrompt: "p" })
+      ).rejects.toThrow(LLMNetworkError);
+
+      const ollama = new OllamaAdapter({ customFetch: mockFailingFetch as any });
+      await expect(
+        ollama.generateQAPairs("text", { difficulty: "beginner", personaPrompt: "p" })
+      ).rejects.toThrow(LLMNetworkError);
     });
   });
 });

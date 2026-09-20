@@ -29,6 +29,85 @@ export class LLMNetworkError extends Error {
   }
 }
 
+/**
+ * Direct strongly-typed extractor for provider-native structured outputs.
+ * Parses JSON strings or pre-parsed objects directly without heuristics,
+ * mapping keywords, sourceLocator, and symmetrical citation/sourceQuote fields.
+ */
+export function parseStructuredCardDrafts(
+  input: string | Record<string, any> | unknown[],
+  providerName: string,
+  options: { difficulty?: DifficultyLevel } = {}
+): CardGenerationDraft[] {
+  let parsed: any;
+  if (typeof input === "string") {
+    const trimmed = input.trim();
+    if (!trimmed) {
+      throw new LLMResponseParsingError(providerName, "Empty content received from LLM response.");
+    }
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch (err: any) {
+      if (trimmed.startsWith("```")) {
+        try {
+          const unwrapped = trimmed.replace(/^```(?:json)?\s*|\s*```$/gi, "").trim();
+          parsed = JSON.parse(unwrapped);
+        } catch (innerErr: any) {
+          throw new LLMResponseParsingError(providerName, `Failed to parse structured JSON: ${innerErr.message}`, trimmed);
+        }
+      } else {
+        throw new LLMResponseParsingError(providerName, `Failed to parse structured JSON: ${err.message}`, trimmed);
+      }
+    }
+  } else if (typeof input === "object" && input !== null) {
+    parsed = input;
+  } else {
+    throw new LLMResponseParsingError(providerName, "Invalid response payload type (expected string or object).");
+  }
+
+  const rawCards = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray(parsed?.cards)
+      ? parsed.cards
+      : typeof parsed === "object" && parsed !== null && (typeof parsed.question === "string" || typeof parsed.answer === "string")
+        ? [parsed]
+        : [];
+
+  if (rawCards.length === 0) {
+    throw new LLMResponseParsingError(providerName, "No flashcard items found in response payload.");
+  }
+
+  const drafts = rawCards.map((card: any) => {
+    const citation = String(card?.citation || card?.sourceQuote || "").trim();
+    const rawDiff = typeof card?.difficulty === "string" ? card.difficulty.toLowerCase().trim() : "";
+    const difficulty: DifficultyLevel =
+      rawDiff === "beginner" || rawDiff === "intermediate" || rawDiff === "expert" || rawDiff === "mixed"
+        ? (rawDiff as DifficultyLevel)
+        : options.difficulty === "mixed"
+          ? "intermediate"
+          : (options.difficulty ?? "intermediate");
+
+    return {
+      question: String(card?.question || "").trim(),
+      answer: String(card?.answer || "").trim(),
+      sourceQuote: citation,
+      citation,
+      difficulty,
+      keywords: Array.isArray(card?.keywords)
+        ? card.keywords.map((k: any) => (k != null ? String(k).trim() : "")).filter(Boolean)
+        : [],
+      sourceLocator: card?.sourceLocator ? String(card.sourceLocator).trim() : "",
+    };
+  });
+
+  const validDrafts = drafts.filter((c: CardGenerationDraft) => c.question.length > 0 && c.answer.length > 0);
+  if (validDrafts.length === 0) {
+    throw new LLMResponseParsingError(providerName, "No valid flashcard items found in response payload.");
+  }
+
+  return validDrafts;
+}
+
 export function cleanJsonString(raw: string): string {
   if (!raw || typeof raw !== "string") {
     return "";

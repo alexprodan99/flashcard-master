@@ -1,5 +1,16 @@
-import type { LLMProviderPort, CardGenerationDraft, DifficultyLevel } from "@flashcard-master/core";
-import { LLMResponseParsingError, LLMNetworkError, parseCardDraftsFromJson, type LLMConfig } from "./types.js";
+import {
+  type LLMProviderPort,
+  type CardGenerationDraft,
+  type DifficultyLevel,
+  CardGenerationDraftSchema,
+  DialectCompiler,
+} from "@flashcard-master/core";
+import {
+  LLMResponseParsingError,
+  LLMNetworkError,
+  parseStructuredCardDrafts,
+  type LLMConfig,
+} from "./types.js";
 
 export class OllamaAdapter implements LLMProviderPort {
   readonly providerName = "ollama";
@@ -30,23 +41,13 @@ export class OllamaAdapter implements LLMProviderPort {
 
     const systemPrompt = `${options.personaPrompt}
 ${diffInstruction}
-CRITICAL GROUNDING RULE: For each card, copy and paste an EXACT, word-for-word sentence from the provided text into "sourceQuote". Do NOT paraphrase, edit, or summarize any words in "sourceQuote".
-CRITICAL JSON FORMATTING: Ensure all inner quotes inside strings (such as code snippets, filenames, or CLI flags) are strictly escaped with backslashes (\\").
-Respond with a JSON object containing a "cards" array:
-{
-  "cards": [
-    {
-      "question": "...",
-      "answer": "...",
-      "sourceQuote": "...",
-      "difficulty": "${options.difficulty === "mixed" ? "beginner" : options.difficulty}"
-    }
-  ]
-}`;
+CRITICAL GROUNDING RULE: For each card, copy and paste an EXACT, word-for-word sentence from the provided text into "citation". Do NOT paraphrase, edit, or summarize any words in "citation".`;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
 
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+      const formatSchema = DialectCompiler.toOllamaBatchSchema(CardGenerationDraftSchema);
 
       const response = await this.fetchFn(`${this.baseUrl}/api/chat`, {
         method: "POST",
@@ -58,7 +59,7 @@ Respond with a JSON object containing a "cards" array:
             { role: "system", content: systemPrompt },
             { role: "user", content: text },
           ],
-          format: "json",
+          format: formatSchema,
           options: {
             num_predict: 4096,
             temperature: 0.2,
@@ -66,7 +67,6 @@ Respond with a JSON object containing a "cards" array:
           stream: false,
         }),
       });
-      clearTimeout(timer);
 
       if (!response.ok) {
         throw new LLMNetworkError(this.providerName, `Ollama server error ${response.status}: ${await response.text()}`);
@@ -78,7 +78,7 @@ Respond with a JSON object containing a "cards" array:
         throw new LLMResponseParsingError(this.providerName, "Empty message response from Ollama.");
       }
 
-      return parseCardDraftsFromJson(content, this.providerName);
+      return parseStructuredCardDrafts(content, this.providerName, { difficulty: options.difficulty });
     } catch (err: any) {
       if (err instanceof LLMNetworkError || err instanceof LLMResponseParsingError) {
         throw err;
@@ -86,7 +86,17 @@ Respond with a JSON object containing a "cards" array:
       if (err.name === "AbortError") {
         throw new LLMNetworkError(this.providerName, `Ollama request timed out after ${this.timeoutMs}ms.`);
       }
+      if (
+        err instanceof TypeError ||
+        err?.name === "FetchError" ||
+        err?.code === "ECONNREFUSED" ||
+        err?.code === "ENOTFOUND"
+      ) {
+        throw new LLMNetworkError(this.providerName, err.message);
+      }
       throw new LLMResponseParsingError(this.providerName, err.message);
+    } finally {
+      clearTimeout(timer);
     }
   }
 }

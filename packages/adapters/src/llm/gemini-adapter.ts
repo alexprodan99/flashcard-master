@@ -1,5 +1,18 @@
-import type { LLMProviderPort, CardGenerationDraft, DifficultyLevel } from "@flashcard-master/core";
-import { LLMAuthenticationError, LLMRateLimitError, LLMResponseParsingError, LLMNetworkError, parseCardDraftsFromJson, type LLMConfig } from "./types.js";
+import {
+  type LLMProviderPort,
+  type CardGenerationDraft,
+  type DifficultyLevel,
+  CardGenerationDraftSchema,
+  DialectCompiler,
+} from "@flashcard-master/core";
+import {
+  LLMAuthenticationError,
+  LLMRateLimitError,
+  LLMResponseParsingError,
+  LLMNetworkError,
+  parseStructuredCardDrafts,
+  type LLMConfig,
+} from "./types.js";
 
 export class GeminiAdapter implements LLMProviderPort {
   readonly providerName = "gemini";
@@ -36,26 +49,18 @@ export class GeminiAdapter implements LLMProviderPort {
 
     const prompt = `${options.personaPrompt}
 ${diffInstruction}
-CRITICAL GROUNDING RULE: For each card, copy and paste an EXACT, word-for-word sentence from the provided text into "sourceQuote". Do NOT paraphrase, edit, or summarize any words in "sourceQuote".
-CRITICAL JSON FORMATTING: Ensure all inner quotes inside strings (such as code snippets, filenames, or CLI flags) are strictly escaped with backslashes (\\").
-Respond with a JSON array:
-[
-  {
-    "question": "...",
-    "answer": "...",
-    "sourceQuote": "...",
-    "difficulty": "${options.difficulty === "mixed" ? "beginner" : options.difficulty}"
-  }
-]
+CRITICAL GROUNDING RULE: For each card, copy and paste an EXACT, word-for-word sentence from the provided text into "citation". Do NOT paraphrase, edit, or summarize any words in "citation".
 
 Document Content:
 ${text}`;
 
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
 
+    try {
       const url = `${this.baseUrl}/models/${this.model}:generateContent?key=${this.apiKey}`;
+      const responseSchema = DialectCompiler.toGeminiBatchSchema(CardGenerationDraftSchema);
+
       const response = await this.fetchFn(url, {
         method: "POST",
         signal: controller.signal,
@@ -64,22 +69,18 @@ ${text}`;
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
             responseMimeType: "application/json",
+            responseSchema,
             maxOutputTokens: 8192,
             temperature: 0.2,
           },
         }),
       });
-      clearTimeout(timer);
 
       if (response.status === 401 || response.status === 403) {
         throw new LLMAuthenticationError(this.providerName, "Invalid Google Gemini API key or forbidden request.");
       }
       if (response.status === 429) {
         throw new LLMRateLimitError(this.providerName, "Google Gemini rate limit exceeded.");
-      }
-      if (response.status === 400) {
-        const errorBody = await response.text();
-        throw new LLMNetworkError(this.providerName, `HTTP error 400: ${errorBody}`);
       }
       if (!response.ok) {
         throw new LLMNetworkError(this.providerName, `HTTP error ${response.status}: ${await response.text()}`);
@@ -111,7 +112,7 @@ ${text}`;
       }
 
       // Filter out internal reasoning/thought parts (which have thought: true in newer models)
-      const textParts = parts.filter((p: any) => !p.thought && typeof p.text === "string");
+      const textParts = parts.filter((p: any) => !p?.thought && typeof p?.text === "string");
       if (textParts.length === 0) {
         throw new LLMResponseParsingError(this.providerName, "No text content returned in Gemini response (only internal thoughts).");
       }
@@ -121,7 +122,7 @@ ${text}`;
         throw new LLMResponseParsingError(this.providerName, "Empty text content in Gemini response.");
       }
 
-      return parseCardDraftsFromJson(rawText, this.providerName);
+      return parseStructuredCardDrafts(rawText, this.providerName, { difficulty: options.difficulty });
     } catch (err: any) {
       if (
         err instanceof LLMAuthenticationError ||
@@ -134,7 +135,17 @@ ${text}`;
       if (err.name === "AbortError") {
         throw new LLMNetworkError(this.providerName, `Request timed out after ${this.timeoutMs}ms.`);
       }
+      if (
+        err instanceof TypeError ||
+        err?.name === "FetchError" ||
+        err?.code === "ECONNREFUSED" ||
+        err?.code === "ENOTFOUND"
+      ) {
+        throw new LLMNetworkError(this.providerName, err.message);
+      }
       throw new LLMResponseParsingError(this.providerName, err.message);
+    } finally {
+      clearTimeout(timer);
     }
   }
 }

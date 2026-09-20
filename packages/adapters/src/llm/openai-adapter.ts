@@ -1,5 +1,18 @@
-import type { LLMProviderPort, CardGenerationDraft, DifficultyLevel } from "@flashcard-master/core";
-import { LLMAuthenticationError, LLMRateLimitError, LLMResponseParsingError, LLMNetworkError, parseCardDraftsFromJson, type LLMConfig } from "./types.js";
+import {
+  type LLMProviderPort,
+  type CardGenerationDraft,
+  type DifficultyLevel,
+  CardGenerationDraftSchema,
+  DialectCompiler,
+} from "@flashcard-master/core";
+import {
+  LLMAuthenticationError,
+  LLMRateLimitError,
+  LLMResponseParsingError,
+  LLMNetworkError,
+  parseStructuredCardDrafts,
+  type LLMConfig,
+} from "./types.js";
 
 export class OpenAIAdapter implements LLMProviderPort {
   readonly providerName = "openai";
@@ -36,21 +49,16 @@ export class OpenAIAdapter implements LLMProviderPort {
 
     const systemPrompt = `${options.personaPrompt}
 ${diffInstruction}
-CRITICAL GROUNDING RULE: For each card, copy and paste an EXACT, word-for-word sentence from the provided text into "sourceQuote". Do NOT paraphrase, edit, or summarize any words in "sourceQuote".
-CRITICAL JSON FORMATTING: Ensure all inner quotes inside strings (such as code snippets, filenames, or CLI flags) are strictly escaped with backslashes (\\").
-You MUST respond ONLY with a JSON array matching this exact schema:
-[
-  {
-    "question": "Concise active-recall question testing one concept",
-    "answer": "Accurate, concise answer",
-    "sourceQuote": "Exact verbatim substring from the source document",
-    "difficulty": "${options.difficulty === "mixed" ? "beginner" : options.difficulty}"
-  }
-]`;
+CRITICAL GROUNDING RULE: For each card, copy and paste an EXACT, word-for-word sentence from the provided text into "citation". Do NOT paraphrase, edit, or summarize any words in "citation".`;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
 
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+      const responseFormat = DialectCompiler.toOpenAIBatchSchema(CardGenerationDraftSchema, {
+        name: "flashcards",
+        strict: true,
+      });
 
       const response = await this.fetchFn(`${this.baseUrl}/chat/completions`, {
         method: "POST",
@@ -65,12 +73,11 @@ You MUST respond ONLY with a JSON array matching this exact schema:
             { role: "system", content: systemPrompt },
             { role: "user", content: text },
           ],
-          response_format: { type: "json_object" },
+          response_format: responseFormat,
           max_tokens: 4096,
           temperature: 0.2,
         }),
       });
-      clearTimeout(timer);
 
       if (response.status === 401 || response.status === 403) {
         throw new LLMAuthenticationError(this.providerName, "Invalid OpenAI API key.");
@@ -88,7 +95,7 @@ You MUST respond ONLY with a JSON array matching this exact schema:
         throw new LLMResponseParsingError(this.providerName, "Empty message content received from OpenAI.");
       }
 
-      return parseCardDraftsFromJson(content, this.providerName);
+      return parseStructuredCardDrafts(content, this.providerName, { difficulty: options.difficulty });
     } catch (err: any) {
       if (
         err instanceof LLMAuthenticationError ||
@@ -101,7 +108,17 @@ You MUST respond ONLY with a JSON array matching this exact schema:
       if (err.name === "AbortError") {
         throw new LLMNetworkError(this.providerName, `Request timed out after ${this.timeoutMs}ms.`);
       }
+      if (
+        err instanceof TypeError ||
+        err?.name === "FetchError" ||
+        err?.code === "ECONNREFUSED" ||
+        err?.code === "ENOTFOUND"
+      ) {
+        throw new LLMNetworkError(this.providerName, err.message);
+      }
       throw new LLMResponseParsingError(this.providerName, err.message);
+    } finally {
+      clearTimeout(timer);
     }
   }
 }
