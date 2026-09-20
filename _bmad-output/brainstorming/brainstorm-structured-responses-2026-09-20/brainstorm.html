@@ -1,0 +1,2773 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Zero-Parser Transcendence | BMad Brainstorming Keepsake</title>
+  <style>
+    /* ==========================================================================
+       RESET & BASE DESIGN SYSTEM: Deep Slate / Neon Violet Aesthetics
+       ========================================================================== */
+    :root {
+      --bg-canvas: #07090e;
+      --bg-subtle: #0d101a;
+      --bg-card: #131726;
+      --bg-card-hover: #191f33;
+      --bg-card-active: #1f2740;
+      --border-subtle: rgba(139, 92, 246, 0.14);
+      --border-glow: rgba(168, 85, 247, 0.38);
+      --border-focus: #a855f7;
+      
+      --accent-violet: #8b5cf6;
+      --accent-purple: #a855f7;
+      --accent-fuchsia: #d946ef;
+      --accent-cyan: #06b6d4;
+      --accent-teal: #14b8a6;
+      --accent-emerald: #10b981;
+      --accent-rose: #f43f5e;
+      --accent-amber: #f59e0b;
+      
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --text-dim: #475569;
+      
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", Menlo, Monaco, Consolas, monospace;
+      
+      --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+      --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.55);
+      --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.7);
+      --shadow-violet: 0 0 30px rgba(139, 92, 246, 0.18);
+      --shadow-cyan: 0 0 30px rgba(6, 182, 212, 0.18);
+      
+      --radius-sm: 6px;
+      --radius-md: 12px;
+      --radius-lg: 18px;
+      --radius-full: 9999px;
+      
+      --transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+      color-scheme: dark;
+    }
+
+    body {
+      background-color: var(--bg-canvas);
+      background-image: 
+        radial-gradient(circle at 15% 10%, rgba(139, 92, 246, 0.12) 0%, transparent 40%),
+        radial-gradient(circle at 85% 25%, rgba(6, 182, 212, 0.08) 0%, transparent 45%),
+        radial-gradient(circle at 50% 75%, rgba(217, 70, 239, 0.06) 0%, transparent 50%),
+        linear-gradient(180deg, rgba(7, 9, 14, 0.95) 0%, rgba(13, 16, 26, 0.98) 100%);
+      background-attachment: fixed;
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      font-size: 15px;
+      line-height: 1.6;
+      min-height: 100vh;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Ambient background grid */
+    body::before {
+      content: "";
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-size: 40px 40px;
+      background-image: 
+        linear-gradient(to right, rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Container */
+    .app-container {
+      position: relative;
+      z-index: 1;
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 0 24px 100px;
+    }
+
+    /* Code & Pre */
+    code, pre {
+      font-family: var(--font-mono);
+      font-size: 0.88em;
+    }
+
+    /* ==========================================================================
+       HEADER & NAVIGATION BAR
+       ========================================================================== */
+    .top-nav {
+      position: sticky;
+      top: 16px;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 20px;
+      background: rgba(15, 18, 30, 0.82);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-full);
+      box-shadow: var(--shadow-md), 0 0 20px rgba(139, 92, 246, 0.08);
+      margin-top: 16px;
+      margin-bottom: 32px;
+      transition: var(--transition);
+    }
+
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .brand-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, var(--accent-violet), var(--accent-cyan));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 14px rgba(168, 85, 247, 0.4);
+    }
+
+    .brand-title {
+      font-weight: 700;
+      font-size: 0.95rem;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, #fff 40%, var(--accent-purple) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .brand-pill {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      padding: 2px 8px;
+      border-radius: var(--radius-full);
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      color: var(--accent-emerald);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      list-style: none;
+    }
+
+    .nav-link {
+      padding: 7px 14px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      text-decoration: none;
+      border-radius: var(--radius-full);
+      transition: var(--transition);
+    }
+
+    .nav-link:hover, .nav-link.active {
+      color: var(--text-primary);
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .nav-link.active {
+      background: rgba(139, 92, 246, 0.2);
+      color: #c084fc;
+      border: 1px solid rgba(168, 85, 247, 0.3);
+    }
+
+    /* ==========================================================================
+       HERO BANNER
+       ========================================================================== */
+    .hero {
+      position: relative;
+      padding: 48px 36px 40px;
+      background: linear-gradient(145deg, rgba(20, 24, 40, 0.7), rgba(13, 16, 26, 0.8));
+      backdrop-filter: blur(14px);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      margin-bottom: 48px;
+      overflow: hidden;
+      box-shadow: var(--shadow-lg), var(--shadow-violet);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      top: -120px;
+      right: -80px;
+      width: 360px;
+      height: 360px;
+      background: radial-gradient(circle, rgba(168, 85, 247, 0.15) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .hero-meta {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: var(--text-muted);
+    }
+
+    .hero-meta-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: var(--radius-sm);
+      background: rgba(139, 92, 246, 0.1);
+      border: 1px solid rgba(139, 92, 246, 0.25);
+      color: #c084fc;
+    }
+
+    .hero-title {
+      font-size: 2.7rem;
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -0.03em;
+      margin-bottom: 14px;
+      background: linear-gradient(135deg, #ffffff 30%, #c084fc 70%, #06b6d4 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero-subtitle {
+      font-size: 1.15rem;
+      color: var(--text-secondary);
+      max-width: 820px;
+      margin-bottom: 28px;
+      font-weight: 400;
+    }
+
+    .hero-highlight-phrase {
+      color: #38bdf8;
+      font-weight: 500;
+    }
+
+    /* Metrics Ribbon */
+    .metrics-ribbon {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-top: 24px;
+    }
+
+    .metric-card {
+      padding: 16px 20px;
+      background: rgba(11, 14, 23, 0.65);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: var(--radius-md);
+      transition: var(--transition);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .metric-card:hover {
+      border-color: var(--border-focus);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+    }
+
+    .metric-card::before {
+      content: "";
+      position: absolute;
+      top: 0; left: 0; width: 3px; height: 100%;
+    }
+
+    .metric-card.eliminated::before { background: var(--accent-rose); }
+    .metric-card.compliance::before { background: var(--accent-emerald); }
+    .metric-card.extensible::before { background: var(--accent-cyan); }
+    .metric-card.winner::before { background: var(--accent-purple); }
+
+    .metric-value {
+      font-family: var(--font-mono);
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .metric-card.eliminated .metric-value { color: #fb7185; }
+    .metric-card.compliance .metric-value { color: #34d399; }
+    .metric-card.extensible .metric-value { color: #38bdf8; }
+    .metric-card.winner .metric-value { color: #c084fc; }
+
+    .metric-label {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+      font-weight: 500;
+    }
+
+    /* ==========================================================================
+       SECTION CONTAINERS & HEADERS
+       ========================================================================== */
+    .section-block {
+      margin-bottom: 64px;
+      scroll-margin-top: 90px;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      margin-bottom: 24px;
+      border-bottom: 1px solid var(--border-subtle);
+      padding-bottom: 16px;
+    }
+
+    .section-tag {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--accent-purple);
+      margin-bottom: 4px;
+      display: block;
+    }
+
+    .section-title {
+      font-size: 1.8rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .section-desc {
+      font-size: 0.92rem;
+      color: var(--text-secondary);
+      max-width: 600px;
+    }
+
+    /* ==========================================================================
+       TECHNIQUE 1: THE LADDERING CLIMB
+       ========================================================================== */
+    .laddering-wrapper {
+      display: grid;
+      grid-template-columns: 1.1fr 1fr;
+      gap: 32px;
+      align-items: start;
+    }
+
+    .ladder-mountain {
+      position: relative;
+      display: flex;
+      flex-direction: column-reverse; /* Climbs up from bottom */
+      gap: 14px;
+      padding: 16px 0;
+    }
+
+    /* Mountain vertical line */
+    .ladder-mountain::before {
+      content: "";
+      position: absolute;
+      top: 30px;
+      bottom: 30px;
+      left: 36px;
+      width: 3px;
+      background: linear-gradient(180deg, var(--accent-cyan) 0%, var(--accent-purple) 60%, var(--accent-rose) 100%);
+      border-radius: var(--radius-full);
+      z-index: 0;
+    }
+
+    .ladder-rung {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      padding: 16px 20px;
+      background: rgba(19, 23, 38, 0.7);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: var(--transition);
+    }
+
+    .ladder-rung:hover {
+      border-color: var(--border-focus);
+      background: var(--bg-card-hover);
+      transform: translateX(6px);
+    }
+
+    .ladder-rung.active {
+      background: linear-gradient(90deg, rgba(139, 92, 246, 0.18), rgba(19, 23, 38, 0.95));
+      border-color: var(--accent-purple);
+      box-shadow: 0 0 20px rgba(168, 85, 247, 0.25);
+    }
+
+    .rung-elevation {
+      flex-shrink: 0;
+      width: 44px;
+      height: 44px;
+      border-radius: var(--radius-full);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 700;
+      background: #090b12;
+      border: 2px solid var(--border-subtle);
+      transition: var(--transition);
+    }
+
+    .ladder-rung.active .rung-elevation {
+      border-color: var(--accent-purple);
+      box-shadow: 0 0 12px var(--accent-purple);
+      color: #fff;
+    }
+
+    .rung-content {
+      flex-grow: 1;
+    }
+
+    .rung-title {
+      font-weight: 600;
+      font-size: 0.98rem;
+      margin-bottom: 2px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .rung-subtitle {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+    }
+
+    .rung-status-tag {
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      padding: 2px 8px;
+      border-radius: var(--radius-full);
+      text-transform: uppercase;
+    }
+
+    /* Ladder Inspector Panel */
+    .ladder-inspector {
+      position: sticky;
+      top: 96px;
+      padding: 28px;
+      background: rgba(19, 23, 38, 0.9);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border-glow);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg), var(--shadow-violet);
+      min-height: 440px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .inspector-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+
+    .inspector-altitude {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      color: var(--accent-cyan);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .inspector-title {
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-top: 6px;
+    }
+
+    .inspector-quote {
+      padding: 14px 18px;
+      background: rgba(7, 9, 14, 0.6);
+      border-left: 3px solid var(--accent-purple);
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      color: #cbd5e1;
+      margin-bottom: 20px;
+      line-height: 1.5;
+    }
+
+    .inspector-body {
+      font-size: 0.92rem;
+      color: var(--text-secondary);
+      margin-bottom: 24px;
+      line-height: 1.6;
+    }
+
+    .inspector-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-top: 16px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: var(--text-muted);
+    }
+
+    /* Auto Climb Button */
+    .btn-climb {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      background: rgba(139, 92, 246, 0.15);
+      border: 1px solid rgba(168, 85, 247, 0.4);
+      border-radius: var(--radius-full);
+      color: #e2e8f0;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+
+    .btn-climb:hover {
+      background: var(--accent-purple);
+      color: #fff;
+      box-shadow: 0 0 16px rgba(168, 85, 247, 0.5);
+    }
+
+    /* ==========================================================================
+       TECHNIQUE 2: SCAMPER PRISMATIC LENSES
+       ========================================================================== */
+    .scamper-container {
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 28px;
+      box-shadow: var(--shadow-md);
+    }
+
+    .scamper-tabs {
+      display: flex;
+      gap: 10px;
+      overflow-x: auto;
+      padding-bottom: 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      margin-bottom: 24px;
+    }
+
+    .scamper-tab {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 18px;
+      background: rgba(19, 23, 38, 0.8);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: var(--transition);
+      white-space: nowrap;
+    }
+
+    .scamper-tab:hover {
+      border-color: var(--border-glow);
+      background: var(--bg-card-hover);
+    }
+
+    .scamper-tab.active {
+      border-color: var(--accent-purple);
+      background: linear-gradient(135deg, rgba(139, 92, 246, 0.22), rgba(19, 23, 38, 0.95));
+      box-shadow: 0 0 16px rgba(168, 85, 247, 0.2);
+    }
+
+    .scamper-letter {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-family: var(--font-mono);
+      font-size: 0.9rem;
+      background: rgba(0, 0, 0, 0.4);
+    }
+
+    .scamper-tab[data-lens="substitute"] .scamper-letter { color: var(--accent-cyan); border: 1px solid rgba(6, 182, 212, 0.4); }
+    .scamper-tab[data-lens="combine"] .scamper-letter { color: var(--accent-purple); border: 1px solid rgba(168, 85, 247, 0.4); }
+    .scamper-tab[data-lens="adapt"] .scamper-letter { color: var(--accent-teal); border: 1px solid rgba(20, 184, 166, 0.4); }
+    .scamper-tab[data-lens="eliminate"] .scamper-letter { color: var(--accent-rose); border: 1px solid rgba(244, 63, 94, 0.4); }
+    .scamper-tab[data-lens="reverse"] .scamper-letter { color: var(--accent-amber); border: 1px solid rgba(245, 158, 11, 0.4); }
+
+    .scamper-tab-title {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .scamper-view {
+      display: none;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .scamper-view.active {
+      display: block;
+    }
+
+    .scamper-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 20px;
+    }
+
+    .scamper-card {
+      padding: 22px;
+      background: rgba(19, 23, 38, 0.7);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      transition: var(--transition);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .scamper-card:hover {
+      border-color: var(--border-glow);
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .card-badge {
+      align-self: flex-start;
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      padding: 3px 10px;
+      border-radius: var(--radius-full);
+      margin-bottom: 12px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .card-badge.substitute { background: rgba(6, 182, 212, 0.12); color: #38bdf8; border: 1px solid rgba(6, 182, 212, 0.3); }
+    .card-badge.combine { background: rgba(168, 85, 247, 0.12); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); }
+    .card-badge.adapt { background: rgba(20, 184, 166, 0.12); color: #2dd4bf; border: 1px solid rgba(20, 184, 166, 0.3); }
+    .card-badge.eliminate { background: rgba(244, 63, 94, 0.12); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.3); }
+    .card-badge.reverse { background: rgba(245, 158, 11, 0.12); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+
+    .card-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+      color: var(--text-primary);
+    }
+
+    .card-desc {
+      font-size: 0.88rem;
+      color: var(--text-secondary);
+      line-height: 1.55;
+      margin-bottom: 16px;
+    }
+
+    .card-code {
+      padding: 10px 14px;
+      background: #080a10;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: var(--radius-sm);
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: #93c5fd;
+      overflow-x: auto;
+    }
+
+    /* ==========================================================================
+       TECHNIQUE 3: EXPANDABLE INTERACTIVE MIND MAP
+       ========================================================================== */
+    .mindmap-container {
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 32px;
+      box-shadow: var(--shadow-md);
+      position: relative;
+    }
+
+    .mindmap-controls {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 28px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .mindmap-core-hub {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 14px 22px;
+      background: linear-gradient(135deg, rgba(139, 92, 246, 0.25), rgba(6, 182, 212, 0.15));
+      border: 1.5px solid var(--accent-purple);
+      border-radius: var(--radius-full);
+      box-shadow: 0 0 24px rgba(168, 85, 247, 0.25);
+    }
+
+    .core-hub-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: var(--radius-full);
+      background: var(--accent-purple);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+    }
+
+    .core-hub-text {
+      font-weight: 700;
+      font-size: 0.95rem;
+      letter-spacing: -0.01em;
+    }
+
+    .mindmap-btn-group {
+      display: flex;
+      gap: 8px;
+    }
+
+    .mindmap-btn {
+      padding: 6px 14px;
+      background: rgba(19, 23, 38, 0.8);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-full);
+      color: var(--text-secondary);
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+
+    .mindmap-btn:hover, .mindmap-btn.active {
+      border-color: var(--accent-purple);
+      color: var(--text-primary);
+      background: rgba(139, 92, 246, 0.15);
+    }
+
+    /* 4 Branches Grid */
+    .branches-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 24px;
+    }
+
+    @media (max-width: 900px) {
+      .branches-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .branch-card {
+      background: rgba(19, 23, 38, 0.85);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 24px;
+      transition: var(--transition);
+      position: relative;
+    }
+
+    .branch-card:hover {
+      border-color: var(--border-glow);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .branch-card.b1 { border-top: 3px solid var(--accent-purple); }
+    .branch-card.b2 { border-top: 3px solid var(--accent-cyan); }
+    .branch-card.b3 { border-top: 3px solid var(--accent-emerald); }
+    .branch-card.b4 { border-top: 3px solid var(--accent-amber); }
+
+    .branch-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .branch-title {
+      font-size: 1.12rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .branch-badge {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      padding: 2px 8px;
+      border-radius: var(--radius-full);
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text-secondary);
+    }
+
+    .branch-nodes {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .node-item {
+      padding: 12px 14px;
+      background: rgba(11, 14, 23, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: var(--transition);
+    }
+
+    .node-item:hover {
+      border-color: var(--border-subtle);
+      background: rgba(11, 14, 23, 0.9);
+      transform: translateX(4px);
+    }
+
+    .node-item.selected {
+      border-color: var(--accent-purple);
+      background: rgba(139, 92, 246, 0.1);
+    }
+
+    .node-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+
+    .node-name {
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: #e2e8f0;
+    }
+
+    .node-type {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+
+    .node-type.decision { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+    .node-type.direction { background: rgba(56, 189, 248, 0.15); color: #38bdf8; }
+    .node-type.idea { background: rgba(168, 85, 247, 0.15); color: #c084fc; }
+    .node-type.question { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+
+    .node-detail {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      line-height: 1.45;
+    }
+
+    /* ==========================================================================
+       TECHNIQUE 4: SOLUTION COMPARATIVE MATRIX
+       ========================================================================== */
+    .matrix-wrapper {
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 28px;
+      box-shadow: var(--shadow-md);
+      overflow-x: auto;
+    }
+
+    .matrix-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      min-width: 820px;
+    }
+
+    .matrix-table th, .matrix-table td {
+      padding: 16px 18px;
+      text-align: left;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .matrix-table th {
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      background: rgba(11, 14, 23, 0.8);
+      position: sticky;
+      top: 0;
+    }
+
+    .matrix-table th.highlight-col {
+      color: #c084fc;
+      background: rgba(139, 92, 246, 0.12);
+      border-left: 1px solid rgba(139, 92, 246, 0.3);
+      border-right: 1px solid rgba(139, 92, 246, 0.3);
+      border-top: 2px solid var(--accent-purple);
+    }
+
+    .matrix-table td.highlight-col {
+      background: rgba(139, 92, 246, 0.05);
+      border-left: 1px solid rgba(139, 92, 246, 0.2);
+      border-right: 1px solid rgba(139, 92, 246, 0.2);
+    }
+
+    .matrix-row {
+      transition: var(--transition);
+    }
+
+    .matrix-row:hover {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .criteria-name {
+      font-weight: 600;
+      font-size: 0.92rem;
+      color: var(--text-primary);
+    }
+
+    .criteria-desc {
+      font-size: 0.76rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .score-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: var(--radius-full);
+    }
+
+    .score-badge.optimal {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+
+    .score-badge.moderate {
+      background: rgba(245, 158, 11, 0.15);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+
+    .score-badge.poor {
+      background: rgba(244, 63, 94, 0.15);
+      color: #fb7185;
+      border: 1px solid rgba(244, 63, 94, 0.3);
+    }
+
+    /* Matrix Summary Callout */
+    .matrix-summary-callout {
+      margin-top: 28px;
+      padding: 22px 28px;
+      background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(6, 182, 212, 0.08));
+      border: 1px solid var(--border-glow);
+      border-radius: var(--radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+
+    .callout-content {
+      max-width: 820px;
+    }
+
+    .callout-tag {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: #c084fc;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .callout-title {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 6px;
+    }
+
+    .callout-desc {
+      font-size: 0.88rem;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    /* ==========================================================================
+       SYNTHESIS & THE ZERO-PARSER REACTOR
+       ========================================================================== */
+    .synthesis-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 28px;
+      margin-bottom: 32px;
+    }
+
+    @media (max-width: 960px) {
+      .synthesis-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Terminal Split */
+    .terminal-box {
+      background: #080a10;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      box-shadow: var(--shadow-md);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .terminal-box.legacy {
+      border-color: rgba(244, 63, 94, 0.3);
+    }
+
+    .terminal-box.modern {
+      border-color: rgba(139, 92, 246, 0.4);
+      box-shadow: 0 0 24px rgba(139, 92, 246, 0.12);
+    }
+
+    .terminal-header {
+      padding: 10px 16px;
+      background: rgba(15, 18, 30, 0.9);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+    }
+
+    .terminal-dots {
+      display: flex;
+      gap: 6px;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: var(--radius-full);
+    }
+
+    .dot.red { background: #f43f5e; }
+    .dot.yellow { background: #f59e0b; }
+    .dot.green { background: #10b981; }
+
+    .terminal-title {
+      font-weight: 600;
+      color: var(--text-secondary);
+    }
+
+    .terminal-code {
+      padding: 18px;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      line-height: 1.65;
+      overflow-x: auto;
+      flex-grow: 1;
+      color: #cbd5e1;
+    }
+
+    .code-comment { color: #64748b; font-style: italic; }
+    .code-err { color: #fb7185; }
+    .code-success { color: #34d399; }
+    .code-keyword { color: #c084fc; font-weight: 600; }
+    .code-prop { color: #38bdf8; }
+    .code-str { color: #fde047; }
+
+    /* Interactive Flashcard Live Showcase */
+    .card-reactor {
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 32px;
+      box-shadow: var(--shadow-md);
+      position: relative;
+    }
+
+    .reactor-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .reactor-title-group h3 {
+      font-size: 1.25rem;
+      font-weight: 700;
+    }
+
+    .reactor-title-group p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .btn-stream-sim {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 18px;
+      background: linear-gradient(135deg, var(--accent-purple), var(--accent-cyan));
+      border: none;
+      border-radius: var(--radius-full);
+      color: #fff;
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: var(--transition);
+      box-shadow: 0 0 16px rgba(168, 85, 247, 0.4);
+    }
+
+    .btn-stream-sim:hover {
+      transform: scale(1.03);
+      box-shadow: 0 0 24px rgba(6, 182, 212, 0.5);
+    }
+
+    /* The Flashcard Preview Component */
+    .flashcard-stage {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 28px;
+      align-items: center;
+    }
+
+    @media (max-width: 900px) {
+      .flashcard-stage {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .flashcard-interactive {
+      background: linear-gradient(145deg, #181c2e, #101322);
+      border: 1.5px solid var(--border-glow);
+      border-radius: var(--radius-lg);
+      padding: 28px;
+      min-height: 280px;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6), var(--shadow-violet);
+      cursor: pointer;
+      position: relative;
+      transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s;
+      perspective: 1000px;
+    }
+
+    .flashcard-interactive:hover {
+      border-color: var(--accent-purple);
+      box-shadow: 0 16px 44px rgba(168, 85, 247, 0.3);
+    }
+
+    .card-top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 18px;
+    }
+
+    .card-mode-pill {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      padding: 3px 10px;
+      border-radius: var(--radius-full);
+      background: rgba(139, 92, 246, 0.15);
+      border: 1px solid rgba(139, 92, 246, 0.3);
+      color: #c084fc;
+      text-transform: uppercase;
+    }
+
+    .card-flip-prompt {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .card-front-content, .card-back-content {
+      transition: opacity 0.3s ease;
+    }
+
+    .card-prompt-label {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent-cyan);
+      margin-bottom: 8px;
+    }
+
+    .card-question {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      line-height: 1.4;
+      margin-bottom: 20px;
+    }
+
+    .card-answer {
+      font-size: 1.05rem;
+      color: #e2e8f0;
+      line-height: 1.6;
+      margin-bottom: 20px;
+      display: none;
+    }
+
+    /* Facet 1: Keywords Drill */
+    .facet-keywords {
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .facet-label {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .keyword-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .keyword-chip {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      padding: 3px 10px;
+      border-radius: var(--radius-full);
+      background: rgba(6, 182, 212, 0.12);
+      border: 1px solid rgba(6, 182, 212, 0.3);
+      color: #38bdf8;
+      transition: var(--transition);
+    }
+
+    .keyword-chip:hover {
+      background: rgba(6, 182, 212, 0.25);
+      border-color: #38bdf8;
+      transform: translateY(-1px);
+    }
+
+    /* Facet 2: Provenance Locator */
+    .facet-provenance {
+      margin-top: 14px;
+      padding: 10px 14px;
+      background: rgba(7, 9, 14, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+    }
+
+    .provenance-doc {
+      color: #cbd5e1;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .provenance-locator {
+      color: #a78bfa;
+      background: rgba(139, 92, 246, 0.12);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    /* Streaming Simulation Log */
+    .stream-log-container {
+      background: #080a10;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: var(--radius-md);
+      padding: 18px;
+      min-height: 280px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+    }
+
+    .stream-log-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      padding-bottom: 8px;
+      margin-bottom: 12px;
+    }
+
+    .stream-events {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-size: 0.78rem;
+      max-height: 210px;
+      overflow-y: auto;
+    }
+
+    .event-line {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      line-height: 1.4;
+      animation: fadeIn 0.25s ease;
+    }
+
+    .event-badge {
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-size: 0.68rem;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .event-badge.sse { background: rgba(139, 92, 246, 0.2); color: #c084fc; }
+    .event-badge.card { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+    .event-badge.info { background: rgba(56, 189, 248, 0.2); color: #38bdf8; }
+
+    /* Final Manifesto Box */
+    .manifesto-card {
+      margin-top: 48px;
+      padding: 36px 40px;
+      background: linear-gradient(145deg, rgba(24, 28, 46, 0.9), rgba(12, 14, 24, 0.95));
+      border: 1.5px solid var(--accent-purple);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg), 0 0 35px rgba(168, 85, 247, 0.25);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .manifesto-card::before {
+      content: "";
+      position: absolute;
+      top: 0; left: 0; right: 0; height: 3px;
+      background: linear-gradient(90deg, var(--accent-purple), var(--accent-cyan), var(--accent-emerald));
+    }
+
+    .manifesto-quote-mark {
+      position: absolute;
+      right: 30px;
+      bottom: 20px;
+      font-size: 8rem;
+      font-family: Georgia, serif;
+      color: rgba(255, 255, 255, 0.03);
+      pointer-events: none;
+      user-select: none;
+    }
+
+    .manifesto-title {
+      font-size: 1.4rem;
+      font-weight: 800;
+      color: var(--text-primary);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .manifesto-text {
+      font-size: 1.05rem;
+      color: #cbd5e1;
+      line-height: 1.7;
+      max-width: 920px;
+    }
+
+    .manifesto-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 24px;
+      padding-top: 18px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    /* Animations */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.2);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: var(--radius-full);
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(168, 85, 247, 0.4);
+    }
+  </style>
+</head>
+<body>
+
+  <div class="app-container">
+
+    <!-- STICKY TOP NAV -->
+    <nav class="top-nav" id="topNav">
+      <a href="#hero" class="nav-brand">
+        <div class="brand-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="16 18 22 12 16 6"></polyline>
+            <polyline points="8 6 2 12 8 18"></polyline>
+          </svg>
+        </div>
+        <div>
+          <span class="brand-title">Zero-Parser Keepsake</span>
+          <span class="brand-pill">Synthesized</span>
+        </div>
+      </a>
+
+      <ul class="nav-links">
+        <li><a href="#laddering" class="nav-link">Laddering</a></li>
+        <li><a href="#scamper" class="nav-link">SCAMPER</a></li>
+        <li><a href="#mindmap" class="nav-link">Mind Map</a></li>
+        <li><a href="#matrix" class="nav-link">Solution Matrix</a></li>
+        <li><a href="#synthesis" class="nav-link">The Reactor</a></li>
+      </ul>
+    </nav>
+
+    <!-- HERO HEADER -->
+    <header class="hero" id="hero">
+      <div class="hero-meta">
+        <span class="hero-meta-badge">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          Session: 2026-09-20T11:37
+        </span>
+        <span>•</span>
+        <span>Facilitator Mode</span>
+        <span>•</span>
+        <span>Topic: Structured LLM Responses</span>
+      </div>
+
+      <h1 class="hero-title">Zero-Parser Transcendence</h1>
+      <p class="hero-subtitle">
+        Escaping brittle string regex surgery and markdown fence scrubbing to achieve <span class="hero-highlight-phrase">compiler-level schema enforcement</span>, deterministic flashcard generation, and rich learning facets with zero framework lock-in.
+      </p>
+
+      <!-- KEY METRICS RIBBON -->
+      <div class="metrics-ribbon">
+        <div class="metric-card eliminated">
+          <div class="metric-value">
+            <span>0%</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </div>
+          <div class="metric-label">Parser Failure Rate ("No valid cards found")</div>
+        </div>
+
+        <div class="metric-card compliance">
+          <div class="metric-value">
+            <span>100%</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          </div>
+          <div class="metric-label">Deterministic Schema Compliance</div>
+        </div>
+
+        <div class="metric-card extensible">
+          <div class="metric-value">Field-First</div>
+          <div class="metric-label">Keywords Drill & Provenance Locators</div>
+        </div>
+
+        <div class="metric-card winner">
+          <div class="metric-value">Native Dialects</div>
+          <div class="metric-label">Winning Core Zod -> Provider Translation</div>
+        </div>
+      </div>
+    </header>
+
+    <!-- ====================================================================
+         TECHNIQUE 1: THE LADDERING CLIMB
+         ==================================================================== -->
+    <section class="section-block" id="laddering">
+      <div class="section-header">
+        <div>
+          <span class="section-tag">Technique 01 • Laddering</span>
+          <h2 class="section-title">The Altitude Ascent: Unmasking the Core Need</h2>
+        </div>
+        <button class="btn-climb" id="autoClimbBtn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"></polyline></svg>
+          <span>Auto-Climb Rungs</span>
+        </button>
+      </div>
+
+      <div class="laddering-wrapper">
+        <!-- Mountain Ascent Rungs (Rendered bottom to top) -->
+        <div class="ladder-mountain" id="mountainRungs">
+          
+          <!-- Rung 0: The Error Abyss -->
+          <div class="ladder-rung active" data-step="0" data-elevation="0m" data-title="The Syntax Abyss" data-status="Eliminated"
+               data-quote="Failed to parse generated flashcards JSON: No valid flashcards found in model output"
+               data-desc="Ground level: Brittle regex string surgery, stripping markdown ```json fences, regexing out <think> tags, quote sanitizers, and wasted syntax-repair retry hops that crash production.">
+            <div class="rung-elevation">0m</div>
+            <div class="rung-content">
+              <div class="rung-title">
+                <span>The Syntax Abyss</span>
+                <span class="rung-status-tag" style="background: rgba(244,63,94,0.15); color: #fb7185;">Eliminated</span>
+              </div>
+              <div class="rung-subtitle">Fragile regex string surgery & JSON.parse failures</div>
+            </div>
+          </div>
+
+          <!-- Rung 1: Deterministic Compliance -->
+          <div class="ladder-rung" data-step="1" data-elevation="1,000m" data-title="Deterministic Schema Compliance" data-status="Engineered"
+               data-quote="Failure-free generation with deterministic schema compliance."
+               data-desc="First ascent: Instead of hoping the LLM emits valid JSON and patching it after the fact, constrain token sampling logits directly so the model is mathematically incapable of emitting invalid syntax.">
+            <div class="rung-elevation">1km</div>
+            <div class="rung-content">
+              <div class="rung-title">
+                <span>Deterministic Compliance</span>
+                <span class="rung-status-tag" style="background: rgba(16,185,129,0.15); color: #34d399;">Engineered</span>
+              </div>
+              <div class="rung-subtitle">Constrained logit sampling at generation time</div>
+            </div>
+          </div>
+
+          <!-- Rung 2: Declarative Model Extension -->
+          <div class="ladder-rung" data-step="2" data-elevation="2,500m" data-title="Declarative Model Extension" data-status="Architected"
+               data-quote="Easy extension of output and input models without manual prompt concatenation glue."
+               data-desc="Second ascent: Freeing developers from handwritten prompt string concatenation. Adding an input parameter or output property becomes a declarative schema definition that compiles automatically.">
+            <div class="rung-elevation">2.5k</div>
+            <div class="rung-content">
+              <div class="rung-title">
+                <span>Declarative Model Extension</span>
+                <span class="rung-status-tag" style="background: rgba(56,189,248,0.15); color: #38bdf8;">Architected</span>
+              </div>
+              <div class="rung-subtitle">Zero prompt-string glue, automatic schema reflection</div>
+            </div>
+          </div>
+
+          <!-- Rung 3: Learning Facet Enrichment -->
+          <div class="ladder-rung" data-step="3" data-elevation="3,800m" data-title="Enriched Learning Facets" data-status="Unleashed"
+               data-quote="Extensible card schema: keywords list for recap drills & exact document provenance locators."
+               data-desc="Third ascent: Flashcards evolve beyond simple front/back pairs. Rich facets—per-card keyword tags for speed drills, and exact document locator metadata beyond citation fragments—flow straight into UI without parser friction.">
+            <div class="rung-elevation">3.8k</div>
+            <div class="rung-content">
+              <div class="rung-title">
+                <span>Enriched Learning Facets</span>
+                <span class="rung-status-tag" style="background: rgba(168,85,247,0.15); color: #c084fc;">Unleashed</span>
+              </div>
+              <div class="rung-subtitle">Keywords drill arrays & deep provenance locators</div>
+            </div>
+          </div>
+
+          <!-- Rung 4: Decoupled Expansion -->
+          <div class="ladder-rung" data-step="4" data-elevation="4,500m" data-title="Decoupled Capability Expansion" data-status="Insight"
+               data-quote="Decoupling product capability expansion from LLM output syntax parsing friction."
+               data-desc="Fourth ascent: Product velocity is decoupled from syntax fragility. Adding a learning facet to flashcards no longer requires rewriting regexes, regex tests, or prompt delimiters.">
+            <div class="rung-elevation">4.5k</div>
+            <div class="rung-content">
+              <div class="rung-title">
+                <span>Decoupled Capability</span>
+                <span class="rung-status-tag" style="background: rgba(245,158,11,0.15); color: #fbbf24;">Insight</span>
+              </div>
+              <div class="rung-subtitle">Feature expansion freed from parser bottlenecks</div>
+            </div>
+          </div>
+
+          <!-- Rung 5: The Field-First Zenith -->
+          <div class="ladder-rung" data-step="5" data-elevation="5,000m" data-title="Zero-Parser & Field-First Zenith" data-status="Summit"
+               data-quote="Zero-parser DX: LLM invocation returns strongly-typed, schema-validated objects directly with no manual regexes or string fixes."
+               data-desc="The Summit: The core realization. The developer simply defines the schema field, validation rules, and business logic. The architecture handles provider compilation, logit constraint, and type guarantees out-of-the-box.">
+            <div class="rung-elevation">5km</div>
+            <div class="rung-content">
+              <div class="rung-title">
+                <span>Field-First DX Zenith</span>
+                <span class="rung-status-tag" style="background: linear-gradient(135deg, #a855f7, #06b6d4); color: #fff;">Summit</span>
+              </div>
+              <div class="rung-subtitle">Zero-parser DX: strongly-typed invocation return</div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Telemetry Inspector Card -->
+        <div class="ladder-inspector" id="ladderInspector">
+          <div>
+            <div class="inspector-header">
+              <div>
+                <div class="inspector-altitude" id="inspectorAltitude">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"></polyline></svg>
+                  <span>ALTITUDE: 0m (GROUND ZERO)</span>
+                </div>
+                <h3 class="inspector-title" id="inspectorTitle">The Syntax Abyss</h3>
+              </div>
+            </div>
+
+            <div class="inspector-quote" id="inspectorQuote">
+              "Failed to parse generated flashcards JSON: No valid flashcards found in model output"
+            </div>
+
+            <p class="inspector-body" id="inspectorDesc">
+              Ground level: Brittle regex string surgery, stripping markdown ```json fences, regexing out &lt;think&gt; tags, quote sanitizers, and wasted syntax-repair retry hops that crash production.
+            </p>
+          </div>
+
+          <div class="inspector-footer">
+            <span>Laddering Method • Core Need Discovery</span>
+            <span id="rungTelemetry">Step 1 of 6</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         TECHNIQUE 2: SCAMPER PRISMATIC LENSES
+         ==================================================================== -->
+    <section class="section-block" id="scamper">
+      <div class="section-header">
+        <div>
+          <span class="section-tag">Technique 02 • SCAMPER</span>
+          <h2 class="section-title">Prismatic Lenses: Deconstructing the Solution Space</h2>
+        </div>
+        <div class="section-desc">
+          Refracting the problem through 5 deliberate angles: Substitute, Combine, Adapt, Eliminate, and Reverse.
+        </div>
+      </div>
+
+      <div class="scamper-container">
+        <!-- Lens Switcher Tabs -->
+        <div class="scamper-tabs" id="scamperTabs">
+          <div class="scamper-tab active" data-lens="substitute">
+            <span class="scamper-letter">S</span>
+            <span class="scamper-tab-title">Substitute</span>
+          </div>
+          <div class="scamper-tab" data-lens="combine">
+            <span class="scamper-letter">C</span>
+            <span class="scamper-tab-title">Combine / IPC</span>
+          </div>
+          <div class="scamper-tab" data-lens="adapt">
+            <span class="scamper-letter">A</span>
+            <span class="scamper-tab-title">Adapt / Port</span>
+          </div>
+          <div class="scamper-tab" data-lens="eliminate">
+            <span class="scamper-letter">E</span>
+            <span class="scamper-tab-title">Eliminate / Purge</span>
+          </div>
+          <div class="scamper-tab" data-lens="reverse">
+            <span class="scamper-letter">R</span>
+            <span class="scamper-tab-title">Reverse / Stream</span>
+          </div>
+        </div>
+
+        <!-- [S]UBSTITUTE VIEW -->
+        <div class="scamper-view active" id="lens-substitute">
+          <div class="scamper-grid">
+            <div class="scamper-card">
+              <div>
+                <span class="card-badge substitute">DSPy In TypeScript</span>
+                <h4 class="card-title">Substitute: dspy.ts Signatures</h4>
+                <p class="card-desc">
+                  Substitute manual regex parsing with declarative signatures and programmatic prompt/output contracts in TypeScript. Provides typed signatures while staying in-ecosystem.
+                </p>
+              </div>
+              <div class="card-code">
+                const GenerateFlashcards = new Signature("text -> flashcards: Flashcard[]");
+              </div>
+            </div>
+
+            <div class="scamper-card">
+              <div>
+                <span class="card-badge substitute">Native API Schemas</span>
+                <h4 class="card-title">Substitute: Provider-Native Schema</h4>
+                <p class="card-desc">
+                  Substitute external framework abstractions with direct provider-native schema enforcement: OpenAI <code>json_schema</code>, Gemini <code>responseSchema</code>, Anthropic tools, and Ollama <code>format</code>.
+                </p>
+              </div>
+              <div class="card-code">
+                provider.generate({ responseSchema: zodToGeminiSchema(CardSchema) });
+              </div>
+            </div>
+
+            <div class="scamper-card">
+              <div>
+                <span class="card-badge substitute">Ecosystem Evaluation</span>
+                <h4 class="card-title">TS vs Python Ecosystem Depth</h4>
+                <p class="card-desc">
+                  Evaluate whether TypeScript needs a full external framework like <code>@instructor-ai/instructor</code> or if provider-native features make frameworks redundant overhead.
+                </p>
+              </div>
+              <div class="card-code">
+                // Verdict: Native provider APIs render 3rd-party runtimes redundant.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- [C]OMBINE VIEW -->
+        <div class="scamper-view" id="lens-combine">
+          <div class="scamper-grid">
+            <div class="scamper-card">
+              <div>
+                <span class="card-badge combine">Microservice Split</span>
+                <h4 class="card-title">Architecture Split: Python Sidecar</h4>
+                <p class="card-desc">
+                  Offload complex generation workflows to a dedicated Python microservice running native Python DSPy, decoupling LLM reasoning runtime from the TypeScript application core.
+                </p>
+              </div>
+              <div class="card-code">
+                [TS Backend] --(HTTP/gRPC)--> [Python DSPy Sidecar Worker]
+              </div>
+            </div>
+
+            <div class="scamper-card">
+              <div>
+                <span class="card-badge combine">Polyglot IPC</span>
+                <h4 class="card-title">Polyglot Local IPC Layer</h4>
+                <p class="card-desc">
+                  TypeScript backend communicates with local Python worker over Unix sockets or lightweight gRPC. Maximizes Python ML ecosystem access at the cost of operational deployment complexity.
+                </p>
+              </div>
+              <div class="card-code">
+                socket.connect("/var/run/flashcard-dspy.sock");
+              </div>
+            </div>
+
+            <div class="scamper-card">
+              <div>
+                <span class="card-badge combine">Schema Compilation</span>
+                <h4 class="card-title">Unified Zod-to-Provider Translation</h4>
+                <p class="card-desc">
+                  Combine single source of truth: derive each provider's native schema dialect automatically from core Zod definitions in TypeScript, without extra processes.
+                </p>
+              </div>
+              <div class="card-code">
+                const dialect = compileProviderDialect(CoreZodCardSchema, provider);
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- [A]DAPT VIEW -->
+        <div class="scamper-view" id="lens-adapt">
+          <div class="scamper-grid">
+            <div class="scamper-card">
+              <div>
+                <span class="card-badge adapt">Hexagonal Architecture</span>
+                <h4 class="card-title">Common Structured Output Port</h4>
+                <p class="card-desc">
+                  Adapt existing LLM adapters by introducing an extensible common structured output port interface with polymorphic provider dialect implementations.
+                </p>
+              </div>
+              <div class="card-code">
+                interface StructuredOutputPort {
+                  generateStructured&lt;T&gt;(schema: ZodSchema&lt;T&gt;): Promise&lt;T&gt;;
+                }
+              </div>
+            </div>
+
+            <div class="scamper-card">
+              <div>
+                <span class="card-badge adapt">Schema-Driven Guidance</span>
+                <h4 class="card-title">Zod Description -> System Guidance</h4>
+                <p class="card-desc">
+                  Adapt field annotations: Zod <code>.describe(...)</code> strings compile directly into prompt-level guidance notes, unifying data validation and semantic guidance in one place.
+                </p>
+              </div>
+              <div class="card-code">
+                keywords: z.array(z.string()).describe("3-5 high-yield recall triggers")
+              </div>
+            </div>
+
+            <div class="scamper-card">
+              <div>
+                <span class="card-badge adapt">Blast Radius Containment</span>
+                <h4 class="card-title">Minimal Change Surface</h4>
+                <p class="card-desc">
+                  Preserve existing adapter boundaries and controller contracts. Internal transformation remains localized strictly inside the provider translation layer.
+                </p>
+              </div>
+              <div class="card-code">
+                // Zero breaking changes to TaskCenter or FlashcardCard components
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- [E]LIMINATE VIEW -->
+        <div class="scamper-view" id="lens-eliminate">
+          <div class="scamper-grid">
+            <div class="scamper-card">
+              <div>
+                <span class="card-badge eliminate">Purged 100%</span>
+                <h4 class="card-title">Eliminate: Regex String Cleaners</h4>
+                <p class="card-desc">
+                  Eradicate markdown fence strippers (<code>```json ... ```</code>), thinking tag scrubbers (<code>&lt;think&gt;</code>), quote balancers, and unescaped newline patchers.
+                </p>
+              </div>
+              <div class="card-code" style="color: #fb7185;">
+                - response.replace(/```json/g, "").replace(/```/g, "").trim();
+              </div>
+            </div>
+
+            <div class="scamper-card">
+              <div>
+                <span class="card-badge eliminate">Purged 100%</span>
+                <h4 class="card-title">Eliminate: Syntax-Repair Retry Hops</h4>
+                <p class="card-desc">
+                  No more sending "Your JSON was malformed, please fix it" repair requests. Retries are strictly reserved for genuine semantic or business rule validations.
+                </p>
+              </div>
+              <div class="card-code" style="color: #fb7185;">
+                - await retryFixingJsonSyntax(rawResponse, parseError);
+              </div>
+            </div>
+
+            <div class="scamper-card">
+              <div>
+                <span class="card-badge eliminate">Purged 100%</span>
+                <h4 class="card-title">Eliminate: Manual Parsing Heuristics</h4>
+                <p class="card-desc">
+                  Remove ad-hoc brackets detection, substring slicing, and loose JSON parsers that mask prompt degradation and cause unpredictable runtime failures.
+                </p>
+              </div>
+              <div class="card-code" style="color: #fb7185;">
+                - const match = raw.match(/\[\s*\{.*\}\s*\]/s);
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- [R]EVERSE VIEW -->
+        <div class="scamper-view" id="lens-reverse">
+          <div class="scamper-grid">
+            <div class="scamper-card">
+              <div>
+                <span class="card-badge reverse">Stream Inversion</span>
+                <h4 class="card-title">Structured Object Streaming</h4>
+                <p class="card-desc">
+                  Reverse the monolithic array paradigm: Parse and yield individual cards progressively as objects stream over the wire, preventing batch truncation failures.
+                </p>
+              </div>
+              <div class="card-code">
+                for await (const card of streamCards(schema)) { emitSSE(card); }
+              </div>
+            </div>
+
+            <div class="scamper-card">
+              <div>
+                <span class="card-badge reverse">Partial Retention</span>
+                <h4 class="card-title">Partial Output Retention</h4>
+                <p class="card-desc">
+                  Monolithic array generation is vulnerable to output token limits. Streaming items preserves valid cards generated prior to token limits, accompanied by friendly UI warning banners.
+                </p>
+              </div>
+              <div class="card-code">
+                saveValidCards(partialList); notifyUser("Retained 7 cards before limit");
+              </div>
+            </div>
+
+            <div class="scamper-card">
+              <div>
+                <span class="card-badge reverse">Execution Inversion</span>
+                <h4 class="card-title">Grammar-Guided Decoding</h4>
+                <p class="card-desc">
+                  Instead of generating unconstrained text and validating downstream, inverse the control: provider grammar engines mask illegal tokens at generation time.
+                </p>
+              </div>
+              <div class="card-code">
+                Token Masking: Valid tokens only allowed by JSON state machine
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         TECHNIQUE 3: INTERACTIVE 4-BRANCH MIND MAP
+         ==================================================================== -->
+    <section class="section-block" id="mindmap">
+      <div class="section-header">
+        <div>
+          <span class="section-tag">Technique 03 • Mind Mapping</span>
+          <h2 class="section-title">The Architectural Mind Map: 4 Core Branches</h2>
+        </div>
+        <div class="section-desc">
+          Click any node to inspect its specific session findings, trade-offs, and architectural role.
+        </div>
+      </div>
+
+      <div class="mindmap-container">
+        <div class="mindmap-controls">
+          <div class="mindmap-core-hub">
+            <div class="core-hub-icon">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/></svg>
+            </div>
+            <span class="core-hub-text">CENTRAL HUB: Reliable Structured LLM Flashcard Pipeline</span>
+          </div>
+
+          <div class="mindmap-btn-group">
+            <button class="mindmap-btn active" data-filter="all">Show All</button>
+            <button class="mindmap-btn" data-filter="decisions">Decisions</button>
+            <button class="mindmap-btn" data-filter="directions">Directions</button>
+            <button class="mindmap-btn" data-filter="ideas">Ideas</button>
+          </div>
+        </div>
+
+        <div class="branches-grid">
+          
+          <!-- BRANCH 1 -->
+          <div class="branch-card b1">
+            <div class="branch-header">
+              <div class="branch-title">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-purple)" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                <span>Branch 1: Core Foundation</span>
+              </div>
+              <span class="branch-badge">Architecture</span>
+            </div>
+            <div class="branch-nodes">
+              <div class="node-item" data-node="decision-1">
+                <div class="node-top">
+                  <span class="node-name">Central Zod Compiler</span>
+                  <span class="node-type decision">Decision</span>
+                </div>
+                <div class="node-detail">Adopt central Zod schema compiled polymorphically into native provider dialects.</div>
+              </div>
+              <div class="node-item" data-node="direction-1">
+                <div class="node-top">
+                  <span class="node-name">Minimal Blast Radius</span>
+                  <span class="node-type direction">Direction</span>
+                </div>
+                <div class="node-detail">Favor minimal blast radius, small change surface, and preserving existing adapter boundaries.</div>
+              </div>
+              <div class="node-item" data-node="idea-1">
+                <div class="node-top">
+                  <span class="node-name">In-House Dialect Mapping</span>
+                  <span class="node-type idea">Idea</span>
+                </div>
+                <div class="node-detail">Lightweight internal schema conversion for full control without 3rd-party framework lock-in.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- BRANCH 2 -->
+          <div class="branch-card b2">
+            <div class="branch-header">
+              <div class="branch-title">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-cyan)" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                <span>Branch 2: Schema Facets</span>
+              </div>
+              <span class="branch-badge">Learning Domain</span>
+            </div>
+            <div class="branch-nodes">
+              <div class="node-item" data-node="direction-2">
+                <div class="node-top">
+                  <span class="node-name">Initial Schema Targets</span>
+                  <span class="node-type direction">Direction</span>
+                </div>
+                <div class="node-detail">Keywords list and exact source document locator, engineered for open-ended extension.</div>
+              </div>
+              <div class="node-item" data-node="idea-2">
+                <div class="node-top">
+                  <span class="node-name">Keywords Recall Drills</span>
+                  <span class="node-type idea">Idea</span>
+                </div>
+                <div class="node-detail">Extensible card schema: keywords list per card enabling lightning-fast recap drills.</div>
+              </div>
+              <div class="node-item" data-node="idea-3">
+                <div class="node-top">
+                  <span class="node-name">Deep Provenance Locators</span>
+                  <span class="node-type idea">Idea</span>
+                </div>
+                <div class="node-detail">Full document provenance metadata: exact source identity, section, and page locator.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- BRANCH 3 -->
+          <div class="branch-card b3">
+            <div class="branch-header">
+              <div class="branch-title">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-emerald)" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                <span>Branch 3: Provider Dialects</span>
+              </div>
+              <span class="branch-badge">Integrations</span>
+            </div>
+            <div class="branch-nodes">
+              <div class="node-item" data-node="idea-4">
+                <div class="node-top">
+                  <span class="node-name">Provider-Native Dialects</span>
+                  <span class="node-type idea">Idea</span>
+                </div>
+                <div class="node-detail">Direct mapping to OpenAI json_schema, Gemini responseSchema, Anthropic tools, Ollama format.</div>
+              </div>
+              <div class="node-item" data-node="question-1">
+                <div class="node-top">
+                  <span class="node-name">Instructor-AI Evaluation</span>
+                  <span class="node-type question">Question</span>
+                </div>
+                <div class="node-detail">Check maturity of @instructor-ai/instructor for TS vs lightweight native mapping.</div>
+              </div>
+              <div class="node-item" data-node="idea-5">
+                <div class="node-top">
+                  <span class="node-name">Prompt-Guidance Synthesis</span>
+                  <span class="node-type idea">Idea</span>
+                </div>
+                <div class="node-detail">Zod field descriptions compile automatically into system prompt directives.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- BRANCH 4 -->
+          <div class="branch-card b4">
+            <div class="branch-header">
+              <div class="branch-title">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-amber)" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                <span>Branch 4: Resilient Streaming</span>
+              </div>
+              <span class="branch-badge">Resilience & UX</span>
+            </div>
+            <div class="branch-nodes">
+              <div class="node-item" data-node="idea-6">
+                <div class="node-top">
+                  <span class="node-name">SSE Card Streaming</span>
+                  <span class="node-type idea">Idea</span>
+                </div>
+                <div class="node-detail">Emit validated flashcards progressively via Server-Sent Events straight to Task Center.</div>
+              </div>
+              <div class="node-item" data-node="idea-7">
+                <div class="node-top">
+                  <span class="node-name">Partial Output Retention</span>
+                  <span class="node-type idea">Idea</span>
+                </div>
+                <div class="node-detail">Preserve valid cards generated prior to token limits with user-facing warning banners.</div>
+              </div>
+              <div class="node-item" data-node="insight-1">
+                <div class="node-top">
+                  <span class="node-name">Monolithic Array Risk</span>
+                  <span class="node-type direction">Insight</span>
+                </div>
+                <div class="node-detail">Monolithic array generation is vulnerable to cutoff; item streaming guarantees partial success.</div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         TECHNIQUE 4: SOLUTION MATRIX
+         ==================================================================== -->
+    <section class="section-block" id="matrix">
+      <div class="section-header">
+        <div>
+          <span class="section-tag">Technique 04 • Solution Matrix</span>
+          <h2 class="section-title">Comparative Matrix: Selecting the Optimum Architecture</h2>
+        </div>
+        <div class="section-desc">
+          Rigorous comparison of candidate approaches against reliability, DX, blast radius, and streaming readiness.
+        </div>
+      </div>
+
+      <div class="matrix-wrapper">
+        <table class="matrix-table">
+          <thead>
+            <tr>
+              <th style="width: 25%;">Evaluation Criteria</th>
+              <th class="highlight-col" style="width: 25%;">
+                👑 In-House Native Dialects
+                <div style="font-size: 0.68rem; font-weight: normal; color: #a78bfa; text-transform: none; margin-top: 2px;">
+                  (Zod in Core -> Provider Schemas)
+                </div>
+              </th>
+              <th style="width: 25%;">
+                Framework-Based TS
+                <div style="font-size: 0.68rem; font-weight: normal; color: var(--text-muted); text-transform: none; margin-top: 2px;">
+                  (@instructor-ai / dspy.ts)
+                </div>
+              </th>
+              <th style="width: 25%;">
+                Python DSPy Sidecar
+                <div style="font-size: 0.68rem; font-weight: normal; color: var(--text-muted); text-transform: none; margin-top: 2px;">
+                  (Polyglot IPC / Microservice)
+                </div>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="matrix-row">
+              <td>
+                <div class="criteria-name">Zero-Parser Reliability</div>
+                <div class="criteria-desc">Elimination of regexes, fence-stripping, and parse crash loops</div>
+              </td>
+              <td class="highlight-col">
+                <span class="score-badge optimal">Guaranteed 100%</span>
+                <div style="font-size: 0.78rem; color: #cbd5e1; margin-top: 4px;">Logit constraint via provider native APIs</div>
+              </td>
+              <td>
+                <span class="score-badge optimal">High (95%)</span>
+                <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 4px;">Wraps provider tool-calling APIs</div>
+              </td>
+              <td>
+                <span class="score-badge optimal">High (95%)</span>
+                <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 4px;">DSPy assertion retry loops</div>
+              </td>
+            </tr>
+
+            <tr class="matrix-row">
+              <td>
+                <div class="criteria-name">Schema Extensibility</div>
+                <div class="criteria-desc">Field-First addition of keywords & deep document provenance</div>
+              </td>
+              <td class="highlight-col">
+                <span class="score-badge optimal">Effortless</span>
+                <div style="font-size: 0.78rem; color: #cbd5e1; margin-top: 4px;">Define in Zod, compiles everywhere automatically</div>
+              </td>
+              <td>
+                <span class="score-badge optimal">Good</span>
+                <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 4px;">Zod schemas directly mapped</div>
+              </td>
+              <td>
+                <span class="score-badge moderate">Frictional</span>
+                <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 4px;">Requires dual-syncing Pydantic & TS types</div>
+              </td>
+            </tr>
+
+            <tr class="matrix-row">
+              <td>
+                <div class="criteria-name">Blast Radius & Boundaries</div>
+                <div class="criteria-desc">Preservation of existing adapter contracts & minimal churn</div>
+              </td>
+              <td class="highlight-col">
+                <span class="score-badge optimal">Minimal (Zero Leak)</span>
+                <div style="font-size: 0.78rem; color: #cbd5e1; margin-top: 4px;">Internal adapter change only; zero UI ripple</div>
+              </td>
+              <td>
+                <span class="score-badge moderate">Moderate</span>
+                <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 4px;">Replaces or wraps provider client instances</div>
+              </td>
+              <td>
+                <span class="score-badge poor">Heavy</span>
+                <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 4px;">New network boundary, IPC protocol, & deployment</div>
+              </td>
+            </tr>
+
+            <tr class="matrix-row">
+              <td>
+                <div class="criteria-name">Runtime Overhead & Lock-in</div>
+                <div class="criteria-desc">Dependencies, package baggage, and framework longevity</div>
+              </td>
+              <td class="highlight-col">
+                <span class="score-badge optimal">Zero Overhead</span>
+                <div style="font-size: 0.78rem; color: #cbd5e1; margin-top: 4px;">Lightweight internal function; 0 new packages</div>
+              </td>
+              <td>
+                <span class="score-badge moderate">Medium Dependency</span>
+                <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 4px;">External framework version drift risks</div>
+              </td>
+              <td>
+                <span class="score-badge poor">High Overhead</span>
+                <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 4px;">Python runtime, virtualenvs, IPC latency</div>
+              </td>
+            </tr>
+
+            <tr class="matrix-row">
+              <td>
+                <div class="criteria-name">Progressive Streaming</div>
+                <div class="criteria-desc">SSE streaming of cards to prevent batch token limit truncation</div>
+              </td>
+              <td class="highlight-col">
+                <span class="score-badge optimal">Native Fit</span>
+                <div style="font-size: 0.78rem; color: #cbd5e1; margin-top: 4px;">Object streaming directly compatible with SSE</div>
+              </td>
+              <td>
+                <span class="score-badge moderate">Partial</span>
+                <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 4px;">Dependent on framework streaming maturity</div>
+              </td>
+              <td>
+                <span class="score-badge moderate">Complex</span>
+                <div style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 4px;">Requires multi-hop IPC streaming buffer</div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- Winner Summary Callout -->
+        <div class="matrix-summary-callout">
+          <div class="callout-content">
+            <div class="callout-tag">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              <span>Selected Architecture Decision</span>
+            </div>
+            <h3 class="callout-title">In-House Native Provider Dialects Emerges Victorious</h3>
+            <p class="callout-desc">
+              By keeping the single source of truth in TypeScript Zod schemas within the application core and compiling directly to provider-native APIs (OpenAI <code>json_schema</code>, Gemini <code>responseSchema</code>, Anthropic tools, Ollama <code>format</code>), we achieve <strong>100% zero-parser reliability</strong> and <strong>effortless schema extensibility</strong> with <strong>zero runtime overhead</strong> and <strong>minimal code churn</strong>.
+            </p>
+          </div>
+          <div>
+            <span class="score-badge optimal" style="font-size: 0.88rem; padding: 8px 18px;">Selected & Approved</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         SYNTHESIS: THE ZERO-PARSER REACTOR & LIVE CARD SHOWCASE
+         ==================================================================== -->
+    <section class="section-block" id="synthesis">
+      <div class="section-header">
+        <div>
+          <span class="section-tag">Technique 05 • Synthesis & Climax</span>
+          <h2 class="section-title">The Zero-Parser Reactor: Field-First Reality</h2>
+        </div>
+        <div class="section-desc">
+          Comparing the legacy regex nightmare with the clean typed dialect pipeline and interactive facet preview.
+        </div>
+      </div>
+
+      <!-- Before vs After Code Split -->
+      <div class="synthesis-grid">
+        <!-- Legacy Regex Nightmare -->
+        <div class="terminal-box legacy">
+          <div class="terminal-header">
+            <div class="terminal-dots">
+              <span class="dot red"></span>
+              <span class="dot yellow"></span>
+              <span class="dot green"></span>
+            </div>
+            <span class="terminal-title">legacy-parser.ts (Regex Surgery Nightmare)</span>
+            <span class="score-badge poor" style="font-size: 0.65rem;">Eliminated</span>
+          </div>
+          <pre class="terminal-code">
+<span class="code-comment">// ❌ Fragile string regex heuristics & fence hacking</span>
+<span class="code-keyword">async function</span> parseFlashcards(raw: <span class="code-prop">string</span>) {
+  <span class="code-comment">// Strip markdown backticks & thinking tags</span>
+  <span class="code-keyword">let</span> clean = raw.replace(<span class="code-err">/```json/gi</span>, <span class="code-str">""</span>)
+                 .replace(<span class="code-err">/```/g</span>, <span class="code-str">""</span>)
+                 .replace(<span class="code-err">/&lt;think&gt;[\s\S]*?&lt;\/think&gt;/gi</span>, <span class="code-str">""</span>)
+                 .trim();
+
+  <span class="code-comment">// Attempt regex extraction of array</span>
+  <span class="code-keyword">const</span> match = clean.match(<span class="code-err">/\[\s*\{.*\}\s*\]/s</span>);
+  <span class="code-keyword">if</span> (!match) {
+    <span class="code-comment">// 💥 Crash: "Failed to parse generated flashcards JSON:</span>
+    <span class="code-comment">//            No valid flashcards found in model output"</span>
+    <span class="code-keyword">throw new</span> Error(<span class="code-str">"No valid flashcards found"</span>);
+  }
+
+  <span class="code-comment">// Try/catch repair retry loops</span>
+  <span class="code-keyword">try</span> {
+    <span class="code-keyword">return</span> JSON.parse(match[<span class="code-prop">0</span>]);
+  } <span class="code-keyword">catch</span> (err) {
+    <span class="code-keyword">return await</span> retryFixingJsonSyntax(clean);
+  }
+}
+          </pre>
+        </div>
+
+        <!-- Modern Zero-Parser Pipeline -->
+        <div class="terminal-box modern">
+          <div class="terminal-header">
+            <div class="terminal-dots">
+              <span class="dot green"></span>
+              <span class="dot yellow"></span>
+              <span class="dot green"></span>
+            </div>
+            <span class="terminal-title">native-dialects.ts (Zero-Parser Zod Compiler)</span>
+            <span class="score-badge optimal" style="font-size: 0.65rem;">Active Architecture</span>
+          </div>
+          <pre class="terminal-code">
+<span class="code-comment">// ✅ Single source of truth: Zod in Core</span>
+<span class="code-keyword">export const</span> FlashcardSchema = z.object({
+  <span class="code-prop">front</span>: z.string().describe(<span class="code-str">"Core question or concept prompt"</span>),
+  <span class="code-prop">back</span>: z.string().describe(<span class="code-str">"Succinct, definitive explanation"</span>),
+  <span class="code-comment">// 🚀 Enriched facets: added without touching any parser!</span>
+  <span class="code-prop">keywords</span>: z.array(z.string()).describe(<span class="code-str">"Drill recall keywords"</span>),
+  <span class="code-prop">provenance</span>: z.object({
+    <span class="code-prop">documentId</span>: z.string(),
+    <span class="code-prop">locator</span>: z.string().describe(<span class="code-str">"Section 4.2 / Page 12"</span>),
+  }),
+});
+
+<span class="code-comment">// Direct typed invocation: provider enforces grammar via logits</span>
+<span class="code-keyword">const</span> cards = <span class="code-keyword">await</span> provider.generateStructured({
+  <span class="code-prop">schema</span>: compileProviderDialect(FlashcardSchema),
+  <span class="code-prop">prompt</span>: sourceText,
+}); <span class="code-comment">// Returns Flashcard[] directly. Zero regex. Zero parse hops!</span>
+          </pre>
+        </div>
+      </div>
+
+      <!-- Live Interactive Flashcard Facet Showcase -->
+      <div class="card-reactor">
+        <div class="reactor-header">
+          <div class="reactor-title-group">
+            <h3>Field-First Learning Facets in Action</h3>
+            <p>Click the flashcard to flip between Front and Back. Observe the newly unlocked Keywords and Deep Provenance facets.</p>
+          </div>
+          <button class="btn-stream-sim" id="simulateSseBtn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="13 17 18 12 13 7"></polyline><polyline points="6 17 11 12 6 7"></polyline></svg>
+            <span>Simulate SSE Card Stream</span>
+          </button>
+        </div>
+
+        <div class="flashcard-stage">
+          <!-- The Interactive Card -->
+          <div class="flashcard-interactive" id="interactiveCard">
+            <div class="card-top-bar">
+              <span class="card-mode-pill" id="cardModePill">Card #1 • Front</span>
+              <span class="card-flip-prompt">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
+                <span>Click card to flip</span>
+              </span>
+            </div>
+
+            <!-- Front Side -->
+            <div class="card-front-content" id="cardFront">
+              <div class="card-prompt-label">Flashcard Prompt</div>
+              <h4 class="card-question">
+                What is compiler-level schema enforcement and how does it eradicate LLM JSON parse errors?
+              </h4>
+            </div>
+
+            <!-- Back Side -->
+            <div class="card-back-content" id="cardBack" style="display: none;">
+              <div class="card-prompt-label" style="color: var(--accent-emerald);">Verified Explanation</div>
+              <p class="card-answer" id="cardAnswer" style="display: block;">
+                Compiler-level schema enforcement compiles high-level types (like Zod) into provider-native grammars (e.g., OpenAI json_schema, Gemini responseSchema). At inference time, token logits violating the grammar are masked before sampling, making syntax corruption mathematically impossible.
+              </p>
+            </div>
+
+            <!-- Facet 1: Keywords Drill Array -->
+            <div class="facet-keywords">
+              <div class="facet-label">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+                <span>Keywords Drill Facet (Speed Recall)</span>
+              </div>
+              <div class="keyword-chips">
+                <span class="keyword-chip">logit-masking</span>
+                <span class="keyword-chip">grammar-decoding</span>
+                <span class="keyword-chip">zero-parser</span>
+                <span class="keyword-chip">schema-dialect</span>
+              </div>
+            </div>
+
+            <!-- Facet 2: Document Provenance Locator -->
+            <div class="facet-provenance">
+              <div class="provenance-doc">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                <span>Doc: <code>structured-llm-arch-2026.pdf</code></span>
+              </div>
+              <div class="provenance-locator">
+                Locator: <code>Section 4.2 • Page 38 • Offset 1840</code>
+              </div>
+            </div>
+          </div>
+
+          <!-- Streaming Live Telemetry Log -->
+          <div class="stream-log-container">
+            <div>
+              <div class="stream-log-header">
+                <span>TASK CENTER SSE STREAM MONITOR</span>
+                <span style="color: var(--accent-emerald);">● CONNECTED</span>
+              </div>
+              <div class="stream-events" id="streamEventsLog">
+                <div class="event-line">
+                  <span class="event-badge info">INFO</span>
+                  <span>Pipeline initialized: In-House Native Provider Dialect</span>
+                </div>
+                <div class="event-line">
+                  <span class="event-badge sse">SSE</span>
+                  <span>Schema compiled: Zod -> provider.responseSchema</span>
+                </div>
+                <div class="event-line">
+                  <span class="event-badge card">CARD #1</span>
+                  <span>Validated card streamed: "What is compiler-level schema enforcement..."</span>
+                </div>
+              </div>
+            </div>
+
+            <div style="font-size: 0.72rem; color: var(--text-muted); border-top: 1px solid rgba(255,255,255,0.06); padding-top: 8px;">
+              Resilience: Partial output retained if token cutoff occurs.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- FINAL MANIFESTO & SYNTHESIS VERDICT -->
+      <div class="manifesto-card">
+        <span class="manifesto-quote-mark">“</span>
+        <div class="manifesto-title">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent-purple)" stroke-width="2.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+          <span>The Zero-Parser Synthesis Manifesto</span>
+        </div>
+        <p class="manifesto-text">
+          Moving from regex string surgery to provider-native schema enforcement delivers guaranteed structure, eliminates brittle sanitizers, and allows field-first schema growth (keywords + provenance) with zero lock-in.
+        </p>
+        <div class="manifesto-footer">
+          <div>
+            <span>BMad Brainstorming Session Keepsake</span>
+            <span> • </span>
+            <span style="color: #cbd5e1;">flashcard-master</span>
+          </div>
+          <div>
+            <span>Architecture: In-House Native Provider Dialects</span>
+            <span> • </span>
+            <span style="color: #34d399;">Status: Complete</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- ==========================================================================
+       INTERACTIVE SCRIPT (Zero External Dependencies)
+       ========================================================================== -->
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+
+      /* ------------------------------------------------------------------------
+         1. Top Nav Active Scroll Tracking
+         ------------------------------------------------------------------------ */
+      const navLinks = document.querySelectorAll(".nav-link");
+      const sections = document.querySelectorAll("section.section-block");
+
+      window.addEventListener("scroll", () => {
+        let current = "";
+        sections.forEach(section => {
+          const sectionTop = section.offsetTop - 140;
+          if (window.pageYOffset >= sectionTop) {
+            current = section.getAttribute("id");
+          }
+        });
+        navLinks.forEach(link => {
+          link.classList.remove("active");
+          if (link.getAttribute("href") === `#${current}`) {
+            link.classList.add("active");
+          }
+        });
+      });
+
+      /* ------------------------------------------------------------------------
+         2. Laddering Mountain Ascent Interaction
+         ------------------------------------------------------------------------ */
+      const rungs = document.querySelectorAll(".ladder-rung");
+      const inspectorAltitude = document.getElementById("inspectorAltitude");
+      const inspectorTitle = document.getElementById("inspectorTitle");
+      const inspectorQuote = document.getElementById("inspectorQuote");
+      const inspectorDesc = document.getElementById("inspectorDesc");
+      const rungTelemetry = document.getElementById("rungTelemetry");
+      const autoClimbBtn = document.getElementById("autoClimbBtn");
+
+      function activateRung(rung) {
+        rungs.forEach(r => r.classList.remove("active"));
+        rung.classList.add("active");
+
+        const elev = rung.getAttribute("data-elevation");
+        const title = rung.getAttribute("data-title");
+        const quote = rung.getAttribute("data-quote");
+        const desc = rung.getAttribute("data-desc");
+        const step = parseInt(rung.getAttribute("data-step"), 10) + 1;
+
+        inspectorAltitude.innerHTML = `
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"></polyline></svg>
+          <span>ALTITUDE: ${elev.toUpperCase()}</span>
+        `;
+        inspectorTitle.textContent = title;
+        inspectorQuote.textContent = `"${quote}"`;
+        inspectorDesc.textContent = desc;
+        rungTelemetry.textContent = `Step ${step} of 6`;
+      }
+
+      rungs.forEach(rung => {
+        rung.addEventListener("click", () => activateRung(rung));
+      });
+
+      // Auto Climb Animation
+      let climbIndex = 0;
+      let climbTimer = null;
+      if (autoClimbBtn) {
+        autoClimbBtn.addEventListener("click", () => {
+          if (climbTimer) {
+            clearInterval(climbTimer);
+            climbTimer = null;
+            autoClimbBtn.innerHTML = `
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"></polyline></svg>
+              <span>Auto-Climb Rungs</span>
+            `;
+            return;
+          }
+
+          autoClimbBtn.innerHTML = `
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+            <span>Pause Climb</span>
+          `;
+
+          climbTimer = setInterval(() => {
+            climbIndex = (climbIndex + 1) % rungs.length;
+            activateRung(rungs[climbIndex]);
+            if (climbIndex === rungs.length - 1) {
+              clearInterval(climbTimer);
+              climbTimer = null;
+              autoClimbBtn.innerHTML = `
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"></polyline></svg>
+                <span>Re-Climb Ladder</span>
+              `;
+            }
+          }, 1800);
+        });
+      }
+
+      /* ------------------------------------------------------------------------
+         3. SCAMPER Lenses Switcher
+         ------------------------------------------------------------------------ */
+      const scamperTabs = document.querySelectorAll(".scamper-tab");
+      const scamperViews = document.querySelectorAll(".scamper-view");
+
+      scamperTabs.forEach(tab => {
+        tab.addEventListener("click", () => {
+          const lens = tab.getAttribute("data-lens");
+          scamperTabs.forEach(t => t.classList.remove("active"));
+          scamperViews.forEach(v => v.classList.remove("active"));
+
+          tab.classList.add("active");
+          const activeView = document.getElementById(`lens-${lens}`);
+          if (activeView) activeView.classList.add("active");
+        });
+      });
+
+      /* ------------------------------------------------------------------------
+         4. Mind Map Node Filter & Highlights
+         ------------------------------------------------------------------------ */
+      const filterBtns = document.querySelectorAll(".mindmap-btn");
+      const nodeItems = document.querySelectorAll(".node-item");
+
+      filterBtns.forEach(btn => {
+        btn.addEventListener("click", () => {
+          filterBtns.forEach(b => b.classList.remove("active"));
+          btn.classList.add("active");
+
+          const filter = btn.getAttribute("data-filter");
+          nodeItems.forEach(node => {
+            const typeBadge = node.querySelector(".node-type");
+            const type = typeBadge ? typeBadge.textContent.toLowerCase() : "";
+
+            if (filter === "all") {
+              node.style.display = "block";
+              node.style.opacity = "1";
+            } else if (filter === "decisions" && type === "decision") {
+              node.style.display = "block";
+              node.style.opacity = "1";
+            } else if (filter === "directions" && (type === "direction" || type === "insight")) {
+              node.style.display = "block";
+              node.style.opacity = "1";
+            } else if (filter === "ideas" && type === "idea") {
+              node.style.display = "block";
+              node.style.opacity = "1";
+            } else {
+              node.style.opacity = "0.2";
+            }
+          });
+        });
+      });
+
+      nodeItems.forEach(node => {
+        node.addEventListener("click", () => {
+          nodeItems.forEach(n => n.classList.remove("selected"));
+          node.classList.add("selected");
+        });
+      });
+
+      /* ------------------------------------------------------------------------
+         5. Flashcard Interactive Flip (Front / Back)
+         ------------------------------------------------------------------------ */
+      const interactiveCard = document.getElementById("interactiveCard");
+      const cardFront = document.getElementById("cardFront");
+      const cardBack = document.getElementById("cardBack");
+      const cardModePill = document.getElementById("cardModePill");
+      let isFlipped = false;
+
+      if (interactiveCard) {
+        interactiveCard.addEventListener("click", (e) => {
+          // If clicked a keyword chip or provenance link, don't flip
+          if (e.target.closest(".keyword-chip") || e.target.closest(".facet-provenance")) {
+            return;
+          }
+          isFlipped = !isFlipped;
+          if (isFlipped) {
+            cardFront.style.display = "none";
+            cardBack.style.display = "block";
+            cardModePill.textContent = "Card #1 • Back (Verified)";
+            cardModePill.style.color = "#34d399";
+            cardModePill.style.borderColor = "rgba(16, 185, 129, 0.4)";
+            interactiveCard.style.borderColor = "rgba(16, 185, 129, 0.4)";
+          } else {
+            cardBack.style.display = "none";
+            cardFront.style.display = "block";
+            cardModePill.textContent = "Card #1 • Front";
+            cardModePill.style.color = "#c084fc";
+            cardModePill.style.borderColor = "rgba(139, 92, 246, 0.3)";
+            interactiveCard.style.borderColor = "var(--border-glow)";
+          }
+        });
+      }
+
+      /* ------------------------------------------------------------------------
+         6. Simulate SSE Structured Card Streaming
+         ------------------------------------------------------------------------ */
+      const simulateSseBtn = document.getElementById("simulateSseBtn");
+      const streamEventsLog = document.getElementById("streamEventsLog");
+
+      const demoCards = [
+        {
+          front: "Why are monolithic JSON arrays vulnerable during LLM generation?",
+          back: "If output tokens hit context limits mid-array, the closing brackets are cut off, invalidating the entire JSON payload and discarding all generated items.",
+          keywords: ["token-limits", "truncation-failure", "sse-streaming"],
+          doc: "system-arch-v2.pdf",
+          loc: "Section 5.1 • Page 42"
+        },
+        {
+          front: "How does SSE streaming resolve token limit batch drop?",
+          back: "Each card is validated and yielded immediately as a standalone object over Server-Sent Events, retaining all prior items even if truncation occurs later.",
+          keywords: ["partial-retention", "sse-events", "resilience"],
+          doc: "system-arch-v2.pdf",
+          loc: "Section 5.3 • Page 45"
+        },
+        {
+          front: "What is the role of Zod field descriptions in provider prompt compilation?",
+          back: "Zod .describe() annotations automatically compile into system prompt guidelines, keeping semantic directions in sync with type validators.",
+          keywords: ["zod-describe", "prompt-compilation", "single-source-truth"],
+          doc: "native-dialects-rfc.md",
+          loc: "Section 2.4 • Page 8"
+        }
+      ];
+
+      let streamRunning = false;
+      if (simulateSseBtn && streamEventsLog) {
+        simulateSseBtn.addEventListener("click", () => {
+          if (streamRunning) return;
+          streamRunning = true;
+          simulateSseBtn.disabled = true;
+          simulateSseBtn.style.opacity = "0.6";
+
+          // Clear previous cards, keep header
+          streamEventsLog.innerHTML = `
+            <div class="event-line">
+              <span class="event-badge sse">SSE INIT</span>
+              <span>Opening stream connection to Task Center...</span>
+            </div>
+          `;
+
+          let cardIndex = 0;
+          const interval = setInterval(() => {
+            if (cardIndex < demoCards.length) {
+              const c = demoCards[cardIndex];
+              const eventLine = document.createElement("div");
+              eventLine.className = "event-line";
+              eventLine.innerHTML = `
+                <span class="event-badge card">CARD #${cardIndex + 2}</span>
+                <span>Streamed & validated: "${c.front.substring(0, 48)}..."</span>
+              `;
+              streamEventsLog.appendChild(eventLine);
+              streamEventsLog.scrollTop = streamEventsLog.scrollHeight;
+
+              // Also update interactive card with newly streamed card!
+              const q = document.querySelector(".card-question");
+              const a = document.getElementById("cardAnswer");
+              if (q) q.textContent = c.front;
+              if (a) a.textContent = c.back;
+
+              // Update chips
+              const chipsCont = document.querySelector(".keyword-chips");
+              if (chipsCont) {
+                chipsCont.innerHTML = c.keywords.map(k => `<span class="keyword-chip">${k}</span>`).join(" ");
+              }
+
+              // Update doc locator
+              const docElem = document.querySelector(".provenance-doc span code");
+              const locElem = document.querySelector(".provenance-locator code");
+              if (docElem) docElem.textContent = c.doc;
+              if (locElem) locElem.textContent = c.loc;
+
+              cardIndex++;
+            } else {
+              clearInterval(interval);
+              const doneLine = document.createElement("div");
+              doneLine.className = "event-line";
+              doneLine.innerHTML = `
+                <span class="event-badge info">STREAM END</span>
+                <span style="color: #34d399;">Batch complete: 4 validated cards preserved without regex parsing!</span>
+              `;
+              streamEventsLog.appendChild(doneLine);
+              streamEventsLog.scrollTop = streamEventsLog.scrollHeight;
+              streamRunning = false;
+              simulateSseBtn.disabled = false;
+              simulateSseBtn.style.opacity = "1";
+            }
+          }, 1100);
+        });
+      }
+
+    });
+  </script>
+</body>
+</html>

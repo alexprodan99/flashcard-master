@@ -96,6 +96,11 @@ This document provides the complete epic and story breakdown for `flashcard-mast
 - **FR-442**: Integrations & Secrets Dashboard UI (Dedicated "⚙️ Settings & Integrations" view/tab in Web UI).
 - **FR-443**: Zero-Friction Token Auto-Injection (Generate Studio and workers automatically retrieve active credentials).
 - **FR-444**: Interactive Notion Source Configuration UI (Add/Edit Source modal with Notion URL validator and recursion toggle).
+- **FR-211**: Provider-Native Structured Output Enforcement (Gemini responseSchema, OpenAI strict json_schema, Anthropic forced tools, Ollama format).
+- **FR-212**: Polymorphic Zod Dialect Compiler (Translates core Zod schema to provider-specific schema definitions and embeds .describe() prompt guidelines).
+- **FR-213**: Enriched Flashcard Learning Facets (keywords: string[] and sourceLocator: string added to domain models, database schema, and Question Explorer UI).
+- **FR-214**: Progressive SSE Card Streaming & Partial Token-Cutoff Retention (Emit validated cards incrementally via SSE into Task Center; gracefully harvest and commit partial cards with warning notifications upon hitting token limits).
+- **FR-215**: Complete Elimination of Legacy String Sanitization (Remove regex cleaners, fence strippers, quote heuristics, and syntax repair retries from adapters).
 
 ### Non-Functional Requirements
 
@@ -1150,6 +1155,95 @@ All tests enforce a strict 3-second timeout and return `{ success: boolean, mess
 - **And** Generate Studio can synthesize grounded flashcards from the ingested Notion documents.
 - **And** 100% of monorepo tests pass across `core`, `adapters`, `cli`, and `web`.
 - **And** `npm run lint` and `npm run typecheck` pass with zero errors.
+
+---
+
+## Epic 16: Deterministic Structured LLM Responses via Provider-Native Dialects
+
+**Goal:** Replace fragile regex-based parsing, markdown fence stripping, and quote sanitizers with deterministic provider-native structured outputs across all supported LLM providers (Gemini, OpenAI, Anthropic, Ollama); establish a single source of truth Zod schema in `@flashcard-master/core` that polymorphically compiles into native provider dialects with embedded prompt directives; expand the flashcard domain model with `keywords: string[]` and `sourceLocator: string` with SQLite non-destructive migrations; stream validated cards progressively via SSE into Task Center while gracefully preserving partial results upon token cutoffs; and completely deprecate legacy string repair heuristics across the monorepo.
+
+### Story 16.1: Enriched Flashcard Schema & SQLite Migration
+**ID:** `16-1-enriched-flashcard-schema-and-sqlite-migration`
+**Description:** Update `packages/core/src/domain/models.ts` and `CardGenerationDraftSchema` to include `keywords: string[]` (2 to 5 atomic semantic keywords with `.describe()` annotation) and `sourceLocator: string` (exact document locator coordinate/URI beyond citation fragment). Update `Flashcard` domain entity and `CardRepository` with SQLite database migrations:
+- Add non-destructive column migrations: `ALTER TABLE cards ADD COLUMN keywords TEXT DEFAULT '[]'; ALTER TABLE cards ADD COLUMN source_locator TEXT DEFAULT '';`.
+- Update repository serialization to persist `keywords` as JSON string array and parse on read with fallback to empty array `[]`.
+- Update repository mapping to read `source_locator` with fallback to empty string `""`.
+- Update `CardRepository` unit tests to verify creation, retrieval, and updates with new fields and ensure existing database records without these fields load without regressions.
+**Acceptance Criteria:**
+- **Given** an updated core domain model
+- **When** `CardGenerationDraftSchema.parse()` is invoked
+- **Then** it validates `keywords` as a non-empty array of strings and `sourceLocator` as a non-empty trimmed string.
+- **And** running SQLite migrations adds `keywords` and `source_locator` columns without failing if columns already exist.
+- **And** querying historical card records returns empty arrays `[]` for keywords and empty string `""` for sourceLocator without runtime exceptions.
+- **And** persisting new cards preserves full keyword lists and source locator coordinates.
+- **And** unit tests in `packages/core` verify schema validation, repository CRUD, and migration backward compatibility.
+
+### Story 16.2: Central Zod-to-Provider Dialect Compiler
+**ID:** `16-2-central-zod-to-provider-dialect-compiler`
+**Description:** Implement `DialectCompiler` in `packages/core/src/llm/dialect-compiler.ts` (or shared adapter layer) that accepts any Zod object schema and polymorphically compiles it into provider-specific structured output formats:
+- **Google Gemini:** Compiles Zod schema into Google GenAI `Schema` (`type: SchemaType.OBJECT`, property types, descriptions from `.describe()`).
+- **OpenAI:** Compiles Zod schema into strict `json_schema` with `additionalProperties: false`, all fields in `required`, and optional fields represented as nullable unions.
+- **Anthropic:** Wraps schema in tool definition `{ name: "emit_flashcards", description: string, input_schema: JsonSchema }` for forced tool execution.
+- **Ollama:** Compiles Zod schema into standard JSON Schema for the `format` option.
+- Schema `.describe()` annotations are automatically extracted to serve as model prompt directives.
+**Acceptance Criteria:**
+- **Given** `CardGenerationDraftSchema`
+- **When** passed to `DialectCompiler.toGeminiSchema()`
+- **Then** it returns a valid Google GenAI Schema object with correct `SchemaType` mappings and descriptions.
+- **And** `DialectCompiler.toOpenAISchema()` returns a valid JSON Schema with `additionalProperties: false` and strict validation properties.
+- **And** `DialectCompiler.toAnthropicTool()` returns a valid tool definition schema configured for forced tool execution.
+- **And** `DialectCompiler.toOllamaSchema()` returns a valid JSON Schema object.
+- **And** unit tests verify compiler output against all 4 provider specifications.
+
+### Story 16.3: Provider Adapters Native Structured Output Migration
+**ID:** `16-3-provider-adapters-native-structured-output-migration`
+**Description:** Refactor all 4 LLM provider adapters in `packages/adapters/src/llm/` to use compiled dialect schemas and parse typed response objects directly without regex parsing:
+- **GeminiAdapter (`gemini-adapter.ts`):** Pass `responseSchema` and `responseMimeType: "application/json"` in `generationConfig`. Parse `JSON.parse(response.text)` directly with `z.array(CardGenerationDraftSchema)`.
+- **OpenAIAdapter (`openai-adapter.ts`):** Pass `response_format: { type: "json_schema", json_schema: { name: "flashcards", strict: true, schema: compiledSchema } }`. Parse content directly with Zod schema.
+- **AnthropicAdapter (`anthropic-adapter.ts`):** Send tool definition with `tool_choice: { type: "tool", name: "emit_flashcards" }`. Extract cards directly from `tool_use.input.cards`.
+- **OllamaAdapter (`ollama-adapter.ts`):** Pass `format: compiledSchema`. Parse response content directly with Zod schema.
+- Remove all prompt-level instructions pleading for JSON formatting in English text.
+**Acceptance Criteria:**
+- **Given** card generation requests sent to Gemini, OpenAI, Anthropic, or Ollama
+- **When** the provider responds
+- **Then** the adapter parses strongly-typed `CardGenerationDraft[]` directly from the provider response payload.
+- **And** no regex searching, fence stripping, or quote escaping heuristics are invoked.
+- **And** generated cards contain `keywords` and `sourceLocator` matching the schema.
+- **And** unit tests with mocked provider responses verify successful object extraction for each adapter.
+
+### Story 16.4: Progressive SSE Streaming & Token Limit Retention
+**ID:** `16-4-progressive-sse-streaming-and-token-limit-retention`
+**Description:** Update card generation workers in `packages/web/src/workers/task-worker.ts` and SSE endpoints in `packages/web/src/server.ts` to support progressive card-by-card emission and graceful token limit handling:
+- Emit `card_created` SSE events progressively into Task Center as each validated card is generated.
+- When an LLM provider stream terminates due to output token limits (`finish_reason === 'length'` or `finish_reason === 'max_tokens'`), catch the event:
+  - Harvest and commit all fully validated flashcards generated prior to the cutoff into SQLite.
+  - Set job status to `COMPLETED_WITH_WARNINGS`.
+  - Emit an SSE warning event (`job_warning: "Generation completed with partial results: output token limit reached. All completed cards were saved."`).
+  - Render a clear amber warning badge and banner in the Task Center UI drawer and Generation Studio.
+**Acceptance Criteria:**
+- **Given** a long document generation job
+- **When** cards are being generated by the worker thread
+- **Then** the Web UI Task Center receives live SSE events displaying cards incrementally as they are created.
+- **And** when an LLM hits the max output token limit mid-generation, all cards produced prior to truncation are committed to SQLite.
+- **And** the Task Center drawer displays a warning badge indicating partial generation due to token limits.
+- **And** no `LLMResponseParsingError` is thrown when token limits are reached.
+- **And** integration tests verify progressive SSE emission and token cutoff retention.
+
+### Story 16.5: Legacy Sanitizer Deprecation & Monorepo Test Suite
+**ID:** `16-5-legacy-sanitizer-deprecation-and-monorepo-test-suite`
+**Description:** Remove legacy heuristic parsing routines from `packages/adapters/src/llm/types.ts`:
+- Delete `cleanJsonString()`, `isClosingQuote()`, and `sanitizeJsonString()`.
+- Deprecate multi-hop syntax repair retry logic.
+- Update `packages/adapters/test/llm-adapters.test.ts` to remove regex/sanitization unit tests and add robust tests for native structured outputs, schema error handling, and provider fallback behavior.
+- Run complete monorepo verification: `npm run lint`, `npm run typecheck`, and `npm test` across all workspaces (`core`, `adapters`, `web`, `cli`).
+**Acceptance Criteria:**
+- **Given** the `packages/adapters` codebase
+- **When** inspecting `packages/adapters/src/llm/types.ts`
+- **Then** zero regex string cleaners, markdown fence strippers, or quote heuristics exist.
+- **And** all adapters rely exclusively on native provider schema enforcement.
+- **And** `npm test` passes across all monorepo packages.
+- **And** `npm run lint` and `npm run typecheck` execute with zero errors or warnings.
+
 
 
 
