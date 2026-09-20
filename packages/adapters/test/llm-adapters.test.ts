@@ -933,6 +933,29 @@ Let's see: { "WAL": "Write-Ahead Logging" }
       }
     });
 
+    it("recovers completed cards from truncated JSON array when token limit is hit", () => {
+      const truncatedObject = `{"cards": [
+        {"question": "What is WAL?", "answer": "Write-Ahead Logging", "citation": "WAL mode", "keywords": ["wal", "sqlite"], "sourceLocator": "Section 1"},
+        {"question": "What is IPC?", "answer": "Inter-Process Communication", "citation": "IPC message", "keywords": ["ipc"], "sourceLocator": "Section 2"},
+        {"question": "What is truncated?", "answer": "Incom`;
+
+      const drafts = parseStructuredCardDrafts(truncatedObject, "openai");
+      expect(drafts.length).toBe(2);
+      expect(drafts[0].question).toBe("What is WAL?");
+      expect(drafts[0].keywords).toEqual(["wal", "sqlite"]);
+      expect(drafts[1].question).toBe("What is IPC?");
+      expect((drafts as any).isPartial).toBe(true);
+
+      const truncatedRootArray = `[
+        {"question": "What is SSE?", "answer": "Server-Sent Events", "citation": "SSE stream", "keywords": ["sse"], "sourceLocator": "Sec 3"},
+        {"question": "What is partial?`;
+
+      const rootDrafts = parseStructuredCardDrafts(truncatedRootArray, "gemini");
+      expect(rootDrafts.length).toBe(1);
+      expect(rootDrafts[0].question).toBe("What is SSE?");
+      expect((rootDrafts as any).isPartial).toBe(true);
+    });
+
     it("throws LLMResponseParsingError for card missing question or answer", () => {
       const payload = JSON.stringify([{ question: "", answer: "answer" }]);
       expect(() => parseStructuredCardDrafts(payload, "gemini")).toThrow(LLMResponseParsingError);

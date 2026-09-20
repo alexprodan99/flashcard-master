@@ -445,6 +445,76 @@ describe('Svelte 5 Universal Client Stores (Epic 14.4)', () => {
       expect(sourcesStore.isSyncingAll).toBe(false);
       expect(sourcesStore.activeSyncAllJobId).toBe(null);
     });
+
+    it('handles card_created SSE events and manages progressive card streams', () => {
+      const listeners: Record<string, (e: any) => void> = {};
+      class MockEventSource {
+        addEventListener(event: string, cb: (e: any) => void) {
+          listeners[event] = cb;
+        }
+        close() {}
+      }
+      vi.stubGlobal('EventSource', MockEventSource);
+
+      const store = new TaskStore();
+      store.init();
+
+      generateStore.startGenerating('job-stream-test');
+
+      // Emit first progressive card
+      listeners['card_created']?.({
+        data: JSON.stringify({
+          jobId: 'job-stream-test',
+          card: {
+            id: 'c-1',
+            question: 'What is SSE?',
+            answer: 'Server-Sent Events',
+            difficulty: 'beginner',
+            keywords: ['sse', 'streaming'],
+            sourceLocator: 'Doc 1, para 1',
+          },
+        }),
+      });
+
+      // Emit second progressive card
+      listeners['card_created']?.({
+        data: JSON.stringify({
+          jobId: 'job-stream-test',
+          card: {
+            id: 'c-2',
+            question: 'What is token cutoff?',
+            answer: 'Premature stop at max tokens',
+            difficulty: 'intermediate',
+            keywords: ['tokens'],
+            sourceLocator: 'Doc 1, para 2',
+          },
+        }),
+      });
+
+      const cards = store.getStreamedCardsForJob('job-stream-test');
+      expect(cards.length).toBe(2);
+      expect(cards[0].question).toBe('What is SSE?');
+      expect(cards[0].keywords).toEqual(['sse', 'streaming']);
+      expect(cards[1].question).toBe('What is token cutoff?');
+
+      // Emit job_completed with warnings (partial retention)
+      listeners['job_completed']?.({
+        data: JSON.stringify({
+          id: 'job-stream-test',
+          type: 'generation',
+          status: 'completed_with_warnings',
+          resultSummary: {
+            cardsCreated: 2,
+            duplicatesSkipped: 0,
+            partial: true,
+          },
+        }),
+      });
+
+      expect(generateStore.isGenerating).toBe(false);
+      expect(generateStore.generationResult?.cardsCreated).toBe(2);
+      expect(generateStore.createdCards.length).toBe(2);
+    });
   });
 
   describe('SettingsStore (Story 15.3)', () => {

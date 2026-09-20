@@ -34,12 +34,47 @@ export class LLMNetworkError extends Error {
  * Parses JSON strings or pre-parsed objects directly without heuristics,
  * mapping keywords, sourceLocator, and symmetrical citation/sourceQuote fields.
  */
+function tryRecoverTruncatedJson(str: string): any {
+  const unwrapped = str.replace(/^```(?:json)?\s*|\s*```$/gi, "").trim();
+  let lastIndex = unwrapped.length;
+
+  while (lastIndex > 0) {
+    const braceIdx = unwrapped.lastIndexOf("}", lastIndex - 1);
+    if (braceIdx === -1) break;
+    lastIndex = braceIdx;
+
+    const candidate = unwrapped.slice(0, braceIdx + 1);
+    const closers = ["]}", "}", "]"];
+    for (const closer of closers) {
+      try {
+        const parsed = JSON.parse(candidate + closer);
+        const cards = Array.isArray(parsed)
+          ? parsed
+          : Array.isArray(parsed?.cards)
+            ? parsed.cards
+            : typeof parsed === "object" && parsed !== null && (typeof parsed.question === "string" || typeof parsed.answer === "string")
+              ? [parsed]
+              : [];
+        if (cards.length > 0) {
+          const valid = cards.filter((c: any) => c && typeof c === "object" && (c.question || c.answer));
+          if (valid.length > 0) {
+            return parsed;
+          }
+        }
+      } catch {}
+    }
+  }
+  return null;
+}
+
 export function parseStructuredCardDrafts(
   input: string | Record<string, any> | unknown[],
   providerName: string,
   options: { difficulty?: DifficultyLevel } = {}
 ): CardGenerationDraft[] {
   let parsed: any;
+  let isTruncatedRecovery = false;
+
   if (typeof input === "string") {
     const trimmed = input.trim();
     if (!trimmed) {
@@ -53,10 +88,22 @@ export function parseStructuredCardDrafts(
           const unwrapped = trimmed.replace(/^```(?:json)?\s*|\s*```$/gi, "").trim();
           parsed = JSON.parse(unwrapped);
         } catch (innerErr: any) {
-          throw new LLMResponseParsingError(providerName, `Failed to parse structured JSON: ${innerErr.message}`, trimmed);
+          const recovered = tryRecoverTruncatedJson(trimmed);
+          if (recovered) {
+            parsed = recovered;
+            isTruncatedRecovery = true;
+          } else {
+            throw new LLMResponseParsingError(providerName, `Failed to parse structured JSON: ${innerErr.message}`, trimmed);
+          }
         }
       } else {
-        throw new LLMResponseParsingError(providerName, `Failed to parse structured JSON: ${err.message}`, trimmed);
+        const recovered = tryRecoverTruncatedJson(trimmed);
+        if (recovered) {
+          parsed = recovered;
+          isTruncatedRecovery = true;
+        } else {
+          throw new LLMResponseParsingError(providerName, `Failed to parse structured JSON: ${err.message}`, trimmed);
+        }
       }
     }
   } else if (typeof input === "object" && input !== null) {
@@ -103,6 +150,11 @@ export function parseStructuredCardDrafts(
   const validDrafts = drafts.filter((c: CardGenerationDraft) => c.question.length > 0 && c.answer.length > 0);
   if (validDrafts.length === 0) {
     throw new LLMResponseParsingError(providerName, "No valid flashcard items found in response payload.");
+  }
+
+  if (isTruncatedRecovery) {
+    (validDrafts as any).isPartial = true;
+    (validDrafts as any).partial = true;
   }
 
   return validDrafts;

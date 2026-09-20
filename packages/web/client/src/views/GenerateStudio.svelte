@@ -544,7 +544,11 @@
               duplicatesSkipped,
               newCards: summary.newCards || [],
             });
-            toastStore.success(`🎉 Generated ${cardsCreated} cards (${duplicatesSkipped} duplicates skipped)`);
+            if (job.status === 'completed_with_warnings') {
+              toastStore.warn(`⚠️ Partial output saved: ${cardsCreated} cards generated (${duplicatesSkipped} duplicates skipped). Token limit was reached.`);
+            } else {
+              toastStore.success(`🎉 Generated ${cardsCreated} cards (${duplicatesSkipped} duplicates skipped)`);
+            }
           }
           break;
         } else if (job.status === 'failed') {

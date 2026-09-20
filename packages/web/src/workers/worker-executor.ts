@@ -133,7 +133,10 @@ export class WorkerExecutor {
                   question: c.question,
                   answer: c.answer,
                   sourceQuote: c.sourceQuote,
+                  citation: c.citation || c.sourceQuote,
                   difficulty: c.difficulty,
+                  keywords: c.keywords || [],
+                  sourceLocator: c.sourceLocator || "",
                 }));
 
                 const dedupResult = this.options.dedupService
@@ -173,9 +176,12 @@ export class WorkerExecutor {
                       targetDeck: msg.targetDeck,
                       personaUsed: msg.persona || "socratic-mentor",
                       tags: msg.tags || [],
+                      keywords: draft.keywords || [],
+                      sourceLocator: draft.sourceLocator || "",
                     });
                     if (created) {
                       committedCards.push(created);
+                      ctx.emitCard?.(created);
                     }
                   } catch (createErr: any) {
                     // Fallback to null sourceId if foreign key constraint failed
@@ -192,9 +198,12 @@ export class WorkerExecutor {
                         targetDeck: msg.targetDeck,
                         personaUsed: msg.persona || "socratic-mentor",
                         tags: msg.tags || [],
+                        keywords: draft.keywords || [],
+                        sourceLocator: draft.sourceLocator || "",
                       });
                       if (created) {
                         committedCards.push(created);
+                        ctx.emitCard?.(created);
                       }
                     } else {
                       throw createErr;

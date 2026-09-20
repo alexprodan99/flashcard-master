@@ -6,6 +6,7 @@ import type {
   JobStatus,
   JobLogLevel,
   JobRepository,
+  Flashcard,
 } from "@flashcard-master/core";
 
 export interface ConcurrencyLimits {
@@ -25,6 +26,7 @@ export interface JobExecutionContext {
   updateProgress: (currentStep: number, totalSteps?: number, stepName?: string) => void;
   log: (stepNumber: number, stepTitle: string, level: JobLogLevel, message: string, details?: Record<string, any>) => JobLog;
   setResultSummary: (summary: Record<string, any>) => void;
+  emitCard?: (card: Flashcard) => void;
 }
 
 export type JobExecutionHandler = (job: Job, ctx: JobExecutionContext) => Promise<any>;
@@ -295,6 +297,9 @@ export class JobManager extends EventEmitter {
       },
       setResultSummary: (summary: Record<string, any>) => {
         latestSummary = summary;
+      },
+      emitCard: (card: Flashcard) => {
+        this.emit("card_created", { jobId: item.jobId, card });
       },
     };
 

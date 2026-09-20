@@ -5,6 +5,7 @@ import {
   GroundingGuard,
   PersonaStudioService,
   type CleanTextDocument,
+  type GeneratedCardDraft,
 } from "@flashcard-master/core";
 import { createLLMAdapter, DocumentExportService } from "@flashcard-master/adapters";
 import type {
@@ -165,82 +166,130 @@ if (parentPort) {
         message: `Analyzing and prompting LLM for "${doc.title}"...`,
       });
 
+      const cleanDoc: CleanTextDocument = {
+        id: doc.id,
+        sourceId: doc.sourceId,
+        title: doc.title,
+        textContent: doc.textContent,
+        originUrl: doc.originUrl,
+        contentHash: "",
+      };
+
+      let docCreatedCount = 0;
+      let docDuplicatesCount = 0;
+      let hasTokenLimitTruncation = false;
+
       try {
-        const cleanDoc: CleanTextDocument = {
-          id: doc.id,
-          sourceId: doc.sourceId,
-          title: doc.title,
-          textContent: doc.textContent,
-          originUrl: doc.originUrl,
-          contentHash: "",
-        };
+          const drafts = await genService.generateFromDocument(cleanDoc, {
+            difficulty,
+            persona,
+            depthMode,
+            targetCountPerChunk: limit,
+            chunkOptions: { chunkMultiplier, fullDocument },
+            enforceGrounding,
+            onCardGenerated: async (d: GeneratedCardDraft) => {
+              const ackPromise = new Promise<any>((resolve) => {
+                cardAckResolver = resolve;
+              });
 
-        const drafts = await genService.generateFromDocument(cleanDoc, {
-          difficulty,
-          persona,
-          depthMode,
-          targetCountPerChunk: limit,
-          chunkOptions: { chunkMultiplier, fullDocument },
-          enforceGrounding,
-        });
+              postMessage({
+                type: "COMMIT_CARDS",
+                jobId,
+                stepNumber,
+                stepTitle,
+                targetDeck: targetDeckOverride || "Default",
+                sourceId: doc.sourceId,
+                documentTitle: doc.title,
+                originUrl: doc.originUrl,
+                persona: persona || "socratic-mentor",
+                tags: (doc as any).tags || [],
+                cards: [{
+                  question: d.question,
+                  answer: d.answer,
+                  sourceQuote: d.sourceQuote,
+                  citation: d.citation || d.sourceQuote,
+                  difficulty: d.difficulty,
+                  keywords: d.keywords || [],
+                  sourceLocator: d.sourceLocator || "",
+                }],
+              });
 
-        totalDrafts += drafts.length;
+              const ack = await ackPromise;
+              docCreatedCount += ack.createdCount || 0;
+              docDuplicatesCount += ack.duplicatesCount || 0;
+              totalCardsCommitted += ack.createdCount || 0;
+              totalDuplicatesSkipped += ack.duplicatesCount || 0;
+            },
+          });
 
-        // Ask main thread to commit cards (dedup and persist)
-        const ackPromise = new Promise<any>((resolve) => {
-          cardAckResolver = resolve;
-        });
+          totalDrafts += drafts.length;
+          successfulDocsCount++;
 
-        postMessage({
-          type: "COMMIT_CARDS",
-          jobId,
-          stepNumber,
-          stepTitle,
-          targetDeck: targetDeckOverride || "Default",
-          sourceId: doc.sourceId,
-          documentTitle: doc.title,
-          originUrl: doc.originUrl,
-          persona: persona || "socratic-mentor",
-          tags: (doc as any).tags || [],
-          cards: drafts.map((d) => ({
-            question: d.question,
-            answer: d.answer,
-            sourceQuote: d.sourceQuote,
-            difficulty: d.difficulty,
-          })),
-        });
+          if ((drafts as any).partial || (drafts as any).isPartial) {
+            hasTokenLimitTruncation = true;
+          }
 
-        const ack = await ackPromise;
-        totalCardsCommitted += ack.createdCount || 0;
-        totalDuplicatesSkipped += ack.duplicatesCount || 0;
-        successfulDocsCount++;
-
-        postMessage({
-          type: "STEP_LOG",
-          jobId,
-          stepNumber,
-          stepTitle,
-          level: "success",
-          message: `Successfully synthesized ${ack.createdCount} card(s) from "${doc.title}" (${ack.duplicatesCount} duplicate(s) filtered)`,
-          details: {
-            draftsCount: drafts.length,
-            createdCount: ack.createdCount,
-            duplicatesCount: ack.duplicatesCount,
-          },
-        });
-      } catch (err: any) {
-        failedDocsCount++;
-        postMessage({
-          type: "STEP_LOG",
-          jobId,
-          stepNumber,
-          stepTitle,
-          level: "error",
-          message: `Generation error for "${doc.title}": ${err.message}`,
-          details: { error: err.message },
-        });
-        // Fault-tolerant: proceed to next document in batch
-      }
+          if (hasTokenLimitTruncation) {
+            postMessage({
+              type: "STEP_LOG",
+              jobId,
+              stepNumber,
+              stepTitle,
+              level: "warn",
+              message: `Output token limit reached: partial output retained (${docCreatedCount} card(s) preserved for "${doc.title}")`,
+              details: {
+                partial: true,
+                preservedCards: docCreatedCount,
+                tokenLimitReached: true,
+                draftsCount: drafts.length,
+                duplicatesCount: docDuplicatesCount,
+              },
+            });
+          } else {
+            postMessage({
+              type: "STEP_LOG",
+              jobId,
+              stepNumber,
+              stepTitle,
+              level: "success",
+              message: `Successfully synthesized ${docCreatedCount} card(s) from "${doc.title}" (${docDuplicatesCount} duplicate(s) filtered)`,
+              details: {
+                draftsCount: drafts.length,
+                createdCount: docCreatedCount,
+                duplicatesCount: docDuplicatesCount,
+              },
+            });
+          }
+        } catch (err: any) {
+          if (docCreatedCount > 0) {
+            successfulDocsCount++;
+            postMessage({
+              type: "STEP_LOG",
+              jobId,
+              stepNumber,
+              stepTitle,
+              level: "warn",
+              message: `Output token limit reached: partial output retained (${docCreatedCount} card(s) preserved for "${doc.title}"). Details: ${err.message}`,
+              details: {
+                partial: true,
+                preservedCards: docCreatedCount,
+                tokenLimitReached: true,
+                error: err.message,
+              },
+            });
+          } else {
+            failedDocsCount++;
+            postMessage({
+              type: "STEP_LOG",
+              jobId,
+              stepNumber,
+              stepTitle,
+              level: "error",
+              message: `Generation error for "${doc.title}": ${err.message}`,
+              details: { error: err.message },
+            });
+          }
+        }
     }
 
     postMessage({
