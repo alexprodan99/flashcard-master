@@ -4,14 +4,14 @@ import { LLMAuthenticationError, LLMRateLimitError, LLMResponseParsingError, LLM
 export class GeminiAdapter implements LLMProviderPort {
   readonly providerName = "gemini";
   private readonly apiKey?: string;
-  private readonly model: string;
+  readonly model: string;
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
   private readonly fetchFn: typeof fetch;
 
   constructor(config: Partial<LLMConfig> = {}) {
     this.apiKey = config.apiKey;
-    this.model = config.model || "gemini-2.0-flash";
+    this.model = config.model || "gemini-3.6-flash";
     this.baseUrl = config.baseUrl || "https://generativelanguage.googleapis.com/v1beta";
     this.timeoutMs = config.timeoutMs ?? 30000;
     this.fetchFn = config.customFetch ?? globalThis.fetch;
@@ -64,27 +64,61 @@ ${text}`;
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
             responseMimeType: "application/json",
-            maxOutputTokens: 4096,
+            maxOutputTokens: 8192,
             temperature: 0.2,
           },
         }),
       });
       clearTimeout(timer);
 
-      if (response.status === 400 || response.status === 403) {
-        throw new LLMAuthenticationError(this.providerName, "Invalid Google Gemini API key or request.");
+      if (response.status === 401 || response.status === 403) {
+        throw new LLMAuthenticationError(this.providerName, "Invalid Google Gemini API key or forbidden request.");
       }
       if (response.status === 429) {
         throw new LLMRateLimitError(this.providerName, "Google Gemini rate limit exceeded.");
+      }
+      if (response.status === 400) {
+        const errorBody = await response.text();
+        throw new LLMNetworkError(this.providerName, `HTTP error 400: ${errorBody}`);
       }
       if (!response.ok) {
         throw new LLMNetworkError(this.providerName, `HTTP error ${response.status}: ${await response.text()}`);
       }
 
       const json = await response.json();
-      const rawText = json.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!rawText) {
+      if (json.promptFeedback?.blockReason) {
+        throw new LLMResponseParsingError(this.providerName, `Prompt blocked by Gemini policy: ${json.promptFeedback.blockReason}`);
+      }
+
+      const candidate = json.candidates?.[0];
+      if (!candidate) {
+        throw new LLMResponseParsingError(this.providerName, "No candidate response returned from Gemini.");
+      }
+
+      if (candidate.finishReason === "SAFETY") {
+        throw new LLMResponseParsingError(this.providerName, "Generation blocked by Gemini safety filters.");
+      }
+      if (candidate.finishReason === "RECITATION") {
+        throw new LLMResponseParsingError(this.providerName, "Generation blocked by Gemini recitation check.");
+      }
+      if (candidate.finishReason === "BLOCKLIST" || candidate.finishReason === "PROHIBITED_CONTENT" || candidate.finishReason === "SPII") {
+        throw new LLMResponseParsingError(this.providerName, `Generation blocked by Gemini policy: ${candidate.finishReason}`);
+      }
+
+      const parts = candidate.content?.parts;
+      if (!parts || !Array.isArray(parts) || parts.length === 0) {
         throw new LLMResponseParsingError(this.providerName, "Empty content response from Gemini.");
+      }
+
+      // Filter out internal reasoning/thought parts (which have thought: true in newer models)
+      const textParts = parts.filter((p: any) => !p.thought && typeof p.text === "string");
+      if (textParts.length === 0) {
+        throw new LLMResponseParsingError(this.providerName, "No text content returned in Gemini response (only internal thoughts).");
+      }
+
+      const rawText = textParts.map((p: any) => p.text).join("").trim();
+      if (!rawText) {
+        throw new LLMResponseParsingError(this.providerName, "Empty text content in Gemini response.");
       }
 
       return parseCardDraftsFromJson(rawText, this.providerName);

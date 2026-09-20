@@ -8,6 +8,7 @@
   import GenerateStudio from './views/GenerateStudio.svelte';
   import QuestionExplorer from './views/QuestionExplorer.svelte';
   import ExportCenter from './views/ExportCenter.svelte';
+  import SettingsView from './views/SettingsView.svelte';
   import { taskStore } from './stores/index.js';
 
   let activeTab = $state('dashboard');
@@ -27,7 +28,7 @@
   function handlePopState() {
     const params = new URLSearchParams(window.location.search);
     const tabParam = params.get('tab');
-    if (tabParam && ['dashboard', 'sources', 'generate', 'cards', 'export'].includes(tabParam)) {
+    if (tabParam && ['dashboard', 'sources', 'generate', 'cards', 'export', 'settings'].includes(tabParam)) {
       activeTab = tabParam;
     } else if (params.get('docId') || params.get('sourceId')) {
       activeTab = 'generate';
@@ -50,6 +51,7 @@
     else if (e.key === '3' || e.key.toLowerCase() === 'g') handleSelectTab('generate');
     else if (e.key === '4') handleSelectTab('cards');
     else if (e.key === '5' || e.key.toLowerCase() === 'e') handleSelectTab('export');
+    else if (e.key === '6') handleSelectTab('settings');
     else if (e.key.toLowerCase() === 't') taskStore.toggleDrawer();
   }
 
@@ -58,7 +60,7 @@
 
     const params = new URLSearchParams(window.location.search);
     const tabParam = params.get('tab');
-    if (tabParam && ['dashboard', 'sources', 'generate', 'cards', 'export'].includes(tabParam)) {
+    if (tabParam && ['dashboard', 'sources', 'generate', 'cards', 'export', 'settings'].includes(tabParam)) {
       activeTab = tabParam;
     } else if (params.get('docId') || params.get('sourceId')) {
       activeTab = 'generate';
@@ -88,6 +90,8 @@
       <QuestionExplorer />
     {:else if activeTab === 'export'}
       <ExportCenter />
+    {:else if activeTab === 'settings'}
+      <SettingsView />
     {/if}
   </main>
 

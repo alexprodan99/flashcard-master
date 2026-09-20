@@ -1,4 +1,16 @@
-import type { DashboardStats, DataSource, Flashcard, GenerationResult, DiscoveredDocument, DocumentExportFormat } from './types.js';
+import type {
+  DashboardStats,
+  DataSource,
+  Flashcard,
+  GenerationResult,
+  DiscoveredDocument,
+  DocumentExportFormat,
+  ProviderKeyStatus,
+  ProviderVerificationResult,
+  SecretProvider,
+  KeySource,
+  LoggingSettings,
+} from './types.js';
 
 export async function fetchStats(): Promise<DashboardStats> {
   const res = await fetch('/api/stats');
@@ -69,7 +81,10 @@ export async function deleteSource(id: string): Promise<void> {
   const res = await fetch(`/api/sources/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   });
-  if (!res.ok) throw new Error('Failed to delete source');
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to delete source');
+  }
 }
 
 export async function syncSource(id: string): Promise<{ success: boolean; sourceId: string; newCount: number; totalFetched: number; error?: string }> {
@@ -355,6 +370,102 @@ export async function clearJobHistory(keepLastN?: number): Promise<{ success: bo
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || 'Failed to clear job history');
+  }
+  return res.json();
+}
+
+export async function fetchSettingsKeys(): Promise<{
+  providers: ProviderKeyStatus[];
+  keys: Record<SecretProvider, ProviderKeyStatus>;
+}> {
+  const res = await fetch('/api/settings/keys');
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to fetch settings keys');
+  }
+  return res.json();
+}
+
+export async function saveSettingsKey(payload: {
+  provider: SecretProvider;
+  key?: string | null;
+  endpoint?: string | null;
+}): Promise<{
+  success: boolean;
+  provider: SecretProvider;
+  isConfigured: boolean;
+  maskedValue: string;
+  source: KeySource;
+  endpoint?: string | null;
+}> {
+  const res = await fetch('/api/settings/keys', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to save settings key');
+  }
+  return res.json();
+}
+
+export async function deleteSettingsKey(provider: SecretProvider): Promise<{
+  success: boolean;
+  provider: SecretProvider;
+  isConfigured: boolean;
+  source: KeySource;
+  maskedValue: string;
+  endpoint?: string | null;
+}> {
+  const res = await fetch(`/api/settings/keys/${encodeURIComponent(provider)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to delete settings key');
+  }
+  return res.json();
+}
+
+export async function testSettingsKey(payload: {
+  provider: SecretProvider;
+  key?: string | null;
+  endpoint?: string | null;
+}): Promise<ProviderVerificationResult> {
+  const res = await fetch('/api/settings/keys/test', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Connection test failed');
+  }
+  return res.json();
+}
+
+export async function fetchLoggingSettings(): Promise<LoggingSettings> {
+  const res = await fetch('/api/settings/logging');
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to fetch logging settings');
+  }
+  return res.json();
+}
+
+export async function updateLoggingSettings(payload: {
+  verbose?: boolean;
+  logLevel?: 'debug' | 'info' | 'warn' | 'error';
+}): Promise<{ success: boolean; verbose: boolean; logLevel: 'debug' | 'info' | 'warn' | 'error' }> {
+  const res = await fetch('/api/settings/logging', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to update logging settings');
   }
   return res.json();
 }

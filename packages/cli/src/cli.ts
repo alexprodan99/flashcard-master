@@ -55,6 +55,9 @@ export function createCli(providedContext?: AppContext): Command {
           cardRepo: context.cardRepo,
           documentRepo: context.docRepo,
           jobRepo: context.jobRepo,
+          settingsRepo: context.settingsRepo,
+          settingsService: context.settingsService,
+          providerVerifier: context.providerVerifier,
           concurrency: {
             maxGenerationWorkers,
             maxSyncWorkers,
@@ -91,7 +94,7 @@ export function createCli(providedContext?: AppContext): Command {
     .option("-t, --tags <tags>", "Comma-separated list of tags", "")
     .action((name: string, type: string, uri: string, options: { deck: string; tags: string }) => {
       try {
-        const validTypes: DataSourceType[] = ["rss", "web", "local", "sitemap", "llms-txt"];
+        const validTypes: DataSourceType[] = ["rss", "web", "local", "sitemap", "llms-txt", "notion"];
         if (!validTypes.includes(type as DataSourceType)) {
           console.error(`Error: Invalid source type "${type}". Must be one of: ${validTypes.join(", ")}`);
           process.exitCode = 1;
@@ -316,7 +319,7 @@ export function createCli(providedContext?: AppContext): Command {
     .description("Generate grounded flashcards from ingested source documents")
     .option("-p, --provider <provider>", "LLM Provider (openai, gemini, anthropic, ollama)", "ollama")
     .option("-k, --api-key <key>", "Provider API Key")
-    .option("-m, --model <model>", "Model identifier (e.g. gpt-4o-mini, gemini-2.0-flash, claude-3-5-haiku-latest, phi4-mini)")
+    .option("-m, --model <model>", "Model identifier (e.g. gpt-4o-mini, gemini-3.6-flash, claude-3-5-haiku-latest, phi4-mini)")
     .option("--endpoint <endpoint>", "Custom API endpoint (e.g. for Ollama / LocalAI)")
     .option("--difficulty <level>", "Difficulty level: beginner, intermediate, expert, mixed", "intermediate")
     .option("--persona <persona>", "Prompt persona: socratic-mentor, strict-examiner, executive-synthesizer", "socratic-mentor")
@@ -487,11 +490,11 @@ export function createCli(providedContext?: AppContext): Command {
 
       try {
         const sourceName = (await question("1. First data source name (e.g. 'Tech Blog'): ")) || "Tech Blog";
-        const sourceType = (await question("2. Source type (rss, web, local, sitemap, llms-txt) [rss]: ")) || "rss";
+        const sourceType = (await question("2. Source type (rss, web, local, sitemap, llms-txt, notion) [rss]: ")) || "rss";
         const sourceUri = (await question("3. Source URI / feed URL / folder path: ")) || "https://news.ycombinator.com/rss";
         const targetDeck = (await question("4. Target Deck name ['Computer Science']: ")) || "Computer Science";
 
-        const validTypes: DataSourceType[] = ["rss", "web", "local", "sitemap", "llms-txt"];
+        const validTypes: DataSourceType[] = ["rss", "web", "local", "sitemap", "llms-txt", "notion"];
         const finalType = validTypes.includes(sourceType as DataSourceType)
           ? (sourceType as DataSourceType)
           : "rss";

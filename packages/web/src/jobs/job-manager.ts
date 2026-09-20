@@ -14,6 +14,11 @@ export interface ConcurrencyLimits {
   maxExportWorkers?: number;
 }
 
+export interface JobManagerOptions extends ConcurrencyLimits {
+  isVerbose?: () => boolean;
+  logToConsole?: boolean;
+}
+
 export interface JobExecutionContext {
   jobId: string;
   signal: AbortSignal;
@@ -47,20 +52,87 @@ export class JobManager extends EventEmitter {
 
   private readonly activeJobs = new Map<string, QueuedItem>();
 
+  private readonly isVerboseFn: () => boolean;
+  private readonly logToConsole: boolean;
+
   constructor(
     private readonly jobRepo: JobRepository,
-    limits: ConcurrencyLimits = {}
+    options: JobManagerOptions = {}
   ) {
     super();
-    this.maxGenerationWorkers = limits.maxGenerationWorkers !== undefined && limits.maxGenerationWorkers > 0
-      ? limits.maxGenerationWorkers
+    this.maxGenerationWorkers = options.maxGenerationWorkers !== undefined && options.maxGenerationWorkers > 0
+      ? options.maxGenerationWorkers
       : 3;
-    this.maxSyncWorkers = limits.maxSyncWorkers !== undefined && limits.maxSyncWorkers > 0
-      ? limits.maxSyncWorkers
+    this.maxSyncWorkers = options.maxSyncWorkers !== undefined && options.maxSyncWorkers > 0
+      ? options.maxSyncWorkers
       : 2;
-    this.maxExportWorkers = limits.maxExportWorkers !== undefined && limits.maxExportWorkers > 0
-      ? limits.maxExportWorkers
+    this.maxExportWorkers = options.maxExportWorkers !== undefined && options.maxExportWorkers > 0
+      ? options.maxExportWorkers
       : 2;
+    this.isVerboseFn = options.isVerbose ?? (() => {
+      const v = process.env.VERBOSE?.toLowerCase();
+      const d = process.env.DEBUG?.toLowerCase();
+      return v === "true" || v === "1" || d === "true" || d === "1";
+    });
+    this.logToConsole = options.logToConsole ?? (process.env.NODE_ENV !== "test");
+  }
+
+  isVerbose(): boolean {
+    return this.isVerboseFn();
+  }
+
+  private printConsole(
+    level: JobLogLevel | "start" | "done" | "fail" | "cancel",
+    jobId: string,
+    message: string,
+    stepInfo?: { stepNumber: number; stepTitle: string },
+    details?: Record<string, any>
+  ): void {
+    if (!this.logToConsole) return;
+    if (level === "debug" && !this.isVerbose()) return;
+
+    const time = new Date().toISOString().split("T")[1].slice(0, 8);
+    const shortId = jobId.length > 8 ? jobId.slice(0, 8) : jobId;
+    const timeStr = `\x1b[90m[${time}]\x1b[0m`;
+    const idStr = `\x1b[90m[${shortId}]\x1b[0m`;
+
+    let badge = "";
+    switch (level) {
+      case "start":
+        badge = "\x1b[34m[START]\x1b[0m";
+        break;
+      case "done":
+        badge = "\x1b[32m[DONE]\x1b[0m";
+        break;
+      case "fail":
+        badge = "\x1b[31m[FAIL]\x1b[0m";
+        break;
+      case "cancel":
+        badge = "\x1b[33m[CANCEL]\x1b[0m";
+        break;
+      case "debug":
+        badge = "\x1b[35m[DEBUG]\x1b[0m";
+        break;
+      case "info":
+        badge = "\x1b[36m[INFO]\x1b[0m";
+        break;
+      case "warn":
+        badge = "\x1b[33m[WARN]\x1b[0m";
+        break;
+      case "error":
+        badge = "\x1b[31m[ERROR]\x1b[0m";
+        break;
+      case "success":
+        badge = "\x1b[32m[SUCCESS]\x1b[0m";
+        break;
+    }
+
+    const stepStr = stepInfo ? `\x1b[90m(Step ${stepInfo.stepNumber}: ${stepInfo.stepTitle})\x1b[0m ` : "";
+    console.log(`${timeStr} ${badge} ${idStr} ${stepStr}${message}`);
+
+    if (details && Object.keys(details).length > 0 && (level === "error" || level === "fail" || this.isVerbose())) {
+      console.log(`\x1b[90m          Details: ${JSON.stringify(details)}\x1b[0m`);
+    }
   }
 
   getLimits(): { maxGenerationWorkers: number; maxSyncWorkers: number; maxExportWorkers: number } {
@@ -183,6 +255,7 @@ export class JobManager extends EventEmitter {
       startedAt,
     });
     this.emit("job_status", runningJob);
+    this.printConsole("start", item.jobId, `Starting job: "${runningJob.title}" (type: ${runningJob.type})`);
 
     // Prepare execution context
     let latestSummary: Record<string, any> | undefined;
@@ -217,6 +290,7 @@ export class JobManager extends EventEmitter {
           details,
         });
         this.emit("job_log", logged);
+        this.printConsole(level, item.jobId, message, { stepNumber, stepTitle }, details);
         return logged;
       },
       setResultSummary: (summary: Record<string, any>) => {
@@ -245,6 +319,7 @@ export class JobManager extends EventEmitter {
 
         this.emit("job_status", completedJob);
         this.emit("job_completed", completedJob);
+        this.printConsole("done", item.jobId, `Completed job: "${completedJob.title}" (${finalStatus})`, undefined, summary);
       })
       .catch((err: any) => {
         const completedAt = new Date().toISOString();
@@ -260,6 +335,7 @@ export class JobManager extends EventEmitter {
           });
           this.emit("job_status", cancelledJob);
           this.emit("job_cancelled", cancelledJob);
+          this.printConsole("cancel", item.jobId, `Job cancelled: "${runningJob.title}"`);
         } else {
           const failedJob = this.jobRepo.update(item.jobId, {
             status: "failed",
@@ -268,6 +344,7 @@ export class JobManager extends EventEmitter {
           });
           this.emit("job_status", failedJob);
           this.emit("job_failed", failedJob);
+          this.printConsole("fail", item.jobId, `Job failed: "${runningJob.title}" - ${err.message || "Error"}`, undefined, { error: String(err?.stack || err) });
         }
       })
       .finally(() => {
@@ -328,6 +405,7 @@ export class JobManager extends EventEmitter {
     });
     this.emit("job_status", updated);
     this.emit("job_cancelled", updated);
+    this.printConsole("cancel", id, `Job cancelled while queued: "${job.title}"`);
     return true;
   }
 

@@ -99,6 +99,55 @@ describe("DocumentRepository", () => {
     const textResults = docRepo.listBySourceId(testSourceId, { search: "SWIM" });
     expect(textResults.length).toBe(1);
     expect(textResults[0].title).toBe("Gossip Membership Protocols");
+
+    // Tokenized search with stop word ("article") and plural tolerance ("protocols" -> "protocol")
+    const tokenizedResults = docRepo.listBySourceId(testSourceId, { search: "paxos protocols article" });
+    expect(tokenizedResults.length).toBe(1);
+    expect(tokenizedResults[0].title).toBe("Paxos Protocol Explained");
+
+    // Exact title ranking
+    docRepo.upsert({
+      id: "doc-exact",
+      sourceId: testSourceId,
+      title: "Consensus",
+      textContent: "Short note on consensus.",
+    });
+    docRepo.upsert({
+      id: "doc-longer",
+      sourceId: testSourceId,
+      title: "Consensus in Distributed Systems: The Complete Guide",
+      textContent: "Deep dive on consensus.",
+    });
+
+    const ranked = docRepo.listBySourceId(testSourceId, { search: "Consensus" });
+    expect(ranked[0].title).toBe("Consensus");
+  });
+
+  it("preserves double-s words like process or class during search stemming without corrupting tokens", () => {
+    docRepo.upsertBatch([
+      {
+        id: "doc-process",
+        sourceId: testSourceId,
+        title: "Background Process Management",
+        textContent: "Managing long-running processes efficiently.",
+      },
+      {
+        id: "doc-class",
+        sourceId: testSourceId,
+        title: "First Class Functions in TypeScript",
+        textContent: "Exploring functional programming constructs.",
+      },
+    ]);
+
+    // Searching for "process" should match doc-process and preserve "process" without truncating to "proces"
+    const processResults = docRepo.listBySourceId(testSourceId, { search: "process" });
+    expect(processResults.length).toBe(1);
+    expect(processResults[0].id).toBe("doc-process");
+
+    // Searching for "class" should match doc-class
+    const classResults = docRepo.listBySourceId(testSourceId, { search: "class" });
+    expect(classResults.length).toBe(1);
+    expect(classResults[0].id).toBe("doc-class");
   });
 
   it("cascades deletion when parent data source is removed", () => {

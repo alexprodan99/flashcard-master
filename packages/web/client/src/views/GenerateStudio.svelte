@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { fetchSources, fetchSourceDocuments, fetchDocumentDetails, syncSource, generateCards, fetchJobDetails } from '../lib/api';
+  import { fetchSources, fetchSourceDocuments, fetchDocuments, fetchDocumentDetails, syncSource, generateCards, fetchJobDetails } from '../lib/api';
   import type { DataSource, DiscoveredDocument, Flashcard, GenerationResult, DifficultyLevel, PersonaType, CardDepthMode } from '../lib/types';
   import GenerationConfigFields from '../components/GenerationConfigFields.svelte';
   import DocumentPreviewModal from '../components/DocumentPreviewModal.svelte';
@@ -84,6 +84,13 @@
           generateStore.selectedSourceIds = sources.map((s) => s.id);
         }
       }
+
+      // If any sources are currently marked as expanded, ensure their documents are loaded and up to date
+      for (const s of sources) {
+        if (generateStore.expandedSources[s.id]) {
+          loadDocumentsForSource(s.id);
+        }
+      }
     } catch (err: any) {
       generateStore.errorMessage = 'Failed to load active data sources: ' + err.message;
     }
@@ -101,14 +108,24 @@
     }
   }
 
+  async function handleRefreshSourceDocuments(sourceId: string) {
+    await loadDocumentsForSource(sourceId);
+    toastStore.info(`Refreshed documents (${generateStore.sourceDocuments[sourceId]?.length || 0} found).`);
+  }
+
   async function handleToggleExpand(sourceId: string) {
     generateStore.expandedSources[sourceId] = !generateStore.expandedSources[sourceId];
-    if (generateStore.expandedSources[sourceId] && !generateStore.sourceDocuments[sourceId]) {
-      await loadDocumentsForSource(sourceId);
-      if (generateStore.selectedSourceIds.includes(sourceId) && generateStore.sourceDocuments[sourceId]) {
-        generateStore.sourceDocuments[sourceId].forEach((doc) => {
-          generateStore.selectedDocIds[doc.id] = true;
-        });
+    if (generateStore.expandedSources[sourceId]) {
+      // Reload if not loaded or if previously recorded as empty
+      if (!generateStore.sourceDocuments[sourceId] || generateStore.sourceDocuments[sourceId].length === 0) {
+        await loadDocumentsForSource(sourceId);
+        if (generateStore.selectedSourceIds.includes(sourceId) && generateStore.sourceDocuments[sourceId]) {
+          generateStore.sourceDocuments[sourceId].forEach((doc) => {
+            if (generateStore.selectedDocIds[doc.id] === undefined) {
+              generateStore.selectedDocIds[doc.id] = true;
+            }
+          });
+        }
       }
     }
   }
@@ -187,6 +204,234 @@
         generateStore.selectedSourceIds = [...generateStore.selectedSourceIds, source.id];
       }
       selectAllDocsForSource(source.id);
+    }
+  }
+
+  let lastCheckedDocId = $state<string | null>(null);
+
+  // Global Scope Search across all sources & documents
+  let globalSearchQuery = $state('');
+  let globalSearchDebounce: ReturnType<typeof setTimeout> | null = null;
+  let isGlobalSearching = $state(false);
+
+  function normalizeSearchText(str: string | null | undefined): string {
+    if (!str) return '';
+    return str
+      .normalize('NFKD')
+      .replace(/[\u00a0\s]+/g, ' ')
+      .trim()
+      .toLowerCase();
+  }
+
+  const SEARCH_STOP_WORDS = new Set(['article', 'articles', 'the', 'a', 'an', 'post', 'posts', 'doc', 'docs']);
+
+  function matchesDocQuery(doc: DiscoveredDocument, rawQuery: string): boolean {
+    const q = normalizeSearchText(rawQuery);
+    if (!q) return true;
+    const allTokens = q.split(' ').filter(Boolean);
+    const nonStop = allTokens.filter((t) => !SEARCH_STOP_WORDS.has(t));
+    const tokens = nonStop.length > 0 ? nonStop : allTokens;
+
+    const titleNorm = normalizeSearchText(doc.title);
+    const urlNorm = normalizeSearchText(doc.url);
+    const textNorm = doc.textContent ? normalizeSearchText(doc.textContent.slice(0, 4000)) : '';
+
+    return tokens.every((token) => {
+      if (titleNorm.includes(token) || urlNorm.includes(token) || textNorm.includes(token)) {
+        return true;
+      }
+      // Plural/singular tolerance (e.g. 'slices' vs 'slice', 'articles' vs 'article')
+      if (token.length > 3 && token.endsWith('s') && !token.endsWith('ss')) {
+        const singular = token.slice(0, -1);
+        if (titleNorm.includes(singular) || urlNorm.includes(singular) || textNorm.includes(singular)) {
+          return true;
+        }
+      } else if (token.length > 3 && !token.endsWith('s')) {
+        const plural = token + 's';
+        if (titleNorm.includes(plural) || urlNorm.includes(plural) || textNorm.includes(plural)) {
+          return true;
+        }
+      }
+      return false;
+    });
+  }
+
+  let totalGlobalMatches = $derived.by(() => {
+    const q = globalSearchQuery.trim();
+    if (!q) return 0;
+    let count = 0;
+    for (const s of sources) {
+      const docs = generateStore.sourceDocuments[s.id] || [];
+      count += docs.filter((d) => matchesDocQuery(d, q)).length;
+    }
+    return count;
+  });
+
+  let matchingSourcesCount = $derived.by(() => {
+    const q = globalSearchQuery.trim();
+    if (!q) return 0;
+    let count = 0;
+    for (const s of sources) {
+      const docs = generateStore.sourceDocuments[s.id] || [];
+      if (docs.some((d) => matchesDocQuery(d, q)) || normalizeSearchText(s.name).includes(normalizeSearchText(q))) {
+        count++;
+      }
+    }
+    return count;
+  });
+
+  async function handleGlobalSearchInput(e: Event) {
+    globalSearchQuery = (e.target as HTMLInputElement).value;
+    if (globalSearchDebounce) clearTimeout(globalSearchDebounce);
+    const q = globalSearchQuery.trim();
+    if (!q) return;
+
+    globalSearchDebounce = setTimeout(async () => {
+      isGlobalSearching = true;
+      try {
+        const res = await fetchDocuments(undefined, q);
+        if (res.documents && res.documents.length > 0) {
+          const bySource: Record<string, DiscoveredDocument[]> = {};
+          res.documents.forEach((d) => {
+            if (!bySource[d.sourceId]) bySource[d.sourceId] = [];
+            bySource[d.sourceId].push(d);
+          });
+          for (const sId of Object.keys(bySource)) {
+            generateStore.expandedSources[sId] = true;
+            if (!generateStore.sourceDocuments[sId] || generateStore.sourceDocuments[sId].length === 0) {
+              await loadDocumentsForSource(sId);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Global search error:', err);
+      } finally {
+        isGlobalSearching = false;
+      }
+    }, 250);
+  }
+
+  function clearGlobalSearch() {
+    globalSearchQuery = '';
+    if (globalSearchDebounce) clearTimeout(globalSearchDebounce);
+    isGlobalSearching = false;
+  }
+
+  let traySearching = $state<Record<string, boolean>>({});
+  let traySearchDebounce: Record<string, ReturnType<typeof setTimeout>> = {};
+
+  function handleTrayFilterInput(sourceId: string, e: Event) {
+    const val = (e.target as HTMLInputElement).value;
+    generateStore.sourceFilterQuery[sourceId] = val;
+
+    if (traySearchDebounce[sourceId]) clearTimeout(traySearchDebounce[sourceId]);
+
+    const q = val.trim();
+    traySearching[sourceId] = true;
+    // Query the server directly so backend SQLite search is used as live backing (parity with Data Sources dashboard)
+    traySearchDebounce[sourceId] = setTimeout(async () => {
+      try {
+        const res = await fetchSourceDocuments(sourceId, q || undefined);
+        if (res.documents) {
+          if (q) {
+            const existing = generateStore.sourceDocuments[sourceId] || [];
+            const map = new Map(existing.map((d) => [d.id, d]));
+            res.documents.forEach((d) => map.set(d.id, d));
+            generateStore.sourceDocuments[sourceId] = Array.from(map.values());
+          } else {
+            generateStore.sourceDocuments[sourceId] = res.documents;
+          }
+        }
+      } catch (err) {
+        console.error(`Error querying documents for source ${sourceId}:`, err);
+      } finally {
+        traySearching[sourceId] = false;
+      }
+    }, 150);
+  }
+
+  function handleClearTrayFilter(sourceId: string) {
+    generateStore.sourceFilterQuery[sourceId] = '';
+    if (traySearchDebounce[sourceId]) clearTimeout(traySearchDebounce[sourceId]);
+    traySearching[sourceId] = false;
+    loadDocumentsForSource(sourceId);
+  }
+
+  function getFilteredDocs(sourceId: string): DiscoveredDocument[] {
+    const docs = generateStore.sourceDocuments[sourceId] || [];
+    const localQuery = (generateStore.sourceFilterQuery[sourceId] || '').trim();
+    const query = localQuery || globalSearchQuery.trim();
+    if (!query) return docs;
+
+    const filtered = docs.filter((d) => matchesDocQuery(d, query));
+    const qNorm = normalizeSearchText(query);
+    return filtered.sort((a, b) => {
+      const aTitle = normalizeSearchText(a.title);
+      const bTitle = normalizeSearchText(b.title);
+      const aRank = aTitle === qNorm ? 0 : aTitle.includes(qNorm) ? 1 : 2;
+      const bRank = bTitle === qNorm ? 0 : bTitle.includes(qNorm) ? 1 : 2;
+      if (aRank !== bRank) return aRank - bRank;
+      return 0;
+    });
+  }
+
+  function getSelectedCountForSource(sourceId: string): number {
+    const docs = generateStore.sourceDocuments[sourceId] || [];
+    return docs.filter((d) => generateStore.selectedDocIds[d.id]).length;
+  }
+
+  function selectFilteredDocs(sourceId: string) {
+    const docs = getFilteredDocs(sourceId);
+    docs.forEach((d) => {
+      generateStore.selectedDocIds[d.id] = true;
+    });
+    if (docs.length > 0 && !generateStore.selectedSourceIds.includes(sourceId)) {
+      generateStore.selectedSourceIds = [...generateStore.selectedSourceIds, sourceId];
+    }
+  }
+
+  function deselectFilteredDocs(sourceId: string) {
+    const docs = getFilteredDocs(sourceId);
+    docs.forEach((d) => {
+      generateStore.selectedDocIds[d.id] = false;
+    });
+    const allSourceDocs = generateStore.sourceDocuments[sourceId] || [];
+    const anyChecked = allSourceDocs.some((d) => generateStore.selectedDocIds[d.id]);
+    if (!anyChecked) {
+      generateStore.selectedSourceIds = generateStore.selectedSourceIds.filter((id) => id !== sourceId);
+    }
+  }
+
+  function handleDocRowClick(doc: DiscoveredDocument, sourceId: string, e: MouseEvent) {
+    if (generateStore.isGenerating) return;
+    const filtered = getFilteredDocs(sourceId);
+    const targetState = !generateStore.selectedDocIds[doc.id];
+
+    if (e.shiftKey && lastCheckedDocId && lastCheckedDocId !== doc.id) {
+      const lastIdx = filtered.findIndex((d) => d.id === lastCheckedDocId);
+      const currIdx = filtered.findIndex((d) => d.id === doc.id);
+      if (lastIdx !== -1 && currIdx !== -1) {
+        const start = Math.min(lastIdx, currIdx);
+        const end = Math.max(lastIdx, currIdx);
+        for (let i = start; i <= end; i++) {
+          generateStore.selectedDocIds[filtered[i].id] = targetState;
+        }
+      } else {
+        generateStore.selectedDocIds[doc.id] = targetState;
+      }
+    } else {
+      generateStore.selectedDocIds[doc.id] = targetState;
+    }
+
+    lastCheckedDocId = doc.id;
+
+    // Sync source checkbox
+    const allDocs = generateStore.sourceDocuments[sourceId] || [];
+    const anyChecked = allDocs.some((d) => generateStore.selectedDocIds[d.id]);
+    if (anyChecked && !generateStore.selectedSourceIds.includes(sourceId)) {
+      generateStore.selectedSourceIds = [...generateStore.selectedSourceIds, sourceId];
+    } else if (!anyChecked) {
+      generateStore.selectedSourceIds = generateStore.selectedSourceIds.filter((id) => id !== sourceId);
     }
   }
 
@@ -365,9 +610,53 @@
               <span>⚠️ No active data sources found. Please add or enable a data source first.</span>
             </div>
           {:else}
+            <!-- Top-Level Global Search across all sources & documents -->
+            <div class="scope-global-search">
+              <div class="search-box-wrapper">
+                <span class="search-icon">🔍</span>
+                <input
+                  type="text"
+                  placeholder="Search across all sources & documents (by title, topic, URL)..."
+                  value={globalSearchQuery}
+                  oninput={handleGlobalSearchInput}
+                  class="scope-global-input"
+                  disabled={generateStore.isGenerating}
+                />
+                {#if isGlobalSearching}
+                  <span class="spinner-inline global-spinner"></span>
+                {/if}
+                {#if globalSearchQuery}
+                  <button
+                    type="button"
+                    class="search-clear-btn"
+                    onclick={clearGlobalSearch}
+                    title="Clear search"
+                  >
+                    ✕
+                  </button>
+                {/if}
+              </div>
+              {#if globalSearchQuery}
+                <div class="global-search-status">
+                  {#if isGlobalSearching}
+                    <span class="search-status-text">Searching database...</span>
+                  {:else if totalGlobalMatches > 0}
+                    <span class="search-status-text highlight">
+                      Found <strong>{totalGlobalMatches}</strong> matching doc{totalGlobalMatches === 1 ? '' : 's'} across <strong>{matchingSourcesCount}</strong> source{matchingSourcesCount === 1 ? '' : 's'}
+                    </span>
+                  {:else}
+                    <span class="search-status-text muted">
+                      No documents match "<em>{globalSearchQuery}</em>"
+                    </span>
+                  {/if}
+                </div>
+              {/if}
+            </div>
+
             <div class="scope-tree-container">
               {#each sources as s (s.id)}
-                <div class="source-node" class:expanded={generateStore.expandedSources[s.id]}>
+                {@const isSourceMatch = !globalSearchQuery || normalizeSearchText(s.name).includes(normalizeSearchText(globalSearchQuery)) || (generateStore.sourceDocuments[s.id] && generateStore.sourceDocuments[s.id].some((d) => matchesDocQuery(d, globalSearchQuery)))}
+                <div class="source-node" class:expanded={generateStore.expandedSources[s.id]} class:dimmed={!!globalSearchQuery && !isSourceMatch}>
                   <div class="source-node-header">
                     <label class="checkbox-container">
                       <input
@@ -387,8 +676,19 @@
                       <span class="toggle-icon">{generateStore.expandedSources[s.id] ? '▼' : '▶'}</span>
                       <span class="type-badge {s.type}">{s.type}</span>
                       <span class="source-title">{s.name}</span>
+                      {#if globalSearchQuery && generateStore.sourceDocuments[s.id]}
+                        {@const matchCount = generateStore.sourceDocuments[s.id].filter((d) => matchesDocQuery(d, globalSearchQuery)).length}
+                        {#if matchCount > 0}
+                          <span class="match-pill">🎯 {matchCount} match{matchCount === 1 ? '' : 'es'}</span>
+                        {/if}
+                      {/if}
                       {#if generateStore.sourceDocuments[s.id]}
-                        <span class="doc-count-pill">{generateStore.sourceDocuments[s.id].length} docs</span>
+                        {@const selCount = getSelectedCountForSource(s.id)}
+                        {#if selCount > 0}
+                          <span class="selected-pill">✓ {selCount} / {generateStore.sourceDocuments[s.id].length}</span>
+                        {:else}
+                          <span class="doc-count-pill">{generateStore.sourceDocuments[s.id].length} docs</span>
+                        {/if}
                       {/if}
                     </button>
                   </div>
@@ -418,43 +718,167 @@
                           </button>
                         </div>
                       {:else}
-                        <div class="tray-filter-row">
-                          <input
-                            type="text"
-                            placeholder="🔍 Filter articles in this source..."
-                            bind:value={generateStore.sourceFilterQuery[s.id]}
-                            class="tray-filter-input"
-                            disabled={generateStore.isGenerating}
-                          />
-                        </div>
+                        {@const filteredDocs = getFilteredDocs(s.id)}
+                        {@const allDocs = generateStore.sourceDocuments[s.id] || []}
+                        {@const selCount = getSelectedCountForSource(s.id)}
 
-                        <div class="tray-doc-list">
-                          {#each generateStore.sourceDocuments[s.id].filter((d) => !generateStore.sourceFilterQuery[s.id] || d.title.toLowerCase().includes(generateStore.sourceFilterQuery[s.id].toLowerCase())) as doc (doc.id)}
-                            <div class="tray-doc-row" class:selected={generateStore.selectedDocIds[doc.id]}>
-                              <label class="tray-doc-label">
-                                <input
-                                  type="checkbox"
-                                  checked={!!generateStore.selectedDocIds[doc.id]}
-                                  onchange={() => toggleDocCheck(doc, s.id)}
-                                  disabled={generateStore.isGenerating}
-                                />
-                                <span class="tray-doc-title" title={doc.title}>{doc.title}</span>
-                              </label>
+                        <div class="tray-toolbar">
+                          <div class="tray-search-box">
+                            <span class="search-icon">🔍</span>
+                            <input
+                              type="text"
+                              placeholder="Filter by title, URL or text..."
+                              value={generateStore.sourceFilterQuery[s.id] || ''}
+                              oninput={(e) => handleTrayFilterInput(s.id, e)}
+                              class="tray-filter-input"
+                              disabled={generateStore.isGenerating}
+                            />
+                            {#if traySearching[s.id]}
+                              <span class="spinner-inline tray-spinner"></span>
+                            {/if}
+                            {#if generateStore.sourceFilterQuery[s.id]}
+                              <button
+                                type="button"
+                                class="tray-filter-clear"
+                                onclick={() => handleClearTrayFilter(s.id)}
+                                title="Clear filter"
+                              >
+                                ✕
+                              </button>
+                            {/if}
+                          </div>
 
-                              <div class="tray-doc-actions">
-                                <span class="word-badge">{doc.wordCount.toLocaleString()}w</span>
-                                <button
-                                  type="button"
-                                  class="btn-preview-mini"
-                                  onclick={() => handleOpenPreview(doc)}
-                                  title="Preview Document Text"
-                                >
-                                  👁️ Preview
-                                </button>
-                              </div>
+                          <div class="tray-actions-row">
+                            <div class="tray-stat-count">
+                              Showing <strong>{filteredDocs.length}</strong> of <strong>{allDocs.length}</strong> docs
+                              {#if selCount > 0}
+                                <span class="sel-highlight">({selCount} selected)</span>
+                              {/if}
                             </div>
-                          {/each}
+                            <div class="tray-bulk-buttons">
+                              <button
+                                type="button"
+                                class="btn-tray-action"
+                                onclick={() => handleRefreshSourceDocuments(s.id)}
+                                disabled={generateStore.loadingDocs[s.id] || generateStore.isGenerating}
+                                title="Reload latest documents from database"
+                              >
+                                {#if generateStore.loadingDocs[s.id]}
+                                  <span class="spinner-inline"></span>
+                                {:else}
+                                  🔄 Refresh
+                                {/if}
+                              </button>
+                              <button
+                                type="button"
+                                class="btn-tray-action"
+                                onclick={() => selectFilteredDocs(s.id)}
+                                disabled={generateStore.isGenerating || filteredDocs.length === 0}
+                                title="Select all filtered documents (Shift+Click rows to multi-select ranges)"
+                              >
+                                Select All
+                              </button>
+                              <button
+                                type="button"
+                                class="btn-tray-action"
+                                onclick={() => deselectFilteredDocs(s.id)}
+                                disabled={generateStore.isGenerating || filteredDocs.length === 0}
+                                title="Clear selection for filtered documents"
+                              >
+                                Clear
+                              </button>
+                            </div>
+                          </div>
                         </div>
+
+                        {#if filteredDocs.length === 0}
+                          <div class="tray-no-match">
+                            <span>No documents match "<em>{generateStore.sourceFilterQuery[s.id] || globalSearchQuery}</em>"</span>
+                            <div class="no-match-actions">
+                              <button
+                                type="button"
+                                class="btn-clear-filter"
+                                onclick={() => { handleClearTrayFilter(s.id); globalSearchQuery = ''; }}
+                              >
+                                Reset Filter
+                              </button>
+                              <button
+                                type="button"
+                                class="btn-clear-filter"
+                                onclick={() => handleRefreshSourceDocuments(s.id)}
+                              >
+                                🔄 Reload Docs
+                              </button>
+                            </div>
+                          </div>
+                        {:else}
+                          <div class="tray-doc-list">
+                            {#each filteredDocs as doc (doc.id)}
+                              <!-- svelte-ignore a11y_interactive_supports_focus -->
+                              <div
+                                class="tray-doc-row"
+                                class:selected={generateStore.selectedDocIds[doc.id]}
+                                onclick={(e) => handleDocRowClick(doc, s.id, e)}
+                                role="checkbox"
+                                aria-checked={!!generateStore.selectedDocIds[doc.id]}
+                                tabindex="0"
+                                onkeydown={(e) => {
+                                  if (e.key === ' ' || e.key === 'Enter') {
+                                    e.preventDefault();
+                                    handleDocRowClick(doc, s.id, e as any);
+                                  }
+                                }}
+                              >
+                                <div class="tray-doc-left">
+                                  <input
+                                    type="checkbox"
+                                    class="doc-checkbox"
+                                    checked={!!generateStore.selectedDocIds[doc.id]}
+                                    onclick={(e) => e.stopPropagation()}
+                                    onchange={() => toggleDocCheck(doc, s.id)}
+                                    disabled={generateStore.isGenerating}
+                                    tabindex="-1"
+                                    aria-label={`Select ${doc.title}`}
+                                  />
+                                  <div class="tray-doc-info">
+                                    <div class="tray-doc-title" title={doc.title}>
+                                      {doc.title}
+                                    </div>
+                                    <div class="tray-doc-meta-row">
+                                      <span class="meta-item word-count">
+                                        📝 {(doc.wordCount || 0).toLocaleString()} words
+                                      </span>
+                                      {#if doc.cardCount && doc.cardCount > 0}
+                                        <span class="meta-item card-count">
+                                          🎴 {doc.cardCount} cards
+                                        </span>
+                                      {/if}
+                                      {#if doc.url}
+                                        <span class="meta-item doc-url" title={doc.url}>
+                                          🔗 {doc.url.replace(/^https?:\/\/(www\.)?/, '')}
+                                        </span>
+                                      {/if}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div class="tray-doc-right">
+                                  <button
+                                    type="button"
+                                    class="btn-preview-mini"
+                                    onclick={(e) => {
+                                      e.stopPropagation();
+                                      handleOpenPreview(doc);
+                                    }}
+                                    title="Preview Document Content"
+                                  >
+                                    👁️ Preview
+                                  </button>
+                                </div>
+                              </div>
+                            {/each}
+                          </div>
+                        {/if}
                       {/if}
                     </div>
                   {/if}
@@ -476,6 +900,7 @@
           bind:limit={generateStore.limit}
           bind:targetDeck={generateStore.targetDeck}
           bind:enforceGrounding={generateStore.enforceGrounding}
+          onNavigate={onNavigate}
         />
 
         {#if generateStore.errorMessage}
@@ -673,14 +1098,97 @@
     font-weight: 600;
   }
 
+  /* Global Scope Search */
+  .scope-global-search {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .search-box-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+  }
+
+  .scope-global-input {
+    width: 100%;
+    background: #0b0f19;
+    border: 1px solid #334155;
+    color: #f8fafc;
+    padding: 8px 36px 8px 34px;
+    border-radius: 6px;
+    font-size: 12.5px;
+    box-sizing: border-box;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+
+  .scope-global-input:focus {
+    outline: none;
+    border-color: #6366f1;
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25);
+  }
+
+  .global-spinner {
+    position: absolute;
+    right: 32px;
+  }
+
+  .search-clear-btn {
+    position: absolute;
+    right: 8px;
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    font-size: 13px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+
+  .search-clear-btn:hover {
+    color: #f8fafc;
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .global-search-status {
+    font-size: 11.5px;
+    padding-left: 2px;
+  }
+
+  .search-status-text.highlight {
+    color: #818cf8;
+  }
+
+  .search-status-text.muted {
+    color: #94a3b8;
+  }
+
+  .match-pill {
+    font-size: 10.5px;
+    background: rgba(16, 185, 129, 0.18);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.35);
+    padding: 1px 7px;
+    border-radius: 9999px;
+    font-weight: 600;
+  }
+
+  .source-node.dimmed {
+    opacity: 0.45;
+  }
+
   /* Scope Tree */
   .scope-tree-container {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    max-height: 380px;
+    max-height: 560px;
     overflow-y: auto;
     padding-right: 4px;
+    scrollbar-width: thin;
+    scrollbar-color: #475569 #0f172a;
   }
 
   .source-node {
@@ -745,14 +1253,24 @@
     font-weight: 500;
   }
 
+  .selected-pill {
+    font-size: 11px;
+    background: rgba(99, 102, 241, 0.2);
+    color: #a5b4fc;
+    border: 1px solid rgba(99, 102, 241, 0.4);
+    padding: 2px 8px;
+    border-radius: 9999px;
+    font-weight: 600;
+  }
+
   /* Tray */
   .source-documents-tray {
     border-top: 1px solid #334155;
-    background: #0b0f19;
-    padding: 10px 12px;
+    background: #090d16;
+    padding: 12px 14px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 10px;
   }
 
   .tray-loading, .tray-empty {
@@ -766,8 +1284,29 @@
     gap: 8px;
   }
 
-  .tray-filter-row {
-    margin-bottom: 4px;
+  .tray-toolbar {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: rgba(15, 23, 42, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 8px 10px;
+    border-radius: 6px;
+  }
+
+  .tray-search-box {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+  }
+
+  .search-icon {
+    position: absolute;
+    left: 10px;
+    font-size: 12px;
+    pointer-events: none;
+    opacity: 0.6;
   }
 
   .tray-filter-input {
@@ -775,87 +1314,263 @@
     background: #1e293b;
     border: 1px solid #334155;
     color: #f8fafc;
-    padding: 6px 10px;
-    border-radius: 4px;
+    padding: 6px 30px;
+    border-radius: 6px;
     font-size: 12px;
+    box-sizing: border-box;
+    transition: border-color 0.15s, box-shadow 0.15s;
   }
 
   .tray-filter-input:focus {
     outline: none;
     border-color: #6366f1;
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+  }
+
+  .tray-filter-clear {
+    position: absolute;
+    right: 8px;
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+
+  .tray-filter-clear:hover {
+    color: #f8fafc;
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .tray-spinner {
+    position: absolute;
+    right: 28px;
+    width: 12px;
+    height: 12px;
+  }
+
+  .tray-actions-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+    color: #94a3b8;
+  }
+
+  .tray-stat-count {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .sel-highlight {
+    color: #818cf8;
+    font-weight: 600;
+  }
+
+  .tray-bulk-buttons {
+    display: flex;
+    gap: 6px;
+  }
+
+  .btn-tray-action {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid #334155;
+    color: #cbd5e1;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 3px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-tray-action:hover:not(:disabled) {
+    background: rgba(99, 102, 241, 0.15);
+    border-color: #6366f1;
+    color: #f8fafc;
+  }
+
+  .btn-tray-action:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .tray-no-match {
+    padding: 16px;
+    text-align: center;
+    color: #94a3b8;
+    font-size: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .no-match-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .btn-clear-filter {
+    background: transparent;
+    border: 1px dashed #475569;
+    color: #94a3b8;
+    padding: 4px 10px;
+    font-size: 11px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  .btn-clear-filter:hover {
+    color: #f8fafc;
+    border-color: #94a3b8;
   }
 
   .tray-doc-list {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    max-height: 200px;
+    max-height: 380px;
     overflow-y: auto;
+    padding-right: 4px;
+    scrollbar-width: thin;
+    scrollbar-color: #334155 #0b0f19;
   }
 
   .tray-doc-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 6px 8px;
-    background: rgba(255, 255, 255, 0.02);
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    border-radius: 4px;
-    gap: 10px;
+    padding: 8px 10px;
+    background: rgba(30, 41, 59, 0.45);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-left: 3px solid transparent;
+    border-radius: 6px;
+    gap: 12px;
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.15s ease;
   }
 
   .tray-doc-row:hover {
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(51, 65, 85, 0.55);
+    border-color: rgba(255, 255, 255, 0.12);
+    transform: translateX(2px);
   }
 
   .tray-doc-row.selected {
-    background: rgba(99, 102, 241, 0.08);
-    border-color: rgba(99, 102, 241, 0.3);
+    background: rgba(99, 102, 241, 0.12);
+    border-color: rgba(99, 102, 241, 0.35);
+    border-left: 3px solid #6366f1;
   }
 
-  .tray-doc-label {
-    flex: 1;
+  .tray-doc-row.selected:hover {
+    background: rgba(99, 102, 241, 0.18);
+    border-color: rgba(99, 102, 241, 0.5);
+  }
+
+  .tray-doc-left {
     display: flex;
-    align-items: center;
-    gap: 8px;
-    cursor: pointer;
+    align-items: flex-start;
+    gap: 10px;
     min-width: 0;
+    flex: 1;
   }
 
-  .tray-doc-title {
-    font-size: 12px;
-    color: #e2e8f0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .tray-doc-actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+  .doc-checkbox {
+    margin-top: 3px;
+    cursor: pointer;
+    accent-color: #6366f1;
+    width: 15px;
+    height: 15px;
     flex-shrink: 0;
   }
 
-  .word-badge {
-    font-size: 10px;
+  .tray-doc-info {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .tray-doc-title {
+    font-size: 12.5px;
+    font-weight: 500;
+    color: #e2e8f0;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    word-break: break-word;
+  }
+
+  .tray-doc-meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    font-size: 10.5px;
     color: #94a3b8;
   }
 
+  .meta-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+  }
+
+  .meta-item.word-count {
+    color: #a5b4fc;
+    background: rgba(99, 102, 241, 0.08);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  .meta-item.card-count {
+    color: #38bdf8;
+    background: rgba(56, 189, 248, 0.08);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  .meta-item.doc-url {
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #64748b;
+  }
+
+  .tray-doc-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
   .btn-preview-mini {
-    background: rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.05);
     border: 1px solid #334155;
     color: #cbd5e1;
-    font-size: 10px;
-    font-weight: 600;
-    padding: 2px 6px;
+    font-size: 10.5px;
+    font-weight: 500;
+    padding: 4px 8px;
     border-radius: 4px;
     cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
   }
 
   .btn-preview-mini:hover {
     background: rgba(255, 255, 255, 0.12);
-    color: white;
+    color: #f8fafc;
+    border-color: #64748b;
   }
 
   /* Badges */
@@ -872,6 +1587,7 @@
   .type-badge.local { background: rgba(168, 85, 247, 0.15); color: #c084fc; }
   .type-badge.sitemap { background: rgba(16, 185, 129, 0.15); color: #34d399; }
   .type-badge.llms-txt { background: rgba(236, 72, 153, 0.15); color: #f472b6; }
+  .type-badge.notion { background: rgba(14, 165, 233, 0.15); color: #38bdf8; }
 
   .btn {
     padding: 8px 16px;

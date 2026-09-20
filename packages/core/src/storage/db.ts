@@ -7,7 +7,7 @@ export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS data_sources (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    type TEXT NOT NULL CHECK(type IN ('rss', 'web', 'local', 'sitemap', 'llms-txt')),
+    type TEXT NOT NULL CHECK(type IN ('rss', 'web', 'local', 'sitemap', 'llms-txt', 'notion')),
     uri TEXT NOT NULL,
     target_deck TEXT NOT NULL DEFAULT 'Default',
     tags TEXT NOT NULL DEFAULT '[]',
@@ -86,7 +86,7 @@ CREATE TABLE IF NOT EXISTS job_logs (
     job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
     step_number INTEGER NOT NULL,
     step_title TEXT NOT NULL,
-    level TEXT NOT NULL CHECK(level IN ('info', 'warn', 'error', 'success')),
+    level TEXT NOT NULL CHECK(level IN ('debug', 'info', 'warn', 'error', 'success')),
     message TEXT NOT NULL,
     details TEXT,
     timestamp TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
@@ -158,19 +158,19 @@ export function createDatabaseClient(options: DatabaseClientOptions = {}): Datab
 export function runMigrations(db: Database.Database): void {
   db.pragma("foreign_keys = OFF");
 
-  // 1. Check if data_sources table exists and needs check constraint update for 'sitemap' and 'llms-txt'
+  // 1. Check if data_sources table exists and needs check constraint update for 'sitemap', 'llms-txt', or 'notion'
   const sourceRow = db
     .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='data_sources'")
     .get() as { sql?: string } | undefined;
 
-  if (sourceRow && sourceRow.sql && !sourceRow.sql.includes("'sitemap'")) {
+  if (sourceRow && sourceRow.sql && (!sourceRow.sql.includes("'sitemap'") || !sourceRow.sql.includes("'notion'"))) {
     db.transaction(() => {
       db.exec("ALTER TABLE data_sources RENAME TO _data_sources_old;");
       db.exec(`
         CREATE TABLE data_sources (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
-            type TEXT NOT NULL CHECK(type IN ('rss', 'web', 'local', 'sitemap', 'llms-txt')),
+            type TEXT NOT NULL CHECK(type IN ('rss', 'web', 'local', 'sitemap', 'llms-txt', 'notion')),
             uri TEXT NOT NULL,
             target_deck TEXT NOT NULL DEFAULT 'Default',
             tags TEXT NOT NULL DEFAULT '[]',
@@ -244,6 +244,38 @@ export function runMigrations(db: Database.Database): void {
       db.exec("CREATE INDEX IF NOT EXISTS idx_flashcards_source_id ON flashcards(source_id);");
       db.exec("CREATE INDEX IF NOT EXISTS idx_flashcards_target_deck ON flashcards(target_deck);");
       db.exec("CREATE INDEX IF NOT EXISTS idx_flashcards_difficulty ON flashcards(difficulty);");
+    })();
+  }
+
+  // 3b. Repair documents table if foreign key references _data_sources_old
+  const docsRow = db
+    .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='documents'")
+    .get() as { sql?: string } | undefined;
+
+  if (docsRow && docsRow.sql && docsRow.sql.includes("_data_sources_old")) {
+    db.transaction(() => {
+      db.exec("ALTER TABLE documents RENAME TO _documents_old;");
+      db.exec(`
+        CREATE TABLE documents (
+            id TEXT PRIMARY KEY,
+            source_id TEXT NOT NULL REFERENCES data_sources(id) ON DELETE CASCADE,
+            title TEXT NOT NULL,
+            url TEXT,
+            text_content TEXT NOT NULL,
+            raw_content TEXT,
+            content_hash TEXT,
+            word_count INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+            updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+        );
+      `);
+      db.exec(`
+        INSERT INTO documents (id, source_id, title, url, text_content, raw_content, content_hash, word_count, created_at, updated_at)
+        SELECT id, source_id, title, url, text_content, raw_content, content_hash, word_count, created_at, updated_at FROM _documents_old;
+      `);
+      db.exec("DROP TABLE _documents_old;");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_documents_source_id ON documents(source_id);");
+      db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_source_url ON documents(source_id, url) WHERE url IS NOT NULL;");
     })();
   }
 
@@ -356,7 +388,7 @@ export function runMigrations(db: Database.Database): void {
         job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
         step_number INTEGER NOT NULL,
         step_title TEXT NOT NULL,
-        level TEXT NOT NULL CHECK(level IN ('info', 'warn', 'error', 'success')),
+        level TEXT NOT NULL CHECK(level IN ('debug', 'info', 'warn', 'error', 'success')),
         message TEXT NOT NULL,
         details TEXT,
         timestamp TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
@@ -366,4 +398,36 @@ export function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at);
     CREATE INDEX IF NOT EXISTS idx_job_logs_job_id ON job_logs(job_id);
   `);
+
+  // Migrate job_logs table check constraint if created before 'debug' level was added
+  const jobLogsTable = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='job_logs'").get() as { sql?: string } | undefined;
+  if (jobLogsTable?.sql && !jobLogsTable.sql.includes("'debug'")) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS job_logs_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+        step_number INTEGER NOT NULL,
+        step_title TEXT NOT NULL,
+        level TEXT NOT NULL CHECK(level IN ('debug', 'info', 'warn', 'error', 'success')),
+        message TEXT NOT NULL,
+        details TEXT,
+        timestamp TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+      );
+      INSERT INTO job_logs_new (id, job_id, step_number, step_title, level, message, details, timestamp)
+        SELECT id, job_id, step_number, step_title, level, message, details, timestamp FROM job_logs;
+      DROP TABLE job_logs;
+      ALTER TABLE job_logs_new RENAME TO job_logs;
+      CREATE INDEX IF NOT EXISTS idx_job_logs_job_id ON job_logs(job_id);
+    `);
+  }
+
+  // 7. Ensure app_settings table exists
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS app_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+  `);
 }
+

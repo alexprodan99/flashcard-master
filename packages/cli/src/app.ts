@@ -8,6 +8,10 @@ import {
   FlashcardRepository,
   DocumentRepository,
   JobRepository,
+  type SettingsRepository,
+  type ProviderVerifierPort,
+  SqliteSettingsRepository,
+  SettingsService,
   StrategyRegistry,
   IngestionService,
   PersonaStudioService,
@@ -25,6 +29,7 @@ import {
   LocalFileStrategy,
   SitemapIngestionStrategy,
   LlmsTxtIngestionStrategy,
+  NotionStrategy,
   createLLMAdapter,
   AnkiPackageExporter,
   AnkiConnectAdapter,
@@ -33,6 +38,7 @@ import {
   MarkdownExporter,
   HtmlStudyGuideExporter,
   PdfStudyGuideExporter,
+  ProviderVerifier,
 } from "@flashcard-master/adapters";
 import type Database from "better-sqlite3";
 
@@ -43,6 +49,9 @@ export interface AppContext {
   cardRepo: FlashcardRepository;
   docRepo: DocumentRepository;
   jobRepo: JobRepository;
+  settingsRepo: SettingsRepository;
+  settingsService: SettingsService;
+  providerVerifier: ProviderVerifierPort;
   mediaService: MediaService;
   strategyRegistry: StrategyRegistry;
   ingestionService: IngestionService;
@@ -79,6 +88,9 @@ export function createAppContext(options: AppOptions = {}): AppContext {
   const cardRepo = new FlashcardRepository(db);
   const docRepo = new DocumentRepository(db);
   const jobRepo = new JobRepository(db);
+  const settingsRepo = new SqliteSettingsRepository(db);
+  const settingsService = new SettingsService(settingsRepo);
+  const providerVerifier = new ProviderVerifier();
   const mediaService = new MediaService();
 
   // Ingestion strategies
@@ -88,6 +100,7 @@ export function createAppContext(options: AppOptions = {}): AppContext {
   strategyRegistry.register(new LocalFileStrategy());
   strategyRegistry.register(new SitemapIngestionStrategy());
   strategyRegistry.register(new LlmsTxtIngestionStrategy({ mediaService }));
+  strategyRegistry.register(new NotionStrategy({ settingsService, mediaService }));
 
   const ingestionService = new IngestionService(sourceRepo, syncRepo, strategyRegistry, docRepo);
 
@@ -117,6 +130,9 @@ export function createAppContext(options: AppOptions = {}): AppContext {
     cardRepo,
     docRepo,
     jobRepo,
+    settingsRepo,
+    settingsService,
+    providerVerifier,
     mediaService,
     strategyRegistry,
     ingestionService,

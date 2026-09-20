@@ -3,6 +3,7 @@ export * from "./ingestion/web-reader-strategy.js";
 export * from "./ingestion/local-file-strategy.js";
 export * from "./ingestion/sitemap-strategy.js";
 export * from "./ingestion/llms-txt-strategy.js";
+export * from "./ingestion/notion-strategy.js";
 export * from "./llm/types.js";
 export * from "./llm/openai-adapter.js";
 export * from "./llm/gemini-adapter.js";
@@ -15,3 +16,5 @@ export * from "./export/delimited-exporter.js";
 export * from "./export/markdown-exporter.js";
 export * from "./export/html-study-guide-exporter.js";
 export * from "./export/document-export-service.js";
+export * from "./verification/provider-verifier.js";
+

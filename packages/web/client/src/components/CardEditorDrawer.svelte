@@ -94,8 +94,8 @@
 </script>
 
 {#if isOpen && card}
-  <div class="drawer-backdrop" role="presentation" onclick={onClose}>
-    <div class="drawer-panel" role="dialog" aria-modal="true" onclick={(e) => e.stopPropagation()}>
+  <div class="drawer-backdrop" role="presentation" onclick={onClose} onkeydown={(e) => { if (e.key === 'Escape') onClose(); }}>
+    <div class="drawer-panel" role="dialog" aria-modal="true" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
       <div class="drawer-header">
         <div>
           <h2>✏️ Edit Flashcard</h2>

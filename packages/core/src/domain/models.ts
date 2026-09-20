@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const DataSourceTypeSchema = z.enum(["rss", "web", "local", "sitemap", "llms-txt"]);
+export const DataSourceTypeSchema = z.enum(["rss", "web", "local", "sitemap", "llms-txt", "notion"]);
 export type DataSourceType = z.infer<typeof DataSourceTypeSchema>;
 
 export const DataSourceSchema = z.object({
@@ -154,7 +154,7 @@ export const JobSchema = z.object({
 });
 export type Job = z.infer<typeof JobSchema>;
 
-export const JobLogLevelSchema = z.enum(["info", "warn", "error", "success"]);
+export const JobLogLevelSchema = z.enum(["debug", "info", "warn", "error", "success"]);
 export type JobLogLevel = z.infer<typeof JobLogLevelSchema>;
 
 export const JobLogSchema = z.object({
@@ -169,4 +169,33 @@ export const JobLogSchema = z.object({
 });
 export type JobLog = z.infer<typeof JobLogSchema>;
 
+export const SettingSchema = z.object({
+  key: z.string().min(1),
+  value: z.string(),
+  updatedAt: z.string().optional(),
+});
+export type Setting = z.infer<typeof SettingSchema>;
+
+export const SecretProviderSchema = z.enum(["openai", "anthropic", "gemini", "ollama", "notion"]);
+export type SecretProvider = z.infer<typeof SecretProviderSchema>;
+
+export const KeySourceSchema = z.enum(["database", "environment", "none"]);
+export type KeySource = z.infer<typeof KeySourceSchema>;
+
+export const ProviderKeyStatusSchema = z.object({
+  provider: z.string(),
+  isConfigured: z.boolean(),
+  maskedValue: z.string(),
+  source: KeySourceSchema,
+  endpoint: z.string().nullable().optional(),
+  updatedAt: z.string().optional(),
+});
+export type ProviderKeyStatus = z.infer<typeof ProviderKeyStatusSchema>;
+
+export const ProviderVerificationResultSchema = z.object({
+  success: z.boolean(),
+  message: z.string(),
+  details: z.record(z.any()).optional(),
+});
+export type ProviderVerificationResult = z.infer<typeof ProviderVerificationResultSchema>;
 

@@ -84,7 +84,14 @@ You MUST output ONLY a valid raw JSON array with no markdown code fences:
       }
 
       const json = await response.json();
-      const responseText = json.content?.[0]?.text;
+      const contentParts = json.content;
+      if (!contentParts || !Array.isArray(contentParts) || contentParts.length === 0) {
+        throw new LLMResponseParsingError(this.providerName, "Empty message response from Anthropic.");
+      }
+
+      const textParts = contentParts.filter((c: any) => c.type === "text" && typeof c.text === "string");
+      const targetParts = textParts.length > 0 ? textParts : contentParts.filter((c: any) => typeof c.text === "string");
+      const responseText = targetParts.map((c: any) => c.text).join("").trim();
       if (!responseText) {
         throw new LLMResponseParsingError(this.providerName, "Empty message response from Anthropic.");
       }

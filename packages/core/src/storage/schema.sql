@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS job_logs (
     job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
     step_number INTEGER NOT NULL,
     step_title TEXT NOT NULL,
-    level TEXT NOT NULL CHECK(level IN ('info', 'warn', 'error', 'success')),
+    level TEXT NOT NULL CHECK(level IN ('debug', 'info', 'warn', 'error', 'success')),
     message TEXT NOT NULL,
     details TEXT,
     timestamp TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))

@@ -112,6 +112,7 @@ npm run cli -- stats
 ## ✨ Features
 
 - **🌐 Multi-Source Ingestion Engine:**
+  - **Notion Pages & Databases:** Ingest Notion notes, workspaces, and databases with recursive subpage crawling (up to 3 levels) and automatic expiring S3 media localization into permanent local WebP assets.
   - **RSS / Atom Feeds:** Ingest technical blogs, newsletters, and release feeds.
   - **XML Sitemaps (`<urlset>` & `<sitemapindex>`):** Ingest entire publication archives (e.g. 300+ blog articles) with recursive discovery and concurrency limits.
   - **LLMs.txt Catalogs (`/llms.txt` & `/llms-full.txt`):** Ingest structured AI documentation catalogs with auto-categorized topic tagging.
@@ -131,7 +132,8 @@ npm run cli -- stats
 - **🗂️ Embedded Web UI Dashboard:**
   - **Zero-Install SPA:** Native dark-theme Single Page Application served directly by Node.js with zero external framework dependencies or CDN tracking.
   - **📊 Dashboard Overview:** Real-time KPIs for total cards, active sources, and deck categories.
-  - **⚡ AI Generation Studio:** In-browser flashcard synthesizer with provider switching (Ollama, Gemini, OpenAI, Anthropic), model presets (`phi4-mini`, `gemini-2.0-flash`, `gpt-4o-mini`, `claude-haiku-4-5-20251001`), custom model overrides, persona selectors, single/multi-source scope, live spinning execution feedback, and card previews.
+  - **⚙️ Integrations & Secrets Hub:** Secure, masked storage for Notion and LLM API keys with real-time live credential verification and automatic background worker injection.
+  - **⚡ AI Generation Studio:** In-browser flashcard synthesizer with provider switching (Ollama, Gemini, OpenAI, Anthropic), model presets (`phi4-mini`, `gemini-3.6-flash`, `gpt-4o-mini`, `claude-haiku-4-5-20251001`), custom model overrides, persona selectors, single/multi-source scope, live spinning execution feedback, and card previews.
   - **🌐 Data Sources Manager:** Add, configure, and synchronize sources with live spinner feedback.
   - **🗂️ Question Explorer:** Search bar, interactive filter chips (Decks, Difficulties, Tag clouds), and click-to-reveal flashcards with source grounding callouts.
   - **✏️ Slide-Over Card Editor:** Smooth slide-in drawer to edit questions, answers, difficulty, tags, and citations with instant optimistic updates.
@@ -170,6 +172,7 @@ Open your browser at **`http://127.0.0.1:3000`** to access the dashboard.
 3. **⚡ Generate Studio:** Pick your AI provider (`Ollama`, `Gemini`, `OpenAI`, `Anthropic`), select your cognitive persona (`Socratic Mentor`, `Strict Examiner`, `Analogy Builder`), customize the model name or use 2026 presets, choose your target data sources, and click `⚡ Start AI Generation` with live progress feedback and instant card previews!
 4. **🗂️ Question Explorer:** Search your knowledge base, filter with deck or tag chips, click `👁️ Reveal Answer` for self-testing, and click `✏️ Edit` on any card to open the slide-over editor.
 5. **🚀 Export & Anki:** Filter cards by Deck and Tag, download your `.apkg`, `.csv`, `.tsv`, `.md`, or `.html` file with 1-click, or click `🚀 Push to Anki` if Anki desktop is open with AnkiConnect!
+6. **⚙️ Settings & Integrations:** Store and test API keys for Notion and AI providers with live connection diagnostics and local SQLite encryption/masking.
 
 ---
 
@@ -281,6 +284,19 @@ If you prefer offline files without installing add-ons:
 
 ---
 
+## 📓 Notion Ingestion & Integration Setup
+
+Flashcard Master supports seamless, recursive ingestion of Notion pages and databases with automatic local WebP caching for expiring AWS S3 image blocks:
+
+1. **Create an Internal Integration:** Visit [Notion Developers Integrations](https://www.notion.so/profile/integrations), create an integration named `Flashcard Master`, and copy your **Internal Integration Secret** (`ntn_...` or `secret_...`).
+2. **Share Target Pages:** In Notion, open your target page or database, click `•••` $\rightarrow$ `Connections` $\rightarrow$ `Connect to...`, and select your integration.
+3. **Configure Token:** Open `http://127.0.0.1:3000/#/settings`, paste your token under **Notion Integration**, click **⚡ Test Connection**, and click **Save Key** (or export `NOTION_API_KEY`).
+4. **Ingest Notes:** Go to **Data Sources** $\rightarrow$ **+ Add Data Source**, select **📓 Notion**, paste your page or database URL, check "Include subpages" for recursive crawling, and click **🔄 Sync**!
+
+👉 For detailed setup instructions and troubleshooting, see the [Notion Integration Guide](docs/notion-setup.md).
+
+---
+
 ## ⚙️ Supported LLM Providers (Optimized for Performance-per-Dollar)
 
 You can switch between local and cloud AI providers seamlessly via CLI flags or environment variables:
@@ -288,7 +304,7 @@ You can switch between local and cloud AI providers seamlessly via CLI flags or 
 | Provider | Recommended Default | Alternatives / Supported Models | Privacy & Cost Tier |
 |---|---|---|---|
 | 🦙 **Ollama** *(Default)* | `--provider ollama` (**`phi4-mini`**) | `llama3.3`, `deepseek-r1`, `qwen2.5`, `mistral` | 🟢 **100% Local, Offline & Free** |
-| 🔵 **Google Gemini** | `--provider gemini` (**`gemini-2.0-flash`**) | `gemini-2.0-pro-exp`, `gemini-1.5-pro` | 🟡 Cloud API (~$0.10 / 1M tokens) |
+| 🔵 **Google Gemini** | `--provider gemini` (**`gemini-3.6-flash`**) | `gemini-3.6-pro`, `gemini-2.5-flash`, `gemini-1.5-pro` | 🟡 Cloud API (~$0.10 / 1M tokens) |
 | 🟢 **OpenAI** | `--provider openai` (**`gpt-4o-mini`**) | `o3-mini`, `gpt-4o`, `gpt-4.5-preview` | 🟡 Cloud API (~$0.15 / 1M tokens) |
 | 🟣 **Anthropic** | `--provider anthropic` (**`claude-haiku-4-5-20251001`**) | `claude-sonnet-5`, `claude-opus-5` | 🟡 Cloud API (~$1.00 / 1M tokens) |
 

@@ -1,24 +1,34 @@
 <script lang="ts">
   import { createSource, uploadSourceFile } from '../lib/api';
   import type { DataSource, DataSourceType } from '../lib/types';
+  import { settingsStore } from '../stores/index.js';
+  import { buildNotionUri, isValidNotionInput } from '../lib/notion-uri.js';
   import UrlListManager from './UrlListManager.svelte';
 
   interface Props {
     isOpen: boolean;
     onClose: () => void;
     onSourceCreated: (source: DataSource) => void;
+    onNavigate?: (tab: string, queryParams?: Record<string, string>) => void;
   }
 
-  let { isOpen, onClose, onSourceCreated }: Props = $props();
+  let { isOpen, onClose, onSourceCreated, onNavigate }: Props = $props();
 
   let name = $state('');
   let type = $state<DataSourceType>('rss');
   let uri = $state('');
   let webUrls = $state<string[]>([]);
+  let notionRecursive = $state(false);
   let targetDeck = $state('Default');
   let tagsInput = $state('');
   let isSubmitting = $state(false);
   let errorMessage = $state<string | null>(null);
+
+  $effect(() => {
+    if (isOpen && !settingsStore.hasLoaded && !settingsStore.loading) {
+      settingsStore.loadKeys();
+    }
+  });
 
   let selectedLocalFile = $state<{ name: string; size: number; path: string } | null>(null);
   let isUploadingFile = $state(false);
@@ -114,6 +124,17 @@
         errorMessage = 'Please select a Markdown or text file to upload, or specify a directory path.';
         return;
       }
+    } else if (type === 'notion') {
+      const rawUri = uri.trim();
+      if (!rawUri) {
+        errorMessage = 'Please provide a Notion page or database URL.';
+        return;
+      }
+      if (!isValidNotionInput(rawUri)) {
+        errorMessage = 'Please provide a valid Notion URL (e.g. notion.so/... or notion.site/...) or a 32-character Notion ID.';
+        return;
+      }
+      finalUri = buildNotionUri(rawUri, { recursive: notionRecursive });
     } else {
       finalUri = uri.trim();
     }
@@ -154,6 +175,7 @@
       isUploadingFile = false;
       isDragging = false;
       showAdvancedPath = false;
+      notionRecursive = false;
       onSourceCreated(source);
       onClose();
     } catch (err: any) {
@@ -164,9 +186,15 @@
   }
 </script>
 
+<svelte:window onkeydown={(e) => { if (e.key === 'Escape' && isOpen) onClose(); }} />
+
 {#if isOpen}
-  <div class="modal-backdrop" role="presentation" onclick={onClose}>
-    <div class="modal-card" role="dialog" aria-modal="true" onclick={(e) => e.stopPropagation()}>
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="modal-backdrop" onclick={onClose}>
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="modal-card" role="dialog" aria-modal="true" tabindex="-1" onclick={(e) => e.stopPropagation()}>
       <div class="modal-header">
         <h2>Add Ingestion Source</h2>
         <button class="close-btn" onclick={onClose} aria-label="Close modal">✕</button>
@@ -199,6 +227,10 @@
             <label class="type-option" class:selected={type === 'llms-txt'}>
               <input type="radio" name="sourceType" value="llms-txt" bind:group={type} />
               <span>📜 LLMs.txt</span>
+            </label>
+            <label class="type-option" class:selected={type === 'notion'}>
+              <input type="radio" name="sourceType" value="notion" bind:group={type} />
+              <span>📓 Notion</span>
             </label>
           </div>
         </div>
@@ -292,6 +324,59 @@
                 <span class="field-hint">Specify an absolute directory path for recursive scanning or a custom file path.</span>
               </div>
             {/if}
+          </div>
+        {:else if type === 'notion'}
+          <div class="form-group">
+            <div class="notion-header-row">
+              <label for="src-uri">Notion Page or Database URL</label>
+              <div class="token-status-wrapper">
+                {#if settingsStore.loading && !settingsStore.hasLoaded}
+                  <span class="token-badge loading" title="Checking Notion token...">
+                    ⏳ Checking...
+                  </span>
+                {:else if settingsStore.keys.notion?.isConfigured}
+                  <span class="token-badge active" title="Notion API token configured">
+                    ✓ Notion Token Active
+                  </span>
+                {:else}
+                  <span class="token-badge missing" title="Notion token not configured in Settings">
+                    ⚠️ Notion Token Missing
+                    {#if onNavigate}
+                      <button
+                        type="button"
+                        class="btn-inline-settings"
+                        onclick={() => {
+                          onClose();
+                          onNavigate('settings');
+                        }}
+                      >
+                        (Configure ⚙️)
+                      </button>
+                    {/if}
+                  </span>
+                {/if}
+              </div>
+            </div>
+            <input
+              id="src-uri"
+              type="text"
+              placeholder="https://www.notion.so/workspace/Page-Title-32hex or Database URL"
+              bind:value={uri}
+              required
+            />
+            <span class="field-hint">
+              Paste the URL of any Notion Page or Database. Ensure your Notion integration has been invited to the page/database.
+            </span>
+
+            <div class="notion-options-group">
+              <label class="checkbox-label">
+                <input type="checkbox" bind:checked={notionRecursive} />
+                <span class="checkbox-text">
+                  <strong>Include subpages as separate documents</strong>
+                  <small>Recursively crawls child pages (up to 6 levels deep) and ingests each as a discrete document.</small>
+                </span>
+              </label>
+            </div>
           </div>
         {:else}
           <div class="form-group">
@@ -654,5 +739,96 @@
   .field-hint {
     font-size: 11px;
     color: #64748b;
+  }
+
+  .notion-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+
+  .token-status-wrapper {
+    display: flex;
+    align-items: center;
+  }
+
+  .token-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 9999px;
+  }
+
+  .token-badge.active {
+    background: rgba(34, 197, 94, 0.15);
+    color: #4ade80;
+    border: 1px solid rgba(34, 197, 94, 0.3);
+  }
+
+  .token-badge.loading {
+    background: rgba(148, 163, 184, 0.15);
+    color: #94a3b8;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+  }
+
+  .token-badge.missing {
+    background: rgba(234, 179, 8, 0.15);
+    color: #fde047;
+    border: 1px solid rgba(234, 179, 8, 0.3);
+  }
+
+  .btn-inline-settings {
+    background: transparent;
+    border: none;
+    color: #38bdf8;
+    cursor: pointer;
+    font-size: 11px;
+    padding: 0;
+    text-decoration: underline;
+  }
+
+  .btn-inline-settings:hover {
+    color: #7dd3fc;
+  }
+
+  .notion-options-group {
+    background: rgba(15, 23, 42, 0.5);
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-top: 10px;
+  }
+
+  .checkbox-label {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    cursor: pointer;
+  }
+
+  .checkbox-label input[type="checkbox"] {
+    margin-top: 3px;
+    cursor: pointer;
+  }
+
+  .checkbox-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .checkbox-text strong {
+    font-size: 13px;
+    color: #f1f5f9;
+  }
+
+  .checkbox-text small {
+    font-size: 11px;
+    color: #94a3b8;
+    line-height: 1.4;
   }
 </style>

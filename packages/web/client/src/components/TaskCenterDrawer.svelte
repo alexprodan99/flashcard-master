@@ -1,8 +1,50 @@
 <script lang="ts">
-  import { taskStore } from '../stores/index.js';
+  import { taskStore, toastStore } from '../stores/index.js';
   import StepAccordion from './StepAccordion.svelte';
 
   let isClearing = $state(false);
+
+  async function handleToggleVerbose() {
+    const isNow = await taskStore.toggleVerbose();
+    if (isNow) {
+      toastStore.info('🐞 Verbose diagnostic logging enabled (Notion subpage, block, and chunk traces visible)');
+    } else {
+      toastStore.info('Standard logging enabled');
+    }
+  }
+
+  function handleCopyAllLogs() {
+    const displayedJobs = taskStore.activeDrawerTab === 'active' ? taskStore.activeJobs : taskStore.historyJobs;
+    if (displayedJobs.length === 0) {
+      toastStore.info('No jobs to copy logs from.');
+      return;
+    }
+
+    const payload = displayedJobs.map((job) => ({
+      jobId: job.id,
+      title: job.title,
+      type: job.type,
+      status: job.status,
+      startedAt: job.startedAt || job.createdAt,
+      completedAt: job.completedAt,
+      logs: taskStore.getLogsForJob(job.id).map((l) => ({
+        timestamp: l.timestamp,
+        level: l.level,
+        step: l.stepTitle,
+        message: l.message,
+        details: l.details,
+      })),
+    }));
+
+    navigator.clipboard
+      .writeText(JSON.stringify(payload, null, 2))
+      .then(() => {
+        toastStore.success(`📋 Copied logs for ${displayedJobs.length} task(s) to clipboard`);
+      })
+      .catch(() => {
+        toastStore.error('Failed to copy logs to clipboard');
+      });
+  }
 
   async function handleClearHistory() {
     if (taskStore.historyJobs.length === 0) return;
@@ -93,6 +135,34 @@
             </button>
           </div>
         {/if}
+      </div>
+
+      <!-- Controls Toolbar -->
+      <div class="drawer-toolbar">
+        <div class="toolbar-left">
+          <button
+            type="button"
+            class="btn-verbose-toggle"
+            class:active={taskStore.isVerbose}
+            onclick={handleToggleVerbose}
+            title={taskStore.isVerbose ? 'Disable verbose diagnostic logging' : 'Enable verbose diagnostic logging (shows subpages, block details, chunking)'}
+          >
+            <span class="toggle-icon">🐞</span>
+            <span class="toggle-label">Verbose Logs</span>
+            <span class="toggle-status">{taskStore.isVerbose ? 'ON' : 'OFF'}</span>
+          </button>
+        </div>
+
+        <div class="toolbar-right">
+          <button
+            type="button"
+            class="btn-toolbar-action"
+            onclick={handleCopyAllLogs}
+            title="Copy logs of all visible tasks to clipboard"
+          >
+            📋 Copy All Logs
+          </button>
+        </div>
       </div>
 
       <!-- Task Lists Content -->
@@ -316,9 +386,72 @@
     color: #f87171;
   }
 
-  .btn-clear-history:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+  .drawer-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 24px;
+    background: #0b1324;
+    border-bottom: 1px solid #1e293b;
+    gap: 12px;
+  }
+
+  .btn-verbose-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid #334155;
+    color: #94a3b8;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-verbose-toggle:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #f1f5f9;
+  }
+
+  .btn-verbose-toggle.active {
+    background: rgba(99, 102, 241, 0.2);
+    border-color: #6366f1;
+    color: #c7d2fe;
+  }
+
+  .btn-verbose-toggle .toggle-status {
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .btn-verbose-toggle.active .toggle-status {
+    background: #6366f1;
+    color: #ffffff;
+  }
+
+  .btn-toolbar-action {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    background: transparent;
+    border: 1px solid #334155;
+    color: #94a3b8;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-toolbar-action:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: #f1f5f9;
+    border-color: #475569;
   }
 
   .drawer-content {

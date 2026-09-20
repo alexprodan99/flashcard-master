@@ -14,6 +14,7 @@
     { id: 'generate', label: 'Generate Studio', icon: '⚡', shortcut: '3 (g)' },
     { id: 'cards', label: 'Question Explorer', icon: '🗂️', shortcut: '4' },
     { id: 'export', label: 'Export & Anki', icon: '🚀', shortcut: '5 (e)' },
+    { id: 'settings', label: 'Settings', icon: '⚙️', shortcut: '6' },
   ];
 </script>
 

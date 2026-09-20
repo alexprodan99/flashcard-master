@@ -1,8 +1,14 @@
-import type { DataSource, RawDocument, CleanTextDocument, SyncState, Flashcard, DifficultyLevel, ImageQuality } from "../domain/models.js";
+import type { DataSource, RawDocument, CleanTextDocument, SyncState, Flashcard, DifficultyLevel, ImageQuality, Setting, ProviderVerificationResult, SecretProvider, JobLogLevel } from "../domain/models.js";
+
+export interface IngestionOptions {
+  onLog?: (level: JobLogLevel, message: string, details?: Record<string, any>) => void;
+  signal?: AbortSignal;
+  verbose?: boolean;
+}
 
 export interface IngestionStrategy {
   readonly type: DataSource["type"];
-  fetch(source: DataSource, lastSync?: SyncState): Promise<RawDocument[]>;
+  fetch(source: DataSource, lastSync?: SyncState, options?: IngestionOptions): Promise<RawDocument[]>;
   extractCleanText(raw: RawDocument): CleanTextDocument;
 }
 
@@ -69,4 +75,23 @@ export interface DocumentExportResult {
   content: string | Buffer | Uint8Array;
   documentCount: number;
 }
+
+export interface SettingsRepository {
+  get(key: string): string | null;
+  getWithMetadata(key: string): Setting | null;
+  set(key: string, value: string): void;
+  delete(key: string): boolean;
+  list(): Record<string, string>;
+  getAll(): Setting[];
+}
+
+export interface ProviderVerifierPort {
+  verify(options: {
+    provider: SecretProvider | string;
+    key?: string | null;
+    endpoint?: string | null;
+    timeoutMs?: number;
+  }): Promise<ProviderVerificationResult>;
+}
+
 

@@ -217,7 +217,12 @@ export class WorkerExecutor {
               let syncResult: any = { newCount: 0, totalFetched: 0 };
               if (this.options.ingestionService) {
                 try {
-                  syncResult = await this.options.ingestionService.syncSource(msg.sourceId);
+                  syncResult = await this.options.ingestionService.syncSource(msg.sourceId, {
+                    onLog: (level, message, details) => {
+                      ctx.log(msg.stepNumber || 0, msg.stepTitle || "Source Sync", level, message, details);
+                    },
+                    signal: ctx.signal,
+                  });
                 } catch (syncErr: any) {
                   ctx.log(msg.stepNumber || 0, "Sync Error", "warn", `Custodial sync failed for source ${msg.sourceId}: ${syncErr.message}`);
                 }

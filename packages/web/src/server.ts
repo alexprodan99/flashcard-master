@@ -21,11 +21,17 @@ import {
   type CardDepthMode,
   type DiscoveredDocument,
   type JobRepository,
+  type SettingsRepository,
+  type ProviderVerifierPort,
+  SqliteSettingsRepository,
+  SettingsService,
+  SUPPORTED_PROVIDERS,
+  createDatabaseClient,
   MediaService,
   CardGenerationService,
 } from "@flashcard-master/core";
-import { createLLMAdapter, DocumentExportService } from "@flashcard-master/adapters";
-import { JobManager, type ConcurrencyLimits } from "./jobs/index.js";
+import { createLLMAdapter, DocumentExportService, ProviderVerifier } from "@flashcard-master/adapters";
+import { JobManager, type ConcurrencyLimits, type JobManagerOptions } from "./jobs/index.js";
 import { WorkerExecutor } from "./workers/index.js";
 
 export type ExportFormat = "apkg" | "csv" | "tsv" | "markdown" | "html" | "pdf";
@@ -46,7 +52,10 @@ export interface WebServerOptions {
   jobRepo?: JobRepository;
   jobManager?: JobManager;
   workerExecutor?: WorkerExecutor;
-  concurrency?: ConcurrencyLimits;
+  settingsRepo?: SettingsRepository;
+  settingsService?: SettingsService;
+  providerVerifier?: ProviderVerifierPort;
+  concurrency?: JobManagerOptions;
   ingestionService?: IngestionService;
   exportService?: ExportService;
   strategyRegistry?: StrategyRegistry;
@@ -70,18 +79,44 @@ export class WebServer {
   private readonly localFilesDir: string;
   private readonly jobManager: JobManager | null;
   private readonly workerExecutor: WorkerExecutor;
+  private readonly settingsRepo: SettingsRepository | null;
+  private readonly settingsService: SettingsService;
+  private readonly providerVerifier: ProviderVerifierPort;
 
   constructor(private readonly options: WebServerOptions) {
     this.port = options.port !== undefined ? options.port : 3000;
     this.host = options.host || "127.0.0.1";
     this.mediaService = options.mediaService || new MediaService();
     this.localFilesDir = options.localFilesDir || path.join(os.homedir(), ".flashcard-master", "local-files");
+    
+    if (options.settingsService) {
+      this.settingsService = options.settingsService;
+      this.settingsRepo = options.settingsRepo || null;
+    } else if (options.settingsRepo) {
+      this.settingsRepo = options.settingsRepo;
+      this.settingsService = new SettingsService(options.settingsRepo);
+    } else {
+      const fallbackDb = createDatabaseClient({ inMemory: true });
+      this.settingsRepo = new SqliteSettingsRepository(fallbackDb);
+      this.settingsService = new SettingsService(this.settingsRepo);
+    }
+
     if (options.jobManager) {
       this.jobManager = options.jobManager;
     } else if (options.jobRepo) {
-      this.jobManager = new JobManager(options.jobRepo, options.concurrency);
+      this.jobManager = new JobManager(options.jobRepo, {
+        ...options.concurrency,
+        isVerbose: options.concurrency?.isVerbose ?? (() => this.settingsService.isVerboseLogging()),
+        logToConsole: options.concurrency?.logToConsole,
+      });
     } else {
       this.jobManager = null;
+    }
+
+    if (options.providerVerifier) {
+      this.providerVerifier = options.providerVerifier;
+    } else {
+      this.providerVerifier = new ProviderVerifier();
     }
 
     if (options.workerExecutor) {
@@ -104,6 +139,19 @@ export class WebServer {
   getWorkerExecutor(): WorkerExecutor {
     return this.workerExecutor;
   }
+
+  getSettingsService(): SettingsService {
+    return this.settingsService;
+  }
+
+  getSettingsRepo(): SettingsRepository | null {
+    return this.settingsRepo;
+  }
+
+  getProviderVerifier(): ProviderVerifierPort {
+    return this.providerVerifier;
+  }
+
 
 
   private getHtmlSpa(): string {
@@ -610,7 +658,7 @@ export class WebServer {
 
             <div class="form-group">
               <label>2. Model Identifier (or type custom model)</label>
-              <input class="form-input" id="gen-model" value="phi4-mini" placeholder="e.g. phi4-mini, gemini-2.0-flash, gpt-4o-mini" required />
+              <input class="form-input" id="gen-model" value="phi4-mini" placeholder="e.g. phi4-mini, gemini-3.6-flash, gpt-4o-mini" required />
             </div>
 
             <div class="form-group" id="gen-apikey-container" style="display: none;">
@@ -1364,7 +1412,7 @@ export class WebServer {
         modelInput.value = 'phi4-mini';
         apiKeyContainer.style.display = 'none';
       } else if (provider === 'gemini') {
-        modelInput.value = 'gemini-2.0-flash';
+        modelInput.value = 'gemini-3.6-flash';
         apiKeyContainer.style.display = 'flex';
       } else if (provider === 'openai') {
         modelInput.value = 'gpt-4o-mini';
@@ -2105,10 +2153,25 @@ export class WebServer {
           // 6. Generation Endpoint: POST /api/generate
           if (pathname === "/api/generate" && method === "POST") {
             const body = await this.parseBody(req);
-            const provider = body.provider || "ollama";
+            const provider = typeof body.provider === "string" && body.provider.trim().length > 0 ? body.provider.trim().toLowerCase() : "ollama";
             const model = body.model || undefined;
-            const apiKey = body.apiKey || (provider === "openai" ? process.env.OPENAI_API_KEY : provider === "gemini" ? process.env.GEMINI_API_KEY : provider === "anthropic" ? process.env.ANTHROPIC_API_KEY : undefined);
-            const baseUrl = body.endpoint || undefined;
+
+            // Resolve credentials: manual body override > SettingsService (DB > Env)
+            const rawKey = typeof body.apiKey === "string" && body.apiKey.trim().length > 0 ? body.apiKey.trim() : undefined;
+            const apiKey = rawKey || this.settingsService.getSecret(provider as any) || undefined;
+
+            const rawEndpoint = typeof body.endpoint === "string" && body.endpoint.trim().length > 0 ? body.endpoint.trim() : undefined;
+            const baseUrl = rawEndpoint || this.settingsService.getEndpoint(provider as any) || undefined;
+
+            // Enforce credential requirements for cloud LLM providers (exempting local endpoints)
+            const isLocalOpenAI = provider === "openai" && typeof baseUrl === "string" && (baseUrl.includes("localhost") || baseUrl.includes("127.0.0.1") || baseUrl.includes("::1"));
+            if (["openai", "anthropic", "gemini"].includes(provider) && !apiKey && !isLocalOpenAI) {
+              this.sendJson(res, 400, {
+                error: `No API key configured for ${provider}. Please provide an API key or configure it in Settings.`,
+              });
+              return;
+            }
+
             const persona = (body.persona as PersonaType) || "socratic-mentor";
             const difficulty = (body.difficulty as DifficultyLevel) || "intermediate";
             const depthMode = (body.depthMode as CardDepthMode) || "atomic";
@@ -2479,6 +2542,7 @@ export class WebServer {
               ).length;
               return {
                 ...doc,
+                textContent: doc.textContent && doc.textContent.length > 2000 ? doc.textContent.slice(0, 2000) : (doc.textContent || ""),
                 cardCount,
               };
             });
@@ -2506,6 +2570,7 @@ export class WebServer {
               ).length;
               return {
                 ...doc,
+                textContent: doc.textContent && doc.textContent.length > 2000 ? doc.textContent.slice(0, 2000) : (doc.textContent || ""),
                 cardCount,
               };
             });
@@ -2688,18 +2753,29 @@ export class WebServer {
 
           // 7. Single Source Update (PATCH) / Delete (DELETE): /api/sources/:id
           if (pathname.startsWith("/api/sources/") && pathname !== "/api/sources/upload") {
-            const id = pathname.slice("/api/sources/".length);
+            let id = pathname.slice("/api/sources/".length);
+            try {
+              id = decodeURIComponent(id);
+            } catch {}
 
             if (method === "DELETE") {
-              const deleted = this.options.sourceRepo.delete(id);
-              this.sendJson(res, deleted ? 200 : 404, { success: deleted });
+              try {
+                const deleted = this.options.sourceRepo.delete(id);
+                this.sendJson(res, deleted ? 200 : 404, { success: deleted });
+              } catch (err: any) {
+                this.sendJson(res, 500, { error: err.message || "Failed to delete source" });
+              }
               return;
             }
 
             if (method === "PATCH" || method === "PUT") {
-              const body = await this.parseBody(req);
-              const updated = this.options.sourceRepo.update(id, body);
-              this.sendJson(res, updated ? 200 : 404, updated || { error: "Source not found" });
+              try {
+                const body = await this.parseBody(req);
+                const updated = this.options.sourceRepo.update(id, body);
+                this.sendJson(res, updated ? 200 : 404, updated || { error: "Source not found" });
+              } catch (err: any) {
+                this.sendJson(res, 500, { error: err.message || "Failed to update source" });
+              }
               return;
             }
           }
@@ -2860,6 +2936,167 @@ export class WebServer {
               res.end(csvContent);
               return;
             }
+          }
+
+          // 15. Settings Keys REST API
+          // 15a. GET /api/settings/keys
+          if (pathname === "/api/settings/keys" && method === "GET") {
+            const keys = this.settingsService.getAllKeyStatuses();
+            const providers = this.settingsService.listProviderStatuses();
+            this.sendJson(res, 200, { keys, providers });
+            return;
+          }
+
+          // 15d. POST /api/settings/keys/test
+          if (pathname === "/api/settings/keys/test" && method === "POST") {
+            const body = await this.parseBody(req);
+            if (!body || typeof body !== "object" || !body.provider || typeof body.provider !== "string") {
+              this.sendJson(res, 400, { error: "Field 'provider' is required and must be a string." });
+              return;
+            }
+
+            const provider = body.provider.trim().toLowerCase();
+            if (!SUPPORTED_PROVIDERS.includes(provider as any)) {
+              this.sendJson(res, 400, {
+                error: `Unsupported provider "${body.provider}". Supported providers: ${SUPPORTED_PROVIDERS.join(", ")}`,
+              });
+              return;
+            }
+
+            if (("key" in body && typeof body.key !== "string" && body.key !== null) ||
+                ("endpoint" in body && typeof body.endpoint !== "string" && body.endpoint !== null)) {
+              this.sendJson(res, 400, { error: "'key' and 'endpoint' must be strings or null." });
+              return;
+            }
+
+            const candidateKey = typeof body.key === "string" && body.key.trim().length > 0 ? body.key.trim() : null;
+            const candidateEndpoint = typeof body.endpoint === "string" && body.endpoint.trim().length > 0 ? body.endpoint.trim() : null;
+
+            const keyToTest = candidateKey || this.settingsService.getSecret(provider);
+            const endpointToTest = candidateEndpoint || this.settingsService.getEndpoint(provider);
+
+            const isLocalOpenAI = provider === "openai" && endpointToTest && (endpointToTest.includes("localhost") || endpointToTest.includes("127.0.0.1"));
+
+            if (["openai", "anthropic", "gemini", "notion"].includes(provider) && !keyToTest && !isLocalOpenAI) {
+              this.sendJson(res, 200, {
+                success: false,
+                message: `No API key configured for ${provider}. Please enter a key to test.`,
+              });
+              return;
+            }
+
+            const timeoutMs = typeof body.timeoutMs === "number" && body.timeoutMs > 0
+              ? Math.min(Math.max(body.timeoutMs, 500), 10000)
+              : 3000;
+
+            try {
+              const result = await this.providerVerifier.verify({
+                provider,
+                key: keyToTest,
+                endpoint: endpointToTest,
+                timeoutMs,
+              });
+              this.sendJson(res, 200, result);
+            } catch (err: any) {
+              this.sendJson(res, 200, {
+                success: false,
+                message: `Verification failed: ${err?.message || String(err)}`,
+              });
+            }
+            return;
+          }
+
+          // 15b. POST /api/settings/keys
+          if (pathname === "/api/settings/keys" && method === "POST") {
+            const body = await this.parseBody(req);
+            if (!body || typeof body !== "object" || !body.provider || typeof body.provider !== "string") {
+              this.sendJson(res, 400, { error: "Field 'provider' is required and must be a string." });
+              return;
+            }
+
+            const provider = body.provider.trim().toLowerCase();
+            if (!SUPPORTED_PROVIDERS.includes(provider as any)) {
+              this.sendJson(res, 400, {
+                error: `Unsupported provider "${body.provider}". Supported providers: ${SUPPORTED_PROVIDERS.join(", ")}`,
+              });
+              return;
+            }
+
+            if (("key" in body && typeof body.key !== "string" && body.key !== null) ||
+                ("endpoint" in body && typeof body.endpoint !== "string" && body.endpoint !== null)) {
+              this.sendJson(res, 400, { error: "'key' and 'endpoint' must be strings or null." });
+              return;
+            }
+
+            const rawKey = typeof body.key === "string" ? body.key.trim() : body.key === null ? null : undefined;
+            const rawEndpoint = typeof body.endpoint === "string" ? body.endpoint.trim() : body.endpoint === null ? null : undefined;
+
+            if (rawKey === undefined && rawEndpoint === undefined) {
+              this.sendJson(res, 400, { error: "At least one of 'key' or 'endpoint' must be provided." });
+              return;
+            }
+
+            this.settingsService.setProviderSecret(provider, rawKey, rawEndpoint);
+            const status = this.settingsService.getKeyStatus(provider);
+            this.sendJson(res, 200, { success: true, ...status });
+            return;
+          }
+
+          // 15c. DELETE /api/settings/keys/:provider
+          if (pathname.startsWith("/api/settings/keys/") && method === "DELETE") {
+            const providerRaw = pathname.slice("/api/settings/keys/".length);
+            if (!providerRaw || providerRaw.trim().length === 0) {
+              this.sendJson(res, 400, { error: "Provider is required in URL path." });
+              return;
+            }
+
+            const provider = providerRaw.replace(/\/+$/, "").trim().toLowerCase();
+            if (!SUPPORTED_PROVIDERS.includes(provider as any)) {
+              this.sendJson(res, 400, {
+                error: `Unsupported provider "${providerRaw}". Supported providers: ${SUPPORTED_PROVIDERS.join(", ")}`,
+              });
+              return;
+            }
+
+            this.settingsService.deleteProviderSecret(provider);
+            const status = this.settingsService.getKeyStatus(provider);
+            this.sendJson(res, 200, { success: true, ...status });
+            return;
+          }
+
+          // 15e. GET /api/settings/logging
+          if (pathname === "/api/settings/logging" && method === "GET") {
+            const verbose = this.settingsService.isVerboseLogging();
+            const logLevel = this.settingsService.getLogLevel();
+            this.sendJson(res, 200, { verbose, logLevel });
+            return;
+          }
+
+          // 15f. PUT /api/settings/logging
+          if (pathname === "/api/settings/logging" && (method === "PUT" || method === "POST")) {
+            const body = await this.parseBody(req);
+            if (!body || typeof body !== "object") {
+              this.sendJson(res, 400, { error: "Request body must be an object." });
+              return;
+            }
+
+            if ("verbose" in body && typeof body.verbose === "boolean") {
+              this.settingsService.setVerboseLogging(body.verbose);
+            }
+
+            if ("logLevel" in body && typeof body.logLevel === "string") {
+              const level = body.logLevel.trim().toLowerCase();
+              if (!["debug", "info", "warn", "error"].includes(level)) {
+                this.sendJson(res, 400, { error: "Field 'logLevel' must be one of: debug, info, warn, error" });
+                return;
+              }
+              this.settingsService.setLogLevel(level);
+            }
+
+            const verbose = this.settingsService.isVerboseLogging();
+            const logLevel = this.settingsService.getLogLevel();
+            this.sendJson(res, 200, { success: true, verbose, logLevel });
+            return;
           }
 
           // Fallback 404

@@ -37,6 +37,10 @@ This document provides the complete epic and story breakdown for `flashcard-mast
 - **FR-113**: Concurrent Multi-URL Reader Ingestion (Fetch all configured URLs in parallel with bounded pool and error isolation).
 - **FR-114**: Single & Batch Document Deletion API (`DELETE /api/documents/:id` and `POST /api/documents/bulk-delete`).
 - **FR-115**: Non-Destructive Flashcard & Study Preservation (Deleting documents prunes raw text while keeping 100% of flashcards intact).
+- **FR-116**: Notion Ingestion Strategy & Resource Detection (Auto-detect whether Notion URL or UUID is a Database or Page via `@notionhq/client`).
+- **FR-117**: Notion Database Ingestion & Metadata Mapping (Delta sync via `last_edited_time`, map Title to title, select tags to document tags).
+- **FR-118**: Notion Page Block Conversion & Configurable Subpage Scope (Markdown block conversion, toggle for recursive subpages as discrete docs).
+- **FR-119**: Notion S3 Presigned Image Localization (Download expiring S3 image assets via `MediaService` to `.flashcard-master/media/`).
 - **FR-201**: Atomic Front/Back Cards (Generate concise, atomic Front/Back Q&A flashcards following the Minimum Information Principle).
 - **FR-202**: Mandatory Verbatim Citation Guard (Every card must include the exact source sentence/quote; reject ungrounded cards).
 - **FR-203**: Configurable Difficulty Levels (Support `beginner`, `intermediate`, `expert` cognitive depth scaling).
@@ -75,24 +79,48 @@ This document provides the complete epic and story breakdown for `flashcard-mast
 - **FR-425**: Document Inspector Quick Filter Selectors ("Select All", "Select Unused (0 cards)", "Invert Selection").
 - **FR-426**: Document Export Modal & Scope Controls (Export modal supporting format selection, merged vs. split, and document scope).
 - **FR-427**: Streaming Download & File Handlers (Direct browser download with Content-Disposition headers).
+- **FR-428**: Question Explorer Real-Time Refresh Action (Preserve active filters while fetching latest card state).
+- **FR-429**: Interactive Local File Picker & Drag-and-Drop (Upload local Markdown/text files directly into server).
+- **FR-430**: Svelte 5 Shared State Modules & LocalStorage Retention (Decoupled reactive stores in `.svelte.ts`).
+- **FR-431**: Two-Way URL & Browser History Navigation Sync (History API sync for seamless back/forward navigation).
+- **FR-432**: Unified Worker Thread Task Queue with Concurrency Pools (Node.js worker threads with bounded pools).
+- **FR-433**: Centralized SQLite Main-Thread Custodian (Zero `SQLITE_BUSY` contention by serializing DB writes on main thread).
+- **FR-434**: Persistent Step-by-Step Logging Sessions (SQLite `jobs` and `job_logs` execution tracking).
+- **FR-435**: Real-Time Server-Sent Events (SSE) Streaming & Cancellation (Live job and log streaming).
+- **FR-436**: Task Center Slide-Over Drawer with Step Accordions (Drawer with active jobs, step logs, and history).
+- **FR-437**: Action Hardening & Immediate Button Disabling (Loading spinners and anti-double-click protection).
+- **FR-438**: CLI & Server Concurrency Pool Flags (Configurable worker pool caps).
+- **FR-439**: Persistent SQLite Settings & Secrets Store (`app_settings` key-value store with `.env` fallback chain).
+- **FR-440**: Secrets Management REST API with Value Masking (Endpoints returning masked credentials e.g. `sk-...4a12`).
+- **FR-441**: Live Provider Connection Verification Endpoints (`POST /api/settings/keys/test` for Notion and LLMs).
+- **FR-442**: Integrations & Secrets Dashboard UI (Dedicated "⚙️ Settings & Integrations" view/tab in Web UI).
+- **FR-443**: Zero-Friction Token Auto-Injection (Generate Studio and workers automatically retrieve active credentials).
+- **FR-444**: Interactive Notion Source Configuration UI (Add/Edit Source modal with Notion URL validator and recursion toggle).
 
 ### Non-Functional Requirements
 
 - **NFR-101**: Performance & Latency (Reader-mode extraction < 3s for < 3,000 words; generation of 10 cards < 15s; database queries < 100ms; document export < 1.5s).
+- **NFR-103**: Background Task Queue Latency (Task submission acknowledges and returns `{ jobId }` in < 50ms).
+- **NFR-104**: Provider Verification Latency (Provider "Test Connection" pings respond in < 3 seconds).
 - **NFR-201**: Privacy & Local-First Invariant (All configurations, source URLs, content caches, and generated cards reside exclusively in local SQLite).
 - **NFR-202**: Zero Telemetry (No telemetry, tracking, or content transmitted externally except direct user-configured LLM API calls).
+- **NFR-203**: Zero-Telemetry Secrets Security & Local-Only Storage (Secrets reside exclusively in local SQLite; never exposed unmasked).
 - **NFR-301**: Reliability & Fault Isolation (Network/parsing failures on an individual source or URL do not crash the overall sync batch).
 - **NFR-302**: Transactional Integrity (Database writes are atomic with SQLite WAL mode).
+- **NFR-303**: Zero Lock Contention (Main thread acts as sole SQLite writer for worker threads, eliminating `SQLITE_BUSY`).
+- **NFR-304**: Fault-Tolerant Partial Success (Step errors record warnings/errors without crashing remaining multi-document batches).
 - **NFR-401**: Cross-Platform Compatibility (CLI and local Web UI operate consistently across Windows, macOS, and Linux).
 
 ### Additional Requirements (from Architecture)
 
 - **ARCH-1**: Monorepo Scaffolding (Turborepo / npm workspaces with `packages/core`, `packages/adapters`, `packages/cli`, `packages/web`).
 - **ARCH-2**: Ports & Adapters Isolation (Core domain imports zero external drivers or vendor SDKs; all I/O via ports).
-- **ARCH-3**: Strategy Pattern Registry (`StrategyRegistry` managing `RssStrategy`, `WebReaderStrategy`, `LocalFileStrategy`, `SitemapStrategy`, `LlmsTxtStrategy`).
+- **ARCH-3**: Strategy Pattern Registry (`StrategyRegistry` managing `RssStrategy`, `WebReaderStrategy`, `LocalFileStrategy`, `SitemapStrategy`, `LlmsTxtStrategy`, `NotionStrategy`).
 - **ARCH-4**: Embedded SQLite Database Client (better-sqlite3 / sqlite3 with WAL mode and foreign key constraints).
 - **ARCH-5**: Vendor-Neutral LLM Provider Adapters (OpenAI, Anthropic, Gemini, Ollama adapters implementing `LLMProviderPort`).
 - **ARCH-6**: Multi-Target Exporter Adapters (`ApkgExporter`, `AnkiConnectAdapter`, `MarkdownExporter`, `PdfExporter`, `DocumentExportService`).
+- **ARCH-7**: Centralized Secrets & Integrations Service (`SettingsService`, `SqliteSettingsRepository`, fallback chain, UI key masking).
+- **ARCH-8**: Notion Ingestion Adapter (`NotionStrategy` via `@notionhq/client`, S3 media localization via `MediaService`).
 
 ### UX Design Requirements (from DESIGN.md & EXPERIENCE.md)
 
@@ -1001,6 +1029,128 @@ So that the interface naturally guides me from data ingestion to flashcard gener
 - **Then** 100% of tests pass across `core`, `adapters`, `cli`, and `web`.
 - **And** concurrency stress tests verify that multiple simultaneous generation and export tasks adhere to pool limits and commit without `SQLITE_BUSY` errors.
 - **And** `npm run lint` and `npm run typecheck` pass with zero errors.
+
+---
+
+## Epic 15: Centralized Secrets & Integrations Dashboard & Notion Data Source Ingestion
+
+**Goal:** Establish a secure, centralized Secrets & Settings management architecture in SQLite with environment variable fallbacks, masked UI credential display, and live "Test Connection" validation for Notion and all LLM providers (OpenAI, Anthropic, Gemini, Ollama); automatically inject stored credentials into card generation workflows and background workers to eliminate manual key re-entry; and implement a full-featured Notion Ingestion Strategy via `@notionhq/client` supporting both Databases and Pages, delta synchronization via `last_edited_time`, configurable child subpage recursion, and automatic localization of expiring AWS S3 image assets via `MediaService`.
+
+### Story 15.1: SQLite Settings Repository, Fallback Chain & Secrets REST API
+**ID:** `15-1-sqlite-settings-repository-and-secrets-api`
+**Description:** Implement database migrations for the `app_settings` table (`key TEXT PRIMARY KEY`, `value TEXT NOT NULL`, `updated_at TEXT NOT NULL`) in `packages/core/src/storage/`. Implement the `SettingsRepository` port interface and `SqliteSettingsRepository` class with atomic upsert, retrieval, deletion, and listing methods. Implement `SettingsService` in `packages/core/src/services/` enforcing the hierarchical fallback chain: `SqliteSettingsRepository.get(key) ?? process.env[ENV_VAR] ?? null` (where saved UI keys take precedence over environment variables). In `packages/web/src/server.ts`, expose REST endpoints:
+- `GET /api/settings/keys`: Returns provider configuration states (`openai`, `anthropic`, `gemini`, `ollama`, `notion`) with masked previews (e.g. `sk-...4a12`, `secret_...9a2f`), `isConfigured: boolean`, and source origin (`database` vs `environment`), strictly never leaking raw keys in JSON responses.
+- `POST /api/settings/keys`: Upserts raw secrets for a specified provider (`{ provider: string, key: string, endpoint?: string }`) into SQLite.
+- `DELETE /api/settings/keys/:provider`: Removes stored secrets from SQLite, resetting the provider to environment fallback or unconfigured state.
+**Acceptance Criteria:**
+- **Given** an initialized SQLite database
+- **When** the server starts or migrations run
+- **Then** the `app_settings` table is created with `key` primary key and timestamps.
+- **And** `SqliteSettingsRepository` provides atomic CRUD operations for settings keys.
+- **And** `SettingsService.getSecret(provider)` checks SQLite first and falls back to environment variables (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `NOTION_API_KEY`, `OLLAMA_HOST`).
+- **And** `GET /api/settings/keys` responds with masked key previews (`sk-...xxxx`, `secret_...xxxx`), never returning plain-text secret strings.
+- **And** `POST /api/settings/keys` validates inputs, trims whitespace, and persists raw credentials into SQLite with updated timestamps.
+- **And** `DELETE /api/settings/keys/:provider` purges the secret from the database.
+- **And** unit and integration tests verify repository persistence, fallback resolution, masking logic, and REST routes.
+
+### Story 15.2: Live Provider Credential Verification Endpoints
+**ID:** `15-2-live-provider-credential-verification-endpoints`
+**Description:** Implement the live verification endpoint `POST /api/settings/keys/test` in `packages/web/src/server.ts` allowing on-demand connectivity checks for configured providers (`notion`, `openai`, `anthropic`, `gemini`, `ollama`). Each provider has an isolated verification handler:
+- `notion`: Uses `@notionhq/client` to execute `notion.users.me()`, verifying token validity and retrieving the connected bot name and workspace context.
+- `openai`: Calls `models.list()` or sends a minimal 1-token prompt via `OpenAIAdapter`, confirming API key validity and active account standing.
+- `anthropic`: Sends a minimal validation probe via `AnthropicAdapter` to verify key authorization.
+- `gemini`: Pings Gemini model discovery via `GeminiAdapter` to verify API key validity.
+- `ollama`: Fetches `/api/tags` on the configured baseUrl to confirm reachability and retrieve installed local model names.
+All tests enforce a strict 3-second timeout and return `{ success: boolean, message: string, details?: any }` with descriptive error reporting on authorization, network, or rate-limit failures.
+**Acceptance Criteria:**
+- **Given** a request to `POST /api/settings/keys/test` with `{ provider: string, key?: string, endpoint?: string }`
+- **When** the provider credentials are valid
+- **Then** the endpoint returns `{ success: true, message: string, details: any }` in < 3 seconds.
+- **And** for Notion, the response confirms bot name and workspace association (e.g. "Connected: Bot 'Flashcard Master'").
+- **And** for Ollama, the response lists installed models found on the instance.
+- **And** when credentials are invalid or unreachable, it returns `{ success: false, message: string }` without crashing the server.
+- **And** unit and integration tests verify mock and real provider validation handlers and error handling.
+
+### Story 15.3: Integrations & Secrets UI Dashboard (`SettingsView`)
+**ID:** `15-3-integrations-and-secrets-ui-dashboard`
+**Description:** Implement `SettingsView.svelte` in `packages/web/client/src/views/` and `settingsStore.svelte.ts` in `packages/web/client/src/stores/`. Add a persistent navigation item **⚙️ Settings** in `<Navigation.svelte>` with two-way browser history and URL sync (`?tab=settings`). The view organizes integrations into structured sections:
+1. **Data Source Connections**:
+   - **Notion**: Internal Integration Secret input (`secret_...` / `ntn_...`), connection status badge (`🟢 Connected` / `⚪ Not Configured`), "Test Connection" button with spinner, and helper text explaining how to create an integration and share pages.
+2. **AI / LLM Providers**:
+   - Provider cards for **OpenAI**, **Anthropic**, **Google Gemini**, and **Ollama**.
+   - Password-masked inputs with an interactive reveal/hide toggle (`👁️`), default model selection, custom endpoint override (for Ollama/OpenAI-compatible endpoints), Save, Clear, and **"Test Connection"** buttons.
+   - Live test status banner rendering success details (`✓ Connected! 5 models available`) or error alerts.
+**Acceptance Criteria:**
+- **Given** the local web dashboard
+- **When** the user clicks "Settings" in the main navigation or accesses `?tab=settings`
+- **Then** `SettingsView` renders with provider cards for Notion and LLMs.
+- **And** `settingsStore` loads masked keys and configuration statuses from `GET /api/settings/keys`.
+- **And** entering a secret and clicking "Save" calls `POST /api/settings/keys`, updates masked state, and displays a success toast.
+- **And** clicking "Test Connection" triggers `POST /api/settings/keys/test`, shows an inline spinner, and displays live diagnostic results.
+- **And** clicking "Clear" calls `DELETE /api/settings/keys/:provider` and resets the card status.
+- **And** component and UI integration tests verify tab navigation, form submissions, masking toggles, and test pings.
+
+### Story 15.4: Automatic Credential Injection in Generation Studio & Workers
+**ID:** `15-4-automatic-credential-injection-in-generation-studio-and-workers`
+**Description:** Refactor `GenerateStudio.svelte`, `DocumentInspector` Configure & Generate modal, and backend worker threads to automatically consume stored API keys from the centralized Settings store. When a user selects an AI provider in Generate Studio:
+- If a key is stored in Settings, the API key input is marked optional and displays a badge: `Using saved API key [sk-...4a12] ✓ (Settings)` with a quick link to open Settings.
+- Users retain the option to provide a one-time key override in the form.
+- In `packages/web/src/workers/task-worker.ts`, update `executeGeneration`: when `payload.apiKey` is not provided, query `SettingsService.getSecret(payload.provider)` to obtain the stored key, throwing a descriptive error only if no key exists in either the database or environment variables.
+- Remove redundant API key prompts across the application.
+**Acceptance Criteria:**
+- **Given** an LLM provider key saved in Settings
+- **When** the user opens Generate Studio or the Document Inspector Generate modal
+- **Then** the interface reflects that the saved API key is active without requiring manual input.
+- **And** submitting card generation without typing a key successfully uses the stored secret from `SettingsService`.
+- **And** providing a manual key in the form overrides the saved key for that specific generation run.
+- **And** background worker threads resolve the stored secret on the main thread and pass it to the worker task.
+- **And** integration tests verify generation runs succeed with stored keys and handle missing keys with clear errors.
+
+### Story 15.5: Notion Ingestion Strategy (`NotionStrategy`)
+**ID:** `15-5-notion-ingestion-strategy`
+**Description:** Install `@notionhq/client` in `packages/adapters`. Implement `NotionStrategy` implementing `IngestionStrategy` (`type = 'notion'`) in `packages/adapters/src/ingestion/notion-strategy.ts`. The strategy accepts Notion URLs (`https://www.notion.so/...`) or raw 32-character UUIDs, extracting the canonical ID. During synchronization:
+- Uses `SettingsService.getSecret("notion")` (or source-level token) to initialize the Notion client.
+- Calls Notion API to determine whether the target ID is a **Database** or a **Page**.
+- **Database Ingestion**:
+  - Queries rows with incremental delta filter: `filter: { timestamp: "last_edited_time", last_edited_time: { after: lastSyncedAt } }`.
+  - Maps row Title property to document title, and multi-select/select tags to document tags.
+  - Recursively fetches block children for each page row and converts blocks to Markdown.
+- **Page Ingestion**:
+  - Fetches page metadata and recursively retrieves all block children.
+  - Converts blocks to clean Markdown (H1-H3, paragraphs, numbered/bulleted lists, quotes, callouts, code blocks with languages, and simple tables).
+  - Checks for subpage recursion: if `recursive=true` is set on the source URI (`?recursive=true`), queries child pages (`child_page` blocks) up to max-depth 3, creating individual `DiscoveredDocument` records for each subpage.
+- **S3 Presigned Media Localization**:
+  - Intercepts all `image` blocks (`block.type === 'image'`).
+  - Downloads the AWS S3 image immediately via `MediaService.downloadAndSave(url, originUrl)` before the 60-minute expiration.
+  - Replaces S3 signed URLs with persistent local `/api/media/<id>` image links in the generated Markdown.
+**Acceptance Criteria:**
+- **Given** a registered Notion data source (Database or Page)
+- **When** `NotionStrategy.fetch()` is executed
+- **Then** the strategy extracts the canonical ID and auto-detects Database vs Page.
+- **And** database sync queries rows incrementally using `last_edited_time` and creates a `RawDocument` per row.
+- **And** page sync extracts clean Markdown from Notion block trees including headings, code blocks, lists, and tables.
+- **And** when `recursive=true`, nested child pages are crawled and emitted as discrete documents with parent provenance.
+- **And** all Notion S3 images are downloaded to `.flashcard-master/media/` and localized to `/api/media/<id>`.
+- **And** unit and integration tests with mocked Notion API responses verify database queries, block-to-markdown conversion, subpage crawling, and image localization.
+
+### Story 15.6: Interactive Notion Source UI & Monorepo Verification
+**ID:** `15-6-interactive-notion-source-ui-and-monorepo-verification`
+**Description:** Update `packages/core/src/domain/models.ts` to add `'notion'` to `DataSourceTypeSchema`. Update database migrations to update `data_sources` CHECK constraint. Update `AddSourceModal.svelte` and `EditSourceModal.svelte` to include the **Notion** source type:
+- When "Notion" is selected, the modal verifies whether the Notion token is configured, displaying a green check badge (`Notion Token Active`) or an alert with a clickable link to navigate to Settings.
+- Provides an input for Notion URL or ID with real-time validation and helper tooltips.
+- Provides a checkbox: `[x] Include subpages as separate documents` (appending `?recursive=true` to the URI).
+- Register `NotionStrategy` in `StrategyRegistry`.
+- Implement end-to-end integration tests covering Notion source creation, database sync, page sync with subpage discovery, settings key management, and monorepo regression checks (`npm test`, `npm run build`).
+**Acceptance Criteria:**
+- **Given** the Add Source modal in the Web UI
+- **When** user selects source type "Notion"
+- **Then** the UI displays token status, Notion URL input, and the subpage recursion checkbox.
+- **And** submitting the form persists the Notion data source in SQLite.
+- **And** clicking "Sync" triggers `NotionStrategy` via background worker, ingesting documents and downloading media assets.
+- **And** Generate Studio can synthesize grounded flashcards from the ingested Notion documents.
+- **And** 100% of monorepo tests pass across `core`, `adapters`, `cli`, and `web`.
+- **And** `npm run lint` and `npm run typecheck` pass with zero errors.
+
 
 
 

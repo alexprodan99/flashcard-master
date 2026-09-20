@@ -196,7 +196,13 @@ describe("WorkerExecutor", () => {
       mockCtx
     );
 
-    expect(mockIngestionService.syncSource).toHaveBeenCalledWith("src-abc");
+    expect(mockIngestionService.syncSource).toHaveBeenCalledWith(
+      "src-abc",
+      expect.objectContaining({
+        signal: mockCtx.signal,
+        onLog: expect.any(Function),
+      })
+    );
     expect(result.newCount).toBe(5);
     expect(result.totalFetched).toBe(10);
   });
