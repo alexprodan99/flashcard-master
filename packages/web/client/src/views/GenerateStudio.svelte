@@ -241,12 +241,12 @@
         return true;
       }
       // Plural/singular tolerance (e.g. 'slices' vs 'slice', 'articles' vs 'article')
-      if (token.length > 3 && token.endsWith('s')) {
+      if (token.length > 3 && token.endsWith('s') && !token.endsWith('ss')) {
         const singular = token.slice(0, -1);
         if (titleNorm.includes(singular) || urlNorm.includes(singular) || textNorm.includes(singular)) {
           return true;
         }
-      } else if (token.length > 3) {
+      } else if (token.length > 3 && !token.endsWith('s')) {
         const plural = token + 's';
         if (titleNorm.includes(plural) || urlNorm.includes(plural) || textNorm.includes(plural)) {
           return true;
@@ -314,6 +314,7 @@
   function clearGlobalSearch() {
     globalSearchQuery = '';
     if (globalSearchDebounce) clearTimeout(globalSearchDebounce);
+    isGlobalSearching = false;
   }
 
   let traySearching = $state<Record<string, boolean>>({});

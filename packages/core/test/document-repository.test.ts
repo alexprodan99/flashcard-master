@@ -123,6 +123,33 @@ describe("DocumentRepository", () => {
     expect(ranked[0].title).toBe("Consensus");
   });
 
+  it("preserves double-s words like process or class during search stemming without corrupting tokens", () => {
+    docRepo.upsertBatch([
+      {
+        id: "doc-process",
+        sourceId: testSourceId,
+        title: "Background Process Management",
+        textContent: "Managing long-running processes efficiently.",
+      },
+      {
+        id: "doc-class",
+        sourceId: testSourceId,
+        title: "First Class Functions in TypeScript",
+        textContent: "Exploring functional programming constructs.",
+      },
+    ]);
+
+    // Searching for "process" should match doc-process and preserve "process" without truncating to "proces"
+    const processResults = docRepo.listBySourceId(testSourceId, { search: "process" });
+    expect(processResults.length).toBe(1);
+    expect(processResults[0].id).toBe("doc-process");
+
+    // Searching for "class" should match doc-class
+    const classResults = docRepo.listBySourceId(testSourceId, { search: "class" });
+    expect(classResults.length).toBe(1);
+    expect(classResults[0].id).toBe("doc-class");
+  });
+
   it("cascades deletion when parent data source is removed", () => {
     docRepo.upsert({
       id: "doc-to-cascade",

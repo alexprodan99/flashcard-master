@@ -34,6 +34,7 @@ export function cleanJsonString(raw: string): string {
     return "";
   }
   let s = raw.replace(/<thinking>[\s\S]*?<\/thinking>/gi, "");
+  s = s.replace(/<think>[\s\S]*?<\/think>/gi, "");
   s = s.replace(/<antThinking>[\s\S]*?<\/antThinking>/gi, "");
   s = s.replace(/```json\s*|\s*```/gi, "").trim();
   const firstBracket = s.indexOf("[");
@@ -82,8 +83,8 @@ export function isClosingQuote(raw: string, quoteIndex: number): boolean {
     }
     if (k >= raw.length) return true;
     const afterComma = raw[k];
-    // In JSON, after a comma, the next element must start with '"', '{', '[', or closing '}' / ']'
-    if (afterComma === '"' || afterComma === "{" || afterComma === "[" || afterComma === "}" || afterComma === "]") {
+    // In JSON, after a comma, the next element can be a string key/value, object, array, or primitive (number, boolean, null)
+    if (/["{\[\]0-9\-tfn]/.test(afterComma)) {
       return true;
     }
     return false;
@@ -94,7 +95,7 @@ export function isClosingQuote(raw: string, quoteIndex: number): boolean {
 
 /**
  * Sanitizes raw JSON string from LLM responses by:
- * 1. Escaping illegal control characters (raw newlines, carriage returns, tabs) inside string literals.
+ * 1. Escaping illegal control characters (raw newlines, carriage returns, tabs, and all 0x00-0x1F chars) inside string literals.
  * 2. Escaping unescaped inner double quotes inside string values (e.g. C# code snippets or quotes).
  */
 export function sanitizeJsonString(raw: string): string {
@@ -148,6 +149,20 @@ export function sanitizeJsonString(raw: string): string {
       }
       if (ch === "\t") {
         result += "\\t";
+        continue;
+      }
+      if (ch === "\b") {
+        result += "\\b";
+        continue;
+      }
+      if (ch === "\f") {
+        result += "\\f";
+        continue;
+      }
+      const code = ch.charCodeAt(0);
+      if (code < 0x20) {
+        if (code === 0) continue; // strip null bytes
+        result += "\\u" + code.toString(16).padStart(4, "0");
         continue;
       }
     }
@@ -314,9 +329,45 @@ export function extractCardsDeep(parsed: any): CardGenerationDraft[] {
   return results;
 }
 
+export function extractCardFromRegexBlock(block: string): CardGenerationDraft | null {
+  const qMatch =
+    block.match(/"(?:question|front|prompt|q)"\s*:\s*"([\s\S]*?)"\s*,\s*"(?:answer|back|response|a|sourceQuote|source_quote|quote|difficulty)"/i) ||
+    block.match(/"(?:question|front|prompt|q)"\s*:\s*"([\s\S]*?)"/i);
+
+  const aMatch =
+    block.match(/"(?:answer|back|response|a)"\s*:\s*"([\s\S]*?)"\s*,\s*"(?:sourceQuote|source_quote|quote|citation|source|difficulty|question|front)"/i) ||
+    block.match(/"(?:answer|back|response|a)"\s*:\s*"([\s\S]*?)"/i);
+
+  const sqMatch =
+    block.match(/"(?:sourceQuote|source_quote|quote|citation|source|verbatim)"\s*:\s*"([\s\S]*?)"\s*(?:,\s*"(?:difficulty|question|front|answer|back)"|$)/i) ||
+    block.match(/"(?:sourceQuote|source_quote|quote|citation|source|verbatim)"\s*:\s*"([\s\S]*?)"/i);
+
+  const diffMatch = block.match(/"(?:difficulty|level)"\s*:\s*"([^"]+)"/i);
+
+  if (qMatch && aMatch) {
+    const q = qMatch[1].replace(/\\"/g, '"').trim();
+    const a = aMatch[1].replace(/\\"/g, '"').trim();
+    const sq = sqMatch ? sqMatch[1].replace(/\\"/g, '"').trim() : a;
+    const diffStr = diffMatch ? diffMatch[1].toLowerCase().trim() : "intermediate";
+    const diff: DifficultyLevel = diffStr === "beginner" || diffStr === "expert" || diffStr === "mixed" ? diffStr : "intermediate";
+
+    if (q && a) {
+      return {
+        question: q,
+        answer: a,
+        sourceQuote: sq || a,
+        difficulty: diff,
+      };
+    }
+  }
+  return null;
+}
+
 export function extractCardsWithRegex(raw: string): CardGenerationDraft[] {
   const cards: CardGenerationDraft[] = [];
-  const objectBlocks = extractJsonObjects(raw);
+  // Pre-sanitize raw text so unescaped inner quotes in code snippets don't distort brace depth tracking
+  const sanitizedRaw = sanitizeJsonString(raw);
+  const objectBlocks = extractJsonObjects(sanitizedRaw);
 
   // Try parsing each extracted object block directly first
   for (const block of objectBlocks) {
@@ -342,35 +393,9 @@ export function extractCardsWithRegex(raw: string): CardGenerationDraft[] {
       // Fall through to regex-based field extraction
     }
 
-    const qMatch =
-      block.match(/"(?:question|front|prompt|q)"\s*:\s*"([\s\S]*?)"\s*,\s*"(?:answer|back|response|a|sourceQuote|source_quote|quote|difficulty)"/i) ||
-      block.match(/"(?:question|front|prompt|q)"\s*:\s*"([\s\S]*?)"/i);
-
-    const aMatch =
-      block.match(/"(?:answer|back|response|a)"\s*:\s*"([\s\S]*?)"\s*,\s*"(?:sourceQuote|source_quote|quote|citation|source|difficulty|question|front)"/i) ||
-      block.match(/"(?:answer|back|response|a)"\s*:\s*"([\s\S]*?)"/i);
-
-    const sqMatch =
-      block.match(/"(?:sourceQuote|source_quote|quote|citation|source|verbatim)"\s*:\s*"([\s\S]*?)"\s*(?:,\s*"(?:difficulty|question|front|answer|back)"|$)/i) ||
-      block.match(/"(?:sourceQuote|source_quote|quote|citation|source|verbatim)"\s*:\s*"([\s\S]*?)"/i);
-
-    const diffMatch = block.match(/"(?:difficulty|level)"\s*:\s*"([^"]+)"/i);
-
-    if (qMatch && aMatch) {
-      const q = qMatch[1].replace(/\\"/g, '"').trim();
-      const a = aMatch[1].replace(/\\"/g, '"').trim();
-      const sq = sqMatch ? sqMatch[1].replace(/\\"/g, '"').trim() : a;
-      const diffStr = diffMatch ? diffMatch[1].toLowerCase().trim() : "intermediate";
-      const diff: DifficultyLevel = diffStr === "beginner" || diffStr === "expert" || diffStr === "mixed" ? diffStr : "intermediate";
-
-      if (q && a) {
-        cards.push({
-          question: q,
-          answer: a,
-          sourceQuote: sq || a,
-          difficulty: diff,
-        });
-      }
+    const card = extractCardFromRegexBlock(block);
+    if (card) {
+      cards.push(card);
     }
   }
 
@@ -380,7 +405,7 @@ export function extractCardsWithRegex(raw: string): CardGenerationDraft[] {
     const blockRegex = /\{([\s\S]*?)\}/g;
     let blockMatch: RegExpExecArray | null;
 
-    while ((blockMatch = blockRegex.exec(raw)) !== null) {
+    while ((blockMatch = blockRegex.exec(sanitizedRaw || raw)) !== null) {
       const block = blockMatch[1];
       if (
         !block.includes('"question"') &&
@@ -391,35 +416,9 @@ export function extractCardsWithRegex(raw: string): CardGenerationDraft[] {
         continue;
       }
 
-      const qMatch =
-        block.match(/"(?:question|front|prompt|q)"\s*:\s*"([\s\S]*?)"\s*,\s*"(?:answer|back|response|a|sourceQuote|source_quote|quote|difficulty)"/i) ||
-        block.match(/"(?:question|front|prompt|q)"\s*:\s*"([\s\S]*?)"/i);
-
-      const aMatch =
-        block.match(/"(?:answer|back|response|a)"\s*:\s*"([\s\S]*?)"\s*,\s*"(?:sourceQuote|source_quote|quote|citation|source|difficulty|question|front)"/i) ||
-        block.match(/"(?:answer|back|response|a)"\s*:\s*"([\s\S]*?)"/i);
-
-      const sqMatch =
-        block.match(/"(?:sourceQuote|source_quote|quote|citation|source|verbatim)"\s*:\s*"([\s\S]*?)"\s*(?:,\s*"(?:difficulty|question|front|answer|back)"|$)/i) ||
-        block.match(/"(?:sourceQuote|source_quote|quote|citation|source|verbatim)"\s*:\s*"([\s\S]*?)"/i);
-
-      const diffMatch = block.match(/"(?:difficulty|level)"\s*:\s*"([^"]+)"/i);
-
-      if (qMatch && aMatch) {
-        const q = qMatch[1].replace(/\\"/g, '"').trim();
-        const a = aMatch[1].replace(/\\"/g, '"').trim();
-        const sq = sqMatch ? sqMatch[1].replace(/\\"/g, '"').trim() : a;
-        const diffStr = diffMatch ? diffMatch[1].toLowerCase().trim() : "intermediate";
-        const diff: DifficultyLevel = diffStr === "beginner" || diffStr === "expert" || diffStr === "mixed" ? diffStr : "intermediate";
-
-        if (q && a) {
-          cards.push({
-            question: q,
-            answer: a,
-            sourceQuote: sq || a,
-            difficulty: diff,
-          });
-        }
+      const card = extractCardFromRegexBlock(block);
+      if (card) {
+        cards.push(card);
       }
     }
   }

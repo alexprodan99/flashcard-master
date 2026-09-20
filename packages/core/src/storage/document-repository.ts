@@ -240,9 +240,9 @@ export class DocumentRepository {
     let whereClause = "";
     for (const token of tokens) {
       let altToken: string | null = null;
-      if (token.length > 3 && token.endsWith("s")) {
+      if (token.length > 3 && token.endsWith("s") && !token.endsWith("ss")) {
         altToken = token.slice(0, -1);
-      } else if (token.length > 3) {
+      } else if (token.length > 3 && !token.endsWith("s")) {
         altToken = token + "s";
       }
 
@@ -259,7 +259,7 @@ export class DocumentRepository {
     }
 
     const cleanSearch = tokens.join(" ");
-    const singularCleanSearch = tokens.map((t) => (t.length > 3 && t.endsWith("s") ? t.slice(0, -1) : t)).join(" ");
+    const singularCleanSearch = tokens.map((t) => (t.length > 3 && t.endsWith("s") && !t.endsWith("ss") ? t.slice(0, -1) : t)).join(" ");
     const orderClause = "ORDER BY CASE WHEN lower(title) = lower(?) OR lower(title) = lower(?) THEN 1 WHEN lower(title) LIKE ? OR lower(title) LIKE ? THEN 2 ELSE 3 END, created_at DESC";
     params.push(cleanSearch, singularCleanSearch, `%${cleanSearch}%`, `%${singularCleanSearch}%`);
 

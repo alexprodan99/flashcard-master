@@ -176,6 +176,89 @@ describe("LLM Provider Adapters", () => {
       expect(drafts.length).toBe(1);
       expect(drafts[0].answer).toBe("Write-Ahead Logging");
     });
+
+    it("defaults to gemini-3.6-flash when model is omitted", () => {
+      const adapter = new GeminiAdapter({ apiKey: "gemini-key" });
+      expect(adapter.model).toBe("gemini-3.6-flash");
+    });
+
+    it("throws LLMResponseParsingError when candidate finishReason is SAFETY", async () => {
+      const mockFetch = async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          candidates: [{ finishReason: "SAFETY" }],
+        }),
+      }) as any;
+
+      const adapter = new GeminiAdapter({ apiKey: "gemini-key", customFetch: mockFetch });
+      await expect(
+        adapter.generateQAPairs("sample text", {
+          difficulty: "intermediate",
+          personaPrompt: "test",
+        })
+      ).rejects.toThrow("Generation blocked by Gemini safety filters.");
+    });
+
+    it("throws LLMResponseParsingError when candidate finishReason is RECITATION", async () => {
+      const mockFetch = async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          candidates: [{ finishReason: "RECITATION" }],
+        }),
+      }) as any;
+
+      const adapter = new GeminiAdapter({ apiKey: "gemini-key", customFetch: mockFetch });
+      await expect(
+        adapter.generateQAPairs("sample text", {
+          difficulty: "intermediate",
+          personaPrompt: "test",
+        })
+      ).rejects.toThrow("Generation blocked by Gemini recitation check.");
+    });
+
+    it("throws LLMResponseParsingError when prompt is blocked by policy", async () => {
+      const mockFetch = async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          promptFeedback: { blockReason: "PROHIBITED_CONTENT" },
+        }),
+      }) as any;
+
+      const adapter = new GeminiAdapter({ apiKey: "gemini-key", customFetch: mockFetch });
+      await expect(
+        adapter.generateQAPairs("sample text", {
+          difficulty: "intermediate",
+          personaPrompt: "test",
+        })
+      ).rejects.toThrow("Prompt blocked by Gemini policy: PROHIBITED_CONTENT");
+    });
+
+    it("throws LLMResponseParsingError without leaking thoughts when response has only thought parts", async () => {
+      const mockFetch = async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          candidates: [
+            {
+              content: {
+                parts: [{ thought: true, text: "I should analyze the document carefully." }],
+              },
+            },
+          ],
+        }),
+      }) as any;
+
+      const adapter = new GeminiAdapter({ apiKey: "gemini-key", customFetch: mockFetch });
+      await expect(
+        adapter.generateQAPairs("sample text", {
+          difficulty: "intermediate",
+          personaPrompt: "test",
+        })
+      ).rejects.toThrow("No text content returned in Gemini response (only internal thoughts).");
+    });
   });
 
   describe("AnthropicAdapter", () => {
@@ -196,6 +279,29 @@ describe("LLM Provider Adapters", () => {
 
       expect(drafts.length).toBe(1);
       expect(drafts[0].difficulty).toBe("intermediate");
+    });
+
+    it("concatenates multiple text content parts from Anthropic into unified response", async () => {
+      const mockFetch = async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          content: [
+            { type: "text", text: '[{"question": "What is Raft?", "answer": ' },
+            { type: "text", text: '"Consensus algorithm", "sourceQuote": "Raft is consensus", "difficulty": "intermediate"}]' },
+          ],
+        }),
+      }) as any;
+
+      const adapter = new AnthropicAdapter({ apiKey: "claude-key", customFetch: mockFetch });
+      const drafts = await adapter.generateQAPairs("sample text", {
+        difficulty: "intermediate",
+        personaPrompt: "test",
+      });
+
+      expect(drafts.length).toBe(1);
+      expect(drafts[0].question).toBe("What is Raft?");
+      expect(drafts[0].answer).toBe("Consensus algorithm");
     });
 
     it("maps HTTP error response to LLMNetworkError preserving exact status and body", async () => {
@@ -366,6 +472,71 @@ describe("LLM Provider Adapters", () => {
       const drafts = parseCardDraftsFromJson(thinkingJson, "anthropic");
       expect(drafts.length).toBe(1);
       expect(drafts[0].question).toBe("What is bmad-help?");
+    });
+
+    it("strips DeepSeek and Ollama <think> tags from model output", async () => {
+      const { parseCardDraftsFromJson } = await import("../src/llm/types.js");
+      const thinkTagJson = `<think>
+I need to generate a card about WAL in SQLite.
+Let's see: { "WAL": "Write-Ahead Logging" }
+</think>
+[
+  {
+    "question": "What is WAL?",
+    "answer": "Write-Ahead Logging",
+    "sourceQuote": "SQLite utilizes WAL.",
+    "difficulty": "intermediate"
+  }
+]`;
+
+      const drafts = parseCardDraftsFromJson(thinkTagJson, "ollama");
+      expect(drafts.length).toBe(1);
+      expect(drafts[0].question).toBe("What is WAL?");
+      expect(drafts[0].answer).toBe("Write-Ahead Logging");
+    });
+
+    it("sanitizes raw unescaped newlines and tabs inside JSON string values", async () => {
+      const { parseCardDraftsFromJson } = await import("../src/llm/types.js");
+      // Use actual unescaped control chars (ASCII 0x0A, 0x09) inside JSON string literal
+      const rawWithControlChars = "[\n  {\n    \"question\": \"What is WAL?\",\n    \"answer\": \"Line 1\nLine 2 with \t tab\",\n    \"sourceQuote\": \"Quote\",\n    \"difficulty\": \"intermediate\"\n  }\n]";
+      const drafts = parseCardDraftsFromJson(rawWithControlChars, "gemini");
+      expect(drafts.length).toBe(1);
+      expect(drafts[0].answer).toBe("Line 1\nLine 2 with \t tab");
+    });
+
+    it("preserves closing quotes in JSON arrays followed by numbers, booleans, or null", async () => {
+      const { parseCardDraftsFromJson } = await import("../src/llm/types.js");
+      const jsonWithPrimitives = `[
+        {
+          "question": "What are response codes?",
+          "answer": "Status is 200",
+          "sourceQuote": "Status is 200",
+          "difficulty": "intermediate",
+          "tags": ["http", 200, "active", true, "deprecated", null]
+        }
+      ]`;
+
+      const drafts = parseCardDraftsFromJson(jsonWithPrimitives, "gemini");
+      expect(drafts.length).toBe(1);
+      expect(drafts[0].answer).toBe("Status is 200");
+    });
+
+    it("extracts card drafts from free-form conversational text containing embedded JSON blocks with nested braces (Stage 3 fallback)", async () => {
+      const { parseCardDraftsFromJson } = await import("../src/llm/types.js");
+      const preambleText = `Certainly! Here is the flashcard you requested:
+      {
+        "question": "How do you implement a background worker in C#?",
+        "answer": "You write: public class Worker : BackgroundService { protected override async Task ExecuteAsync(CancellationToken ct) { await Task.Delay(1000, ct); } }",
+        "sourceQuote": "public class Worker : BackgroundService { }",
+        "difficulty": "expert"
+      }
+      I hope this helps you study!`;
+
+      const drafts = parseCardDraftsFromJson(preambleText, "gemini");
+      expect(drafts.length).toBe(1);
+      expect(drafts[0].question).toContain("background worker");
+      expect(drafts[0].answer).toContain("BackgroundService");
+      expect(drafts[0].difficulty).toBe("expert");
     });
 
     it("throws LLMResponseParsingError when no valid cards can be extracted from empty or garbage response", async () => {
