@@ -51,6 +51,8 @@ export const FlashcardSchema = z.object({
   sourceQuote: z.string().min(1),
   sourceOriginUrl: z.string().nullable().optional(),
   documentTitle: z.string().nullable().optional(),
+  keywords: z.array(z.string().trim()).default([]),
+  sourceLocator: z.string().trim().default(""),
   difficulty: DifficultyLevelSchema.default("intermediate"),
   personaUsed: z.string().default("socratic-mentor"),
   targetDeck: z.string().default("Default"),
@@ -59,6 +61,36 @@ export const FlashcardSchema = z.object({
   updatedAt: z.string().datetime().optional(),
 });
 export type Flashcard = z.infer<typeof FlashcardSchema>;
+
+export const CardGenerationDraftSchema = z.object({
+  question: z
+    .string()
+    .trim()
+    .min(5)
+    .describe("Clear, self-contained, atomic prompt or question focusing on a single core concept."),
+  answer: z
+    .string()
+    .trim()
+    .min(1)
+    .describe("Comprehensive, factually accurate answer directly addressing the question."),
+  citation: z
+    .string()
+    .trim()
+    .min(1)
+    .describe("Exact verbatim excerpt quoted from the source text grounding this flashcard."),
+  keywords: z
+    .array(z.string().trim().min(1))
+    .min(1)
+    .describe("List of 2 to 5 atomic semantic keywords or key terms for rapid revision drills."),
+  sourceLocator: z
+    .string()
+    .trim()
+    .min(1)
+    .describe("Document locator coordinate (e.g., section heading, page number, URI, or block ID) where the citation originates."),
+  difficulty: DifficultyLevelSchema.optional().describe("Cognitive difficulty level: beginner, intermediate, expert, or mixed."),
+});
+export type CardGenerationDraftInput = z.input<typeof CardGenerationDraftSchema>;
+export type CardGenerationDraftOutput = z.output<typeof CardGenerationDraftSchema>;
 
 export interface RawDocument {
   id: string;

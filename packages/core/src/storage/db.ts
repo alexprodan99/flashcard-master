@@ -45,6 +45,8 @@ CREATE TABLE IF NOT EXISTS flashcards (
     source_quote TEXT NOT NULL,
     source_origin_url TEXT,
     document_title TEXT,
+    keywords TEXT NOT NULL DEFAULT '[]',
+    source_locator TEXT NOT NULL DEFAULT '',
     difficulty TEXT NOT NULL CHECK(difficulty IN ('beginner', 'intermediate', 'expert', 'mixed')),
     persona_used TEXT NOT NULL DEFAULT 'socratic-mentor',
     target_deck TEXT NOT NULL DEFAULT 'Default',
@@ -279,10 +281,18 @@ export function runMigrations(db: Database.Database): void {
     })();
   }
 
-  // 4. Ensure document_title column exists in flashcards table
+  // 4. Ensure document_title, keywords, and source_locator columns exist in flashcards table
   const cardCols = db.prepare("PRAGMA table_info(flashcards)").all() as Array<{ name: string }>;
-  if (cardCols && cardCols.length > 0 && !cardCols.some((c) => c.name === "document_title")) {
-    db.exec("ALTER TABLE flashcards ADD COLUMN document_title TEXT;");
+  if (cardCols && cardCols.length > 0) {
+    if (!cardCols.some((c) => c.name.toLowerCase() === "document_title")) {
+      db.exec("ALTER TABLE flashcards ADD COLUMN document_title TEXT;");
+    }
+    if (!cardCols.some((c) => c.name.toLowerCase() === "keywords")) {
+      db.exec("ALTER TABLE flashcards ADD COLUMN keywords TEXT NOT NULL DEFAULT '[]';");
+    }
+    if (!cardCols.some((c) => c.name.toLowerCase() === "source_locator")) {
+      db.exec("ALTER TABLE flashcards ADD COLUMN source_locator TEXT NOT NULL DEFAULT '';");
+    }
   }
 
   // 5. Backfill source_origin_url and document_title from parent data source for legacy cards
@@ -345,6 +355,8 @@ export function runMigrations(db: Database.Database): void {
             source_quote TEXT NOT NULL,
             source_origin_url TEXT,
             document_title TEXT,
+            keywords TEXT NOT NULL DEFAULT '[]',
+            source_locator TEXT NOT NULL DEFAULT '',
             difficulty TEXT NOT NULL CHECK(difficulty IN ('beginner', 'intermediate', 'expert', 'mixed')),
             persona_used TEXT NOT NULL DEFAULT 'socratic-mentor',
             target_deck TEXT NOT NULL DEFAULT 'Default',
@@ -354,8 +366,8 @@ export function runMigrations(db: Database.Database): void {
         );
       `);
       db.exec(`
-        INSERT INTO flashcards (id, source_id, question, answer, source_quote, source_origin_url, document_title, difficulty, persona_used, target_deck, tags, created_at, updated_at)
-        SELECT id, source_id, question, answer, source_quote, source_origin_url, document_title, difficulty, persona_used, target_deck, tags, created_at, updated_at FROM _flashcards_difficulty_old;
+        INSERT INTO flashcards (id, source_id, question, answer, source_quote, source_origin_url, document_title, keywords, source_locator, difficulty, persona_used, target_deck, tags, created_at, updated_at)
+        SELECT id, source_id, question, answer, source_quote, source_origin_url, document_title, keywords, source_locator, difficulty, persona_used, target_deck, tags, created_at, updated_at FROM _flashcards_difficulty_old;
       `);
       db.exec("DROP TABLE _flashcards_difficulty_old;");
       db.exec("CREATE INDEX IF NOT EXISTS idx_flashcards_source_id ON flashcards(source_id);");

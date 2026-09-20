@@ -164,9 +164,9 @@ development_status:
   15-6-interactive-notion-source-ui-and-monorepo-verification: done
   epic-15-retrospective: optional
 
-  epic-16: backlog
-  16-1-enriched-flashcard-schema-and-sqlite-migration: ready-for-dev
-  16-2-central-zod-to-provider-dialect-compiler: backlog
+  epic-16: in-progress
+  16-1-enriched-flashcard-schema-and-sqlite-migration: done
+  16-2-central-zod-to-provider-dialect-compiler: ready-for-dev
   16-3-provider-adapters-native-structured-output-migration: backlog
   16-4-progressive-sse-streaming-and-token-limit-retention: backlog
   16-5-legacy-sanitizer-deprecation-and-monorepo-test-suite: backlog
