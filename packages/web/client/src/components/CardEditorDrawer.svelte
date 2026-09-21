@@ -20,6 +20,8 @@
   let targetDeck = $state('Default');
   let difficulty = $state<DifficultyLevel>('intermediate');
   let tagsInput = $state('');
+  let keywordsInput = $state('');
+  let sourceLocator = $state('');
 
   let isSaving = $state(false);
   let isDeleting = $state(false);
@@ -35,6 +37,8 @@
       targetDeck = card.targetDeck || 'Default';
       difficulty = card.difficulty;
       tagsInput = (card.tags || []).join(', ');
+      keywordsInput = (card.keywords || []).join(', ');
+      sourceLocator = card.sourceLocator || '';
       errorMessage = null;
     }
   });
@@ -56,15 +60,22 @@
         .map((t) => t.trim())
         .filter((t) => t.length > 0);
 
+      const keywords = keywordsInput
+        .split(',')
+        .map((k) => k.trim())
+        .filter((k) => k.length > 0);
+
       const updated = await updateCard(card.id, {
         question: question.trim(),
         answer: answer.trim(),
         sourceQuote: sourceQuote.trim(),
+        sourceLocator: sourceLocator.trim() || '',
         documentTitle: documentTitle.trim() || null,
         sourceOriginUrl: sourceOriginUrl.trim() || null,
         targetDeck: targetDeck.trim() || 'Default',
         difficulty,
         tags,
+        keywords,
       });
 
       onCardUpdated(updated);
@@ -139,6 +150,16 @@
           ></textarea>
         </div>
 
+        <div class="form-group">
+          <label for="edit-locator">Source Locator / Coordinate</label>
+          <input
+            id="edit-locator"
+            type="text"
+            bind:value={sourceLocator}
+            placeholder="e.g. Section 2.1, page 42, or paragraph 3"
+          />
+        </div>
+
         <div class="form-row">
           <div class="form-group">
             <label for="edit-doc-title">Source Document Title</label>
@@ -181,6 +202,16 @@
               <option value="mixed">Mixed</option>
             </select>
           </div>
+        </div>
+
+        <div class="form-group">
+          <label for="edit-keywords">Keywords (comma-separated concept terms)</label>
+          <input
+            id="edit-keywords"
+            type="text"
+            bind:value={keywordsInput}
+            placeholder="e.g. raft, consensus, state-machine"
+          />
         </div>
 
         <div class="form-group">

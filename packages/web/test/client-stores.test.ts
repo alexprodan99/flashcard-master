@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { GenerateStore, generateStore } from '../client/src/stores/generateStore.svelte.js';
 import { SourcesStore, sourcesStore } from '../client/src/stores/sourcesStore.svelte.js';
 import { ExplorerStore } from '../client/src/stores/explorerStore.svelte.js';
@@ -209,6 +209,47 @@ describe('Svelte 5 Universal Client Stores (Epic 14.4)', () => {
       store.removeCard('c1');
       expect(store.cards.length).toBe(1);
       expect(store.selectedIds).not.toContain('c1');
+    });
+
+    it('supports keywords and sourceLocator in card updates and search filtering', () => {
+      const store = new ExplorerStore();
+      const mockCard: Flashcard = {
+        id: 'card-kw-1',
+        sourceId: 's1',
+        question: 'What is Raft algorithm?',
+        answer: 'A consensus algorithm.',
+        sourceQuote: 'Raft manages replicated logs.',
+        keywords: ['consensus', 'replicated log', 'leader election'],
+        sourceLocator: 'Section 5.1',
+        difficulty: 'intermediate',
+        personaUsed: 'socratic-mentor',
+        targetDeck: 'Distributed Systems',
+        tags: ['systems'],
+        createdAt: '',
+        updatedAt: '',
+      };
+
+      store.setCards([mockCard]);
+      expect(store.cards[0].keywords).toEqual(['consensus', 'replicated log', 'leader election']);
+      expect(store.cards[0].sourceLocator).toBe('Section 5.1');
+
+      // Update card with new keywords and locator
+      store.updateCard({
+        ...mockCard,
+        keywords: ['consensus', 'heartbeat'],
+        sourceLocator: 'Section 5.2',
+      });
+      expect(store.cards[0].keywords).toEqual(['consensus', 'heartbeat']);
+      expect(store.cards[0].sourceLocator).toBe('Section 5.2');
+
+      // Filter simulation logic (matching QuestionExplorer.svelte)
+      const q1 = 'heartbeat';
+      const matchKeywords = (store.cards[0].keywords || []).some((k) => k.toLowerCase().includes(q1));
+      expect(matchKeywords).toBe(true);
+
+      const q2 = 'section 5.2';
+      const matchLocator = (store.cards[0].sourceLocator || '').toLowerCase().includes(q2);
+      expect(matchLocator).toBe(true);
     });
   });
 
@@ -444,6 +485,76 @@ describe('Svelte 5 Universal Client Stores (Epic 14.4)', () => {
 
       expect(sourcesStore.isSyncingAll).toBe(false);
       expect(sourcesStore.activeSyncAllJobId).toBe(null);
+    });
+
+    it('handles card_created SSE events and manages progressive card streams', () => {
+      const listeners: Record<string, (e: any) => void> = {};
+      class MockEventSource {
+        addEventListener(event: string, cb: (e: any) => void) {
+          listeners[event] = cb;
+        }
+        close() {}
+      }
+      vi.stubGlobal('EventSource', MockEventSource);
+
+      const store = new TaskStore();
+      store.init();
+
+      generateStore.startGenerating('job-stream-test');
+
+      // Emit first progressive card
+      listeners['card_created']?.({
+        data: JSON.stringify({
+          jobId: 'job-stream-test',
+          card: {
+            id: 'c-1',
+            question: 'What is SSE?',
+            answer: 'Server-Sent Events',
+            difficulty: 'beginner',
+            keywords: ['sse', 'streaming'],
+            sourceLocator: 'Doc 1, para 1',
+          },
+        }),
+      });
+
+      // Emit second progressive card
+      listeners['card_created']?.({
+        data: JSON.stringify({
+          jobId: 'job-stream-test',
+          card: {
+            id: 'c-2',
+            question: 'What is token cutoff?',
+            answer: 'Premature stop at max tokens',
+            difficulty: 'intermediate',
+            keywords: ['tokens'],
+            sourceLocator: 'Doc 1, para 2',
+          },
+        }),
+      });
+
+      const cards = store.getStreamedCardsForJob('job-stream-test');
+      expect(cards.length).toBe(2);
+      expect(cards[0].question).toBe('What is SSE?');
+      expect(cards[0].keywords).toEqual(['sse', 'streaming']);
+      expect(cards[1].question).toBe('What is token cutoff?');
+
+      // Emit job_completed with warnings (partial retention)
+      listeners['job_completed']?.({
+        data: JSON.stringify({
+          id: 'job-stream-test',
+          type: 'generation',
+          status: 'completed_with_warnings',
+          resultSummary: {
+            cardsCreated: 2,
+            duplicatesSkipped: 0,
+            partial: true,
+          },
+        }),
+      });
+
+      expect(generateStore.isGenerating).toBe(false);
+      expect(generateStore.generationResult?.cardsCreated).toBe(2);
+      expect(generateStore.createdCards.length).toBe(2);
     });
   });
 

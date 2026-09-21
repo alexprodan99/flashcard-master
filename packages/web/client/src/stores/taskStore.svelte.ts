@@ -1,4 +1,4 @@
-import type { Job, JobLog, JobStatus } from '../lib/types.js';
+import type { Job, JobLog, JobStatus, Flashcard } from '../lib/types.js';
 import { fetchJobs, fetchJobDetails, cancelJobApi, clearJobHistory, fetchLoggingSettings, updateLoggingSettings } from '../lib/api.js';
 import { toastStore } from './toastStore.svelte.js';
 import { generateStore } from './generateStore.svelte.js';
@@ -7,6 +7,7 @@ import { sourcesStore } from './sourcesStore.svelte.js';
 export class TaskStore {
   jobs = $state<Job[]>([]);
   jobLogs = $state<Record<string, JobLog[]>>({});
+  streamedCards = $state<Record<string, Flashcard[]>>({});
   isConnected = $state(false);
   isDrawerOpen = $state(false);
   activeDrawerTab = $state<'active' | 'history'>('active');
@@ -106,6 +107,22 @@ export class TaskStore {
         } catch {}
       });
 
+      this.eventSource.addEventListener('card_created', (e) => {
+        try {
+          const payload = JSON.parse(e.data);
+          const jobId = payload.jobId;
+          const card: Flashcard = payload.card;
+          if (jobId && card) {
+            if (!this.streamedCards[jobId]) {
+              this.streamedCards[jobId] = [];
+            }
+            if (!this.streamedCards[jobId].some((c) => c.id === card.id)) {
+              this.streamedCards[jobId] = [...this.streamedCards[jobId], card];
+            }
+          }
+        } catch {}
+      });
+
       this.eventSource.addEventListener('job_completed', (e) => {
         try {
           const completedJob: Job = JSON.parse(e.data);
@@ -122,9 +139,13 @@ export class TaskStore {
               cardsCreated,
               totalDraftsGenerated: summary.totalDraftsGenerated ?? cardsCreated,
               duplicatesSkipped,
-              newCards: summary.newCards || [],
+              newCards: summary.newCards || this.getStreamedCardsForJob(completedJob.id),
             });
-            toastStore.success(`🎉 Generated ${cardsCreated} cards (${duplicatesSkipped} duplicates skipped)`);
+            if (completedJob.status === 'completed_with_warnings') {
+              toastStore.warn(`⚠️ Partial output saved: ${cardsCreated} cards generated (${duplicatesSkipped} duplicates skipped). Output token limit reached.`);
+            } else {
+              toastStore.success(`🎉 Generated ${cardsCreated} cards (${duplicatesSkipped} duplicates skipped)`);
+            }
             return;
           }
 
@@ -315,6 +336,9 @@ export class TaskStore {
       for (const id of Object.keys(this.expandedJobIds)) {
         if (!activeIds.has(id)) delete this.expandedJobIds[id];
       }
+      for (const id of Object.keys(this.streamedCards)) {
+        if (!activeIds.has(id)) delete this.streamedCards[id];
+      }
       return res.deletedCount;
     } catch {
       return 0;
@@ -402,6 +426,10 @@ export class TaskStore {
 
   getLogsForJob(jobId: string): JobLog[] {
     return this.jobLogs[jobId] || [];
+  }
+
+  getStreamedCardsForJob(jobId: string): Flashcard[] {
+    return this.streamedCards[jobId] || [];
   }
 
   teardown() {

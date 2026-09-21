@@ -10,6 +10,8 @@ export const CreateFlashcardInputSchema = z.object({
   sourceQuote: z.string().min(1),
   sourceOriginUrl: z.string().nullable().optional(),
   documentTitle: z.string().nullable().optional(),
+  keywords: z.array(z.string().trim()).default([]),
+  sourceLocator: z.string().trim().default(""),
   difficulty: DifficultyLevelSchema.default("intermediate"),
   personaUsed: z.string().default("socratic-mentor"),
   targetDeck: z.string().default("Default"),
@@ -28,7 +30,37 @@ export interface CardFilter {
 export class FlashcardRepository {
   constructor(private readonly db: Database.Database) {}
 
-  private mapRowToFlashcard(row: any): Flashcard {
+  public mapRowToFlashcard(row: any): Flashcard {
+    let keywords: string[] = [];
+    if (typeof row.keywords === "string") {
+      try {
+        const parsed = JSON.parse(row.keywords);
+        if (Array.isArray(parsed)) {
+          keywords = parsed.map((k: any) => String(k).trim()).filter(Boolean);
+        }
+      } catch {
+        keywords = [];
+      }
+    } else if (Array.isArray(row.keywords)) {
+      keywords = row.keywords.map((k: any) => String(k).trim()).filter(Boolean);
+    }
+
+    const sourceLocator = row.source_locator != null ? String(row.source_locator).trim() : "";
+
+    let tags: string[] = [];
+    if (typeof row.tags === "string") {
+      try {
+        const parsed = JSON.parse(row.tags);
+        if (Array.isArray(parsed)) {
+          tags = parsed.map((t: any) => String(t).trim()).filter(Boolean);
+        }
+      } catch {
+        tags = [];
+      }
+    } else if (Array.isArray(row.tags)) {
+      tags = row.tags.map((t: any) => String(t).trim()).filter(Boolean);
+    }
+
     return FlashcardSchema.parse({
       id: row.id,
       sourceId: row.source_id,
@@ -37,10 +69,12 @@ export class FlashcardRepository {
       sourceQuote: row.source_quote,
       sourceOriginUrl: row.source_origin_url,
       documentTitle: row.document_title,
+      keywords,
+      sourceLocator,
       difficulty: row.difficulty,
       personaUsed: row.persona_used,
       targetDeck: row.target_deck,
-      tags: typeof row.tags === "string" ? JSON.parse(row.tags) : row.tags || [],
+      tags,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     });
@@ -50,12 +84,14 @@ export class FlashcardRepository {
     const card = CreateFlashcardInputSchema.parse(rawCard);
     const id = crypto.randomUUID();
     const tagsJson = JSON.stringify(card.tags || []);
+    const keywordsJson = JSON.stringify(card.keywords || []);
+    const sourceLocator = card.sourceLocator || "";
 
     const stmt = this.db.prepare(`
       INSERT INTO flashcards (
         id, source_id, question, answer, source_quote, source_origin_url, document_title,
-        difficulty, persona_used, target_deck, tags
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        keywords, source_locator, difficulty, persona_used, target_deck, tags
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -66,6 +102,8 @@ export class FlashcardRepository {
       card.sourceQuote,
       card.sourceOriginUrl ?? null,
       card.documentTitle ?? null,
+      keywordsJson,
+      sourceLocator,
       card.difficulty || "intermediate",
       card.personaUsed || "socratic-mentor",
       card.targetDeck || "Default",
@@ -83,16 +121,19 @@ export class FlashcardRepository {
     const stmt = this.db.prepare(`
       INSERT INTO flashcards (
         id, source_id, question, answer, source_quote, source_origin_url, document_title,
-        difficulty, persona_used, target_deck, tags
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        keywords, source_locator, difficulty, persona_used, target_deck, tags
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const createdIds: string[] = [];
 
     const insertMany = this.db.transaction((items: CreateFlashcardInput[]) => {
-      for (const card of items) {
+      for (const item of items) {
+        const card = CreateFlashcardInputSchema.parse(item);
         const id = crypto.randomUUID();
         const tagsJson = JSON.stringify(card.tags || []);
+        const keywordsJson = JSON.stringify(card.keywords || []);
+        const sourceLocator = card.sourceLocator || "";
 
         stmt.run(
           id,
@@ -102,6 +143,8 @@ export class FlashcardRepository {
           card.sourceQuote,
           card.sourceOriginUrl ?? null,
           card.documentTitle ?? null,
+          keywordsJson,
+          sourceLocator,
           card.difficulty || "intermediate",
           card.personaUsed || "socratic-mentor",
           card.targetDeck || "Default",
@@ -141,8 +184,8 @@ export class FlashcardRepository {
       params.push(filter.difficulty);
     }
     if (filter.search) {
-      conditions.push("(question LIKE ? OR answer LIKE ?)");
-      params.push(`%${filter.search}%`, `%${filter.search}%`);
+      conditions.push("(question LIKE ? OR answer LIKE ? OR keywords LIKE ? OR source_locator LIKE ?)");
+      params.push(`%${filter.search}%`, `%${filter.search}%`, `%${filter.search}%`, `%${filter.search}%`);
     }
 
     let sql = "SELECT * FROM flashcards";
@@ -190,6 +233,17 @@ export class FlashcardRepository {
       fields.push("document_title = ?");
       params.push(updates.documentTitle);
     }
+    if (updates.keywords !== undefined) {
+      fields.push("keywords = ?");
+      const kw = Array.isArray(updates.keywords)
+        ? updates.keywords.map((k: any) => String(k).trim()).filter(Boolean)
+        : [];
+      params.push(JSON.stringify(kw));
+    }
+    if (updates.sourceLocator !== undefined) {
+      fields.push("source_locator = ?");
+      params.push(updates.sourceLocator != null ? String(updates.sourceLocator).trim() : "");
+    }
     if (updates.difficulty !== undefined) {
       fields.push("difficulty = ?");
       params.push(updates.difficulty);
@@ -204,7 +258,10 @@ export class FlashcardRepository {
     }
     if (updates.tags !== undefined) {
       fields.push("tags = ?");
-      params.push(JSON.stringify(updates.tags));
+      const tg = Array.isArray(updates.tags)
+        ? updates.tags.map((t: any) => String(t).trim()).filter(Boolean)
+        : [];
+      params.push(JSON.stringify(tg));
     }
 
     if (fields.length === 0) {

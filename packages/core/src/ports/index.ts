@@ -16,7 +16,10 @@ export interface CardGenerationDraft {
   question: string;
   answer: string;
   sourceQuote: string;
+  citation?: string;
   difficulty: DifficultyLevel;
+  keywords?: string[];
+  sourceLocator?: string;
 }
 
 export interface LLMProviderPort {

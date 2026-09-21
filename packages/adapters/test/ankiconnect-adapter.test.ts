@@ -19,6 +19,8 @@ describe("AnkiConnectAdapter", () => {
       question: "What is Raft consensus?",
       answer: "A leader-based distributed consensus protocol.",
       sourceQuote: "Raft is a consensus protocol for managing replicated logs.",
+      keywords: ["raft", "consensus"],
+      sourceLocator: "Raft Paper Section 1",
       difficulty: "intermediate",
       personaUsed: "socratic-mentor",
       targetDeck: "Distributed Systems",
@@ -29,6 +31,8 @@ describe("AnkiConnectAdapter", () => {
       question: "What is SQLite WAL mode?",
       answer: "Write-Ahead Logging.",
       sourceQuote: "WAL allows concurrent reading and writing.",
+      keywords: ["sqlite", "wal"],
+      sourceLocator: "WAL Docs",
       difficulty: "beginner",
       personaUsed: "socratic-mentor",
       targetDeck: "Databases",
@@ -126,5 +130,42 @@ describe("AnkiConnectAdapter", () => {
     expect(result.totalCards).toBe(0);
     expect(result.addedCards).toBe(0);
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("merges keywords into tags and appends keywords and locator to back HTML", async () => {
+    let capturedNotes: any[] = [];
+    global.fetch = vi.fn().mockImplementation(async (_url, options) => {
+      const body = JSON.parse(options.body);
+      if (body.action === "version") return { ok: true, json: async () => ({ result: 6, error: null }) };
+      if (body.action === "createDeck") return { ok: true, json: async () => ({ result: 123, error: null }) };
+      if (body.action === "canAddNotes") {
+        capturedNotes = body.params.notes;
+        return { ok: true, json: async () => ({ result: [true], error: null }) };
+      }
+      if (body.action === "addNote") return { ok: true, json: async () => ({ result: 100001, error: null }) };
+      return { ok: true, json: async () => ({ result: null, error: null }) };
+    });
+
+    const adapter = new AnkiConnectAdapter();
+    const cardWithMultiwordKeywords: Flashcard = {
+      id: "33333333-3333-3333-3333-333333333333",
+      question: "What is WAL?",
+      answer: "Write Ahead Logging",
+      sourceQuote: "WAL is write ahead log",
+      keywords: ["write ahead logging", "sqlite db"],
+      sourceLocator: "Chapter 4",
+      difficulty: "intermediate",
+      personaUsed: "socratic-mentor",
+      targetDeck: "Databases",
+      tags: ["storage"],
+    };
+
+    await adapter.syncCards([cardWithMultiwordKeywords]);
+
+    expect(capturedNotes.length).toBe(1);
+    expect(capturedNotes[0].tags).toEqual(["storage", "write-ahead-logging", "sqlite-db"]);
+    expect(capturedNotes[0].fields.Back).toContain("<strong>Keywords:</strong>");
+    expect(capturedNotes[0].fields.Back).toContain('<span class="keyword-badge">write ahead logging</span>');
+    expect(capturedNotes[0].fields.Back).toContain("<em>(Chapter 4)</em>");
   });
 });

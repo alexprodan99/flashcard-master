@@ -1,0 +1,34 @@
+- id: "1"
+  title: Enriched Flashcard Schema & SQLite Migration
+  description: >-
+    Add keywords and sourceLocator fields to CardGenerationDraftSchema in packages/core and update
+    CardRepository with SQLite ALTER TABLE migrations providing backward-compatible defaults.
+  done_checkpoint: true
+
+- id: "2"
+  title: Central Zod-to-Provider Dialect Compiler
+  description: >-
+    Implement a polymorphic schema compiler translating the core Zod schema into Gemini responseSchema,
+    OpenAI strict json_schema, Anthropic tool definitions, and Ollama format with embedded prompt descriptions.
+  done_checkpoint: true
+
+- id: "3"
+  title: Provider Adapters Native Structured Output Migration
+  description: >-
+    Refactor Gemini, OpenAI, Anthropic, and Ollama adapters to transmit compiled dialect schemas and
+    parse strongly-typed response objects directly without regex or text-cleaning heuristics.
+  done_checkpoint: true
+
+- id: "4"
+  title: Progressive SSE Streaming & Token Limit Retention
+  description: >-
+    Update card generation workers and SSE endpoints to stream completed cards incrementally into Task Center
+    and gracefully preserve all valid cards with a user warning notification upon hitting token limits.
+  done_checkpoint: true
+
+- id: "5"
+  title: Legacy Sanitizer Deprecation & Monorepo Test Suite
+  description: >-
+    Remove deprecated regex cleaners and syntax-repair loops from packages/adapters/src/llm/types.ts,
+    and verify full build, lint, and test suites across the monorepo to guarantee zero regressions.
+  done_checkpoint: true

@@ -132,8 +132,18 @@ export class AnkiConnectAdapter implements ExporterPort {
         const cardDeck = options.targetDeck || c.targetDeck || "Default";
         let backHtml = this.escapeHtml(c.answer);
         if (includeCitation && c.sourceQuote) {
-          backHtml += `<div class="citation"><strong>Source Citation:</strong> "${this.escapeHtml(c.sourceQuote)}"</div>`;
+          const locatorHtml = c.sourceLocator ? ` <em>(${this.escapeHtml(c.sourceLocator)})</em>` : "";
+          backHtml += `<div class="citation"><strong>Source Citation:</strong> "${this.escapeHtml(c.sourceQuote)}"${locatorHtml}</div>`;
         }
+        if (c.keywords && c.keywords.length > 0) {
+          const kwBadges = c.keywords.map((k) => `<span class="keyword-badge">${this.escapeHtml(k)}</span>`).join(" ");
+          backHtml += `<div class="keywords"><strong>Keywords:</strong> ${kwBadges}</div>`;
+        }
+
+        const keywordTags = (c.keywords || [])
+          .map((k) => k.trim().replace(/\s+/g, "-"))
+          .filter(Boolean);
+        const allTags = Array.from(new Set([...(c.tags || []), ...keywordTags]));
 
         return {
           deckName: cardDeck,
@@ -142,7 +152,7 @@ export class AnkiConnectAdapter implements ExporterPort {
             Front: this.escapeHtml(c.question),
             Back: backHtml,
           },
-          tags: c.tags || [],
+          tags: allTags,
           options: {
             allowDuplicate: false,
             duplicateScope: "deck",

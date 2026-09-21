@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { createDatabaseClient } from "../src/storage/db.js";
+import { createDatabaseClient, runMigrations } from "../src/storage/db.js";
 import { DataSourceRepository } from "../src/storage/source-repository.js";
-import { FlashcardRepository } from "../src/storage/card-repository.js";
-import type Database from "better-sqlite3";
+import { FlashcardRepository, CreateFlashcardInputSchema } from "../src/storage/card-repository.js";
+import { CardGenerationDraftSchema } from "../src/domain/models.js";
+import Database from "better-sqlite3";
 
 describe("FlashcardRepository", () => {
   let db: Database.Database;
@@ -165,5 +166,287 @@ describe("FlashcardRepository", () => {
     expect(deletedCount).toBe(2);
     expect(cardRepo.getById(card1.id)).toBeNull();
     expect(cardRepo.getById(card2.id)).toBeNull();
+  });
+
+  it("persists, queries, and updates enriched keywords and sourceLocator", () => {
+    const card = cardRepo.create({
+      question: "What is self-attention?",
+      answer: "A mechanism that relates different positions of a single sequence.",
+      sourceQuote: "Self-attention, sometimes called intra-attention...",
+      keywords: ["transformer", "attention"],
+      sourceLocator: "Section 3.2",
+      targetDeck: "Deep Learning",
+    });
+
+    expect(card.id).toBeDefined();
+    expect(card.keywords).toEqual(["transformer", "attention"]);
+    expect(card.sourceLocator).toBe("Section 3.2");
+
+    const fetched = cardRepo.getById(card.id);
+    expect(fetched).not.toBeNull();
+    expect(fetched?.keywords).toEqual(["transformer", "attention"]);
+    expect(fetched?.sourceLocator).toBe("Section 3.2");
+
+    // Update keywords and sourceLocator
+    const updated = cardRepo.update(card.id, {
+      keywords: ["deep learning", "neural network"],
+      sourceLocator: "Chapter 4, Page 52",
+    });
+
+    expect(updated?.keywords).toEqual(["deep learning", "neural network"]);
+    expect(updated?.sourceLocator).toBe("Chapter 4, Page 52");
+    expect(updated?.updatedAt).toBeDefined();
+
+    // Reject non-existent card ID with null
+    const nonExistent = cardRepo.update("00000000-0000-0000-0000-000000000000", {
+      keywords: ["test"],
+    });
+    expect(nonExistent).toBeNull();
+  });
+
+  it("applies backward-compatible defaults when enriched fields are omitted", () => {
+    const card = cardRepo.create({
+      question: "What is backpropagation?",
+      answer: "An algorithm for supervised learning of artificial neural networks.",
+      sourceQuote: "Backpropagation efficiently computes gradient vectors.",
+    });
+
+    expect(card.keywords).toEqual([]);
+    expect(card.sourceLocator).toBe("");
+
+    const fetched = cardRepo.getById(card.id);
+    expect(fetched?.keywords).toEqual([]);
+    expect(fetched?.sourceLocator).toBe("");
+  });
+
+  it("persists enriched fields in batch creation", () => {
+    const cards = cardRepo.createBatch([
+      {
+        question: "Batch Q1",
+        answer: "Batch A1",
+        sourceQuote: "Batch quote 1",
+        keywords: ["batch", "one"],
+        sourceLocator: "Doc 1 / Page 1",
+      },
+      {
+        question: "Batch Q2",
+        answer: "Batch A2",
+        sourceQuote: "Batch quote 2",
+      },
+    ]);
+
+    expect(cards.length).toBe(2);
+    expect(cards[0].keywords).toEqual(["batch", "one"]);
+    expect(cards[0].sourceLocator).toBe("Doc 1 / Page 1");
+    expect(cards[1].keywords).toEqual([]);
+    expect(cards[1].sourceLocator).toBe("");
+  });
+
+  it("safely maps legacy database rows with NULL or absent keywords and source_locator", () => {
+    const legacyRow = {
+      id: "33333333-3333-3333-3333-333333333333",
+      source_id: null,
+      question: "Legacy question?",
+      answer: "Legacy answer.",
+      source_quote: "Legacy source quote.",
+      source_origin_url: null,
+      document_title: null,
+      keywords: null,
+      source_locator: null,
+      difficulty: "intermediate",
+      persona_used: "socratic-mentor",
+      target_deck: "Default",
+      tags: null,
+      created_at: "2025-01-01T00:00:00.000Z",
+      updated_at: "2025-01-01T00:00:00.000Z",
+    };
+
+    const card = cardRepo.mapRowToFlashcard(legacyRow);
+    expect(card.keywords).toEqual([]);
+    expect(card.sourceLocator).toBe("");
+
+    // Test malformed JSON fallback
+    const malformedRow = {
+      ...legacyRow,
+      id: "44444444-4444-4444-4444-444444444444",
+      keywords: "invalid-json-array{[",
+      source_locator: "Section A",
+    };
+    const card2 = cardRepo.mapRowToFlashcard(malformedRow);
+    expect(card2.keywords).toEqual([]);
+    expect(card2.sourceLocator).toBe("Section A");
+  });
+
+  it("validates CreateFlashcardInputSchema and rejects invalid keywords", () => {
+    const invalidResult = CreateFlashcardInputSchema.safeParse({
+      question: "Valid question?",
+      answer: "Valid answer.",
+      sourceQuote: "Valid quote.",
+      keywords: [123, null] as any,
+    });
+    expect(invalidResult.success).toBe(false);
+
+    const validResult = CreateFlashcardInputSchema.safeParse({
+      question: "Valid question?",
+      answer: "Valid answer.",
+      sourceQuote: "Valid quote.",
+      keywords: ["keyword1", "keyword2"],
+      sourceLocator: "Page 10",
+    });
+    expect(validResult.success).toBe(true);
+    if (validResult.success) {
+      expect(validResult.data.keywords).toEqual(["keyword1", "keyword2"]);
+      expect(validResult.data.sourceLocator).toBe("Page 10");
+    }
+  });
+
+  it("migrates existing SQLite databases lacking keywords and source_locator columns non-destructively", () => {
+    const legacyDb = new Database(":memory:");
+    try {
+      // Create legacy flashcards table schema without keywords and source_locator
+      legacyDb.exec(`
+        CREATE TABLE data_sources (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            type TEXT NOT NULL CHECK(type IN ('rss', 'web', 'local', 'sitemap', 'llms-txt', 'notion')),
+            uri TEXT NOT NULL,
+            target_deck TEXT NOT NULL DEFAULT 'Default',
+            tags TEXT NOT NULL DEFAULT '[]',
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+            updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+        );
+        CREATE TABLE flashcards (
+            id TEXT PRIMARY KEY,
+            source_id TEXT REFERENCES data_sources(id) ON DELETE SET NULL,
+            question TEXT NOT NULL,
+            answer TEXT NOT NULL,
+            source_quote TEXT NOT NULL,
+            source_origin_url TEXT,
+            document_title TEXT,
+            difficulty TEXT NOT NULL CHECK(difficulty IN ('beginner', 'intermediate', 'expert', 'mixed')),
+            persona_used TEXT NOT NULL DEFAULT 'socratic-mentor',
+            target_deck TEXT NOT NULL DEFAULT 'Default',
+            tags TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+            updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+        );
+      `);
+
+      // Insert pre-migration card
+      const legacyId = "a1b2c3d4-e5f6-4a1b-8c2d-3e4f5a6b7c8d";
+      legacyDb.prepare(`
+        INSERT INTO flashcards (id, question, answer, source_quote, difficulty)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(legacyId, "Old Q", "Old A", "Old Quote", "intermediate");
+
+      // Verify columns do not exist prior to migration
+      const colsBefore = legacyDb.prepare("PRAGMA table_info(flashcards)").all() as Array<{ name: string }>;
+      expect(colsBefore.some((c) => c.name === "keywords")).toBe(false);
+      expect(colsBefore.some((c) => c.name === "source_locator")).toBe(false);
+
+      // Run migrations
+      runMigrations(legacyDb);
+
+      // Verify columns now exist
+      const colsAfter = legacyDb.prepare("PRAGMA table_info(flashcards)").all() as Array<{ name: string }>;
+      expect(colsAfter.some((c) => c.name === "keywords")).toBe(true);
+      expect(colsAfter.some((c) => c.name === "source_locator")).toBe(true);
+
+      // Verify existing row can be loaded cleanly via repository
+      const repo = new FlashcardRepository(legacyDb);
+      const card = repo.getById(legacyId);
+      expect(card).not.toBeNull();
+      expect(card?.question).toBe("Old Q");
+      expect(card?.keywords).toEqual([]);
+      expect(card?.sourceLocator).toBe("");
+
+      // Re-running migrations is idempotent and non-destructive
+      expect(() => runMigrations(legacyDb)).not.toThrow();
+    } finally {
+      legacyDb.close();
+    }
+  });
+
+  it("validates CardGenerationDraftSchema per structured responses spec", () => {
+    // Valid draft
+    const valid = CardGenerationDraftSchema.parse({
+      question: "What is attention mechanism?",
+      answer: "An architecture component that computes weighted representations.",
+      citation: "The attention mechanism computes a weighted sum of values based on query and keys.",
+      keywords: ["attention", "transformer", "deep learning"],
+      sourceLocator: "Section 3.1, Eq 1",
+      difficulty: "intermediate",
+    });
+    expect(valid.question).toBe("What is attention mechanism?");
+    expect(valid.keywords).toEqual(["attention", "transformer", "deep learning"]);
+    expect(valid.sourceLocator).toBe("Section 3.1, Eq 1");
+
+    // Invalid: empty keywords
+    expect(() =>
+      CardGenerationDraftSchema.parse({
+        question: "What is attention mechanism?",
+        answer: "Valid answer",
+        citation: "Valid citation",
+        keywords: [],
+        sourceLocator: "Section 1",
+      })
+    ).toThrow();
+
+    // Invalid: empty sourceLocator
+    expect(() =>
+      CardGenerationDraftSchema.parse({
+        question: "What is attention mechanism?",
+        answer: "Valid answer",
+        citation: "Valid citation",
+        keywords: ["keyword"],
+        sourceLocator: "   ",
+      })
+    ).toThrow();
+
+    // Invalid: question too short (< 5 chars)
+    expect(() =>
+      CardGenerationDraftSchema.parse({
+        question: "Why?",
+        answer: "Valid answer",
+        citation: "Valid citation",
+        keywords: ["keyword"],
+        sourceLocator: "Section 1",
+      })
+    ).toThrow();
+  });
+
+  it("searches and updates cards with keywords and sourceLocator", () => {
+    const card = cardRepo.create({
+      question: "What is Raft?",
+      answer: "A consensus protocol.",
+      sourceQuote: "Raft is a consensus protocol designed for understandability.",
+      keywords: ["raft", "consensus", "state machine"],
+      sourceLocator: "Section 5.2",
+      targetDeck: "Distributed",
+      tags: ["distributed-systems"],
+    });
+
+    // Search by keyword
+    const byKeyword = cardRepo.list({ search: "consensus" });
+    expect(byKeyword.length).toBe(1);
+    expect(byKeyword[0].id).toBe(card.id);
+
+    // Search by locator
+    const byLocator = cardRepo.list({ search: "Section 5.2" });
+    expect(byLocator.length).toBe(1);
+    expect(byLocator[0].id).toBe(card.id);
+
+    // Update keywords and locator
+    const updated = cardRepo.update(card.id, {
+      keywords: ["paxos", "consensus"],
+      sourceLocator: "Chapter 7",
+    });
+    expect(updated?.keywords).toEqual(["paxos", "consensus"]);
+    expect(updated?.sourceLocator).toBe("Chapter 7");
+
+    const reloaded = cardRepo.getById(card.id);
+    expect(reloaded?.keywords).toEqual(["paxos", "consensus"]);
+    expect(reloaded?.sourceLocator).toBe("Chapter 7");
   });
 });

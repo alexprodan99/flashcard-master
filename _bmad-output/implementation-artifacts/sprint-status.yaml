@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 08-30-2026 20:47
-last_updated: 09-10-2026 09:26
+last_updated: 09-20-2026 15:54
 project: flashcard-master
 project_key: NOKEY
 tracking_system: file-system
@@ -163,6 +163,15 @@ development_status:
   15-5-notion-ingestion-strategy: done
   15-6-interactive-notion-source-ui-and-monorepo-verification: done
   epic-15-retrospective: optional
+
+  epic-16: done
+  16-1-enriched-flashcard-schema-and-sqlite-migration: done
+  16-2-central-zod-to-provider-dialect-compiler: done
+  16-3-provider-adapters-native-structured-output-migration: done
+  16-4-progressive-sse-streaming-and-token-limit-retention: done
+  16-5-legacy-sanitizer-deprecation-and-monorepo-test-suite: done
+  16-6-question-explorer-keywords-and-anki-export-integration: done
+  epic-16-retrospective: done
 action_items:
   - id: "epic-14-retro-item-1-add-progressive-exponential-backoff-and"
     epic: 14

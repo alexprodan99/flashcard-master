@@ -41,6 +41,8 @@ export interface Flashcard {
   personaUsed: string;
   targetDeck: string;
   tags: string[];
+  keywords?: string[];
+  sourceLocator?: string;
   createdAt: string;
   updatedAt: string;
 }

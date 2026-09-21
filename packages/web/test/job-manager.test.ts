@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { createDatabaseClient, JobRepository } from "@flashcard-master/core";
 import { JobManager, type JobExecutionContext } from "../src/jobs/job-manager.js";
 
@@ -305,7 +305,7 @@ describe("JobManager", () => {
       await p1;
 
       // When isVerboseActive is false, debug log should not be printed
-      const output = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
+      const output = consoleSpy.mock.calls.map((c: any) => c[0]).join("\n");
       expect(output).toContain("[START]");
       expect(output).toContain("[INFO]");
       expect(output).toContain("Found 12 blocks");
@@ -331,7 +331,7 @@ describe("JobManager", () => {
 
       await p2;
 
-      const output2 = consoleSpy.mock.calls.map((c) => c[0]).join("\n");
+      const output2 = consoleSpy.mock.calls.map((c: any) => c[0]).join("\n");
       expect(output2).toContain("[DEBUG]");
       expect(output2).toContain("Crawling subpage depth 2");
     } finally {

@@ -31,7 +31,9 @@
         const inAnswer = c.answer.toLowerCase().includes(q);
         const inQuote = (c.sourceQuote || '').toLowerCase().includes(q);
         const inTags = (c.tags || []).some((t) => t.toLowerCase().includes(q));
-        return inQuestion || inAnswer || inQuote || inTags;
+        const inKeywords = (c.keywords || []).some((k) => k.toLowerCase().includes(q));
+        const inLocator = (c.sourceLocator || '').toLowerCase().includes(q);
+        return inQuestion || inAnswer || inQuote || inTags || inKeywords || inLocator;
       }
       return true;
     })
@@ -169,7 +171,7 @@
         <span class="search-icon">🔍</span>
         <input
           type="text"
-          placeholder="Search questions, answers, tags, or source quotes..."
+          placeholder="Search questions, answers, tags, keywords, or source quotes..."
           bind:value={explorerStore.searchQuery}
         />
         {#if explorerStore.searchQuery}
@@ -296,6 +298,9 @@
             <div class="card-badges">
               <span class="difficulty-badge {card.difficulty}">{card.difficulty}</span>
               <span class="deck-tag">📦 {card.targetDeck || 'Default'}</span>
+              {#if card.sourceLocator}
+                <span class="locator-badge" title="Source Locator">📍 {card.sourceLocator}</span>
+              {/if}
             </div>
           </div>
 
@@ -349,11 +354,20 @@
           {/if}
 
           <div class="card-footer">
-            <div class="tags-list">
+            <div class="meta-pills">
               {#if card.tags && card.tags.length > 0}
-                {#each card.tags as tag}
-                  <span class="tag-pill">#{tag}</span>
-                {/each}
+                <div class="tags-list">
+                  {#each card.tags as tag}
+                    <span class="tag-pill">#{tag}</span>
+                  {/each}
+                </div>
+              {/if}
+              {#if card.keywords && card.keywords.length > 0}
+                <div class="keywords-list">
+                  {#each card.keywords as keyword}
+                    <span class="keyword-pill">🏷️ {keyword}</span>
+                  {/each}
+                </div>
               {/if}
             </div>
             <button
@@ -655,6 +669,16 @@
     color: #94a3b8;
   }
 
+  .locator-badge {
+    font-size: 11px;
+    font-weight: 500;
+    color: #7dd3fc;
+    background: rgba(14, 165, 233, 0.15);
+    border: 1px solid rgba(14, 165, 233, 0.3);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+
   .card-question {
     display: flex;
     gap: 10px;
@@ -800,7 +824,15 @@
     border-top: 1px solid rgba(51, 65, 85, 0.5);
   }
 
-  .tags-list {
+  .meta-pills {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .tags-list,
+  .keywords-list {
     display: flex;
     flex-wrap: wrap;
     gap: 4px;
@@ -809,6 +841,15 @@
   .tag-pill {
     background: rgba(255, 255, 255, 0.05);
     color: #94a3b8;
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+
+  .keyword-pill {
+    background: rgba(99, 102, 241, 0.15);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    color: #a5b4fc;
     font-size: 11px;
     padding: 2px 6px;
     border-radius: 4px;

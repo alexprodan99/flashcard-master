@@ -11,6 +11,7 @@ export interface CardGenerationOptions {
   targetCountPerChunk?: number;
   chunkOptions?: TextChunkerOptions;
   enforceGrounding?: boolean;
+  onCardGenerated?: (card: GeneratedCardDraft) => void | Promise<void>;
 }
 
 export interface GeneratedCardDraft extends CardGenerationDraft {
@@ -111,15 +112,22 @@ export class CardGenerationService {
         const finalChunkDrafts = validDrafts.slice(0, targetCount);
 
         for (const draft of finalChunkDrafts) {
-          allDrafts.push({
+          const mapped: GeneratedCardDraft = {
             question: draft.question,
             answer: draft.answer,
             sourceQuote: draft.sourceQuote,
+            citation: draft.citation || draft.sourceQuote,
             difficulty: draft.difficulty || difficulty,
+            keywords: draft.keywords || [],
+            sourceLocator: draft.sourceLocator || "",
             sourceId: doc.sourceId,
             originUrl: doc.originUrl,
             documentTitle: doc.title,
-          });
+          };
+          allDrafts.push(mapped);
+          if (options.onCardGenerated) {
+            await options.onCardGenerated(mapped);
+          }
         }
       } catch (err: any) {
         console.warn(`[CardGenerationService] Error generating cards for chunk in doc "${doc.title}":`, err.message);

@@ -347,4 +347,86 @@ describe("WorkerExecutor", () => {
     expect(logs.some((l) => l.message.includes("Successfully compiled"))).toBe(true);
     expect(summary.documentCount).toBe(1);
   }, 15000);
+
+  it("progressively streams cards via ctx.emitCard and preserves keywords and sourceLocator in SQLite", async () => {
+    mockWorkerPath = path.join(tmpDir, "mock-stream-worker.js");
+    const scriptContent = `
+      import { parentPort } from "node:worker_threads";
+
+      parentPort.on("message", (msg) => {
+        if (msg.action === "START_TASK") {
+          parentPort.postMessage({
+            type: "COMMIT_CARDS",
+            jobId: msg.jobId,
+            stepNumber: 1,
+            stepTitle: "Chunk 1",
+            targetDeck: "Distributed",
+            sourceId: "src-distributed",
+            documentTitle: "Raft.md",
+            cards: [
+              {
+                question: "What is Raft?",
+                answer: "A consensus algorithm",
+                sourceQuote: "Raft is a consensus algorithm",
+                difficulty: "intermediate",
+                keywords: ["raft", "consensus", "distributed"],
+                sourceLocator: "Section 1, paragraph 2"
+              }
+            ]
+          });
+        }
+
+        if (msg.action === "COMMIT_CARDS_ACK") {
+          parentPort.postMessage({
+            type: "TASK_COMPLETE",
+            jobId: msg.jobId,
+            resultSummary: {
+              cardsCreated: msg.createdCount,
+              duplicatesSkipped: msg.duplicatesCount,
+            }
+          });
+        }
+      });
+    `;
+    fs.writeFileSync(mockWorkerPath, scriptContent, "utf8");
+
+    const db = createDatabaseClient({ inMemory: true });
+    const cardRepo = new FlashcardRepository(db);
+    const dedupService = new CardDeduplicationService();
+
+    const executor = new WorkerExecutor({
+      cardRepo,
+      dedupService,
+      workerScriptPath: mockWorkerPath,
+    });
+
+    const emittedCards: any[] = [];
+    const mockCtx: JobExecutionContext = {
+      jobId: "stream-job-1",
+      signal: new AbortController().signal,
+      updateProgress: () => {},
+      log: () => ({} as any),
+      setResultSummary: () => {},
+      emitCard: (card) => {
+        emittedCards.push(card);
+      },
+    };
+
+    const result = await executor.executeTask(
+      { type: "generation", payload: { documents: [], provider: "mock" } },
+      mockCtx
+    );
+
+    expect(result.cardsCreated).toBe(1);
+    expect(emittedCards.length).toBe(1);
+    expect(emittedCards[0].question).toBe("What is Raft?");
+    expect(emittedCards[0].keywords).toEqual(["raft", "consensus", "distributed"]);
+    expect(emittedCards[0].sourceLocator).toBe("Section 1, paragraph 2");
+
+    // Verify stored in SQLite
+    const inDb = cardRepo.list({ targetDeck: "Distributed" });
+    expect(inDb.length).toBe(1);
+    expect(inDb[0].keywords).toEqual(["raft", "consensus", "distributed"]);
+    expect(inDb[0].sourceLocator).toBe("Section 1, paragraph 2");
+  });
 });

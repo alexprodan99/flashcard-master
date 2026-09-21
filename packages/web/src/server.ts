@@ -1888,6 +1888,9 @@ export class WebServer {
             const onCancelled = (job: any) => {
               res.write(`event: job_cancelled\ndata: ${JSON.stringify(job)}\n\n`);
             };
+            const onCard = (cardData: any) => {
+              res.write(`event: card_created\ndata: ${JSON.stringify(cardData)}\n\n`);
+            };
 
             this.jobManager.on("job_created", onCreated);
             this.jobManager.on("job_status", onStatus);
@@ -1896,6 +1899,7 @@ export class WebServer {
             this.jobManager.on("job_completed", onCompleted);
             this.jobManager.on("job_failed", onFailed);
             this.jobManager.on("job_cancelled", onCancelled);
+            this.jobManager.on("card_created", onCard);
 
             const heartbeat = setInterval(() => {
               res.write(": ping\n\n");
@@ -1911,6 +1915,7 @@ export class WebServer {
                 this.jobManager.off("job_completed", onCompleted);
                 this.jobManager.off("job_failed", onFailed);
                 this.jobManager.off("job_cancelled", onCancelled);
+                this.jobManager.off("card_created", onCard);
               }
             });
             return;
@@ -1957,9 +1962,15 @@ export class WebServer {
                 res.write(`event: job_status\ndata: ${JSON.stringify(j)}\n\n`);
               }
             };
+            const onCard = (cardData: any) => {
+              if (cardData.jobId === jobId) {
+                res.write(`event: card_created\ndata: ${JSON.stringify(cardData)}\n\n`);
+              }
+            };
 
             this.jobManager.on("job_log", onLog);
             this.jobManager.on("job_status", onStatus);
+            this.jobManager.on("card_created", onCard);
 
             const heartbeat = setInterval(() => {
               res.write(": ping\n\n");
@@ -1970,6 +1981,7 @@ export class WebServer {
               if (this.jobManager) {
                 this.jobManager.off("job_log", onLog);
                 this.jobManager.off("job_status", onStatus);
+                this.jobManager.off("card_created", onCard);
               }
             });
             return;
@@ -2260,6 +2272,7 @@ export class WebServer {
                         limit,
                         targetDeckOverride,
                         enforceGrounding,
+                        timeoutMs: typeof body?.timeoutMs === "number" && body.timeoutMs > 0 ? body.timeoutMs : undefined,
                       },
                     },
                     ctx
@@ -2279,7 +2292,13 @@ export class WebServer {
 
             try {
               const createLLMFn = this.options.createLLMAdapterFn || createLLMAdapter;
-              const llm = createLLMFn({ provider, model, apiKey, baseUrl });
+              const llm = createLLMFn({
+                provider,
+                model,
+                apiKey,
+                baseUrl,
+                timeoutMs: typeof body?.timeoutMs === "number" && body.timeoutMs > 0 ? body.timeoutMs : undefined,
+              });
               const genService = new CardGenerationService(
                 llm,
                 undefined,

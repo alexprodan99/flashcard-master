@@ -140,6 +140,8 @@
       hasWarn: stepLogs.some((l) => l.level === 'warn'),
     }));
   });
+
+  let streamedCards = $derived(taskStore.getStreamedCardsForJob(job.id));
 </script>
 
 <div class="accordion-item" class:expanded class:status-running={job.status === 'running'} class:status-failed={job.status === 'failed'}>
@@ -227,11 +229,18 @@
 
       {#if (job.status === 'completed' || job.status === 'completed_with_warnings') && (job.resultSummary || (job as any).result)}
         {@const summary = job.resultSummary || (job as any).result || {}}
-        <div class="job-result-box">
-          <strong>🎉 Task Completed Successfully</strong>
+        <div class="job-result-box" class:warning-box={job.status === 'completed_with_warnings'}>
+          {#if job.status === 'completed_with_warnings'}
+            <div class="warning-title-row">
+              <span class="warning-badge">⚠️ Partial Output Retained</span>
+              <strong>Token limit reached during generation</strong>
+            </div>
+          {:else}
+            <strong>🎉 Task Completed Successfully</strong>
+          {/if}
           {#if job.type === 'generation' || (job.type as any) === 'generate'}
             <div class="result-stats">
-              <span>+{summary.cardsCreated || 0} cards generated</span>
+              <span>+{summary.cardsCreated || 0} cards preserved</span>
               <span>• {summary.duplicatesSkipped || 0} duplicates skipped</span>
             </div>
           {:else if job.type === 'sync_source' || job.type === 'sync_all' || (job.type as any) === 'sync'}
@@ -244,6 +253,36 @@
               <span>Saved file: {summary.filename || 'Export file ready'}</span>
             </div>
           {/if}
+        </div>
+      {/if}
+
+      {#if streamedCards.length > 0}
+        <div class="streamed-cards-section">
+          <div class="streamed-cards-header">
+            <span class="stream-pulse">●</span>
+            <h5>Live Streamed Cards ({streamedCards.length})</h5>
+          </div>
+          <div class="streamed-cards-list">
+            {#each streamedCards as card (card.id)}
+              <div class="streamed-card-item">
+                <div class="card-item-header">
+                  <span class="diff-badge {card.difficulty}">{card.difficulty}</span>
+                  {#if card.sourceLocator}
+                    <span class="locator-badge" title="Source Locator">📍 {card.sourceLocator}</span>
+                  {/if}
+                </div>
+                <div class="card-question"><strong>Q:</strong> {card.question}</div>
+                <div class="card-answer"><strong>A:</strong> {card.answer}</div>
+                {#if card.keywords && card.keywords.length > 0}
+                  <div class="keywords-list">
+                    {#each card.keywords as kw}
+                      <span class="keyword-pill">🏷️ {kw}</span>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+            {/each}
+          </div>
         </div>
       {/if}
 
@@ -541,11 +580,121 @@
     font-size: 12px;
   }
 
+  .job-result-box.warning-box {
+    background: rgba(234, 179, 8, 0.15);
+    border: 1px solid rgba(234, 179, 8, 0.35);
+    color: #fef08a;
+  }
+
+  .warning-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 2px;
+  }
+
+  .warning-badge {
+    background: rgba(234, 179, 8, 0.25);
+    color: #fde047;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    text-transform: uppercase;
+  }
+
   .result-stats {
     margin-top: 4px;
     font-size: 11px;
     display: flex;
     gap: 8px;
+  }
+
+  .streamed-cards-section {
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .streamed-cards-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .stream-pulse {
+    color: #22c55e;
+    animation: pulse 1.5s infinite;
+    font-size: 10px;
+  }
+
+  .streamed-cards-header h5 {
+    margin: 0;
+    font-size: 11px;
+    font-weight: 700;
+    color: #94a3b8;
+    text-transform: uppercase;
+  }
+
+  .streamed-cards-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 240px;
+    overflow-y: auto;
+  }
+
+  .streamed-card-item {
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 11px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .card-item-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+  }
+
+  .locator-badge {
+    color: #94a3b8;
+    font-family: monospace;
+    font-size: 10px;
+  }
+
+  .card-question {
+    color: #f1f5f9;
+  }
+
+  .card-answer {
+    color: #94a3b8;
+  }
+
+  .keywords-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 2px;
+  }
+
+  .keyword-pill {
+    background: rgba(99, 102, 241, 0.15);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    color: #c7d2fe;
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-weight: 500;
   }
 
   .pipeline-section {
