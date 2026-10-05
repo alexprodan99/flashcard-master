@@ -3,6 +3,7 @@ import path from "node:path";
 import fs from "node:fs";
 import {
   createDatabaseClient,
+  getDefaultDatabasePath,
   DataSourceRepository,
   SyncStateRepository,
   FlashcardRepository,
@@ -71,17 +72,13 @@ export interface AppOptions {
 }
 
 export function getDefaultDbPath(): string {
-  const dir = path.join(os.homedir(), ".flashcard-master");
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  return path.join(dir, "flashcards.db");
+  return getDefaultDatabasePath();
 }
 
 export function createAppContext(options: AppOptions = {}): AppContext {
   const db = options.inMemory
     ? createDatabaseClient({ inMemory: true })
-    : createDatabaseClient({ dbPath: options.dbPath || getDefaultDbPath() });
+    : createDatabaseClient({ dbPath: options.dbPath || getDefaultDatabasePath() });
 
   const sourceRepo = new DataSourceRepository(db);
   const syncRepo = new SyncStateRepository(db);

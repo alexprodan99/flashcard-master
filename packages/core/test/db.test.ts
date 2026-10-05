@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { createDatabaseClient } from "../src/storage/db.js";
+import {
+  createDatabaseClient,
+  getDefaultDatabasePath,
+  migrateLegacyDatabaseIfNeeded,
+} from "../src/storage/db.js";
 import { DataSourceSchema } from "../src/domain/models.js";
 import fs from "node:fs";
 import path from "node:path";
@@ -236,5 +240,106 @@ describe("SQLite Database Client", () => {
     expect(mixedCard.difficulty).toBe("mixed");
 
     migratedDb.close();
+  });
+
+  it("resolves canonical database path pointing to ~/.flashcard-master/data.sqlite", () => {
+    const canonical = getDefaultDatabasePath();
+    expect(canonical.endsWith(path.join(".flashcard-master", "data.sqlite"))).toBe(true);
+  });
+
+  it("migrates legacy flashcards.db to data.sqlite non-destructively preserving all records", () => {
+    const legacyDbPath = path.join(tempDir, "flashcards.db");
+    const canonicalDbPath = path.join(tempDir, "data.sqlite");
+
+    // 1. Create legacy DB with data
+    const legacyDb = createDatabaseClient({ dbPath: legacyDbPath });
+    legacyDb.prepare(`
+      INSERT INTO data_sources (id, name, type, uri, target_deck)
+      VALUES ('legacy-src-1', 'Legacy Tech Feed', 'rss', 'https://example.com/rss', 'Default')
+    `).run();
+    legacyDb.prepare(`
+      INSERT INTO flashcards (id, source_id, question, answer, source_quote, difficulty)
+      VALUES ('legacy-card-1', 'legacy-src-1', 'Legacy Q', 'Legacy A', 'Legacy quote', 'beginner')
+    `).run();
+    legacyDb.close();
+
+    expect(fs.existsSync(legacyDbPath)).toBe(true);
+    expect(fs.existsSync(canonicalDbPath)).toBe(false);
+
+    // 2. Open canonical database - should detect legacy and copy
+    const client = createDatabaseClient({ dbPath: canonicalDbPath });
+    expect(fs.existsSync(canonicalDbPath)).toBe(true);
+
+    const source = client.prepare("SELECT * FROM data_sources WHERE id = 'legacy-src-1'").get() as any;
+    expect(source).toBeDefined();
+    expect(source.name).toBe("Legacy Tech Feed");
+
+    const card = client.prepare("SELECT * FROM flashcards WHERE id = 'legacy-card-1'").get() as any;
+    expect(card).toBeDefined();
+    expect(card.question).toBe("Legacy Q");
+
+    // Verify WAL mode on canonical database
+    const journalMode = client.pragma("journal_mode", { simple: true });
+    expect(journalMode).toBe("wal");
+
+    client.close();
+    // Legacy file should also remain intact (non-destructive)
+    expect(fs.existsSync(legacyDbPath)).toBe(true);
+  });
+
+  it("does not overwrite data.sqlite if both legacy and canonical databases exist", () => {
+    const legacyDbPath = path.join(tempDir, "flashcards.db");
+    const canonicalDbPath = path.join(tempDir, "data.sqlite");
+
+    // 1. Create legacy DB
+    // 1. Create canonical DB first with value 'canonical'
+    const canonicalDb = createDatabaseClient({ dbPath: canonicalDbPath });
+    canonicalDb.prepare(`
+      INSERT INTO app_settings (key, value) VALUES ('version', 'canonical')
+    `).run();
+    canonicalDb.close();
+
+    // 2. Create legacy DB with value 'legacy'
+    const legacyDb = createDatabaseClient({ dbPath: legacyDbPath });
+    legacyDb.prepare(`
+      INSERT INTO app_settings (key, value) VALUES ('version', 'legacy')
+    `).run();
+    legacyDb.close();
+
+    // 3. Run migration helper - should detect canonical already exists and refuse to overwrite
+    const result = migrateLegacyDatabaseIfNeeded(legacyDbPath, canonicalDbPath);
+    expect(result).toBe(false);
+
+    // 4. Verify canonical DB was NOT overwritten
+    const checkDb = createDatabaseClient({ dbPath: canonicalDbPath });
+    const setting = checkDb.prepare("SELECT value FROM app_settings WHERE key = 'version'").get() as any;
+    expect(setting.value).toBe("canonical");
+    checkDb.close();
+  });
+
+  it("migrates legacy flashcards.db-wal to data.sqlite-wal when WAL sidecar exists", () => {
+    const legacyDbPath = path.join(tempDir, "flashcards.db");
+    const legacyWalPath = `${legacyDbPath}-wal`;
+    const canonicalDbPath = path.join(tempDir, "data.sqlite");
+    const canonicalWalPath = `${canonicalDbPath}-wal`;
+
+    // 1. Create legacy DB
+    const legacyDb = createDatabaseClient({ dbPath: legacyDbPath });
+    legacyDb.close();
+
+    // 2. Simulate WAL sidecar file
+    fs.writeFileSync(legacyWalPath, "simulated-wal-content");
+
+    expect(fs.existsSync(legacyDbPath)).toBe(true);
+    expect(fs.existsSync(legacyWalPath)).toBe(true);
+    expect(fs.existsSync(canonicalDbPath)).toBe(false);
+    expect(fs.existsSync(canonicalWalPath)).toBe(false);
+
+    // 3. Trigger migration
+    const migrated = migrateLegacyDatabaseIfNeeded(legacyDbPath, canonicalDbPath);
+    expect(migrated).toBe(true);
+    expect(fs.existsSync(canonicalDbPath)).toBe(true);
+    expect(fs.existsSync(canonicalWalPath)).toBe(true);
+    expect(fs.readFileSync(canonicalWalPath, "utf-8")).toBe("simulated-wal-content");
   });
 });

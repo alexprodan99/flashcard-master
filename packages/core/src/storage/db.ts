@@ -104,13 +104,94 @@ export interface DatabaseClientOptions {
   inMemory?: boolean;
 }
 
+export function migrateLegacyDatabaseIfNeeded(
+  legacyPath?: string,
+  canonicalPath?: string
+): boolean {
+  const home = os.homedir();
+  const defaultDir = path.join(home, ".flashcard-master");
+  const actualLegacy = legacyPath || path.join(defaultDir, "flashcards.db");
+  const actualCanonical = canonicalPath || path.join(defaultDir, "data.sqlite");
+  const tempCanonical = `${actualCanonical}.tmp`;
+
+  try {
+    if (fs.existsSync(actualLegacy) && !fs.existsSync(actualCanonical)) {
+      const destDir = path.dirname(actualCanonical);
+      if (!fs.existsSync(destDir)) {
+        fs.mkdirSync(destDir, { recursive: true });
+      }
+
+      // Clean up stale .tmp file if left over from a previous interrupted run
+      if (fs.existsSync(tempCanonical)) {
+        try {
+          fs.unlinkSync(tempCanonical);
+        } catch {}
+      }
+
+      // Safe atomic copy: copy to temporary file first
+      fs.copyFileSync(actualLegacy, tempCanonical);
+
+      // If legacy WAL/SHM files exist, copy them as well if present
+      const legacyWal = `${actualLegacy}-wal`;
+      const canonicalWal = `${actualCanonical}-wal`;
+      if (fs.existsSync(legacyWal) && !fs.existsSync(canonicalWal)) {
+        try {
+          fs.copyFileSync(legacyWal, canonicalWal);
+        } catch {}
+      }
+
+      const legacyShm = `${actualLegacy}-shm`;
+      const canonicalShm = `${actualCanonical}-shm`;
+      if (fs.existsSync(legacyShm) && !fs.existsSync(canonicalShm)) {
+        try {
+          fs.copyFileSync(legacyShm, canonicalShm);
+        } catch {}
+      }
+
+      // Atomic rename from .tmp to canonical destination
+      fs.renameSync(tempCanonical, actualCanonical);
+
+      return true;
+    } else if (fs.existsSync(actualLegacy) && fs.existsSync(actualCanonical)) {
+      // Both exist: if canonical database is already valid and populated (> 0 bytes),
+      // avoid spamming warning on every startup. Only warn if canonical is 0 bytes.
+      try {
+        const canonicalStats = fs.statSync(actualCanonical);
+        if (canonicalStats.size === 0) {
+          const legacyStats = fs.statSync(actualLegacy);
+          console.warn(
+            `[db] Warning: Canonical database (${actualCanonical}) is 0 bytes while legacy database (${actualLegacy}: ${legacyStats.size} bytes) exists. Please inspect databases manually.`
+          );
+        }
+      } catch {}
+    }
+  } catch (err) {
+    if (fs.existsSync(tempCanonical)) {
+      try {
+        fs.unlinkSync(tempCanonical);
+      } catch {}
+    }
+    console.warn(
+      `[db] Failed to migrate legacy database from ${actualLegacy} to ${actualCanonical}:`,
+      err
+    );
+  }
+
+  return false;
+}
+
 export function getDefaultDatabasePath(): string {
   const home = os.homedir();
   const dir = path.join(home, ".flashcard-master");
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
-  return path.join(dir, "data.sqlite");
+  const canonicalPath = path.join(dir, "data.sqlite");
+  const legacyPath = path.join(dir, "flashcards.db");
+
+  migrateLegacyDatabaseIfNeeded(legacyPath, canonicalPath);
+
+  return canonicalPath;
 }
 
 export function getDefaultMediaDirectory(): string {
@@ -132,6 +213,10 @@ export function createDatabaseClient(options: DatabaseClientOptions = {}): Datab
     const parentDir = path.dirname(dbLocation);
     if (!fs.existsSync(parentDir)) {
       fs.mkdirSync(parentDir, { recursive: true });
+    }
+    if (path.basename(dbLocation) === "data.sqlite") {
+      const legacyPath = path.join(parentDir, "flashcards.db");
+      migrateLegacyDatabaseIfNeeded(legacyPath, dbLocation);
     }
   }
 

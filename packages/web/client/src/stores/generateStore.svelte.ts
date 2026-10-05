@@ -6,10 +6,18 @@ import type {
   Flashcard,
 } from '../lib/types.js';
 
-const STORAGE_KEY = 'fc_generation_settings';
-const LEGACY_STORAGE_KEY = 'fcm_generator_settings';
+export const STORAGE_KEY = 'fc_generation_settings';
+export const LEGACY_STORAGE_KEY = 'fcm_generator_settings';
+export const SELECTION_STORAGE_KEY = 'fc_generation_selections';
 
-interface PersistedSettings {
+export interface PersistedSelections {
+  selectedDocIds: Record<string, boolean>;
+  selectedSourceIds: string[];
+  expandedSources: Record<string, boolean>;
+  sourceFilterQuery: Record<string, string>;
+}
+
+export interface PersistedSettings {
   provider: string;
   model: string;
   apiKey: string;
@@ -20,12 +28,31 @@ interface PersistedSettings {
   limit: number;
   targetDeck: string;
   enforceGrounding: boolean;
+  selectedDocIds?: Record<string, boolean>;
+  selectedSourceIds?: string[];
+  expandedSources?: Record<string, boolean>;
+  sourceFilterQuery?: Record<string, string>;
+}
+
+function getLocalStorage(): Storage | null {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      return window.localStorage;
+    }
+    if (typeof localStorage !== 'undefined') {
+      return localStorage;
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 function loadPersistedSettings(): Partial<PersistedSettings> {
-  if (typeof window === 'undefined') return {};
+  const storage = getLocalStorage();
+  if (!storage) return {};
   try {
-    const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY);
+    const raw = storage.getItem(STORAGE_KEY) || storage.getItem(LEGACY_STORAGE_KEY);
     if (!raw) return {};
     return JSON.parse(raw);
   } catch {
@@ -34,10 +61,47 @@ function loadPersistedSettings(): Partial<PersistedSettings> {
 }
 
 function savePersistedSettings(settings: PersistedSettings) {
-  if (typeof window === 'undefined') return;
+  const storage = getLocalStorage();
+  if (!storage) return;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-  } catch {}
+    storage.setItem(STORAGE_KEY, JSON.stringify(settings));
+  } catch {
+    // Graceful error handling (e.g. QuotaExceededError or SecurityError)
+  }
+}
+
+function loadPersistedSelections(): Partial<PersistedSelections> {
+  const storage = getLocalStorage();
+  if (!storage) return {};
+  try {
+    const raw = storage.getItem(SELECTION_STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+
+    // Fallback: check if stored inside settings storage
+    const settingsRaw = storage.getItem(STORAGE_KEY) || storage.getItem(LEGACY_STORAGE_KEY);
+    if (settingsRaw) {
+      const parsed = JSON.parse(settingsRaw);
+      return {
+        selectedDocIds: parsed.selectedDocIds,
+        selectedSourceIds: parsed.selectedSourceIds,
+        expandedSources: parsed.expandedSources,
+        sourceFilterQuery: parsed.sourceFilterQuery,
+      };
+    }
+  } catch {
+    return {};
+  }
+  return {};
+}
+
+function savePersistedSelections(selections: PersistedSelections) {
+  const storage = getLocalStorage();
+  if (!storage) return;
+  try {
+    storage.setItem(SELECTION_STORAGE_KEY, JSON.stringify(selections));
+  } catch {
+    // Graceful error handling (e.g. QuotaExceededError or SecurityError)
+  }
 }
 
 export class GenerateStore {
@@ -81,6 +145,28 @@ export class GenerateStore {
     if (typeof saved.limit === 'number') this.limit = saved.limit;
     if (saved.targetDeck !== undefined) this.targetDeck = saved.targetDeck;
     if (saved.enforceGrounding !== undefined) this.enforceGrounding = saved.enforceGrounding;
+
+    const savedSelections = loadPersistedSelections();
+
+    const rawDocIds = savedSelections.selectedDocIds || saved.selectedDocIds;
+    if (rawDocIds && typeof rawDocIds === 'object' && !Array.isArray(rawDocIds)) {
+      this.selectedDocIds = { ...rawDocIds };
+    }
+
+    const rawSourceIds = savedSelections.selectedSourceIds || saved.selectedSourceIds;
+    if (Array.isArray(rawSourceIds)) {
+      this.selectedSourceIds = [...rawSourceIds];
+    }
+
+    const rawExpanded = savedSelections.expandedSources || saved.expandedSources;
+    if (rawExpanded && typeof rawExpanded === 'object' && !Array.isArray(rawExpanded)) {
+      this.expandedSources = { ...rawExpanded };
+    }
+
+    const rawFilter = savedSelections.sourceFilterQuery || saved.sourceFilterQuery;
+    if (rawFilter && typeof rawFilter === 'object' && !Array.isArray(rawFilter)) {
+      this.sourceFilterQuery = { ...rawFilter };
+    }
   }
 
   save() {
@@ -95,6 +181,20 @@ export class GenerateStore {
       limit: this.limit,
       targetDeck: this.targetDeck,
       enforceGrounding: this.enforceGrounding,
+      selectedDocIds: this.selectedDocIds,
+      selectedSourceIds: this.selectedSourceIds,
+      expandedSources: this.expandedSources,
+      sourceFilterQuery: this.sourceFilterQuery,
+    });
+    this.saveSelections();
+  }
+
+  saveSelections() {
+    savePersistedSelections({
+      selectedDocIds: this.selectedDocIds,
+      selectedSourceIds: this.selectedSourceIds,
+      expandedSources: this.expandedSources,
+      sourceFilterQuery: this.sourceFilterQuery,
     });
   }
 
@@ -114,10 +214,12 @@ export class GenerateStore {
 
   toggleDoc(id: string) {
     this.selectedDocIds[id] = !this.selectedDocIds[id];
+    this.saveSelections();
   }
 
   setDocSelected(id: string, selected: boolean) {
     this.selectedDocIds[id] = selected;
+    this.saveSelections();
   }
 
   selectAllDocsForSource(sourceId: string, docIds: string[]) {
@@ -127,6 +229,7 @@ export class GenerateStore {
     if (!this.selectedSourceIds.includes(sourceId)) {
       this.selectedSourceIds = [...this.selectedSourceIds, sourceId];
     }
+    this.saveSelections();
   }
 
   deselectAllDocsForSource(sourceId: string, docIds: string[]) {
@@ -134,6 +237,7 @@ export class GenerateStore {
       this.selectedDocIds[id] = false;
     });
     this.selectedSourceIds = this.selectedSourceIds.filter((id) => id !== sourceId);
+    this.saveSelections();
   }
 
   toggleSource(sourceId: string, docIds?: string[]) {
@@ -153,10 +257,52 @@ export class GenerateStore {
         });
       }
     }
+    this.saveSelections();
   }
 
   toggleExpandSource(sourceId: string) {
     this.expandedSources[sourceId] = !this.expandedSources[sourceId];
+    this.saveSelections();
+  }
+
+  setSourceExpanded(sourceId: string, expanded: boolean) {
+    this.expandedSources[sourceId] = expanded;
+    this.saveSelections();
+  }
+
+  setSourceFilterQuery(sourceId: string, query: string) {
+    this.sourceFilterQuery[sourceId] = query;
+    this.saveSelections();
+  }
+
+  resetSelections() {
+    this.selectedDocIds = {};
+    this.selectedSourceIds = [];
+    this.saveSelections();
+  }
+
+  pruneDeadIds(validSourceIds: string[], validDocIds?: string[]) {
+    const validSrcSet = new Set(validSourceIds);
+    this.selectedSourceIds = this.selectedSourceIds.filter((id) => validSrcSet.has(id));
+    for (const id of Object.keys(this.expandedSources)) {
+      if (!validSrcSet.has(id)) {
+        delete this.expandedSources[id];
+      }
+    }
+    for (const id of Object.keys(this.sourceFilterQuery)) {
+      if (!validSrcSet.has(id)) {
+        delete this.sourceFilterQuery[id];
+      }
+    }
+    if (validDocIds) {
+      const validDocSet = new Set(validDocIds);
+      for (const id of Object.keys(this.selectedDocIds)) {
+        if (!validDocSet.has(id)) {
+          delete this.selectedDocIds[id];
+        }
+      }
+    }
+    this.saveSelections();
   }
 
   startGenerating(jobId?: string | null) {
@@ -180,11 +326,6 @@ export class GenerateStore {
     if (error) {
       this.errorMessage = error;
     }
-  }
-
-  resetSelections() {
-    this.selectedDocIds = {};
-    this.selectedSourceIds = [];
   }
 }
 

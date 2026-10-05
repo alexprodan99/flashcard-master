@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { GenerateStore, generateStore } from '../client/src/stores/generateStore.svelte.js';
+import { GenerateStore, generateStore, SELECTION_STORAGE_KEY, STORAGE_KEY } from '../client/src/stores/generateStore.svelte.js';
 import { SourcesStore, sourcesStore } from '../client/src/stores/sourcesStore.svelte.js';
 import { ExplorerStore } from '../client/src/stores/explorerStore.svelte.js';
 import { ExportStore } from '../client/src/stores/exportStore.svelte.js';
 import { TaskStore } from '../client/src/stores/taskStore.svelte.js';
 import { SettingsStore, settingsStore } from '../client/src/stores/settingsStore.svelte.js';
-import type { DataSource, Flashcard, GenerationResult, Job } from '../client/src/lib/types.js';
+import { loadCachedStats, saveCachedStats, DASHBOARD_STATS_STORAGE_KEY } from '../client/src/lib/dashboard-cache.js';
+import type { DataSource, Flashcard, GenerationResult, Job, DashboardStats } from '../client/src/lib/types.js';
 
 describe('Svelte 5 Universal Client Stores (Epic 14.4)', () => {
   let localStorageMock: Record<string, string> = {};
@@ -107,6 +108,93 @@ describe('Svelte 5 Universal Client Stores (Epic 14.4)', () => {
       expect(store.generationResult?.cardsCreated).toBe(2);
       expect(store.createdCards.length).toBe(1);
       expect(store.createdCards[0].question).toBe('What is SQLite WAL?');
+    });
+
+    it('persists active document selections, source accordions, and filter queries across reloads', () => {
+      const store1 = new GenerateStore();
+
+      store1.selectAllDocsForSource('src-10', ['doc-1', 'doc-2']);
+      store1.toggleExpandSource('src-10');
+      store1.setSourceFilterQuery('src-10', 'concurrency');
+
+      // Verify localStorage storage
+      const raw = localStorageMock[SELECTION_STORAGE_KEY];
+      expect(raw).toBeDefined();
+      const parsed = JSON.parse(raw);
+      expect(parsed.selectedSourceIds).toContain('src-10');
+      expect(parsed.selectedDocIds['doc-1']).toBe(true);
+      expect(parsed.selectedDocIds['doc-2']).toBe(true);
+      expect(parsed.expandedSources['src-10']).toBe(true);
+      expect(parsed.sourceFilterQuery['src-10']).toBe('concurrency');
+
+      // Simulate page reload (F5) by creating a new store instance with existing localStorage
+      const store2 = new GenerateStore();
+      expect(store2.selectedSourceIds).toContain('src-10');
+      expect(store2.selectedDocIds['doc-1']).toBe(true);
+      expect(store2.selectedDocIds['doc-2']).toBe(true);
+      expect(store2.expandedSources['src-10']).toBe(true);
+      expect(store2.sourceFilterQuery['src-10']).toBe('concurrency');
+    });
+
+    it('prunes dead source and document IDs safely', () => {
+      const store = new GenerateStore();
+      store.selectAllDocsForSource('src-valid', ['doc-valid', 'doc-dead']);
+      store.selectAllDocsForSource('src-dead', ['doc-other']);
+      store.toggleExpandSource('src-valid');
+      store.toggleExpandSource('src-dead');
+      store.setSourceFilterQuery('src-dead', 'query');
+
+      expect(store.selectedSourceIds).toContain('src-dead');
+      expect(store.expandedSources['src-dead']).toBe(true);
+
+      // Prune dead sources and documents
+      store.pruneDeadIds(['src-valid'], ['doc-valid']);
+
+      expect(store.selectedSourceIds).toEqual(['src-valid']);
+      expect(store.expandedSources['src-dead']).toBeUndefined();
+      expect(store.sourceFilterQuery['src-dead']).toBeUndefined();
+      expect(store.selectedDocIds['doc-dead']).toBeUndefined();
+      expect(store.selectedDocIds['doc-valid']).toBe(true);
+
+      // Verify pruned state was persisted
+      const parsed = JSON.parse(localStorageMock[SELECTION_STORAGE_KEY]);
+      expect(parsed.selectedSourceIds).toEqual(['src-valid']);
+      expect(parsed.expandedSources['src-dead']).toBeUndefined();
+    });
+
+    it('handles localStorage errors gracefully without crashing (SecurityError / QuotaExceededError)', () => {
+      // Stub setItem to throw QuotaExceededError
+      vi.stubGlobal('localStorage', {
+        getItem: (key: string) => localStorageMock[key] || null,
+        setItem: () => {
+          throw new Error('QuotaExceededError: DOM Exception 22');
+        },
+        removeItem: vi.fn(),
+        clear: vi.fn(),
+      });
+
+      const store = new GenerateStore();
+      // Should not throw
+      expect(() => {
+        store.selectAllDocsForSource('src-1', ['doc-1']);
+        store.toggleDoc('doc-1');
+        store.toggleExpandSource('src-1');
+        store.setSourceFilterQuery('src-1', 'test');
+        store.save();
+      }).not.toThrow();
+
+      // Stub getItem to throw SecurityError (private browsing)
+      vi.stubGlobal('localStorage', {
+        getItem: () => {
+          throw new Error('SecurityError: The operation is insecure.');
+        },
+        setItem: vi.fn(),
+        removeItem: vi.fn(),
+        clear: vi.fn(),
+      });
+
+      // Instantiating with blocked localStorage should not crash
+      expect(() => new GenerateStore()).not.toThrow();
     });
   });
 
@@ -806,4 +894,77 @@ describe('Svelte 5 Universal Client Stores (Epic 14.4)', () => {
       expect(store.testResults.anthropic).toBeNull();
     });
   });
+
+  describe('Dashboard Telemetry SWR Cache (Story 17.1)', () => {
+    it('persists and restores dashboard stats via loadCachedStats and saveCachedStats', () => {
+      const mockStats: DashboardStats = {
+        totalCards: 42,
+        totalSources: 3,
+        activeSources: 2,
+        totalDecks: 2,
+        decks: { Systems: 42 },
+        difficulties: { beginner: 10, intermediate: 20, expert: 12, mixed: 0 },
+        recentSources: [
+          {
+            id: 's1',
+            name: 'Distributed Systems',
+            type: 'local',
+            uri: '/books/dist.md',
+            targetDeck: 'Systems',
+            tags: [],
+            isActive: true,
+            createdAt: '',
+            updatedAt: '',
+          },
+        ],
+      };
+
+      // Save via exported helper
+      saveCachedStats(mockStats);
+
+      // Verify raw storage
+      const raw = localStorageMock[DASHBOARD_STATS_STORAGE_KEY];
+      expect(raw).toBeDefined();
+
+      // Read back via exported helper (simulating initial SWR render on reload)
+      const loaded = loadCachedStats();
+      expect(loaded).toBeDefined();
+      expect(loaded?.totalCards).toBe(42);
+      expect(loaded?.activeSources).toBe(2);
+      expect(loaded?.recentSources[0].name).toBe('Distributed Systems');
+    });
+
+    it('tolerates corrupt JSON in dashboard cache gracefully', () => {
+      localStorageMock[DASHBOARD_STATS_STORAGE_KEY] = '{invalid-json';
+      expect(loadCachedStats()).toBeNull();
+    });
+
+    it('tolerates localStorage throwing SecurityError or QuotaExceededError', () => {
+      vi.stubGlobal('localStorage', {
+        getItem: () => {
+          throw new Error('SecurityError: The operation is insecure.');
+        },
+        setItem: () => {
+          throw new Error('QuotaExceededError: DOM Exception 22');
+        },
+        removeItem: vi.fn(),
+        clear: vi.fn(),
+      });
+
+      expect(() => loadCachedStats()).not.toThrow();
+      expect(loadCachedStats()).toBeNull();
+
+      const mockStats: DashboardStats = {
+        totalCards: 1,
+        totalSources: 1,
+        activeSources: 1,
+        totalDecks: 1,
+        decks: { Default: 1 },
+        difficulties: { beginner: 1, intermediate: 0, expert: 0, mixed: 0 },
+        recentSources: [],
+      };
+      expect(() => saveCachedStats(mockStats)).not.toThrow();
+    });
+  });
 });
+

@@ -46,6 +46,15 @@
     generateStore.save();
   });
 
+  // Auto-save selections, expanded accordions, and filters to localStorage
+  $effect(() => {
+    JSON.stringify(generateStore.selectedDocIds);
+    JSON.stringify(generateStore.selectedSourceIds);
+    JSON.stringify(generateStore.expandedSources);
+    JSON.stringify(generateStore.sourceFilterQuery);
+    generateStore.saveSelections();
+  });
+
   async function loadSources() {
     try {
       const all = await fetchSources();
@@ -84,6 +93,10 @@
           generateStore.selectedSourceIds = sources.map((s) => s.id);
         }
       }
+
+      // Prune dead source IDs that no longer exist
+      const activeSourceIds = sources.map((s) => s.id);
+      generateStore.pruneDeadIds(activeSourceIds);
 
       // If any sources are currently marked as expanded, ensure their documents are loaded and up to date
       for (const s of sources) {
