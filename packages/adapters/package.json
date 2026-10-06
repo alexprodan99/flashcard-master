@@ -25,7 +25,9 @@
     "fast-glob": "^3.3.3",
     "fast-xml-parser": "^4.5.3",
     "jsdom": "^26.0.0",
-    "jszip": "^3.10.1"
+    "jszip": "^3.10.1",
+    "mammoth": "^1.13.0",
+    "unpdf": "^1.8.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",

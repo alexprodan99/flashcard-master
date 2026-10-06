@@ -19,6 +19,19 @@ describe("htmlToCleanText and normalizeCleanText", () => {
     expect(clean).toMatch(/# Introduction to Raft\n\nRaft is a consensus/);
   });
 
+  it("converts inline formatting elements like strong, b, em, i, and a links when preserveInlineFormatting is enabled", () => {
+    const html = `
+      <p>This is <b>bold</b> and <strong>strong</strong> text.</p>
+      <p>This is <i>italic</i> and <em>emphasized</em> text.</p>
+      <p>Visit <a href="https://example.com/docs">our documentation</a> for details.</p>
+    `;
+
+    const clean = htmlToCleanText(html, undefined, { preserveInlineFormatting: true });
+    expect(clean).toContain("This is **bold** and **strong** text.");
+    expect(clean).toContain("This is *italic* and *emphasized* text.");
+    expect(clean).toContain("Visit [our documentation](https://example.com/docs) for details.");
+  });
+
   it("converts pre and code blocks while preserving code indentation and language", () => {
     const html = `
       <p>Example code:</p>
@@ -93,6 +106,40 @@ describe("htmlToCleanText and normalizeCleanText", () => {
     const clean = htmlToCleanText(html, "https://example.com/docs/intro");
     expect(clean).toContain("![Architecture Diagram](https://example.com/assets/diagram.png)");
     expect(clean).toContain("![](https://example.com/photo.jpg)");
+  });
+
+  it("converts HTML tables to GitHub Flavored Markdown (GFM) tables", () => {
+    const html = `
+      <h1>Features</h1>
+      <table>
+        <thead>
+          <tr>
+            <th>Format</th>
+            <th>Parser</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>PDF</td>
+            <td>unpdf</td>
+            <td>Supported</td>
+          </tr>
+          <tr>
+            <td>DOCX</td>
+            <td>mammoth</td>
+            <td>Supported</td>
+          </tr>
+        </tbody>
+      </table>
+    `;
+
+    const clean = htmlToCleanText(html);
+    expect(clean).toContain("# Features");
+    expect(clean).toContain("| Format | Parser | Status |");
+    expect(clean).toContain("| --- | --- | --- |");
+    expect(clean).toContain("| PDF | unpdf | Supported |");
+    expect(clean).toContain("| DOCX | mammoth | Supported |");
   });
 
   it("handles empty or null inputs gracefully", () => {
