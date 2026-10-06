@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS documents (
     raw_content TEXT,
     content_hash TEXT,
     word_count INTEGER DEFAULT 0,
+    start_page INTEGER DEFAULT NULL,
+    end_page INTEGER DEFAULT NULL,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
@@ -341,6 +343,13 @@ export function runMigrations(db: Database.Database): void {
 
   if (docsRow && docsRow.sql && docsRow.sql.includes("_data_sources_old")) {
     db.transaction(() => {
+      const oldCols = (db.prepare("PRAGMA table_info(documents)").all() as Array<{ name: string }>).map((c) =>
+        c.name.toLowerCase()
+      );
+      const hasRaw = oldCols.includes("raw_content") ? "raw_content" : "NULL AS raw_content";
+      const hasStart = oldCols.includes("start_page") ? "start_page" : "NULL AS start_page";
+      const hasEnd = oldCols.includes("end_page") ? "end_page" : "NULL AS end_page";
+
       db.exec("ALTER TABLE documents RENAME TO _documents_old;");
       db.exec(`
         CREATE TABLE documents (
@@ -352,13 +361,15 @@ export function runMigrations(db: Database.Database): void {
             raw_content TEXT,
             content_hash TEXT,
             word_count INTEGER DEFAULT 0,
+            start_page INTEGER DEFAULT NULL,
+            end_page INTEGER DEFAULT NULL,
             created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
             updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
         );
       `);
       db.exec(`
-        INSERT INTO documents (id, source_id, title, url, text_content, raw_content, content_hash, word_count, created_at, updated_at)
-        SELECT id, source_id, title, url, text_content, raw_content, content_hash, word_count, created_at, updated_at FROM _documents_old;
+        INSERT INTO documents (id, source_id, title, url, text_content, raw_content, content_hash, word_count, start_page, end_page, created_at, updated_at)
+        SELECT id, source_id, title, url, text_content, ${hasRaw}, content_hash, word_count, ${hasStart}, ${hasEnd}, created_at, updated_at FROM _documents_old;
       `);
       db.exec("DROP TABLE _documents_old;");
       db.exec("CREATE INDEX IF NOT EXISTS idx_documents_source_id ON documents(source_id);");
@@ -400,6 +411,8 @@ export function runMigrations(db: Database.Database): void {
         raw_content TEXT,
         content_hash TEXT,
         word_count INTEGER DEFAULT 0,
+        start_page INTEGER DEFAULT NULL,
+        end_page INTEGER DEFAULT NULL,
         created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
         updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
@@ -413,13 +426,29 @@ export function runMigrations(db: Database.Database): void {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_source_url ON documents(source_id, url) WHERE url IS NOT NULL;
   `);
 
-  // 7. Ensure raw_content column exists in documents table for existing databases
+  // 7. Ensure raw_content, start_page, and end_page columns exist in documents table for existing databases
   const docCols = db.prepare("PRAGMA table_info(documents)").all() as Array<{ name: string }>;
-  if (docCols && docCols.length > 0 && !docCols.some((c) => c.name === "raw_content")) {
-    try {
-      db.exec("ALTER TABLE documents ADD COLUMN raw_content TEXT;");
-    } catch {
-      // Catch "duplicate column" or other non-fatal migration errors cleanly
+  if (docCols && docCols.length > 0) {
+    if (!docCols.some((c) => c.name === "raw_content")) {
+      try {
+        db.exec("ALTER TABLE documents ADD COLUMN raw_content TEXT;");
+      } catch {
+        // Catch "duplicate column" or other non-fatal migration errors cleanly
+      }
+    }
+    if (!docCols.some((c) => c.name === "start_page")) {
+      try {
+        db.exec("ALTER TABLE documents ADD COLUMN start_page INTEGER DEFAULT NULL;");
+      } catch {
+        // Catch "duplicate column" or other non-fatal migration errors cleanly
+      }
+    }
+    if (!docCols.some((c) => c.name === "end_page")) {
+      try {
+        db.exec("ALTER TABLE documents ADD COLUMN end_page INTEGER DEFAULT NULL;");
+      } catch {
+        // Catch "duplicate column" or other non-fatal migration errors cleanly
+      }
     }
   }
 

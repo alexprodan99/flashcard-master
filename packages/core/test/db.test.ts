@@ -342,4 +342,58 @@ describe("SQLite Database Client", () => {
     expect(fs.existsSync(canonicalWalPath)).toBe(true);
     expect(fs.readFileSync(canonicalWalPath, "utf-8")).toBe("simulated-wal-content");
   });
+
+  it("migrates existing database missing start_page and end_page without data loss", () => {
+    const dbFile = path.join(tempDir, "legacy-docs.sqlite");
+    const rawDb = new (require("better-sqlite3"))(dbFile);
+
+    // Create minimal data_sources table
+    rawDb.exec(`
+      CREATE TABLE data_sources (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL,
+        uri TEXT NOT NULL,
+        target_deck TEXT NOT NULL DEFAULT 'Default',
+        tags TEXT NOT NULL DEFAULT '[]',
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+      );
+      INSERT INTO data_sources (id, name, type, uri) VALUES ('src-1', 'Source 1', 'local', 'file:///test');
+
+      CREATE TABLE documents (
+        id TEXT PRIMARY KEY,
+        source_id TEXT NOT NULL REFERENCES data_sources(id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        url TEXT,
+        text_content TEXT NOT NULL,
+        raw_content TEXT,
+        content_hash TEXT,
+        word_count INTEGER DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+      );
+      INSERT INTO documents (id, source_id, title, text_content) VALUES ('doc-legacy', 'src-1', 'Old Doc', 'Legacy text content');
+    `);
+    rawDb.close();
+
+    // Now open via createDatabaseClient which executes runMigrations
+    const migratedDb = createDatabaseClient({ dbPath: dbFile });
+
+    const columns = migratedDb.prepare("PRAGMA table_info(documents)").all() as Array<{ name: string }>;
+    const colNames = columns.map((c) => c.name);
+    expect(colNames).toContain("start_page");
+    expect(colNames).toContain("end_page");
+
+    // Verify data was preserved
+    const row = migratedDb.prepare("SELECT * FROM documents WHERE id = 'doc-legacy'").get() as any;
+    expect(row).toBeDefined();
+    expect(row.title).toBe("Old Doc");
+    expect(row.text_content).toBe("Legacy text content");
+    expect(row.start_page).toBeNull();
+    expect(row.end_page).toBeNull();
+
+    migratedDb.close();
+  });
 });

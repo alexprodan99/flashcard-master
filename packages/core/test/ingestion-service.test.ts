@@ -135,4 +135,77 @@ describe("IngestionService", () => {
     await service.syncSource(source.id);
     expect(docRepo.listBySourceId(source.id).length).toBe(2);
   });
+
+  it("slices multi-page document into discrete subdocument rows during syncSource when slicing is configured", async () => {
+    const source = sourceRepo.create({ name: "PDF Textbook Source", type: "rss", uri: "file:///books/math" });
+
+    const pageTexts: string[] = [];
+    for (let i = 1; i <= 10; i++) {
+      pageTexts.push(`<!-- page: ${i} -->\n\nPage ${i} content on mathematics.`);
+    }
+
+    mockStrategy.mockItems = [
+      {
+        id: "pdf-doc-1",
+        sourceId: source.id,
+        title: "Calculus.pdf",
+        rawContent: pageTexts.join("\n\n"),
+        guid: "guid-pdf-1",
+        originUrl: "file:///books/math/Calculus.pdf",
+      },
+    ];
+
+    const result = await service.syncSource(source.id, {
+      slicing: {
+        mode: "budget",
+        pagesPerChunk: 5,
+      },
+    });
+
+    // Should generate 2 subdocuments (pages 1-5 and pages 6-10)
+    expect(result.newCount).toBe(2);
+    expect(result.newDocuments.length).toBe(2);
+    expect(result.newDocuments[0].startPage).toBe(1);
+    expect(result.newDocuments[0].endPage).toBe(5);
+
+    const savedDocs = docRepo.listBySourceId(source.id);
+    expect(savedDocs.length).toBe(2);
+    expect(savedDocs.map((d) => d.title)).toContain("Calculus.pdf - Pages 1-5");
+    expect(savedDocs.map((d) => d.title)).toContain("Calculus.pdf - Pages 6-10");
+    expect(savedDocs.find((d) => d.startPage === 1)?.url).toBe("file:///books/math/Calculus.pdf#page=1-5");
+    expect(savedDocs.find((d) => d.startPage === 6)?.url).toBe("file:///books/math/Calculus.pdf#page=6-10");
+  });
+
+  it("populates startPage: 1 and endPage: totalPages when page markers exist and slicing is not configured", async () => {
+    const source = sourceRepo.create({ name: "Single PDF Source", type: "rss", uri: "file:///books/bio" });
+
+    const pageTexts: string[] = [];
+    for (let i = 1; i <= 8; i++) {
+      pageTexts.push(`<!-- page: ${i} -->\n\nPage ${i} content on biology.`);
+    }
+
+    mockStrategy.mockItems = [
+      {
+        id: "pdf-doc-single",
+        sourceId: source.id,
+        title: "Biology.pdf",
+        rawContent: pageTexts.join("\n\n"),
+        guid: "guid-bio-1",
+        originUrl: "file:///books/bio/Biology.pdf",
+      },
+    ];
+
+    const result = await service.syncSource(source.id);
+
+    expect(result.newCount).toBe(1);
+    expect(result.newDocuments.length).toBe(1);
+    expect(result.newDocuments[0].startPage).toBe(1);
+    expect(result.newDocuments[0].endPage).toBe(8);
+
+    const savedDocs = docRepo.listBySourceId(source.id);
+    expect(savedDocs.length).toBe(1);
+    expect(savedDocs[0].title).toBe("Biology.pdf");
+    expect(savedDocs[0].startPage).toBe(1);
+    expect(savedDocs[0].endPage).toBe(8);
+  });
 });

@@ -2200,6 +2200,8 @@ export class WebServer {
                 title: string;
                 textContent: string;
                 originUrl?: string;
+                startPage?: number | null;
+                endPage?: number | null;
               }> = [];
 
               if (Array.isArray(body.documentIds) && body.documentIds.length > 0 && this.options.documentRepo) {
@@ -2212,6 +2214,8 @@ export class WebServer {
                       title: doc.title,
                       textContent: doc.textContent,
                       originUrl: doc.url || undefined,
+                      startPage: doc.startPage ?? null,
+                      endPage: doc.endPage ?? null,
                     });
                   }
                 }
@@ -2236,6 +2240,8 @@ export class WebServer {
                         title: doc.title,
                         textContent: doc.textContent,
                         originUrl: doc.url || undefined,
+                        startPage: doc.startPage ?? null,
+                        endPage: doc.endPage ?? null,
                       });
                     }
                   }
@@ -2322,6 +2328,8 @@ export class WebServer {
                     textContent: doc.textContent,
                     originUrl: doc.url || undefined,
                     contentHash: doc.contentHash || "",
+                    startPage: doc.startPage ?? null,
+                    endPage: doc.endPage ?? null,
                   };
                   const drafts = await genService.generateFromDocument(cleanDoc, {
                     difficulty,
@@ -2349,6 +2357,8 @@ export class WebServer {
                       sourceQuote: draft.sourceQuote,
                       sourceOriginUrl: draft.originUrl || doc.url || (parentSource?.type === "web" || parentSource?.type === "rss" || parentSource?.type === "sitemap" || parentSource?.type === "llms-txt" ? parentSource.uri : null),
                       documentTitle: draft.documentTitle || doc.title,
+                      keywords: draft.keywords || [],
+                      sourceLocator: draft.sourceLocator || "",
                       difficulty: draft.difficulty,
                       personaUsed: persona,
                       targetDeck,
@@ -2407,6 +2417,8 @@ export class WebServer {
                         sourceQuote: draft.sourceQuote,
                         sourceOriginUrl: draft.originUrl || (s.type === "web" || s.type === "rss" || s.type === "sitemap" || s.type === "llms-txt" ? s.uri : null),
                         documentTitle: draft.documentTitle || s.name,
+                        keywords: draft.keywords || [],
+                        sourceLocator: draft.sourceLocator || "",
                         difficulty: draft.difficulty,
                         personaUsed: persona,
                         targetDeck,

@@ -1,9 +1,11 @@
 import type { DataSource, RawDocument, CleanTextDocument, SyncState, Flashcard, DifficultyLevel, ImageQuality, Setting, ProviderVerificationResult, SecretProvider, JobLogLevel } from "../domain/models.js";
+import type { DocumentSlicingOptions } from "../services/document-slicing-engine.js";
 
 export interface IngestionOptions {
   onLog?: (level: JobLogLevel, message: string, details?: Record<string, any>) => void;
   signal?: AbortSignal;
   verbose?: boolean;
+  slicing?: DocumentSlicingOptions;
 }
 
 export interface IngestionStrategy {

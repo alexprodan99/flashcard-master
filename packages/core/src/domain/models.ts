@@ -110,6 +110,8 @@ export interface CleanTextDocument {
   rawContent?: string;
   originUrl?: string;
   contentHash: string;
+  startPage?: number | null;
+  endPage?: number | null;
 }
 
 export const DiscoveredDocumentSchema = z.object({
@@ -121,6 +123,8 @@ export const DiscoveredDocumentSchema = z.object({
   rawContent: z.string().nullable().optional(),
   contentHash: z.string().nullable().optional(),
   wordCount: z.number().int().nonnegative().default(0),
+  startPage: z.number().int().nullable().optional(),
+  endPage: z.number().int().nullable().optional(),
   createdAt: z.string().datetime().optional(),
   updatedAt: z.string().datetime().optional(),
 });

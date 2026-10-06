@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { CardGenerationService } from "../src/services/card-generation-service.js";
+import { CardGenerationService, formatCardSourceLocator } from "../src/services/card-generation-service.js";
 import type { LLMProviderPort, CardGenerationDraft } from "../src/ports/index.js";
 import type { CleanTextDocument } from "../src/domain/models.js";
 
@@ -180,5 +180,74 @@ describe("CardGenerationService", () => {
     expect(drafts.length).toBe(1);
     expect(capturedPrompt).toContain("TASK: Synthesize exactly 3 comprehensive DEEP-DIVE flashcards");
     expect(capturedPrompt).toContain("DEEP-DIVE PEDAGOGICAL RULES");
+  });
+
+  describe("formatCardSourceLocator", () => {
+    it("formats single page coordinates with draft locator", () => {
+      const locator = formatCardSourceLocator("Calculus.pdf", 14, 14, "Section 2.1");
+      expect(locator).toBe("Calculus.pdf - Page 14, Section 2.1");
+    });
+
+    it("formats single page coordinates without draft locator", () => {
+      const locator = formatCardSourceLocator("Calculus.pdf", 14, 14, "");
+      expect(locator).toBe("Calculus.pdf - Page 14");
+    });
+
+    it("formats multi-page range coordinates with draft locator", () => {
+      const locator = formatCardSourceLocator("Physics.pdf", 20, 25, "Section 3.4");
+      expect(locator).toBe("Physics.pdf - Pages 20-25, Section 3.4");
+    });
+
+    it("avoids duplicate prefix if draft locator already contains doc title while retaining page coordinates", () => {
+      const locator = formatCardSourceLocator("Calculus.pdf", 14, 14, "Calculus.pdf - Section 2.1");
+      expect(locator).toBe("Calculus.pdf - Page 14, Section 2.1");
+    });
+
+    it("avoids duplicate prefix if draft locator already contains doc title without pages", () => {
+      const locator = formatCardSourceLocator("Calculus.pdf", null, null, "Calculus.pdf - Section 2.1");
+      expect(locator).toBe("Calculus.pdf - Section 2.1");
+    });
+
+    it("formats doc title without pages if page numbers are absent", () => {
+      const locator = formatCardSourceLocator("Notes", null, null, "Section 1");
+      expect(locator).toBe("Notes - Section 1");
+    });
+
+    it("does not duplicate page part if document title already contains page", () => {
+      const locator = formatCardSourceLocator("Calculus.pdf - Page 14", 14, 14, "Section 2.1");
+      expect(locator).toBe("Calculus.pdf - Page 14 - Section 2.1");
+    });
+  });
+
+  it("propagates startPage and endPage into card sourceLocator during generation", async () => {
+    const mockProvider: LLMProviderPort = {
+      providerName: "locator-llm",
+      async generateQAPairs(): Promise<CardGenerationDraft[]> {
+        return [
+          {
+            question: "What is the derivative of sin(x)?",
+            answer: "cos(x)",
+            sourceQuote: "The derivative of sin(x) is cos(x).",
+            sourceLocator: "Section 2.1",
+            difficulty: "intermediate",
+          },
+        ];
+      },
+    };
+
+    const service = new CardGenerationService(mockProvider);
+    const subdoc: CleanTextDocument = {
+      id: "doc-sub",
+      sourceId: "source-sub",
+      title: "Calculus.pdf",
+      textContent: "The derivative of sin(x) is cos(x).",
+      contentHash: "hash-calc",
+      startPage: 14,
+      endPage: 14,
+    };
+
+    const drafts = await service.generateFromDocument(subdoc);
+    expect(drafts.length).toBe(1);
+    expect(drafts[0].sourceLocator).toBe("Calculus.pdf - Page 14, Section 2.1");
   });
 });

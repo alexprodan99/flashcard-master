@@ -175,6 +175,8 @@ if (parentPort) {
         textContent: doc.textContent,
         originUrl: doc.originUrl,
         contentHash: "",
+        startPage: doc.startPage ?? null,
+        endPage: doc.endPage ?? null,
       };
 
       let docCreatedCount = 0;

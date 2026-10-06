@@ -21,6 +21,8 @@ export interface GenerationTaskPayload {
     title: string;
     textContent: string;
     originUrl?: string;
+    startPage?: number | null;
+    endPage?: number | null;
   }>;
   provider: string;
   model?: string;
@@ -142,6 +144,8 @@ export type WorkerOutboundMessage =
         textContent: string;
         contentHash: string;
         wordCount: number;
+        startPage?: number | null;
+        endPage?: number | null;
       }>;
     }
   | {
