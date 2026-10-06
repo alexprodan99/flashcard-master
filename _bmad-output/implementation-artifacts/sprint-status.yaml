@@ -177,7 +177,7 @@ development_status:
   17-1-database-path-unification-and-localstorage-state-persistence: done
   17-2-pure-js-pdf-and-docx-parsing-adapters: done
   17-3-configurable-document-slicing-engine-and-catalog-integration: done
-  17-4-remote-media-localization-and-packaging-for-epub-exports: ready-for-dev
+  17-4-remote-media-localization-and-packaging-for-epub-exports: done
   17-5-decoupled-async-background-worker-ingestion-pipeline: ready-for-dev
   17-6-ui-and-cli-slicing-controls-and-monorepo-test-suite: ready-for-dev
   epic-17-retrospective: optional

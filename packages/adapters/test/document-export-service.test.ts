@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { DocumentExportService } from "../src/export/document-export-service.js";
 import { type DiscoveredDocument, MediaService } from "@flashcard-master/core";
 import JSZip from "jszip";
@@ -692,6 +692,470 @@ describe("DocumentExportService", () => {
 
       const diskBytes = await fs.readFile(outputPath);
       expect(diskBytes.length).toBe((result.content as Buffer).length);
+    });
+
+    describe("Remote Media Localization & Packaging for EPUB Exports (Story 17.4)", () => {
+      it("localizes remote Markdown image from RSS fixture (Milan Jovanović .NET Weekly) into EPUB", async () => {
+        const fakePngBuffer = Buffer.from("fake-png-binary-data");
+        const mockFetch = vi.fn().mockImplementation(async (url: string) => {
+          if (url === "https://milanjovanovic.tech/assets/diagram.png") {
+            return new Response(fakePngBuffer, {
+              status: 200,
+              headers: { "Content-Type": "image/png" },
+            });
+          }
+          return new Response("Not Found", { status: 404 });
+        });
+
+        const mediaService = new MediaService({
+          mediaDir: path.join(tempDir, "media"),
+          customFetch: mockFetch as any,
+          optimizeWebp: false,
+        });
+
+        const rssDocs: DiscoveredDocument[] = [
+          {
+            id: "milan-post-1",
+            sourceId: "milan-rss",
+            title: ".NET Weekly #128: Modular Monolith Architecture",
+            url: "https://milanjovanovic.tech/blog/modular-monolith-architecture",
+            textContent:
+              "In this issue, we explore modular monolith patterns.\n\n![Modular Monolith Architecture](https://milanjovanovic.tech/assets/diagram.png)\n\nKey benefits include simpler deployments.",
+            wordCount: 20,
+          },
+        ];
+
+        const mediaExporter = new DocumentExportService(mediaService);
+        const result = await mediaExporter.export(rssDocs, {
+          format: "epub",
+          sourceName: ".NET Weekly",
+        });
+
+        const zip = await JSZip.loadAsync(result.content as Buffer);
+        const files = Object.keys(zip.files);
+        const packagedImage = files.find((f) => f.startsWith("OEBPS/images/") && f.endsWith(".png"));
+        expect(packagedImage).toBeDefined();
+
+        const imageFilename = path.basename(packagedImage!);
+        const chapterXhtml = await zip.file("OEBPS/chapter_1.xhtml")!.async("string");
+        expect(chapterXhtml).toContain(`<img src="images/${imageFilename}" alt="Modular Monolith Architecture" />`);
+        expect(chapterXhtml).not.toContain("https://milanjovanovic.tech/assets/diagram.png");
+
+        const opfContent = await zip.file("OEBPS/content.opf")!.async("string");
+        expect(opfContent).toContain(`href="images/${imageFilename}" media-type="image/png"`);
+      });
+
+      it("localizes remote HTML <img> tags and registers in content.opf", async () => {
+        const fakeWebpBuffer = Buffer.from("fake-webp-binary-data");
+        const mockFetch = vi.fn().mockResolvedValue(
+          new Response(fakeWebpBuffer, {
+            status: 200,
+            headers: { "Content-Type": "image/webp" },
+          })
+        );
+
+        const mediaService = new MediaService({
+          mediaDir: path.join(tempDir, "media"),
+          customFetch: mockFetch as any,
+          optimizeWebp: false,
+        });
+
+        const htmlDocs: DiscoveredDocument[] = [
+          {
+            id: "doc-html-1",
+            sourceId: "src-1",
+            title: "Performance Metrics",
+            textContent:
+              'Quarterly performance breakdown:\n\n<img src="https://example.com/chart.webp" alt="Performance Chart" />\n\nAs seen above, throughput improved.',
+            wordCount: 15,
+          },
+        ];
+
+        const mediaExporter = new DocumentExportService(mediaService);
+        const result = await mediaExporter.export(htmlDocs, {
+          format: "epub",
+          sourceName: "Metrics Report",
+        });
+
+        const zip = await JSZip.loadAsync(result.content as Buffer);
+        const files = Object.keys(zip.files);
+        const packagedImage = files.find((f) => f.startsWith("OEBPS/images/") && f.endsWith(".webp"));
+        expect(packagedImage).toBeDefined();
+
+        const imageFilename = path.basename(packagedImage!);
+        const chapterXhtml = await zip.file("OEBPS/chapter_1.xhtml")!.async("string");
+        expect(chapterXhtml).toContain(`<img src="images/${imageFilename}" alt="Performance Chart" />`);
+        expect(chapterXhtml).not.toContain("https://example.com/chart.webp");
+
+        const opfContent = await zip.file("OEBPS/content.opf")!.async("string");
+        expect(opfContent).toContain(`href="images/${imageFilename}" media-type="image/webp"`);
+      });
+
+      it("deduplicates identical remote URLs across multiple documents into a single download and manifest entry", async () => {
+        let fetchCount = 0;
+        const fakeLogoBuffer = Buffer.from("fake-logo-png-data");
+        const mockFetch = vi.fn().mockImplementation(async () => {
+          fetchCount++;
+          return new Response(fakeLogoBuffer, {
+            status: 200,
+            headers: { "Content-Type": "image/png" },
+          });
+        });
+
+        const mediaService = new MediaService({
+          mediaDir: path.join(tempDir, "media"),
+          customFetch: mockFetch as any,
+          optimizeWebp: false,
+        });
+
+        const sharedUrl = "https://example.com/company-logo.png";
+        const multiDocs: DiscoveredDocument[] = [
+          {
+            id: "d1",
+            sourceId: "s1",
+            title: "Chapter 1",
+            textContent: `Header:\n\n![Logo](${sharedUrl})\n\nContent 1`,
+            wordCount: 5,
+          },
+          {
+            id: "d2",
+            sourceId: "s1",
+            title: "Chapter 2",
+            textContent: `Header:\n\n![Logo](${sharedUrl})\n\nContent 2`,
+            wordCount: 5,
+          },
+          {
+            id: "d3",
+            sourceId: "s1",
+            title: "Chapter 3",
+            textContent: `Header:\n\n![Logo](${sharedUrl})\n\nContent 3`,
+            wordCount: 5,
+          },
+        ];
+
+        const mediaExporter = new DocumentExportService(mediaService);
+        const result = await mediaExporter.export(multiDocs, {
+          format: "epub",
+          sourceName: "Book with Shared Logo",
+        });
+
+        expect(fetchCount).toBe(1);
+
+        const zip = await JSZip.loadAsync(result.content as Buffer);
+        const imageFiles = Object.keys(zip.files).filter(
+          (f) => f.startsWith("OEBPS/images/") && !zip.files[f].dir
+        );
+        expect(imageFiles).toHaveLength(1);
+
+        const imageFilename = path.basename(imageFiles[0]);
+
+        for (let ch = 1; ch <= 3; ch++) {
+          const chContent = await zip.file(`OEBPS/chapter_${ch}.xhtml`)!.async("string");
+          expect(chContent).toContain(`<img src="images/${imageFilename}" alt="Logo" />`);
+          expect(chContent).not.toContain(sharedUrl);
+        }
+
+        const opfContent = await zip.file("OEBPS/content.opf")!.async("string");
+        const manifestItemMatches = opfContent.match(/href="images\/[^"]+"/g);
+        expect(manifestItemMatches).toHaveLength(1);
+      });
+
+      it("handles 404 or network failure gracefully by rendering alt-text placeholder without crashing", async () => {
+        const mockFailingFetch = vi.fn().mockResolvedValue(
+          new Response("Not Found", { status: 404 })
+        );
+
+        const mediaService = new MediaService({
+          mediaDir: path.join(tempDir, "media"),
+          customFetch: mockFailingFetch as any,
+        });
+
+        const docWith404: DiscoveredDocument[] = [
+          {
+            id: "doc-broken",
+            sourceId: "src-1",
+            title: "Broken Image Article",
+            textContent:
+              "Here is an illustration:\n\n![Broken Diagram](https://example.com/missing-diagram.png)\n\nAnd some accompanying text.",
+            wordCount: 12,
+          },
+        ];
+
+        const mediaExporter = new DocumentExportService(mediaService);
+        const result = await mediaExporter.export(docWith404, {
+          format: "epub",
+          sourceName: "Resilient Book",
+        });
+
+        expect(result).toBeDefined();
+        const zip = await JSZip.loadAsync(result.content as Buffer);
+
+        // No image should be packaged in OEBPS/images/
+        const imageFiles = Object.keys(zip.files).filter((f) => f.startsWith("OEBPS/images/"));
+        expect(imageFiles).toHaveLength(0);
+
+        // Chapter XHTML must degrade gracefully to placeholder retaining alt text
+        const chapterXhtml = await zip.file("OEBPS/chapter_1.xhtml")!.async("string");
+        expect(chapterXhtml).toContain("[Image: Broken Diagram]");
+        expect(chapterXhtml).toContain("image-placeholder");
+        expect(chapterXhtml).not.toContain("https://example.com/missing-diagram.png");
+
+        // Manifest must not contain broken image item
+        const opfContent = await zip.file("OEBPS/content.opf")!.async("string");
+        expect(opfContent).not.toContain('media-type="image/');
+      });
+
+      it("handles remote URLs with query parameters cleanly without corrupted filenames", async () => {
+        const fakeJpegBuffer = Buffer.from("fake-jpeg-binary-data");
+        const mockFetch = vi.fn().mockResolvedValue(
+          new Response(fakeJpegBuffer, {
+            status: 200,
+            headers: { "Content-Type": "image/jpeg" },
+          })
+        );
+
+        const mediaService = new MediaService({
+          mediaDir: path.join(tempDir, "media"),
+          customFetch: mockFetch as any,
+          optimizeWebp: false,
+        });
+
+        const docWithQueryParams: DiscoveredDocument[] = [
+          {
+            id: "doc-query",
+            sourceId: "src-1",
+            title: "Dynamic CDN Photo",
+            textContent:
+              "Dynamic asset:\n\n![Portrait](https://example.com/photo.jpg?size=large&v=2&cache=0)",
+            wordCount: 5,
+          },
+        ];
+
+        const mediaExporter = new DocumentExportService(mediaService);
+        const result = await mediaExporter.export(docWithQueryParams, {
+          format: "epub",
+          sourceName: "Photo Album",
+        });
+
+        const zip = await JSZip.loadAsync(result.content as Buffer);
+        const imageFiles = Object.keys(zip.files).filter(
+          (f) => f.startsWith("OEBPS/images/") && !zip.files[f].dir
+        );
+        expect(imageFiles).toHaveLength(1);
+        expect(imageFiles[0]).not.toContain("?");
+        expect(imageFiles[0]).not.toContain("&");
+        expect(imageFiles[0].endsWith(".jpg")).toBe(true);
+
+        const imageFilename = path.basename(imageFiles[0]);
+        const chapterXhtml = await zip.file("OEBPS/chapter_1.xhtml")!.async("string");
+        expect(chapterXhtml).toContain(`<img src="images/${imageFilename}" alt="Portrait" />`);
+        expect(chapterXhtml).not.toContain("?size=large");
+      });
+
+      it("registers correct MIME types for WebP, PNG, JPEG, SVG, and GIF in content.opf", async () => {
+        const mediaService = new MediaService({
+          mediaDir: path.join(tempDir, "media"),
+          optimizeWebp: false,
+        });
+
+        const assetWebp = await mediaService.saveMedia(Buffer.from("webp-data"), "image/webp");
+        const assetPng = await mediaService.saveMedia(Buffer.from("png-data"), "image/png");
+        const assetJpg = await mediaService.saveMedia(Buffer.from("jpg-data"), "image/jpeg");
+        const assetSvg = await mediaService.saveMedia(Buffer.from("<svg></svg>"), "image/svg+xml");
+        const assetGif = await mediaService.saveMedia(Buffer.from("gif-data"), "image/gif");
+
+        const mixedDocs: DiscoveredDocument[] = [
+          {
+            id: "doc-mixed",
+            sourceId: "s1",
+            title: "Media Gallery",
+            textContent: `All formats:
+![WebP](/api/media/${assetWebp.filename})
+![PNG](/api/media/${assetPng.filename})
+![JPG](/api/media/${assetJpg.filename})
+![SVG](/api/media/${assetSvg.filename})
+![GIF](/api/media/${assetGif.filename})`,
+            wordCount: 10,
+          },
+        ];
+
+        const mediaExporter = new DocumentExportService(mediaService);
+        const result = await mediaExporter.export(mixedDocs, {
+          format: "epub",
+          sourceName: "Format Gallery",
+        });
+
+        const zip = await JSZip.loadAsync(result.content as Buffer);
+        const opf = await zip.file("OEBPS/content.opf")!.async("string");
+
+        expect(opf).toContain(`href="images/${assetWebp.filename}" media-type="image/webp"`);
+        expect(opf).toContain(`href="images/${assetPng.filename}" media-type="image/png"`);
+        expect(opf).toContain(`href="images/${assetJpg.filename}" media-type="image/jpeg"`);
+        expect(opf).toContain(`href="images/${assetSvg.filename}" media-type="image/svg+xml"`);
+        expect(opf).toContain(`href="images/${assetGif.filename}" media-type="image/gif"`);
+      });
+
+      it("handles missing MediaService instance gracefully without crash or null pointer error", async () => {
+        const exporterWithoutMedia = new DocumentExportService();
+        const docs: DiscoveredDocument[] = [
+          {
+            id: "doc-nomedia",
+            sourceId: "src-1",
+            title: "Offline Article",
+            textContent: "Illustration:\n\n![Offline Diagram](https://example.com/unreachable.png)",
+            wordCount: 5,
+          },
+        ];
+
+        const result = await exporterWithoutMedia.export(docs, {
+          format: "epub",
+          sourceName: "Standalone Book",
+        });
+
+        expect(result).toBeDefined();
+        const zip = await JSZip.loadAsync(result.content as Buffer);
+        const chapterXhtml = await zip.file("OEBPS/chapter_1.xhtml")!.async("string");
+        expect(chapterXhtml).toContain("[Image: Offline Diagram]");
+        expect(chapterXhtml).not.toContain("https://example.com/unreachable.png");
+      });
+
+      it("prevents URL prefix collisions by sorting remote URLs in descending length order", async () => {
+        const fakePng1 = Buffer.from("png-short-url");
+        const fakePng2 = Buffer.from("png-long-url");
+
+        const mockFetch = vi.fn().mockImplementation((url: string) => {
+          if (url === "https://example.com/photo.png?v=2") {
+            return Promise.resolve(new Response(fakePng2, { status: 200, headers: { "Content-Type": "image/png" } }));
+          }
+          if (url === "https://example.com/photo.png") {
+            return Promise.resolve(new Response(fakePng1, { status: 200, headers: { "Content-Type": "image/png" } }));
+          }
+          return Promise.resolve(new Response("Not found", { status: 404 }));
+        });
+
+        const mediaService = new MediaService({
+          mediaDir: path.join(tempDir, "media"),
+          customFetch: mockFetch as any,
+          optimizeWebp: false,
+        });
+
+        const docWithCollidingUrls: DiscoveredDocument[] = [
+          {
+            id: "doc-collision",
+            sourceId: "src-1",
+            title: "Prefix Collision Doc",
+            textContent: "Short URL:\n\n![Short](https://example.com/photo.png)\n\nLong URL:\n\n![Long](https://example.com/photo.png?v=2)",
+            wordCount: 8,
+          },
+        ];
+
+        const mediaExporter = new DocumentExportService(mediaService);
+        const result = await mediaExporter.export(docWithCollidingUrls, {
+          format: "epub",
+          sourceName: "Collision Book",
+        });
+
+        const zip = await JSZip.loadAsync(result.content as Buffer);
+        const chapterXhtml = await zip.file("OEBPS/chapter_1.xhtml")!.async("string");
+
+        // Both URLs should be cleanly rewritten without leaving leftover ?v=2 text
+        expect(chapterXhtml).not.toContain("https://example.com/photo.png");
+        expect(chapterXhtml).not.toContain("?v=2");
+        expect(chapterXhtml).toMatch(/<img src="images\/[a-f0-9]+\.png" alt="Short" \/>/);
+        expect(chapterXhtml).toMatch(/<img src="images\/[a-f0-9]+\.png" alt="Long" \/>/);
+      });
+
+      it("degrades failed remote HTML img tag with quotes in alt text to placeholder gracefully", async () => {
+        const mockFailingFetch = vi.fn().mockResolvedValue(new Response("Not Found", { status: 404 }));
+        const mediaService = new MediaService({
+          mediaDir: path.join(tempDir, "media"),
+          customFetch: mockFailingFetch as any,
+        });
+
+        const docWithBrokenHtmlImg: DiscoveredDocument[] = [
+          {
+            id: "doc-broken-html",
+            sourceId: "src-1",
+            title: "Broken HTML Doc",
+            textContent: '<img src="https://example.com/failed.png" alt="John\'s Architecture Diagram" />',
+            wordCount: 5,
+          },
+        ];
+
+        const mediaExporter = new DocumentExportService(mediaService);
+        const result = await mediaExporter.export(docWithBrokenHtmlImg, {
+          format: "epub",
+          sourceName: "Broken HTML Book",
+        });
+
+        const zip = await JSZip.loadAsync(result.content as Buffer);
+        const chapterXhtml = await zip.file("OEBPS/chapter_1.xhtml")!.async("string");
+        expect(chapterXhtml).toContain("[Image: John&apos;s Architecture Diagram]");
+        expect(chapterXhtml).toContain("image-placeholder");
+        expect(chapterXhtml).not.toContain("https://example.com/failed.png");
+      });
+
+      it("parses Markdown image titles cleanly without leaking title into src", async () => {
+        const fakePng = Buffer.from("png-with-title");
+        const mockFetch = vi.fn().mockResolvedValue(new Response(fakePng, { status: 200, headers: { "Content-Type": "image/png" } }));
+        const mediaService = new MediaService({
+          mediaDir: path.join(tempDir, "media"),
+          customFetch: mockFetch as any,
+          optimizeWebp: false,
+        });
+
+        const docWithTitle: DiscoveredDocument[] = [
+          {
+            id: "doc-title",
+            sourceId: "src-1",
+            title: "Image Title Doc",
+            textContent: '![Diagram](https://example.com/architecture.png "Figure 1: System Architecture")',
+            wordCount: 5,
+          },
+        ];
+
+        const mediaExporter = new DocumentExportService(mediaService);
+        const result = await mediaExporter.export(docWithTitle, {
+          format: "epub",
+          sourceName: "Title Book",
+        });
+
+        const zip = await JSZip.loadAsync(result.content as Buffer);
+        const chapterXhtml = await zip.file("OEBPS/chapter_1.xhtml")!.async("string");
+        expect(chapterXhtml).toContain("<figcaption>Figure 1: System Architecture</figcaption>");
+        expect(chapterXhtml).not.toContain('"Figure 1');
+        expect(chapterXhtml).toMatch(/<img src="images\/[a-f0-9]+\.png" alt="Diagram" \/>/);
+      });
+
+      it("degrades missing local media references in EPUB to placeholder", async () => {
+        const mediaService = new MediaService({
+          mediaDir: path.join(tempDir, "media"),
+        });
+
+        const docWithMissingLocal: DiscoveredDocument[] = [
+          {
+            id: "doc-missing-local",
+            sourceId: "src-1",
+            title: "Missing Local Doc",
+            textContent: "Local missing:\n\n![Missing Local Graphic](/api/media/does-not-exist.png)",
+            wordCount: 5,
+          },
+        ];
+
+        const mediaExporter = new DocumentExportService(mediaService);
+        const result = await mediaExporter.export(docWithMissingLocal, {
+          format: "epub",
+          sourceName: "Missing Local Book",
+        });
+
+        const zip = await JSZip.loadAsync(result.content as Buffer);
+        const chapterXhtml = await zip.file("OEBPS/chapter_1.xhtml")!.async("string");
+        expect(chapterXhtml).toContain("[Image: Missing Local Graphic]");
+        expect(chapterXhtml).not.toContain("images/does-not-exist.png");
+
+        const opfContent = await zip.file("OEBPS/content.opf")!.async("string");
+        expect(opfContent).not.toContain("does-not-exist.png");
+      });
     });
   });
 });

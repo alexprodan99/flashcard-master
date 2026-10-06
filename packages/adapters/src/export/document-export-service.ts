@@ -1060,25 +1060,56 @@ export class DocumentExportService {
   }
 
   private formatInlineMarkdownXhtml(text: string): string {
-    let escaped = this.escapeXml(text);
+    const imgPlaceholders: string[] = [];
+    const protectedText = text.replace(/<img\b([^>]*?)\/?>/gi, (_m, attrs) => {
+      const srcMatch = attrs.match(/\bsrc=(['"])(.*?)\1/i) || attrs.match(/\bsrc=([^\s>]+)/i);
+      const altMatch = attrs.match(/\balt=(['"])(.*?)\1/i);
+      const src = srcMatch ? (srcMatch[2] ?? srcMatch[1]).trim() : "";
+      const alt = altMatch ? altMatch[2].trim() : "";
+      const idx = imgPlaceholders.length;
+      imgPlaceholders.push(
+        `<img src="${this.escapeXml(src)}" alt="${this.escapeXml(alt)}" />`
+      );
+      return `___XHTML_IMG_${idx}___`;
+    });
+
+    let escaped = this.escapeXml(protectedText);
     // Inline code: `code`
     escaped = escaped.replace(/`([^`]+)`/g, "<code>$1</code>");
     // Bold: **text** or __text__
     escaped = escaped.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
     escaped = escaped.replace(/__([^_]+)__/g, "<strong>$1</strong>");
+    // Handle inline missing image placeholders before italic *...*
+    escaped = escaped.replace(
+      /\*\[Image:\s*([^\]]*)\]\*/g,
+      (_match, alt) => {
+        return `<span class="image-placeholder">[Image: ${this.escapeXml(
+          alt.trim() || "Image unavailable"
+        )}]</span>`;
+      }
+    );
     // Italic: *text* or _text_
     escaped = escaped.replace(/\*([^*]+)\*/g, "<em>$1</em>");
     escaped = escaped.replace(/_([^_]+)_/g, "<em>$1</em>");
-    // Markdown image: ![alt](url)
-    escaped = escaped.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_match, alt, src) => {
-      const figcaption = alt ? `<figcaption>${this.escapeXml(alt)}</figcaption>` : "";
-      return `<figure class="doc-figure"><img src="${src}" alt="${this.escapeXml(alt)}" />${figcaption}</figure>`;
-    });
+    // Markdown image: ![alt](url) or ![alt](url "title")
+    escaped = escaped.replace(
+      /!\[([^\]]*)\]\(([^\s")]+)(?:\s+(['"])(.*?)\3)?\)/g,
+      (_match, alt, rawSrc, _quote, title) => {
+        const src = rawSrc.trim();
+        const displayCaption = title ? title.trim() : alt ? alt.trim() : "";
+        const figcaption = displayCaption ? `<figcaption>${this.escapeXml(displayCaption)}</figcaption>` : "";
+        return `<figure class="doc-figure"><img src="${src}" alt="${this.escapeXml(alt.trim())}" />${figcaption}</figure>`;
+      }
+    );
     // Markdown link: [label](url)
     escaped = escaped.replace(
       /(?<!\!)\[([^\]]+)\]\((https?:\/\/[^\s)]+|\/[^\s)]+|\.\/[^\s)]+|images\/[^\s)]+)\)/g,
       '<a href="$2">$1 ↗</a>'
     );
+    // Restore protected HTML img tags
+    for (let i = 0; i < imgPlaceholders.length; i++) {
+      escaped = escaped.replace(`___XHTML_IMG_${i}___`, imgPlaceholders[i]);
+    }
     return escaped;
   }
 
@@ -1121,15 +1152,46 @@ export class DocumentExportService {
         continue;
       }
 
-      const imgMatch = block.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
+      const imgMatch = block.match(/^!\[([^\]]*)\]\(([^\s")]+)(?:\s+(['"])(.*?)\3)?\)$/);
       if (imgMatch) {
         const alt = imgMatch[1].trim();
         const src = imgMatch[2].trim();
-        const figcaption = alt ? `<figcaption>${this.escapeXml(alt)}</figcaption>` : "";
+        const title = imgMatch[4] ? imgMatch[4].trim() : "";
+        const displayCaption = title || alt;
+        const figcaption = displayCaption ? `<figcaption>${this.escapeXml(displayCaption)}</figcaption>` : "";
         xhtmlBlocks.push(
           `<figure class="doc-figure"><img src="${this.escapeXml(src)}" alt="${this.escapeXml(
             alt
           )}" />${figcaption}</figure>`
+        );
+        continue;
+      }
+
+      const htmlImgMatch = block.match(/^<img\b([^>]*?)\/?>$/i);
+      if (htmlImgMatch) {
+        const attrs = htmlImgMatch[1];
+        const srcMatch = attrs.match(/\bsrc=(['"])(.*?)\1/i) || attrs.match(/\bsrc=([^\s>]+)/i);
+        const altMatch = attrs.match(/\balt=(['"])(.*?)\1/i);
+        if (srcMatch) {
+          const src = (srcMatch[2] ?? srcMatch[1]).trim();
+          const alt = altMatch ? altMatch[2].trim() : "";
+          const figcaption = alt ? `<figcaption>${this.escapeXml(alt)}</figcaption>` : "";
+          xhtmlBlocks.push(
+            `<figure class="doc-figure"><img src="${this.escapeXml(src)}" alt="${this.escapeXml(
+              alt
+            )}" />${figcaption}</figure>`
+          );
+          continue;
+        }
+      }
+
+      const missingImgMatch = block.match(/^\*\[Image:\s*([^\]]*)\]\*$/);
+      if (missingImgMatch) {
+        const alt = missingImgMatch[1].trim();
+        xhtmlBlocks.push(
+          `<figure class="doc-figure doc-figure-missing"><span class="image-placeholder">[Image: ${this.escapeXml(
+            alt || "Image unavailable"
+          )}]</span></figure>`
         );
         continue;
       }
@@ -1294,6 +1356,17 @@ figure.doc-figure img {
   max-width: 100%;
   height: auto;
 }
+figure.doc-figure-missing {
+  border: 1px dashed #cccccc;
+  background-color: #fafafa;
+  padding: 1.5em 1em;
+  border-radius: 4px;
+}
+.image-placeholder {
+  font-style: italic;
+  color: #777777;
+  font-size: 0.9em;
+}
 figcaption {
   font-size: 0.85em;
   color: #666666;
@@ -1356,14 +1429,26 @@ nav li {
           ];
 
     // 4. Media scanning & packaging into OEBPS/images/
-    const mediaRegex = /(?:(?:\/api\/media\/)|(?:api\/media\/))([a-zA-Z0-9_.-]+)/g;
+    const localMediaRegex = /(?:(?:\/api\/media\/)|(?:api\/media\/))([a-zA-Z0-9_.-]+)/g;
+    const remoteMdImageRegex = /!\[([^\]]*)\]\((https?:\/\/[^\s")]+)(?:\s+["'][^"']*["'])?\)/g;
+    const remoteHtmlImageRegex = /<img\b[^>]*?\bsrc=(['"])(https?:\/\/[^\s>]+?)\1[^>]*\/?>/gi;
+
     const referencedMedia = new Set<string>();
+    const remoteImageUrls = new Set<string>();
 
     effectiveDocs.forEach((doc) => {
       const text = doc.textContent || "";
-      const matches = Array.from(text.matchAll(mediaRegex));
-      for (const m of matches) {
+      const localMatches = Array.from(text.matchAll(localMediaRegex));
+      for (const m of localMatches) {
         referencedMedia.add(m[1]);
+      }
+      const mdMatches = Array.from(text.matchAll(remoteMdImageRegex));
+      for (const m of mdMatches) {
+        remoteImageUrls.add(m[2]);
+      }
+      const htmlMatches = Array.from(text.matchAll(remoteHtmlImageRegex));
+      for (const m of htmlMatches) {
+        remoteImageUrls.add(m[2]);
       }
     });
 
@@ -1382,11 +1467,114 @@ nav li {
       }
     }
 
+    const urlToFilenameMap = new Map<string, string | null>();
+    if (this.mediaService && remoteImageUrls.size > 0) {
+      for (const remoteUrl of remoteImageUrls) {
+        try {
+          const asset =
+            typeof this.mediaService.fetchAndCacheMedia === "function"
+              ? await this.mediaService.fetchAndCacheMedia(remoteUrl)
+              : await this.mediaService.downloadAndSave(remoteUrl);
+
+          if (asset && asset.filename) {
+            const mediaBuffer = await this.mediaService.readMedia(asset.filename);
+            if (mediaBuffer) {
+              zip.file(`OEBPS/images/${asset.filename}`, mediaBuffer);
+              packagedImages.add(asset.filename);
+              urlToFilenameMap.set(remoteUrl, asset.filename);
+              continue;
+            }
+          }
+          console.warn(`[DocumentExportService] Failed to download or read remote image: ${remoteUrl}`);
+          urlToFilenameMap.set(remoteUrl, null);
+        } catch (err) {
+          console.warn(`[DocumentExportService] Error fetching remote image "${remoteUrl}":`, err);
+          urlToFilenameMap.set(remoteUrl, null);
+        }
+      }
+    } else if (!this.mediaService && remoteImageUrls.size > 0) {
+      for (const remoteUrl of remoteImageUrls) {
+        urlToFilenameMap.set(remoteUrl, null);
+      }
+    }
+
+    const escapeRegex = (str: string): string => {
+      return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    };
+
     const rewriteMediaForEpub = (content: string): string => {
-      return content.replace(
+      let rewritten = content;
+
+      // 1. Process local media files
+      for (const filename of referencedMedia) {
+        const escapedFn = escapeRegex(filename);
+        const localTarget = `(?:\\/api\\/media\\/|api\\/media\\/)${escapedFn}`;
+        if (packagedImages.has(filename)) {
+          rewritten = rewritten.replace(
+            new RegExp(localTarget, "g"),
+            `images/${filename}`
+          );
+        } else {
+          // Fallback missing local media to placeholder
+          const mdRegex = new RegExp(
+            `!\\[([^\\]]*)\\]\\(${localTarget}(?:\\s+(['"])[^'"]*\\2)?\\)`,
+            "g"
+          );
+          rewritten = rewritten.replace(mdRegex, (_m, alt) => {
+            return `*[Image: ${alt ? alt.trim() : "Image unavailable"}]*`;
+          });
+
+          const htmlImgRegex = new RegExp(
+            `<img\\b([^>]*?)\\bsrc=(['"])${localTarget}\\2([^>]*?)\\/?>`,
+            "gi"
+          );
+          rewritten = rewritten.replace(htmlImgRegex, (_m, preAttrs, _q, postAttrs) => {
+            const combined = `${preAttrs} ${postAttrs}`;
+            const altMatch = combined.match(/\balt=(['"])(.*?)\1/i);
+            const alt = altMatch ? altMatch[2].trim() : "";
+            return `*[Image: ${alt || "Image unavailable"}]*`;
+          });
+        }
+      }
+
+      // Any remaining local references that were packaged
+      rewritten = rewritten.replace(
         /(?:\/api\/media\/|api\/media\/)([a-zA-Z0-9_.-]+)/g,
-        "images/$1"
+        (_m, fn) => (packagedImages.has(fn) ? `images/${fn}` : `*[Image: Image unavailable]*`)
       );
+
+      // 2. Sort remote entries descending by length to avoid URL prefix collisions
+      const sortedRemoteEntries = Array.from(urlToFilenameMap.entries()).sort(
+        ([a], [b]) => b.length - a.length
+      );
+
+      for (const [remoteUrl, localFilename] of sortedRemoteEntries) {
+        if (localFilename) {
+          rewritten = rewritten.replaceAll(remoteUrl, `images/${localFilename}`);
+        } else {
+          const escapedUrl = escapeRegex(remoteUrl);
+          const mdRegex = new RegExp(
+            `!\\[([^\\]]*)\\]\\(${escapedUrl}(?:\\s+(['"])[^'"]*\\2)?\\)`,
+            "g"
+          );
+          rewritten = rewritten.replace(mdRegex, (_m, alt) => {
+            return `*[Image: ${alt ? alt.trim() : "Image unavailable"}]*`;
+          });
+
+          const htmlImgRegex = new RegExp(
+            `<img\\b([^>]*?)\\bsrc=(['"])${escapedUrl}\\2([^>]*?)\\/?>`,
+            "gi"
+          );
+          rewritten = rewritten.replace(htmlImgRegex, (_m, preAttrs, _q, postAttrs) => {
+            const combined = `${preAttrs} ${postAttrs}`;
+            const altMatch = combined.match(/\balt=(['"])(.*?)\1/i);
+            const alt = altMatch ? altMatch[2].trim() : "";
+            return `*[Image: ${alt || "Image unavailable"}]*`;
+          });
+        }
+      }
+
+      return rewritten;
     };
 
     const bookUuid = crypto.randomUUID();

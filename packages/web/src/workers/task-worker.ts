@@ -4,6 +4,7 @@ import {
   PromptBuilder,
   GroundingGuard,
   PersonaStudioService,
+  MediaService,
   type CleanTextDocument,
   type GeneratedCardDraft,
 } from "@flashcard-master/core";
@@ -414,13 +415,14 @@ if (parentPort) {
     });
 
     if (payload.exportKind === "documents" && payload.documents && payload.documents.length > 0) {
-      const exportService = new DocumentExportService();
+      const exportService = new DocumentExportService(new MediaService());
       const result = await exportService.export(payload.documents, {
         format: payload.format as any,
         mode: payload.mode as any,
         sourceName: payload.sourceName,
         includeTableOfContents: true,
         includeCitations: true,
+        outputPath: payload.outputPath,
       });
 
       const sizeBytes = typeof result.content === "string" ? Buffer.byteLength(result.content) : result.content.byteLength;
