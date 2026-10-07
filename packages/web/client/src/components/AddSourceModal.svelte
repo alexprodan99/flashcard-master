@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { createSource, uploadSourceFile } from '../lib/api';
-  import type { DataSource, DataSourceType } from '../lib/types';
-  import { settingsStore } from '../stores/index.js';
+  import { createSource, uploadSourceFile, syncSource } from '../lib/api';
+  import type { DataSource, DataSourceType, SlicingMode, DocumentSlicingOptions } from '../lib/types';
+  import { settingsStore, toastStore } from '../stores/index.js';
   import { buildNotionUri, isValidNotionInput } from '../lib/notion-uri.js';
   import UrlListManager from './UrlListManager.svelte';
 
@@ -36,6 +36,35 @@
   let showAdvancedPath = $state(false);
   let fileInputRef = $state<HTMLInputElement | null>(null);
 
+  // Slicing configuration state (Story 17.6)
+  let slicingMode = $state<SlicingMode>('outline');
+  let pagesPerChunk = $state<number | string>(5);
+  let wordsPerChunk = $state<number | string>(1500);
+  let minChunkWords = $state<number | string>(200);
+  let syncImmediately = $state(true);
+
+  function getSlicingOptions(): DocumentSlicingOptions | undefined {
+    if (type !== 'local') return undefined;
+    if (slicingMode === 'budget') {
+      return {
+        mode: 'budget',
+        pagesPerChunk: Math.max(1, parseInt(String(pagesPerChunk), 10) || 5),
+        wordsPerChunk: Math.max(50, parseInt(String(wordsPerChunk), 10) || 1500),
+      };
+    }
+    if (slicingMode === 'outline') {
+      return {
+        mode: 'outline',
+        minChunkWords: Math.max(10, parseInt(String(minChunkWords), 10) || 200),
+        pagesPerChunk: Math.max(1, parseInt(String(pagesPerChunk), 10) || 5),
+      };
+    }
+    if (slicingMode === 'none') {
+      return { mode: 'none' };
+    }
+    return undefined;
+  }
+
   function formatFileSize(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -43,9 +72,16 @@
   }
 
   async function handleFile(file: File) {
-    const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
-    if (!['.md', '.markdown', '.txt'].includes(ext)) {
-      errorMessage = 'Only .md, .markdown, and .txt files are supported.';
+    const lastDot = file.name.lastIndexOf('.');
+    const ext = lastDot >= 0 ? file.name.slice(lastDot).toLowerCase() : '';
+    if (ext === '.doc') {
+      errorMessage = 'Legacy pre-2007 Word (.doc) files are not supported. Please convert to .docx or .pdf before uploading.';
+      return;
+    }
+
+    const ALLOWED_EXTS = ['.md', '.markdown', '.txt', '.pdf', '.docx'];
+    if (!ALLOWED_EXTS.includes(ext)) {
+      errorMessage = 'Only .md, .markdown, .txt, .pdf, and .docx files are supported.';
       return;
     }
 
@@ -62,7 +98,7 @@
       uri = result.path;
 
       if (!name.trim()) {
-        name = result.filename.replace(/\.(md|markdown|txt)$/i, '');
+        name = result.filename.replace(/\.(md|markdown|txt|pdf|docx)$/i, '');
       }
     } catch (err: any) {
       errorMessage = err.message || 'Failed to upload local file';
@@ -165,6 +201,21 @@
         tags,
       });
 
+      if (syncImmediately) {
+        try {
+          const slicing = getSlicingOptions();
+          const syncResult: any = await syncSource(source.id, slicing ? { slicing } : undefined);
+          if (syncResult?.jobId) {
+            toastStore.info(`Source added. Sync task #${syncResult.jobId.slice(0, 8)} queued in background.`);
+          } else if (syncResult?.newCount !== undefined) {
+            toastStore.success(`Source added and synced: ${syncResult.newCount} document(s) ingested.`);
+          }
+        } catch (syncErr: any) {
+          console.warn('Sync failed:', syncErr);
+          toastStore.warn(`Source created, but initial sync encountered an issue: ${syncErr.message || 'Sync failed'}`);
+        }
+      }
+
       // Reset form
       name = '';
       uri = '';
@@ -176,6 +227,11 @@
       isDragging = false;
       showAdvancedPath = false;
       notionRecursive = false;
+      slicingMode = 'outline';
+      pagesPerChunk = 5;
+      wordsPerChunk = 1500;
+      minChunkWords = 200;
+      syncImmediately = true;
       onSourceCreated(source);
       onClose();
     } catch (err: any) {
@@ -288,13 +344,13 @@
                   <p class="drop-text">Uploading file...</p>
                 {:else}
                   <span class="drop-icon">📁</span>
-                  <p class="drop-text">Drag &amp; drop Markdown/Text file here, or</p>
+                  <p class="drop-text">Drag &amp; drop Markdown, Text, PDF, or Word (.docx) file here, or</p>
                   <label class="btn-browse">
                     Browse File...
                     <input
                       bind:this={fileInputRef}
                       type="file"
-                      accept=".md,.markdown,.txt"
+                      accept=".md,.markdown,.txt,.pdf,.docx"
                       onchange={handleFileSelect}
                       hidden
                     />
@@ -324,6 +380,94 @@
                 <span class="field-hint">Specify an absolute directory path for recursive scanning or a custom file path.</span>
               </div>
             {/if}
+
+            <!-- Slicing Configuration Controls (Story 17.6) -->
+            <div class="slicing-config-card">
+              <div class="slicing-card-header">
+                <span class="slicing-header-title">📄 Document Slicing Configuration</span>
+                <span class="slicing-header-sub">Configure how rich documents (.pdf, .docx, .md) are sliced into subdocuments</span>
+              </div>
+
+              <div class="slicing-mode-selector">
+                <label class="slicing-mode-option" class:selected={slicingMode === 'outline'}>
+                  <input type="radio" name="slicingMode" value="outline" bind:group={slicingMode} />
+                  <span class="slicing-mode-label">
+                    <strong>Semantic Outline</strong>
+                    <small>Slices by headings/chapters &amp; sections</small>
+                  </span>
+                </label>
+                <label class="slicing-mode-option" class:selected={slicingMode === 'budget'}>
+                  <input type="radio" name="slicingMode" value="budget" bind:group={slicingMode} />
+                  <span class="slicing-mode-label">
+                    <strong>Page Budget</strong>
+                    <small>Fixed page &amp; word threshold chunks</small>
+                  </span>
+                </label>
+                <label class="slicing-mode-option" class:selected={slicingMode === 'none'}>
+                  <input type="radio" name="slicingMode" value="none" bind:group={slicingMode} />
+                  <span class="slicing-mode-label">
+                    <strong>None</strong>
+                    <small>Ingest as a single whole document</small>
+                  </span>
+                </label>
+              </div>
+
+              {#if slicingMode === 'outline'}
+                <div class="slicing-thresholds-grid">
+                  <div class="threshold-field">
+                    <label for="slicing-min-chunk-words">Min Section Words</label>
+                    <input
+                      id="slicing-min-chunk-words"
+                      type="number"
+                      min="50"
+                      step="50"
+                      placeholder="200"
+                      bind:value={minChunkWords}
+                    />
+                    <span class="threshold-hint">Min words to qualify as a standalone section (default: 200).</span>
+                  </div>
+                  <div class="threshold-field">
+                    <label for="slicing-pages-per-chunk">Pages per Chunk (Fallback)</label>
+                    <input
+                      id="slicing-pages-per-chunk"
+                      type="number"
+                      min="1"
+                      step="1"
+                      placeholder="5"
+                      bind:value={pagesPerChunk}
+                    />
+                    <span class="threshold-hint">Page chunk size if headings are absent (default: 5).</span>
+                  </div>
+                </div>
+              {:else if slicingMode === 'budget'}
+                <div class="slicing-thresholds-grid">
+                  <div class="threshold-field">
+                    <label for="slicing-pages-per-chunk-budget">Pages per Chunk</label>
+                    <input
+                      id="slicing-pages-per-chunk-budget"
+                      type="number"
+                      min="1"
+                      step="1"
+                      placeholder="5"
+                      bind:value={pagesPerChunk}
+                    />
+                    <span class="threshold-hint">Fixed page chunk size for PDF documents (default: 5).</span>
+                  </div>
+                  <div class="threshold-field">
+                    <label for="slicing-words-per-chunk">Words per Chunk</label>
+                    <input
+                      id="slicing-words-per-chunk"
+                      type="number"
+                      min="100"
+                      step="100"
+                      placeholder="1500"
+                      bind:value={wordsPerChunk}
+                    />
+                    <span class="threshold-hint">Fixed word chunk size for non-paged documents (default: 1500).</span>
+                  </div>
+                </div>
+              {/if}
+            </div>
           </div>
         {:else if type === 'notion'}
           <div class="form-group">
@@ -421,6 +565,16 @@
               bind:value={tagsInput}
             />
           </div>
+        </div>
+
+        <div class="form-group sync-immediately-group">
+          <label class="checkbox-label">
+            <input type="checkbox" bind:checked={syncImmediately} />
+            <span class="checkbox-text">
+              <strong>Sync immediately upon creation</strong>
+              <small>Begins file processing and subdocument slicing right away</small>
+            </span>
+          </label>
         </div>
 
         <div class="modal-footer">
@@ -830,5 +984,126 @@
     font-size: 11px;
     color: #94a3b8;
     line-height: 1.4;
+  }
+
+  .slicing-config-card {
+    margin-top: 14px;
+    padding: 14px;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .slicing-card-header {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .slicing-header-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #e2e8f0;
+  }
+
+  .slicing-header-sub {
+    font-size: 11px;
+    color: #94a3b8;
+  }
+
+  .slicing-mode-selector {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+
+  .slicing-mode-option {
+    display: flex;
+    align-items: flex-start;
+    padding: 10px;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .slicing-mode-option input[type="radio"] {
+    margin-top: 2px;
+    margin-right: 8px;
+  }
+
+  .slicing-mode-option.selected {
+    background: rgba(99, 102, 241, 0.15);
+    border-color: #6366f1;
+  }
+
+  .slicing-mode-label {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .slicing-mode-label strong {
+    font-size: 12px;
+    color: #f1f5f9;
+  }
+
+  .slicing-mode-label small {
+    font-size: 10px;
+    color: #94a3b8;
+    line-height: 1.3;
+  }
+
+  .slicing-thresholds-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    padding-top: 4px;
+    border-top: 1px dashed #334155;
+  }
+
+  .threshold-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .threshold-field label {
+    font-size: 11px;
+    font-weight: 500;
+    color: #cbd5e1;
+  }
+
+  .threshold-field input[type="number"] {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 6px 10px;
+    color: #f8fafc;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  .threshold-field input[type="number"]:focus {
+    border-color: #6366f1;
+  }
+
+  .threshold-hint {
+    font-size: 10px;
+    color: #64748b;
+    line-height: 1.3;
+  }
+
+  .sync-immediately-group {
+    background: rgba(15, 23, 42, 0.5);
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-top: 10px;
   }
 </style>

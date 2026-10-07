@@ -3,6 +3,7 @@
   import { fetchSourceDocuments, fetchDocumentDetails, generateCards, deleteDocument, deleteDocumentsBulk } from '../lib/api';
   import { toastStore } from '../stores/index.js';
   import type { DataSource, DiscoveredDocument, PersonaType, DifficultyLevel, CardDepthMode } from '../lib/types';
+  import { formatPageBadge } from '../lib/formatters.js';
   import GenerationConfigFields from './GenerationConfigFields.svelte';
   import DocumentPreviewModal from './DocumentPreviewModal.svelte';
   import DocumentExportModal from './DocumentExportModal.svelte';
@@ -386,6 +387,9 @@
                   <div class="doc-header">
                     <h4 class="doc-title">{doc.title}</h4>
                     <div class="doc-badges">
+                      {#if formatPageBadge(doc)}
+                        <span class="badge page-badge">📄 {formatPageBadge(doc)}</span>
+                      {/if}
                       <span class="badge word-count">📝 {doc.wordCount.toLocaleString()} words</span>
                       <span class="badge card-count" class:has-cards={(doc.cardCount || 0) > 0}>
                         🎴 {doc.cardCount || 0} cards
@@ -793,6 +797,12 @@
     padding: 2px 6px;
     border-radius: 4px;
     font-weight: 600;
+  }
+
+  .badge.page-badge {
+    background: rgba(14, 165, 233, 0.15);
+    color: #38bdf8;
+    border: 1px solid rgba(14, 165, 233, 0.3);
   }
 
   .badge.word-count {

@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { DiscoveredDocument } from '../lib/types';
+  import { formatPageBadge } from '../lib/formatters.js';
 
   interface Props {
     isOpen: boolean;
@@ -164,6 +165,9 @@
         <div class="header-details">
           <h3>{document.title}</h3>
           <div class="preview-meta">
+            {#if formatPageBadge(document)}
+              <span class="meta-pill page-pill">📄 {formatPageBadge(document)}</span>
+            {/if}
             <span class="meta-pill">📝 {document.wordCount.toLocaleString()} words</span>
             {#if (document.cardCount || 0) > 0}
               <span class="meta-pill card-pill">🎴 {document.cardCount} cards generated</span>
@@ -332,6 +336,12 @@
     padding: 2px 6px;
     border-radius: 4px;
     font-weight: 500;
+  }
+
+  .meta-pill.page-pill {
+    background: rgba(14, 165, 233, 0.15);
+    color: #38bdf8;
+    border: 1px solid rgba(14, 165, 233, 0.3);
   }
 
   .meta-pill.card-pill {

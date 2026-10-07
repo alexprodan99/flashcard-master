@@ -10,6 +10,7 @@ import type {
   SecretProvider,
   KeySource,
   LoggingSettings,
+  DocumentSlicingOptions,
 } from './types.js';
 
 export async function fetchStats(): Promise<DashboardStats> {
@@ -87,10 +88,14 @@ export async function deleteSource(id: string): Promise<void> {
   }
 }
 
-export async function syncSource(id: string): Promise<{ success: boolean; sourceId: string; newCount: number; totalFetched: number; error?: string }> {
+export async function syncSource(
+  id: string,
+  options?: { slicing?: DocumentSlicingOptions }
+): Promise<{ success: boolean; sourceId?: string; newCount?: number; totalFetched?: number; jobId?: string; status?: string; title?: string; error?: string }> {
   const res = await fetch(`/api/sync/${encodeURIComponent(id)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    body: options?.slicing ? JSON.stringify({ slicing: options.slicing }) : undefined,
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
@@ -99,10 +104,13 @@ export async function syncSource(id: string): Promise<{ success: boolean; source
   return res.json();
 }
 
-export async function syncAllSources(): Promise<Array<{ success: boolean; sourceId: string; newCount: number; totalFetched: number; error?: string }>> {
+export async function syncAllSources(
+  options?: { slicing?: DocumentSlicingOptions }
+): Promise<Array<{ success: boolean; sourceId?: string; newCount?: number; totalFetched?: number; error?: string }> | { success: boolean; jobId: string; status: string; title?: string }> {
   const res = await fetch('/api/sync', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    body: options?.slicing ? JSON.stringify({ slicing: options.slicing }) : undefined,
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));

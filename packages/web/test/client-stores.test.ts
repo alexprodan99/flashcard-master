@@ -6,7 +6,9 @@ import { ExportStore } from '../client/src/stores/exportStore.svelte.js';
 import { TaskStore } from '../client/src/stores/taskStore.svelte.js';
 import { SettingsStore, settingsStore } from '../client/src/stores/settingsStore.svelte.js';
 import { loadCachedStats, saveCachedStats, DASHBOARD_STATS_STORAGE_KEY } from '../client/src/lib/dashboard-cache.js';
-import type { DataSource, Flashcard, GenerationResult, Job, DashboardStats } from '../client/src/lib/types.js';
+import type { DataSource, Flashcard, GenerationResult, Job, DashboardStats, DiscoveredDocument, DocumentSlicingOptions, SlicingMode } from '../client/src/lib/types.js';
+import { syncSource, syncAllSources } from '../client/src/lib/api.js';
+import { formatPageBadge } from '../client/src/lib/formatters.js';
 
 describe('Svelte 5 Universal Client Stores (Epic 14.4)', () => {
   let localStorageMock: Record<string, string> = {};
@@ -964,6 +966,150 @@ describe('Svelte 5 Universal Client Stores (Epic 14.4)', () => {
         recentSources: [],
       };
       expect(() => saveCachedStats(mockStats)).not.toThrow();
+    });
+  });
+
+  describe('Story 17.6: UI & CLI Slicing Controls & Page Bound Badges', () => {
+    it('preserves startPage and endPage metadata on DiscoveredDocument', () => {
+      const docWithPages: DiscoveredDocument = {
+        id: 'doc-1',
+        sourceId: 'src-1',
+        title: 'Rich PDF Section',
+        textContent: 'Content...',
+        wordCount: 1200,
+        startPage: 14,
+        endPage: 18,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      expect(docWithPages.startPage).toBe(14);
+      expect(docWithPages.endPage).toBe(18);
+
+      const docWithoutPages: DiscoveredDocument = {
+        id: 'doc-2',
+        sourceId: 'src-1',
+        title: 'Legacy Markdown',
+        textContent: 'Content...',
+        wordCount: 500,
+        startPage: null,
+        endPage: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      expect(docWithoutPages.startPage).toBeNull();
+      expect(docWithoutPages.endPage).toBeNull();
+    });
+
+    it('formats page coordinate badges correctly according to spec rules', () => {
+      const baseDoc: DiscoveredDocument = {
+        id: 'doc-test',
+        sourceId: 'src-1',
+        title: 'Test',
+        textContent: '',
+        wordCount: 100,
+        createdAt: '',
+        updatedAt: '',
+      };
+
+      // Multi-page range: startPage !== endPage -> "Pages 14-18"
+      expect(formatPageBadge({ ...baseDoc, startPage: 14, endPage: 18 })).toBe('Pages 14-18');
+
+      // Single-page range: startPage === endPage -> "Page 14"
+      expect(formatPageBadge({ ...baseDoc, startPage: 14, endPage: 14 })).toBe('Page 14');
+
+      // Single-page when endPage is null or less than startPage -> "Page 7"
+      expect(formatPageBadge({ ...baseDoc, startPage: 7, endPage: null })).toBe('Page 7');
+      expect(formatPageBadge({ ...baseDoc, startPage: 10, endPage: 8 })).toBe('Page 10');
+
+      // startPage null or undefined -> null (graceful omit)
+      expect(formatPageBadge({ ...baseDoc, startPage: null, endPage: null })).toBeNull();
+      expect(formatPageBadge({ ...baseDoc, startPage: undefined, endPage: undefined })).toBeNull();
+    });
+
+    it('transmits slicing options in POST body via syncSource API helper', async () => {
+      const originalFetch = globalThis.fetch;
+      const fetchCalls: { url: string; options: RequestInit }[] = [];
+
+      globalThis.fetch = vi.fn(async (url: any, options: any) => {
+        fetchCalls.push({ url: String(url), options });
+        return {
+          ok: true,
+          json: async () => ({ success: true, sourceId: 'src-pdf', newCount: 3, totalFetched: 3 }),
+        } as Response;
+      });
+
+      try {
+        // Budget mode slicing
+        const budgetOpts: DocumentSlicingOptions = {
+          mode: 'budget',
+          pagesPerChunk: 5,
+          wordsPerChunk: 1500,
+        };
+        await syncSource('src-pdf', { slicing: budgetOpts });
+
+        expect(fetchCalls.length).toBe(1);
+        expect(fetchCalls[0].url).toBe('/api/sync/src-pdf');
+        expect(fetchCalls[0].options.method).toBe('POST');
+        expect(JSON.parse(fetchCalls[0].options.body as string)).toEqual({
+          slicing: { mode: 'budget', pagesPerChunk: 5, wordsPerChunk: 1500 },
+        });
+
+        // Outline mode slicing
+        const outlineOpts: DocumentSlicingOptions = {
+          mode: 'outline',
+          minChunkWords: 250,
+          pagesPerChunk: 5,
+        };
+        await syncSource('src-pdf-2', { slicing: outlineOpts });
+
+        expect(fetchCalls.length).toBe(2);
+        expect(fetchCalls[1].url).toBe('/api/sync/src-pdf-2');
+        expect(JSON.parse(fetchCalls[1].options.body as string)).toEqual({
+          slicing: { mode: 'outline', minChunkWords: 250, pagesPerChunk: 5 },
+        });
+
+        // Omitted slicing maintains backward-compatible undefined body
+        await syncSource('src-legacy');
+        expect(fetchCalls.length).toBe(3);
+        expect(fetchCalls[2].url).toBe('/api/sync/src-legacy');
+        expect(fetchCalls[2].options.body).toBeUndefined();
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it('transmits slicing options in POST body via syncAllSources API helper', async () => {
+      const originalFetch = globalThis.fetch;
+      const fetchCalls: { url: string; options: RequestInit }[] = [];
+
+      globalThis.fetch = vi.fn(async (url: any, options: any) => {
+        fetchCalls.push({ url: String(url), options });
+        return {
+          ok: true,
+          json: async () => [{ success: true, sourceId: 'src-1', newCount: 1, totalFetched: 1 }],
+        } as Response;
+      });
+
+      try {
+        const slicingOpts: DocumentSlicingOptions = { mode: 'none' };
+        await syncAllSources({ slicing: slicingOpts });
+
+        expect(fetchCalls.length).toBe(1);
+        expect(fetchCalls[0].url).toBe('/api/sync');
+        expect(fetchCalls[0].options.method).toBe('POST');
+        expect(JSON.parse(fetchCalls[0].options.body as string)).toEqual({
+          slicing: { mode: 'none' },
+        });
+
+        // Without slicing
+        await syncAllSources();
+        expect(fetchCalls.length).toBe(2);
+        expect(fetchCalls[1].options.body).toBeUndefined();
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
     });
   });
 });
