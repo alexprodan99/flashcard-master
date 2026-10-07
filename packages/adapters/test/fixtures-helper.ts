@@ -1,8 +1,16 @@
 import JSZip from "jszip";
 
-export function createMinimalPdf(text: string): Buffer {
+export function createMinimalPdf(text: string, meta?: { title?: string; author?: string }): Buffer {
   const streamContent = `BT /F1 12 Tf 100 700 Td (${text}) Tj ET`;
   const streamLength = Buffer.byteLength(streamContent);
+  let infoObj = "";
+  let infoRef = "";
+  if (meta) {
+    const titleEntry = meta.title ? `/Title (${meta.title})` : "";
+    const authorEntry = meta.author ? `/Author (${meta.author})` : "";
+    infoObj = `6 0 obj\n<< ${titleEntry} ${authorEntry} >>\nendobj\n`;
+    infoRef = "/Info 6 0 R";
+  }
   const pdfString = `%PDF-1.4
 1 0 obj
 << /Type /Catalog /Pages 2 0 R >>
@@ -22,8 +30,8 @@ endobj
 5 0 obj
 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
 endobj
-trailer
-<< /Size 6 /Root 1 0 R >>
+${infoObj}trailer
+<< /Size ${meta ? 7 : 6} /Root 1 0 R ${infoRef} >>
 %%EOF`;
   return Buffer.from(pdfString);
 }

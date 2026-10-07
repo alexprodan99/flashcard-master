@@ -31,12 +31,16 @@ export class PdfParser {
     }
 
     try {
-      const data = Buffer.isBuffer(buffer)
-        ? new Uint8Array(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength))
-        : buffer instanceof Uint8Array
-          ? new Uint8Array(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength))
-          : new Uint8Array(buffer);
-      const extraction = await extractText(data, { mergePages: false });
+      const sliceBuffer = (b: Buffer | Uint8Array) =>
+        Buffer.isBuffer(b) || b instanceof Uint8Array
+          ? new Uint8Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength))
+          : new Uint8Array(b);
+
+      const metaData = sliceBuffer(buffer);
+      const textData = sliceBuffer(buffer);
+
+      const metaPromise = getMeta(metaData).catch(() => null);
+      const extraction = await extractText(textData, { mergePages: false });
       const totalPages = extraction.totalPages || 0;
       if (totalPages <= 0) {
         console.warn("[PdfParser] PDF has zero pages.");
@@ -74,7 +78,7 @@ export class PdfParser {
         .trim();
 
       // Extract metadata and title
-      const meta = await getMeta(data).catch(() => null);
+      const meta = await metaPromise;
       const title = this.extractTitle(meta, cleanedPageTexts, filename);
 
       const words = cleanedPageTexts.join(" ").match(/\S+/g);
@@ -236,16 +240,78 @@ export class PdfParser {
     const metaTitle = meta?.info?.Title;
     if (metaTitle && typeof metaTitle === "string" && metaTitle.trim().length > 0) {
       const clean = metaTitle.trim();
-      if (!/^(untitled|document\d*|pdf)$/i.test(clean)) {
+      if (!/^(untitled|document\d*|pdf|microsoft word - .*)$/i.test(clean)) {
         return clean;
       }
     }
 
-    // Try first line of first page
+    const isDisqualifiedLine = (line: string): boolean => {
+      const trimmed = line.trim();
+      if (trimmed.length < 3 || trimmed.length > 150) return true;
+      // Ends with comma or ampersand (e.g. "Neal Ford,", "Patrick Kua &")
+      if (/[,&]$/.test(trimmed)) return true;
+      // Starts with author/contributor/publisher indicators
+      if (
+        /^(?:by\b|authors?\b|forewords?\b|written by\b|edited by\b|illustrated by\b|translated by\b|published by\b|printed in\b)/i.test(
+          trimmed
+        )
+      ) {
+        return true;
+      }
+      // Copyright, ISBN, legal notices
+      if (/^(?:copyright|©|\(c\)|all rights reserved|isbn\b|issn\b|doi\b)/i.test(trimmed)) {
+        return true;
+      }
+      // Edition indicators (e.g. "2nd Edition")
+      if (
+        /^(?:\d+(?:st|nd|rd|th)?\s+edition|first edition|second edition|third edition|early release)$/i.test(
+          trimmed
+        )
+      ) {
+        return true;
+      }
+      // If author is known in meta, and candidate line is part of author metadata
+      const authorMeta = meta?.info?.Author;
+      if (typeof authorMeta === "string" && authorMeta.trim().length > 0) {
+        if (authorMeta.toLowerCase().includes(trimmed.toLowerCase())) {
+          return true;
+        }
+      }
+      // Lines consisting only of proper names joined by & or and (e.g. "Patrick Kua & Pramod Sadalage")
+      if (/(?:^|\s)&(?:\s|$)/.test(trimmed) || /\b(?:and|with)\b/i.test(trimmed)) {
+        const parts = trimmed.split(/\s*(?:and|with|&|,)\s*/i).filter(Boolean);
+        if (
+          parts.length >= 2 &&
+          parts.every((p) => /^[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}$/.test(p))
+        ) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    // Try candidate lines from the first page
     if (cleanedPages.length > 0 && cleanedPages[0]) {
-      const firstLine = cleanedPages[0].split("\n")[0]?.trim();
-      if (firstLine && firstLine.length > 0 && firstLine.length < 100) {
-        return firstLine.replace(/^#+\s*/, "");
+      const lines = cleanedPages[0]
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0 && !/^<!--\s*page:\s*\d+\s*-->$/i.test(l));
+
+      // Check for markdown heading first
+      const headingLine = lines.find((l) => /^#+\s+/.test(l));
+      if (headingLine) {
+        const stripped = headingLine.replace(/^#+\s*/, "").trim();
+        if (!isDisqualifiedLine(stripped)) {
+          return stripped;
+        }
+      }
+
+      // Check first 15 lines for the first valid title line
+      for (const line of lines.slice(0, 15)) {
+        const candidate = line.replace(/^#+\s*/, "").trim();
+        if (!isDisqualifiedLine(candidate)) {
+          return candidate;
+        }
       }
     }
 

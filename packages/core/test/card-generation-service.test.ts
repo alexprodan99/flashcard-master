@@ -217,6 +217,26 @@ describe("CardGenerationService", () => {
       const locator = formatCardSourceLocator("Calculus.pdf - Page 14", 14, 14, "Section 2.1");
       expect(locator).toBe("Calculus.pdf - Page 14 - Section 2.1");
     });
+
+    it("strips chunk page range from doc title when draft locator specifies an exact page", () => {
+      const locator = formatCardSourceLocator(
+        "Building Evolutionary Architectures - Pages 26-30",
+        26,
+        30,
+        "Page 27"
+      );
+      expect(locator).toBe("Building Evolutionary Architectures - Page 27");
+    });
+
+    it("strips chunk page range from doc title when draft locator specifies page and section", () => {
+      const locator = formatCardSourceLocator(
+        "Building Evolutionary Architectures - Pages 26-30",
+        26,
+        30,
+        "Page 27, Guided Change"
+      );
+      expect(locator).toBe("Building Evolutionary Architectures - Page 27, Guided Change");
+    });
   });
 
   it("propagates startPage and endPage into card sourceLocator during generation", async () => {

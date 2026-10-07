@@ -26,12 +26,23 @@ export function formatCardSourceLocator(
   endPage?: number | null,
   draftLocator?: string
 ): string {
-  const cleanTitle = (docTitle || "Document").trim();
+  let cleanTitle = (docTitle || "Document").trim();
   let cleanDraft = (draftLocator || "").trim();
 
   // If cleanDraft starts with cleanTitle, strip cleanTitle prefix before formatting
   if (cleanDraft.startsWith(cleanTitle)) {
     cleanDraft = cleanDraft.slice(cleanTitle.length).replace(/^[\s\-:,]+/, "").trim();
+  }
+
+  const hasPageInDraft = /\bpages?\s*\d+/i.test(cleanDraft);
+
+  // If cleanDraft specifies a page, strip any chunk page range suffix from cleanTitle
+  // to avoid redundant locators like "Book - Pages 26-30 - Page 27"
+  if (hasPageInDraft) {
+    cleanTitle = cleanTitle.replace(/\s*[-–—]\s*Pages?\s*\d+(?:\s*[-–—]\s*\d+)?\s*$/i, "").trim();
+    if (cleanDraft.startsWith(cleanTitle)) {
+      cleanDraft = cleanDraft.slice(cleanTitle.length).replace(/^[\s\-:,]+/, "").trim();
+    }
   }
 
   let pagePart = "";
@@ -46,8 +57,6 @@ export function formatCardSourceLocator(
   if (pagePart && cleanTitle.toLowerCase().includes(pagePart.toLowerCase())) {
     pagePart = "";
   }
-
-  const hasPageInDraft = /\bpages?\s*\d+/i.test(cleanDraft);
 
   if (!cleanDraft) {
     return pagePart ? `${cleanTitle} - ${pagePart}` : cleanTitle;

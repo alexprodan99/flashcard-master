@@ -223,6 +223,38 @@ describe("Document Parsers (Story 17.2)", () => {
       // Cyrillic characters are correctly detected as letters and not rejected as scanned image
       expect(result!.text).toContain("<!-- page: 1 -->");
     });
+
+    it("extracts title from PDF metadata and does not confuse author with title", async () => {
+      const pdfBuffer = createMinimalPdf(
+        "Neal Ford, Rebecca Parsons\nBuilding Evolutionary Architectures\nChapter 1 text here.",
+        {
+          title: "Building Evolutionary Architectures",
+          author: "Neal Ford, Rebecca Parsons, Patrick Kua",
+        }
+      );
+      const result = await pdfParser.parse(pdfBuffer, "book.pdf");
+
+      expect(result).not.toBeNull();
+      expect(result!.title).toBe("Building Evolutionary Architectures");
+      expect(result!.metadata?.Title).toBe("Building Evolutionary Architectures");
+    });
+
+    it("skips author lines ending in comma or ampersand when falling back to page 1 text", async () => {
+      const pdfBuffer = createMultiPagePdf([
+        [
+          "Neal Ford,",
+          "Rebecca Parsons,",
+          "Patrick Kua & Pramod Sadalage",
+          "Forewords by Mark Richards & Martin Fowler",
+          "Building Evolutionary Architectures",
+          "Detailed content on evolutionary software governance.",
+        ],
+      ]);
+      const result = await pdfParser.parse(pdfBuffer, "fallback-book.pdf");
+
+      expect(result).not.toBeNull();
+      expect(result!.title).toBe("Building Evolutionary Architectures");
+    });
   });
 
   describe("LocalFileStrategy Integration", () => {
