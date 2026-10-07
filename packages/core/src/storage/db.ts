@@ -106,6 +106,42 @@ export interface DatabaseClientOptions {
   inMemory?: boolean;
 }
 
+function hasUserData(filePath: string): boolean {
+  try {
+    if (!fs.existsSync(filePath)) return false;
+    const stats = fs.statSync(filePath);
+    if (stats.size === 0) return false;
+    let testDb: Database.Database | null = null;
+    try {
+      testDb = new Database(filePath, { readonly: true, fileMustExist: true });
+      const sourceCount = (testDb.prepare("SELECT count(*) as c FROM data_sources").get() as any)?.c ?? 0;
+      const cardCount = (testDb.prepare("SELECT count(*) as c FROM flashcards").get() as any)?.c ?? 0;
+      const docCount = (testDb.prepare("SELECT count(*) as c FROM documents").get() as any)?.c ?? 0;
+      const settingsCount = (testDb.prepare("SELECT count(*) as c FROM app_settings").get() as any)?.c ?? 0;
+      return sourceCount > 0 || cardCount > 0 || docCount > 0 || settingsCount > 0;
+    } catch {
+      if (testDb) {
+        try {
+          const tables = testDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all() as any[];
+          for (const t of tables) {
+            const count = (testDb.prepare(`SELECT count(*) as c FROM "${t.name}"`).get() as any)?.c ?? 0;
+            if (count > 0) return true;
+          }
+        } catch {}
+      }
+      return false;
+    } finally {
+      if (testDb) {
+        try {
+          testDb.close();
+        } catch {}
+      }
+    }
+  } catch {
+    return true; // Fail-safe: if unreadable, assume it has data
+  }
+}
+
 export function migrateLegacyDatabaseIfNeeded(
   legacyPath?: string,
   canonicalPath?: string
@@ -117,7 +153,17 @@ export function migrateLegacyDatabaseIfNeeded(
   const tempCanonical = `${actualCanonical}.tmp`;
 
   try {
-    if (fs.existsSync(actualLegacy) && !fs.existsSync(actualCanonical)) {
+    const legacyExists = fs.existsSync(actualLegacy);
+    if (!legacyExists) {
+      return false;
+    }
+
+    const canonicalExists = fs.existsSync(actualCanonical);
+    const shouldMigrate =
+      !canonicalExists ||
+      (!hasUserData(actualCanonical) && hasUserData(actualLegacy));
+
+    if (shouldMigrate) {
       const destDir = path.dirname(actualCanonical);
       if (!fs.existsSync(destDir)) {
         fs.mkdirSync(destDir, { recursive: true });
@@ -136,36 +182,43 @@ export function migrateLegacyDatabaseIfNeeded(
       // If legacy WAL/SHM files exist, copy them as well if present
       const legacyWal = `${actualLegacy}-wal`;
       const canonicalWal = `${actualCanonical}-wal`;
-      if (fs.existsSync(legacyWal) && !fs.existsSync(canonicalWal)) {
+      if (fs.existsSync(legacyWal)) {
         try {
-          fs.copyFileSync(legacyWal, canonicalWal);
+          fs.copyFileSync(legacyWal, `${tempCanonical}-wal`);
         } catch {}
       }
 
       const legacyShm = `${actualLegacy}-shm`;
       const canonicalShm = `${actualCanonical}-shm`;
-      if (fs.existsSync(legacyShm) && !fs.existsSync(canonicalShm)) {
+      if (fs.existsSync(legacyShm)) {
         try {
-          fs.copyFileSync(legacyShm, canonicalShm);
+          fs.copyFileSync(legacyShm, `${tempCanonical}-shm`);
+        } catch {}
+      }
+
+      // If replacing an unpopulated canonical file, clean up its sidecars first
+      if (canonicalExists) {
+        try {
+          if (fs.existsSync(canonicalWal)) fs.unlinkSync(canonicalWal);
+          if (fs.existsSync(canonicalShm)) fs.unlinkSync(canonicalShm);
+          fs.unlinkSync(actualCanonical);
         } catch {}
       }
 
       // Atomic rename from .tmp to canonical destination
       fs.renameSync(tempCanonical, actualCanonical);
+      if (fs.existsSync(`${tempCanonical}-wal`)) {
+        try {
+          fs.renameSync(`${tempCanonical}-wal`, canonicalWal);
+        } catch {}
+      }
+      if (fs.existsSync(`${tempCanonical}-shm`)) {
+        try {
+          fs.renameSync(`${tempCanonical}-shm`, canonicalShm);
+        } catch {}
+      }
 
       return true;
-    } else if (fs.existsSync(actualLegacy) && fs.existsSync(actualCanonical)) {
-      // Both exist: if canonical database is already valid and populated (> 0 bytes),
-      // avoid spamming warning on every startup. Only warn if canonical is 0 bytes.
-      try {
-        const canonicalStats = fs.statSync(actualCanonical);
-        if (canonicalStats.size === 0) {
-          const legacyStats = fs.statSync(actualLegacy);
-          console.warn(
-            `[db] Warning: Canonical database (${actualCanonical}) is 0 bytes while legacy database (${actualLegacy}: ${legacyStats.size} bytes) exists. Please inspect databases manually.`
-          );
-        }
-      } catch {}
     }
   } catch (err) {
     if (fs.existsSync(tempCanonical)) {

@@ -317,6 +317,34 @@ describe("SQLite Database Client", () => {
     checkDb.close();
   });
 
+  it("migrates legacy flashcards.db if canonical data.sqlite exists but contains zero user records", () => {
+    const legacyDbPath = path.join(tempDir, "flashcards.db");
+    const canonicalDbPath = path.join(tempDir, "data.sqlite");
+
+    // 1. Create canonical DB with schema initialized but zero rows in any table
+    const canonicalDb = createDatabaseClient({ dbPath: canonicalDbPath });
+    canonicalDb.close();
+
+    // 2. Create legacy DB with real data
+    const legacyDb = createDatabaseClient({ dbPath: legacyDbPath });
+    legacyDb.prepare(`
+      INSERT INTO data_sources (id, name, type, uri, target_deck)
+      VALUES ('legacy-src-2', 'Populated Feed', 'rss', 'https://example.com/feed', 'Default')
+    `).run();
+    legacyDb.close();
+
+    // 3. Trigger migration - should detect canonical is unpopulated and migrate legacy
+    const result = migrateLegacyDatabaseIfNeeded(legacyDbPath, canonicalDbPath);
+    expect(result).toBe(true);
+
+    // 4. Verify canonical DB now has the legacy data
+    const checkDb = createDatabaseClient({ dbPath: canonicalDbPath });
+    const source = checkDb.prepare("SELECT * FROM data_sources WHERE id = 'legacy-src-2'").get() as any;
+    expect(source).toBeDefined();
+    expect(source.name).toBe("Populated Feed");
+    checkDb.close();
+  });
+
   it("migrates legacy flashcards.db-wal to data.sqlite-wal when WAL sidecar exists", () => {
     const legacyDbPath = path.join(tempDir, "flashcards.db");
     const legacyWalPath = `${legacyDbPath}-wal`;
