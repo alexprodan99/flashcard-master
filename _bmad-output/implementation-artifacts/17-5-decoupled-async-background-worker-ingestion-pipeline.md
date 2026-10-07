@@ -27,7 +27,7 @@ context:
 - Allowed upload extensions must be `.md`, `.markdown`, `.txt`, `.pdf`, and `.docx`.
 - Legacy pre-2007 binary `.doc` files (identified by `.doc` extension or `0xD0CF11E0` OLE magic bytes) must be rejected upfront with a clear 400 error.
 - Background worker execution must run in isolated `node:worker_threads` with `resourceLimits` (default `maxOldGenerationSizeMb: 512`) to protect the main process from memory spikes.
-- Background worker tasks must enforce configurable execution timeouts (default 5 minutes / 300,000ms) and clean `AbortSignal` cancellation, terminating the worker thread without leaking resources.
+- Background worker tasks must enforce configurable execution timeouts (default 60 minutes / 3,600,000ms, with dynamic document-scaled generation timeouts e.g. up to 180s per document, configurable via `--task-timeout <minutes>` or 0 to disable) and clean `AbortSignal` cancellation, terminating the worker thread without leaking resources.
 - Worker threads must stream incremental progress events (`STEP_PROGRESS`, `STEP_LOG`) via IPC, which `JobManager` broadcasts over SSE to Task Center.
 - SQLite remains strictly custodial: worker threads perform CPU-intensive parsing and slicing, then submit extracted subdocument batches via `COMMIT_SYNC_RESULT` to the main thread `WorkerExecutor` for transactional database persistence.
 - Slicing configurations passed during sync must be forwarded to the slicing engine.
@@ -100,7 +100,7 @@ context:
 ### Worker Resource Limits & Timeout Protection
 ```ts
 const MAX_WORKER_HEAP_MB = 512;
-const DEFAULT_TASK_TIMEOUT_MS = 300_000; // 5 minutes
+const DEFAULT_TASK_TIMEOUT_MS = 3_600_000; // 60 minutes default (configurable, 0 to disable)
 
 worker = new Worker(this.workerScriptPath, {
   execArgv,
