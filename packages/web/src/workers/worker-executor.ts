@@ -22,7 +22,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const MAX_WORKER_HEAP_MB = 512;
-const DEFAULT_TASK_TIMEOUT_MS = 300_000; // 5 minutes
+const DEFAULT_TASK_TIMEOUT_MS = 3_600_000; // 60 minutes default (configurable, 0 to disable)
 
 export interface WorkerExecutorOptions {
   cardRepo?: FlashcardRepository;
@@ -112,10 +112,10 @@ export class WorkerExecutor {
           },
         });
 
-        // Configurable execution timeout guard
+        // Configurable execution timeout guard (0 to disable)
         const rawTimeout = Number((task.payload as any)?.timeoutMs);
         const timeoutMs =
-          Number.isFinite(rawTimeout) && rawTimeout > 0
+          Number.isFinite(rawTimeout) && rawTimeout >= 0
             ? rawTimeout
             : (this.options.defaultTimeoutMs ?? DEFAULT_TASK_TIMEOUT_MS);
 

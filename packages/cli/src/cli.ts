@@ -36,22 +36,33 @@ export function createCli(providedContext?: AppContext): Command {
     .option("--max-generation-workers <number>", "Max concurrent generation workers", "3")
     .option("--max-sync-workers <number>", "Max concurrent sync workers", "2")
     .option("--max-export-workers <number>", "Max concurrent export workers", "2")
+    .option("--task-timeout <minutes>", "Default worker task timeout in minutes (0 to disable)", "60")
+    .option("--max-worker-heap <mb>", "Max memory heap per worker thread in MB", "512")
     .action(async (options: {
       port: string;
       host: string;
       maxGenerationWorkers?: string;
       maxSyncWorkers?: string;
       maxExportWorkers?: string;
+      taskTimeout?: string;
+      maxWorkerHeap?: string;
     }) => {
       try {
         const port = parseInt(options.port, 10) || 3000;
         const maxGenerationWorkers = options.maxGenerationWorkers ? Math.max(1, parseInt(options.maxGenerationWorkers, 10) || 1) : 3;
         const maxSyncWorkers = options.maxSyncWorkers ? Math.max(1, parseInt(options.maxSyncWorkers, 10) || 1) : 2;
         const maxExportWorkers = options.maxExportWorkers ? Math.max(1, parseInt(options.maxExportWorkers, 10) || 1) : 2;
+        const taskTimeoutMinutes = options.taskTimeout !== undefined ? parseInt(options.taskTimeout, 10) : 60;
+        const defaultTaskTimeoutMs = !isNaN(taskTimeoutMinutes) && taskTimeoutMinutes >= 0
+          ? taskTimeoutMinutes * 60 * 1000
+          : undefined;
+        const maxWorkerHeapMb = options.maxWorkerHeap ? parseInt(options.maxWorkerHeap, 10) : undefined;
 
         const server = createWebServer({
           port,
           host: options.host,
+          defaultTaskTimeoutMs,
+          maxWorkerHeapMb,
           sourceRepo: context.sourceRepo,
           syncRepo: context.syncRepo,
           cardRepo: context.cardRepo,
@@ -76,7 +87,7 @@ export function createCli(providedContext?: AppContext): Command {
 
         const { url } = await server.listen(port);
         console.log(`\n🎴 Flashcard Master Web UI is running at: ${url}`);
-        console.log(`⚡ Background Task Concurrency: Generation=${maxGenerationWorkers}, Sync=${maxSyncWorkers}, Export=${maxExportWorkers}`);
+        console.log(`⚡ Background Task Concurrency: Generation=${maxGenerationWorkers}, Sync=${maxSyncWorkers}, Export=${maxExportWorkers} | Task Timeout=${taskTimeoutMinutes === 0 ? "Disabled" : `${taskTimeoutMinutes}m`}`);
         console.log("Press Ctrl+C to stop.\n");
       } catch (err: any) {
         console.error(`Failed to start Web UI server: ${err.message}`);

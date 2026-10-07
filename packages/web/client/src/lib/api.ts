@@ -175,6 +175,7 @@ export async function generateCards(payload: {
   targetDeck?: string;
   enforceGrounding?: boolean;
   sync?: boolean;
+  timeoutMs?: number;
 }): Promise<GenerationResult> {
   const url = payload.sync ? '/api/generate?sync=true' : '/api/generate';
   const res = await fetch(url, {

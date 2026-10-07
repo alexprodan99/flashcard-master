@@ -66,6 +66,8 @@ export interface WebServerOptions {
   mediaService?: MediaService;
   localFilesDir?: string;
   createLLMAdapterFn?: (config: any) => any;
+  defaultTaskTimeoutMs?: number;
+  maxWorkerHeapMb?: number;
   ankiConnectAdapter?: {
     checkHealth(): Promise<AnkiConnectHealthCheck>;
     syncCards(cards: any[], options?: any): Promise<any>;
@@ -130,6 +132,8 @@ export class WebServer {
         dedupService: options.dedupService,
         ingestionService: options.ingestionService,
         documentRepo: options.documentRepo,
+        defaultTimeoutMs: options.defaultTaskTimeoutMs,
+        maxWorkerHeapMb: options.maxWorkerHeapMb,
       });
     }
   }
@@ -2114,10 +2118,14 @@ export class WebServer {
                 `Sync source: ${source.name}`,
                 { sourceId, sourceName: source.name, slicing },
                 async (_j, ctx) => {
+                  const explicitTimeout = typeof (slicing as any)?.timeoutMs === "number" && (slicing as any).timeoutMs >= 0 ? (slicing as any).timeoutMs : undefined;
+                  const syncTimeoutMs = explicitTimeout !== undefined
+                    ? explicitTimeout
+                    : (this.options.defaultTaskTimeoutMs ?? 1_800_000);
                   return await this.workerExecutor.executeTask(
                     {
                       type: "sync_source",
-                      payload: { sources: [source], slicing },
+                      payload: { sources: [source], slicing, timeoutMs: syncTimeoutMs },
                     },
                     ctx
                   );
@@ -2168,10 +2176,17 @@ export class WebServer {
                 `Sync all sources (${activeSources.length} active)`,
                 { sourceCount: activeSources.length, slicing },
                 async (_j, ctx) => {
+                  const explicitTimeout = typeof (slicing as any)?.timeoutMs === "number" && (slicing as any).timeoutMs >= 0 ? (slicing as any).timeoutMs : undefined;
+                  const syncTimeoutMs = explicitTimeout !== undefined
+                    ? explicitTimeout
+                    : Math.max(
+                        this.options.defaultTaskTimeoutMs ?? 1_800_000,
+                        (activeSources.length || 1) * 10 * 60 * 1000
+                      );
                   return await this.workerExecutor.executeTask(
                     {
                       type: "sync_all",
-                      payload: { sources: activeSources, slicing },
+                      payload: { sources: activeSources, slicing, timeoutMs: syncTimeoutMs },
                     },
                     ctx
                   );
@@ -2295,6 +2310,13 @@ export class WebServer {
                   targetDeck: targetDeckOverride,
                 },
                 async (_j, ctx) => {
+                  const explicitTimeout = typeof body?.timeoutMs === "number" && body.timeoutMs >= 0 ? body.timeoutMs : undefined;
+                  const dynamicTimeoutMs = explicitTimeout !== undefined
+                    ? explicitTimeout
+                    : Math.max(
+                        this.options.defaultTaskTimeoutMs ?? 3_600_000,
+                        docCount * 3 * 60 * 1000 // 3 minutes per document
+                      );
                   return await this.workerExecutor.executeTask(
                     {
                       type: "generation",
@@ -2312,7 +2334,7 @@ export class WebServer {
                         limit,
                         targetDeckOverride,
                         enforceGrounding,
-                        timeoutMs: typeof body?.timeoutMs === "number" && body.timeoutMs > 0 ? body.timeoutMs : undefined,
+                        timeoutMs: dynamicTimeoutMs,
                       },
                     },
                     ctx
