@@ -1,14 +1,22 @@
 import { parentPort } from "node:worker_threads";
+import crypto from "node:crypto";
 import {
   CardGenerationService,
   PromptBuilder,
   GroundingGuard,
   PersonaStudioService,
   MediaService,
+  DocumentSlicingEngine,
   type CleanTextDocument,
   type GeneratedCardDraft,
+  type RawDocument,
+  type DiscoveredDocument,
 } from "@flashcard-master/core";
-import { createLLMAdapter, DocumentExportService } from "@flashcard-master/adapters";
+import {
+  createLLMAdapter,
+  DocumentExportService,
+  LocalFileStrategy,
+} from "@flashcard-master/adapters";
 import type {
   WorkerInboundMessage,
   WorkerOutboundMessage,
@@ -311,8 +319,27 @@ if (parentPort) {
     });
   }
 
+  function extractPageBounds(text: string): { startPage: number | null; endPage: number | null } {
+    const pageMatches = Array.from(text.matchAll(/<!--\s*page:\s*(\d+)\s*-->/gi));
+    if (pageMatches.length > 0) {
+      let minPage: number | null = null;
+      let maxPage: number | null = null;
+      for (const m of pageMatches) {
+        const n = parseInt(m[1], 10);
+        if (!isNaN(n)) {
+          minPage = minPage === null ? n : Math.min(minPage, n);
+          maxPage = maxPage === null ? n : Math.max(maxPage, n);
+        }
+      }
+      if (minPage !== null && maxPage !== null) {
+        return { startPage: minPage, endPage: maxPage };
+      }
+    }
+    return { startPage: null, endPage: null };
+  }
+
   async function executeSync(jobId: string, payload: SyncTaskPayload) {
-    const { sources } = payload;
+    const { sources, slicing } = payload;
     const totalSources = sources.length;
     let totalNewDocs = 0;
     let totalFetchedDocs = 0;
@@ -325,6 +352,9 @@ if (parentPort) {
       level: "info",
       message: `Starting background synchronization for ${totalSources} data source(s)`,
     });
+
+    const slicingEngine = new DocumentSlicingEngine();
+    const localStrategy = new LocalFileStrategy();
 
     for (let i = 0; i < totalSources; i++) {
       if (isAborted) {
@@ -353,33 +383,223 @@ if (parentPort) {
       });
 
       try {
-        // In worker mode, we request the main thread to run source sync or deliver documents
-        const ackPromise = new Promise<any>((resolve) => {
-          syncAckResolver = resolve;
-        });
+        if (source.type === "local") {
+          postMessage({
+            type: "STEP_LOG",
+            jobId,
+            stepNumber,
+            stepTitle,
+            level: "info",
+            message: `Parsing local files for "${source.name}" in background worker...`,
+          });
 
-        postMessage({
-          type: "COMMIT_SYNC_RESULT",
-          jobId,
-          sourceId: source.id,
-          stepNumber,
-          documents: [],
-        });
+          let rawDocs: RawDocument[] = [];
+          try {
+            rawDocs = await localStrategy.fetch(source);
+          } catch (fetchErr: any) {
+            postMessage({
+              type: "STEP_LOG",
+              jobId,
+              stepNumber,
+              stepTitle,
+              level: "warn",
+              message: `Format error or parsing failure while reading "${source.name}": ${fetchErr.message}`,
+              details: { error: fetchErr.message },
+            });
+            rawDocs = [];
+          }
 
-        const ack = await ackPromise;
-        totalNewDocs += ack.newCount || 0;
-        totalFetchedDocs += ack.totalFetched || 0;
+          const isSlicingActive = Boolean(slicing && slicing.mode !== "none");
+          const documentsToCommit: DiscoveredDocument[] = [];
 
-        postMessage({
-          type: "STEP_LOG",
-          jobId,
-          stepNumber,
-          stepTitle,
-          level: "success",
-          message: `Synced "${source.name}": fetched ${ack.totalFetched || 0}, ${ack.newCount || 0} new documents`,
-          details: ack,
-        });
+          for (let docIdx = 0; docIdx < rawDocs.length; docIdx++) {
+            if (isAborted) {
+              throw new Error("Task cancelled by user");
+            }
+
+            const raw = rawDocs[docIdx];
+            postMessage({
+              type: "STEP_PROGRESS",
+              jobId,
+              currentStep: docIdx + 1,
+              totalSteps: rawDocs.length,
+              stepName: `Parsing: ${raw.title}`,
+            });
+
+            postMessage({
+              type: "STEP_LOG",
+              jobId,
+              stepNumber,
+              stepTitle,
+              level: "info",
+              message: `Extracting text and structure from "${raw.title}" (${docIdx + 1}/${rawDocs.length})...`,
+            });
+
+            let cleanDoc: CleanTextDocument;
+            try {
+              cleanDoc = localStrategy.extractCleanText(raw);
+            } catch (cleanErr: any) {
+              postMessage({
+                type: "STEP_LOG",
+                jobId,
+                stepNumber,
+                stepTitle,
+                level: "warn",
+                message: `Failed to extract clean text from "${raw.title}": ${cleanErr.message}`,
+              });
+              continue;
+            }
+
+            if (cleanDoc.startPage == null && cleanDoc.textContent) {
+              const bounds = extractPageBounds(cleanDoc.textContent);
+              if (bounds.startPage !== null) {
+                cleanDoc.startPage = bounds.startPage;
+                cleanDoc.endPage = bounds.endPage;
+              }
+            }
+
+            const docUrl = cleanDoc.originUrl || raw.originUrl || `file://${source.uri}`;
+
+            if (isSlicingActive) {
+              postMessage({
+                type: "STEP_LOG",
+                jobId,
+                stepNumber,
+                stepTitle,
+                level: "info",
+                message: `Applying ${slicing!.mode} slicing to "${cleanDoc.title}"...`,
+              });
+
+              let slices: any[] = [];
+              try {
+                slices = slicingEngine.slice(
+                  {
+                    sourceId: source.id,
+                    title: cleanDoc.title || "Untitled Document",
+                    textContent: cleanDoc.textContent,
+                    rawContent: raw.rawContent || cleanDoc.rawContent || null,
+                    url: docUrl,
+                    originUrl: docUrl,
+                  },
+                  slicing
+                );
+              } catch (sliceErr: any) {
+                postMessage({
+                  type: "STEP_LOG",
+                  jobId,
+                  stepNumber,
+                  stepTitle,
+                  level: "warn",
+                  message: `Document slicing failed for "${cleanDoc.title}": ${sliceErr.message}`,
+                });
+                slices = [];
+              }
+
+              for (const slice of slices) {
+                documentsToCommit.push({
+                  id: slice.id,
+                  sourceId: slice.sourceId,
+                  title: slice.title,
+                  url: slice.url ?? null,
+                  textContent: slice.textContent,
+                  rawContent: slice.rawContent || null,
+                  contentHash: slice.contentHash,
+                  wordCount: slice.wordCount,
+                  startPage: slice.startPage ?? null,
+                  endPage: slice.endPage ?? null,
+                });
+              }
+            } else {
+              const uniqueKey = docUrl || raw.guid || cleanDoc.title;
+              const deterministicId = crypto
+                .createHash("sha256")
+                .update(`${source.id}:${uniqueKey}`)
+                .digest("hex")
+                .slice(0, 32);
+
+              const wordCount = cleanDoc.textContent.trim()
+                ? cleanDoc.textContent.trim().split(/\s+/).length
+                : 0;
+
+              documentsToCommit.push({
+                id: deterministicId,
+                sourceId: source.id,
+                title: cleanDoc.title || "Untitled Document",
+                url: docUrl,
+                textContent: cleanDoc.textContent,
+                rawContent: raw.rawContent || cleanDoc.rawContent || null,
+                contentHash: cleanDoc.contentHash || null,
+                wordCount,
+                startPage: cleanDoc.startPage ?? null,
+                endPage: cleanDoc.endPage ?? null,
+              });
+            }
+          }
+
+          // Send extracted documents to main thread custodian
+          const ackPromise = new Promise<any>((resolve) => {
+            syncAckResolver = resolve;
+          });
+
+          postMessage({
+            type: "COMMIT_SYNC_RESULT",
+            jobId,
+            sourceId: source.id,
+            stepNumber,
+            stepTitle,
+            documents: documentsToCommit,
+            slicing,
+          });
+
+          const ack = await ackPromise;
+          const newCount = ack.newCount ?? documentsToCommit.length;
+          const totalFetched = ack.totalFetched ?? rawDocs.length;
+          totalNewDocs += newCount;
+          totalFetchedDocs += totalFetched;
+
+          postMessage({
+            type: "STEP_LOG",
+            jobId,
+            stepNumber,
+            stepTitle,
+            level: "success",
+            message: `Synced "${source.name}": processed ${rawDocs.length} file(s), committed ${documentsToCommit.length} document record(s)`,
+            details: { ...ack, documentsCount: documentsToCommit.length },
+          });
+        } else {
+          // For non-local sources (e.g. RSS, web), delegate to custodial ingestion service
+          const ackPromise = new Promise<any>((resolve) => {
+            syncAckResolver = resolve;
+          });
+
+          postMessage({
+            type: "COMMIT_SYNC_RESULT",
+            jobId,
+            sourceId: source.id,
+            stepNumber,
+            stepTitle,
+            documents: undefined,
+            slicing,
+          });
+
+          const ack = await ackPromise;
+          totalNewDocs += ack.newCount || 0;
+          totalFetchedDocs += ack.totalFetched || 0;
+
+          postMessage({
+            type: "STEP_LOG",
+            jobId,
+            stepNumber,
+            stepTitle,
+            level: "success",
+            message: `Synced "${source.name}": fetched ${ack.totalFetched || 0}, ${ack.newCount || 0} new documents`,
+            details: ack,
+          });
+        }
       } catch (err: any) {
+        if (err.message === "Task cancelled by user" || isAborted) {
+          throw err;
+        }
         postMessage({
           type: "STEP_LOG",
           jobId,

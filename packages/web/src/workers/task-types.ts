@@ -6,6 +6,7 @@ import type {
   CardDepthMode,
   CleanTextDocument,
   DiscoveredDocument,
+  DocumentSlicingOptions,
   DataSource,
   Flashcard,
 } from "@flashcard-master/core";
@@ -41,6 +42,8 @@ export interface GenerationTaskPayload {
 
 export interface SyncTaskPayload {
   sources: DataSource[];
+  slicing?: DocumentSlicingOptions;
+  timeoutMs?: number;
 }
 
 export interface ExportTaskPayload {
@@ -138,15 +141,8 @@ export type WorkerOutboundMessage =
       sourceId: string;
       stepNumber: number;
       stepTitle?: string;
-      documents: Array<{
-        title: string;
-        url?: string;
-        textContent: string;
-        contentHash: string;
-        wordCount: number;
-        startPage?: number | null;
-        endPage?: number | null;
-      }>;
+      documents?: DiscoveredDocument[];
+      slicing?: DocumentSlicingOptions;
     }
   | {
       type: "TASK_COMPLETE";

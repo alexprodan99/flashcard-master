@@ -6,6 +6,7 @@ import type {
   Flashcard,
   FlashcardRepository,
   DataSourceRepository,
+  SyncStateRepository,
   CardDeduplicationService,
   IngestionService,
   DocumentRepository,
@@ -20,13 +21,19 @@ import type {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const MAX_WORKER_HEAP_MB = 512;
+const DEFAULT_TASK_TIMEOUT_MS = 300_000; // 5 minutes
+
 export interface WorkerExecutorOptions {
   cardRepo?: FlashcardRepository;
   sourceRepo?: DataSourceRepository;
+  syncRepo?: SyncStateRepository;
   dedupService?: CardDeduplicationService;
   ingestionService?: IngestionService;
   documentRepo?: DocumentRepository;
   workerScriptPath?: string;
+  maxWorkerHeapMb?: number;
+  defaultTimeoutMs?: number;
 }
 
 export function resolveDefaultWorkerScriptPath(): string {
@@ -71,9 +78,14 @@ export class WorkerExecutor {
     return new Promise((resolve, reject) => {
       let worker: Worker | null = null;
       let isCompleted = false;
+      let timeoutTimer: NodeJS.Timeout | null = null;
 
       const cleanup = () => {
         isCompleted = true;
+        if (timeoutTimer) {
+          clearTimeout(timeoutTimer);
+          timeoutTimer = null;
+        }
         if (worker) {
           worker.terminate().catch(() => {});
           worker = null;
@@ -92,7 +104,38 @@ export class WorkerExecutor {
           ? ["--experimental-strip-types"]
           : undefined;
 
-        worker = new Worker(this.workerScriptPath, { execArgv });
+        const heapLimitMb = this.options.maxWorkerHeapMb ?? MAX_WORKER_HEAP_MB;
+        worker = new Worker(this.workerScriptPath, {
+          execArgv,
+          resourceLimits: {
+            maxOldGenerationSizeMb: heapLimitMb,
+          },
+        });
+
+        // Configurable execution timeout guard
+        const rawTimeout = Number((task.payload as any)?.timeoutMs);
+        const timeoutMs =
+          Number.isFinite(rawTimeout) && rawTimeout > 0
+            ? rawTimeout
+            : (this.options.defaultTimeoutMs ?? DEFAULT_TASK_TIMEOUT_MS);
+
+        if (typeof timeoutMs === "number" && timeoutMs > 0 && timeoutMs !== Infinity) {
+          timeoutTimer = setTimeout(() => {
+            if (!isCompleted) {
+              const timeoutErr = new Error(`Task execution timed out after ${timeoutMs}ms`);
+              timeoutErr.name = "TimeoutError";
+              ctx.log(
+                0,
+                "Execution Timeout",
+                "error",
+                `Worker task exceeded timeout limit of ${timeoutMs}ms and was terminated`,
+                { timeoutMs }
+              );
+              cleanup();
+              reject(timeoutErr);
+            }
+          }, timeoutMs);
+        }
 
         // Handle task cancellation via AbortSignal
         ctx.signal.addEventListener("abort", () => {
@@ -223,26 +266,77 @@ export class WorkerExecutor {
               };
               worker.postMessage(ackMsg);
             } else if (msg.type === "COMMIT_SYNC_RESULT") {
-              let syncResult: any = { newCount: 0, totalFetched: 0 };
-              if (this.options.ingestionService) {
+              let newCount = 0;
+              let totalFetched = 0;
+
+              if (Array.isArray(msg.documents) && msg.documents.length > 0) {
                 try {
-                  syncResult = await this.options.ingestionService.syncSource(msg.sourceId, {
+                  if (this.options.documentRepo) {
+                    this.options.documentRepo.upsertBatch(msg.documents as any);
+                  } else {
+                    ctx.log(
+                      msg.stepNumber || 0,
+                      "Storage Warning",
+                      "warn",
+                      "Document repository not configured; skipping subdocument persistence."
+                    );
+                  }
+                  newCount = msg.documents.length;
+                  totalFetched = msg.documents.length;
+
+                  if (this.options.syncRepo) {
+                    this.options.syncRepo.upsert({
+                      sourceId: msg.sourceId,
+                      lastSyncedAt: new Date().toISOString(),
+                      itemCount: newCount,
+                    });
+                  }
+                } catch (dbErr: any) {
+                  ctx.log(
+                    msg.stepNumber || 0,
+                    "Database Error",
+                    "error",
+                    `Failed to persist subdocuments to SQLite: ${dbErr.message}`,
+                    { error: dbErr.message }
+                  );
+                  throw dbErr;
+                }
+              } else if (
+                this.options.ingestionService &&
+                (msg.documents === undefined || !this.options.documentRepo)
+              ) {
+                try {
+                  const syncResult = await this.options.ingestionService.syncSource(msg.sourceId, {
+                    slicing: msg.slicing,
                     onLog: (level, message, details) => {
                       ctx.log(msg.stepNumber || 0, msg.stepTitle || "Source Sync", level, message, details);
                     },
                     signal: ctx.signal,
                   });
+                  newCount = syncResult?.newCount || 0;
+                  totalFetched = syncResult?.totalFetched || 0;
                 } catch (syncErr: any) {
-                  ctx.log(msg.stepNumber || 0, "Sync Error", "warn", `Custodial sync failed for source ${msg.sourceId}: ${syncErr.message}`);
+                  ctx.log(
+                    msg.stepNumber || 0,
+                    "Sync Error",
+                    "warn",
+                    `Custodial sync failed for source ${msg.sourceId}: ${syncErr.message}`
+                  );
                 }
+              } else if (this.options.syncRepo && Array.isArray(msg.documents)) {
+                this.options.syncRepo.upsert({
+                  sourceId: msg.sourceId,
+                  lastSyncedAt: new Date().toISOString(),
+                  itemCount: 0,
+                });
               }
 
               const ackMsg: WorkerInboundMessage = {
                 action: "COMMIT_SYNC_ACK",
                 jobId: msg.jobId,
                 sourceId: msg.sourceId,
-                newCount: syncResult?.newCount || 0,
-                totalFetched: syncResult?.totalFetched || 0,
+                newCount,
+                totalFetched,
               };
               worker.postMessage(ackMsg);
             } else if (msg.type === "TASK_COMPLETE") {

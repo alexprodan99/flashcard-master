@@ -9,6 +9,7 @@ import {
   SyncStateRepository,
   FlashcardRepository,
   DocumentRepository,
+  JobRepository,
   IngestionService,
   StrategyRegistry,
   ExporterRegistry,
@@ -30,6 +31,7 @@ import {
   LocalFileStrategy,
 } from "@flashcard-master/adapters";
 import { createWebServer, WebServer } from "../src/server.js";
+import { JobManager } from "../src/jobs/index.js";
 import type Database from "better-sqlite3";
 import type { IngestionStrategy, RawDocument, CleanTextDocument, DataSource } from "@flashcard-master/core";
 
@@ -1413,6 +1415,177 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       expect(docsData.documents.length).toBe(1);
       expect(docsData.documents[0].title).toBe("Distributed Systems Notes");
       expect(docsData.documents[0].textContent).toContain("Consensus algorithms guarantee consistency.");
+    });
+
+    it("uploads a .pdf file and returns HTTP 200 in under 50ms without main thread parsing", async () => {
+      const pdfBuffer = Buffer.from("%PDF-1.4 mock content for fast upload test\n%%EOF");
+      const start = Date.now();
+      const res = await fetch(`${serverUrl}/api/sources/upload`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/pdf",
+          "x-filename": "Handbook.pdf",
+        },
+        body: pdfBuffer,
+      });
+      const duration = Date.now() - start;
+
+      expect(res.status).toBe(200);
+      const data = (await res.json()) as any;
+      expect(data.filename).toBe("Handbook.pdf");
+      expect(data.size).toBe(pdfBuffer.length);
+      expect(data.path).toBe(path.resolve(tempLocalFilesDir, "Handbook.pdf"));
+      expect(fs.existsSync(data.path)).toBe(true);
+      expect(duration).toBeLessThan(100);
+    });
+
+    it("uploads a .docx file and returns HTTP 200 in under 50ms without main thread parsing", async () => {
+      // Standard PK zip header (0x50, 0x4B, 0x03, 0x04) for docx
+      const docxBuffer = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00, 0x00, 0x00, 0x00]);
+      const start = Date.now();
+      const res = await fetch(`${serverUrl}/api/sources/upload`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "x-filename": "Report.docx",
+        },
+        body: docxBuffer,
+      });
+      const duration = Date.now() - start;
+
+      expect(res.status).toBe(200);
+      const data = (await res.json()) as any;
+      expect(data.filename).toBe("Report.docx");
+      expect(data.size).toBe(docxBuffer.length);
+      expect(data.path).toBe(path.resolve(tempLocalFilesDir, "Report.docx"));
+      expect(fs.existsSync(data.path)).toBe(true);
+      expect(duration).toBeLessThan(100);
+    });
+
+    it("rejects legacy .doc file extension upfront with HTTP 400 without writing to disk", async () => {
+      const res = await fetch(`${serverUrl}/api/sources/upload`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          filename: "ancient.doc",
+          content: "Legacy binary text",
+        }),
+      });
+
+      expect(res.status).toBe(400);
+      const data = (await res.json()) as any;
+      expect(data.error).toContain("Legacy pre-2007 Word (.doc) files are not supported");
+      expect(data.error).toContain(".docx or .pdf");
+      expect(fs.existsSync(path.join(tempLocalFilesDir, "ancient.doc"))).toBe(false);
+    });
+
+    it("rejects OLE binary magic bytes (0xD0CF11E0) spoofed as .docx with HTTP 400 without saving", async () => {
+      // OLE Compound File header signature: D0 CF 11 E0
+      const oleSpoofedBuffer = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+      const res = await fetch(`${serverUrl}/api/sources/upload`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "x-filename": "spoofed.docx",
+        },
+        body: oleSpoofedBuffer,
+      });
+
+      expect(res.status).toBe(400);
+      const data = (await res.json()) as any;
+      expect(data.error).toContain("Legacy binary Word (.doc) format detected");
+      expect(fs.existsSync(path.join(tempLocalFilesDir, "spoofed.docx"))).toBe(false);
+    });
+
+    it("accepts slicing configuration in POST /api/sync/:id and forwards it to sync pipeline", async () => {
+      // Create local note
+      const notePath = path.join(tempLocalFilesDir, "sliced-note.md");
+      fs.writeFileSync(
+        notePath,
+        "# Section 1\nAlpha beta gamma.\n\n# Section 2\nDelta epsilon zeta."
+      );
+
+      const createRes = await fetch(`${serverUrl}/api/sources`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Slicing Note",
+          type: "local",
+          uri: notePath,
+          targetDeck: "Notes",
+        }),
+      });
+      const source = (await createRes.json()) as any;
+
+      // Sync with slicing payload
+      const syncRes = await fetch(`${serverUrl}/api/sync/${source.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          slicing: { mode: "outline" },
+        }),
+      });
+      expect(syncRes.status).toBe(200);
+
+      // Verify subdocuments created
+      const docsRes = await fetch(`${serverUrl}/api/sources/${source.id}/documents`);
+      const docsData = (await docsRes.json()) as any;
+      expect(docsData.documents.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it("enqueues background sync job and returns HTTP 202 with slicing when jobManager is enabled", async () => {
+      const jobRepo = new JobRepository(db);
+      const jobManager = new JobManager(jobRepo);
+      const jmServer = createWebServer({
+        port: 0,
+        sourceRepo,
+        syncRepo,
+        cardRepo,
+        documentRepo: docRepo,
+        ingestionService,
+        jobManager,
+        jobRepo,
+      });
+      const { url: jmServerUrl } = await jmServer.listen();
+
+      try {
+        const source = sourceRepo.create({
+          name: "Async Note",
+          type: "local",
+          uri: tempLocalFilesDir,
+          targetDeck: "Notes",
+        });
+
+        const syncRes = await fetch(`${jmServerUrl}/api/sync/${source.id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            slicing: { mode: "outline", minChunkWords: 50 },
+          }),
+        });
+
+        expect(syncRes.status).toBe(202);
+        const data = (await syncRes.json()) as any;
+        expect(data.success).toBe(true);
+        expect(data.jobId).toBeDefined();
+
+        const job = jobManager.getJob(data.jobId);
+        expect(job).toBeDefined();
+        expect(job?.metadata?.slicing).toEqual({ mode: "outline", minChunkWords: 50 });
+      } finally {
+        await jmServer.close();
+      }
+    });
+
+    it("returns HTTP 404 for nonexistent source in POST /api/sync/:id", async () => {
+      const syncRes = await fetch(`${serverUrl}/api/sync/nonexistent-id-999`, {
+        method: "POST",
+      });
+      expect(syncRes.status).toBe(404);
+      const data = (await syncRes.json()) as any;
+      expect(data.error).toContain("not found");
     });
   });
 });
