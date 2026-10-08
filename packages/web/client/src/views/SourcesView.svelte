@@ -462,8 +462,7 @@
   sourceId={exportingSource?.id}
   onClose={() => (isExportModalOpen = false)}
   onExportSuccess={(fn) => {
-    toastMessage = `✅ Exported ${fn}`;
-    setTimeout(() => (toastMessage = null), 4000);
+    toastStore.success(`Exported ${fn}`);
   }}
 />
 
