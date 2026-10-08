@@ -25,7 +25,7 @@ describe("CLI App Context and Canonical Database Resolution (Story 17.1)", () =>
     }
     if (fs.existsSync(tempDir)) {
       try {
-        fs.rmSync(tempDir, { recursive: true, force: true });
+        fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
       } catch {}
     }
   });

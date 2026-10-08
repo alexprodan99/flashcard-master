@@ -106,7 +106,9 @@ describe("E2E Multi-Processing Flow & Concurrency Verification", () => {
     if (server) {
       await server.close();
     }
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    } catch {}
   });
 
   it("enforces bounded concurrency pool limits and executes queued jobs in FIFO order", async () => {

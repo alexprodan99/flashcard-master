@@ -22,7 +22,9 @@ describe("WorkerExecutor", () => {
   });
 
   afterEach(() => {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    } catch {}
   });
 
   it("handles progress, step logging, and main-thread card commits via IPC", async () => {

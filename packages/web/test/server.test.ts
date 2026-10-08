@@ -170,10 +170,14 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     await server.close();
     db.close();
     if (fs.existsSync(tempMediaDir)) {
-      fs.rmSync(tempMediaDir, { recursive: true, force: true });
+      try {
+        fs.rmSync(tempMediaDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+      } catch {}
     }
     if (fs.existsSync(tempLocalFilesDir)) {
-      fs.rmSync(tempLocalFilesDir, { recursive: true, force: true });
+      try {
+        fs.rmSync(tempLocalFilesDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+      } catch {}
     }
   });
 
