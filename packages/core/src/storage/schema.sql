@@ -27,8 +27,11 @@ CREATE TABLE IF NOT EXISTS documents (
     title TEXT NOT NULL,
     url TEXT,
     text_content TEXT NOT NULL,
+    raw_content TEXT,
     content_hash TEXT,
     word_count INTEGER DEFAULT 0,
+    start_page INTEGER DEFAULT NULL,
+    end_page INTEGER DEFAULT NULL,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
@@ -64,6 +67,7 @@ CREATE INDEX IF NOT EXISTS idx_flashcards_source_id ON flashcards(source_id);
 CREATE INDEX IF NOT EXISTS idx_flashcards_target_deck ON flashcards(target_deck);
 CREATE INDEX IF NOT EXISTS idx_flashcards_difficulty ON flashcards(difficulty);
 CREATE INDEX IF NOT EXISTS idx_documents_source_id ON documents(source_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_source_url ON documents(source_id, url) WHERE url IS NOT NULL;
 
 -- Background Jobs Queue & Tracking
 CREATE TABLE IF NOT EXISTS jobs (

@@ -487,5 +487,125 @@ describe("MediaService", () => {
     expect(defaultDir.endsWith("media")).toBe(true);
     expect(fs.existsSync(defaultDir)).toBe(true);
   });
+
+  describe("fetchAndCacheMedia (Story 17.4)", () => {
+    it("memoizes identical remote image URLs and fetches only once", async () => {
+      let fetchCallCount = 0;
+      const fakePngBuffer = await sharp({
+        create: {
+          width: 50,
+          height: 50,
+          channels: 4,
+          background: { r: 10, g: 20, b: 30, alpha: 1 },
+        },
+      })
+        .png()
+        .toBuffer();
+
+      const mockFetch = async () => {
+        fetchCallCount++;
+        return new Response(fakePngBuffer, {
+          status: 200,
+          headers: { "Content-Type": "image/png" },
+        });
+      };
+
+      const cacheService = new MediaService({
+        mediaDir: tempDir,
+        customFetch: mockFetch as any,
+      });
+
+      const url = "https://example.com/shared-logo.png";
+      const [res1, res2, res3] = await Promise.all([
+        cacheService.fetchAndCacheMedia(url),
+        cacheService.fetchAndCacheMedia(url),
+        cacheService.fetchAndCacheMedia(url),
+      ]);
+
+      expect(fetchCallCount).toBe(1);
+      expect(res1).not.toBeNull();
+      expect(res2?.id).toBe(res1?.id);
+      expect(res3?.filename).toBe(res1?.filename);
+    });
+
+    it("memoizes 404 failures to prevent duplicate failing HTTP requests", async () => {
+      let fetchCallCount = 0;
+      const mockFailingFetch = async () => {
+        fetchCallCount++;
+        return new Response("Not Found", { status: 404 });
+      };
+
+      const cacheService = new MediaService({
+        mediaDir: tempDir,
+        customFetch: mockFailingFetch as any,
+      });
+
+      const res1 = await cacheService.fetchAndCacheMedia("https://example.com/missing.png");
+      const res2 = await cacheService.fetchAndCacheMedia("https://example.com/missing.png");
+
+      expect(fetchCallCount).toBe(1);
+      expect(res1).toBeNull();
+      expect(res2).toBeNull();
+    });
+
+    it("clears cached URLs when clearUrlCache is invoked", async () => {
+      let fetchCallCount = 0;
+      const fakePngBuffer = await sharp({
+        create: {
+          width: 20,
+          height: 20,
+          channels: 3,
+          background: { r: 100, g: 100, b: 100 },
+        },
+      })
+        .png()
+        .toBuffer();
+
+      const mockFetch = async () => {
+        fetchCallCount++;
+        return new Response(fakePngBuffer, {
+          status: 200,
+          headers: { "Content-Type": "image/png" },
+        });
+      };
+
+      const cacheService = new MediaService({
+        mediaDir: tempDir,
+        customFetch: mockFetch as any,
+      });
+
+      await cacheService.fetchAndCacheMedia("https://example.com/icon.png");
+      expect(fetchCallCount).toBe(1);
+
+      cacheService.clearUrlCache();
+
+      await cacheService.fetchAndCacheMedia("https://example.com/icon.png");
+      expect(fetchCallCount).toBe(2);
+    });
+
+    it("falls back to URL file extension when Content-Type is application/octet-stream", () => {
+      expect(
+        mediaService.detectExtension(
+          "application/octet-stream",
+          "https://example.com/download/diagram.png"
+        )
+      ).toBe("png");
+      expect(
+        mediaService.detectExtension(
+          "application/octet-stream",
+          "https://example.com/download/photo.jpeg"
+        )
+      ).toBe("jpg");
+      expect(
+        mediaService.detectExtension(
+          "application/octet-stream",
+          "https://example.com/download/binary-file"
+        )
+      ).toBe("bin");
+      expect(
+        mediaService.detectExtension("application/octet-stream")
+      ).toBe("bin");
+    });
+  });
 });
 

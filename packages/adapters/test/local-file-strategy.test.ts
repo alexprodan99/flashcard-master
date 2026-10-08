@@ -15,7 +15,9 @@ describe("LocalFileStrategy", () => {
 
   afterEach(() => {
     if (fs.existsSync(tempDir)) {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      try {
+        fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+      } catch {}
     }
   });
 

@@ -16,6 +16,15 @@ export interface DataSource {
   updatedAt: string;
 }
 
+export type SlicingMode = 'outline' | 'budget' | 'none';
+
+export interface DocumentSlicingOptions {
+  mode?: SlicingMode;
+  pagesPerChunk?: number;
+  wordsPerChunk?: number;
+  minChunkWords?: number;
+}
+
 export interface DiscoveredDocument {
   id: string;
   sourceId: string;
@@ -25,6 +34,8 @@ export interface DiscoveredDocument {
   contentHash?: string | null;
   wordCount: number;
   cardCount?: number;
+  startPage?: number | null;
+  endPage?: number | null;
   createdAt: string;
   updatedAt: string;
 }

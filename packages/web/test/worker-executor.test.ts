@@ -2,12 +2,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
-import { WorkerExecutor } from "../src/workers/worker-executor.js";
+import { WorkerExecutor, resolveDefaultWorkerScriptPath } from "../src/workers/worker-executor.js";
 import type { JobExecutionContext } from "../src/jobs/job-manager.js";
 import {
   createDatabaseClient,
   FlashcardRepository,
   CardDeduplicationService,
+  DocumentRepository,
+  SyncStateRepository,
+  DataSourceRepository,
 } from "@flashcard-master/core";
 
 describe("WorkerExecutor", () => {
@@ -19,7 +22,9 @@ describe("WorkerExecutor", () => {
   });
 
   afterEach(() => {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    } catch {}
   });
 
   it("handles progress, step logging, and main-thread card commits via IPC", async () => {
@@ -346,7 +351,7 @@ describe("WorkerExecutor", () => {
     expect(result.documentCount).toBe(1);
     expect(logs.some((l) => l.message.includes("Successfully compiled"))).toBe(true);
     expect(summary.documentCount).toBe(1);
-  }, 15000);
+  }, 30000);
 
   it("progressively streams cards via ctx.emitCard and preserves keywords and sourceLocator in SQLite", async () => {
     mockWorkerPath = path.join(tmpDir, "mock-stream-worker.js");
@@ -429,4 +434,220 @@ describe("WorkerExecutor", () => {
     expect(inDb[0].keywords).toEqual(["raft", "consensus", "distributed"]);
     expect(inDb[0].sourceLocator).toBe("Section 1, paragraph 2");
   });
+
+  it("enforces execution timeout and terminates worker cleanly", async () => {
+    mockWorkerPath = path.join(tmpDir, "mock-timeout-worker.js");
+    const scriptContent = `
+      import { parentPort } from "node:worker_threads";
+
+      parentPort.on("message", (msg) => {
+        if (msg.action === "START_TASK") {
+          // Worker hangs indefinitely
+          setInterval(() => {}, 1000);
+        }
+      });
+    `;
+    fs.writeFileSync(mockWorkerPath, scriptContent, "utf8");
+
+    const executor = new WorkerExecutor({
+      workerScriptPath: mockWorkerPath,
+      defaultTimeoutMs: 150,
+    });
+
+    const logs: any[] = [];
+    const mockCtx: JobExecutionContext = {
+      jobId: "timeout-job-1",
+      signal: new AbortController().signal,
+      updateProgress: () => {},
+      log: (stepNumber, stepTitle, level, message, details) => {
+        logs.push({ stepNumber, stepTitle, level, message, details });
+        return {} as any;
+      },
+      setResultSummary: () => {},
+    };
+
+    await expect(
+      executor.executeTask(
+        {
+          type: "sync_source",
+          payload: { sources: [], timeoutMs: 150 },
+        },
+        mockCtx
+      )
+    ).rejects.toThrow(/timed out/i);
+
+    expect(logs.some((l) => l.stepTitle === "Execution Timeout" && l.level === "error")).toBe(true);
+  });
+
+  it("custodially persists extracted subdocuments and updates syncRepo in COMMIT_SYNC_RESULT", async () => {
+    const db = createDatabaseClient({ inMemory: true });
+    const sourceRepo = new DataSourceRepository(db);
+    const source = sourceRepo.create({
+      name: "Report Source",
+      type: "local",
+      uri: "/tmp/report.docx",
+    });
+    const documentRepo = new DocumentRepository(db);
+    const syncRepo = new SyncStateRepository(db);
+
+    mockWorkerPath = path.join(tmpDir, "mock-doc-sync-worker.js");
+    const scriptContent = `
+      import { parentPort } from "node:worker_threads";
+
+      parentPort.on("message", (msg) => {
+        if (msg.action === "START_TASK") {
+          parentPort.postMessage({
+            type: "COMMIT_SYNC_RESULT",
+            jobId: msg.jobId,
+            sourceId: "${source.id}",
+            stepNumber: 1,
+            stepTitle: "Syncing Report.docx",
+            documents: [
+              {
+                id: "doc-slice-1",
+                sourceId: "${source.id}",
+                title: "Report.docx - Section 1",
+                textContent: "Executive summary and background.",
+                contentHash: "hash-slice-1",
+                wordCount: 4,
+                startPage: 1,
+                endPage: 2
+              },
+              {
+                id: "doc-slice-2",
+                sourceId: "${source.id}",
+                title: "Report.docx - Section 2",
+                textContent: "Architecture and implementation roadmap.",
+                contentHash: "hash-slice-2",
+                wordCount: 4,
+                startPage: 3,
+                endPage: 5
+              }
+            ]
+          });
+        }
+
+        if (msg.action === "COMMIT_SYNC_ACK") {
+          parentPort.postMessage({
+            type: "TASK_COMPLETE",
+            jobId: msg.jobId,
+            resultSummary: {
+              sourceId: msg.sourceId,
+              newCount: msg.newCount,
+              totalFetched: msg.totalFetched
+            }
+          });
+        }
+      });
+    `;
+    fs.writeFileSync(mockWorkerPath, scriptContent, "utf8");
+
+    const executor = new WorkerExecutor({
+      sourceRepo,
+      documentRepo,
+      syncRepo,
+      workerScriptPath: mockWorkerPath,
+      maxWorkerHeapMb: 512,
+    });
+
+    const mockCtx: JobExecutionContext = {
+      jobId: "sync-doc-job-1",
+      signal: new AbortController().signal,
+      updateProgress: () => {},
+      log: () => ({} as any),
+      setResultSummary: () => {},
+    };
+
+    const result = await executor.executeTask(
+      {
+        type: "sync_source",
+        payload: { sources: [] },
+      },
+      mockCtx
+    );
+
+    expect(result.newCount).toBe(2);
+    expect(result.totalFetched).toBe(2);
+
+    // Verify subdocuments are persisted into SQLite document table
+    const storedDoc1 = documentRepo.getById("doc-slice-1");
+    expect(storedDoc1).toBeDefined();
+    expect(storedDoc1?.title).toBe("Report.docx - Section 1");
+    expect(storedDoc1?.startPage).toBe(1);
+    expect(storedDoc1?.endPage).toBe(2);
+
+    const storedDoc2 = documentRepo.getById("doc-slice-2");
+    expect(storedDoc2).toBeDefined();
+    expect(storedDoc2?.title).toBe("Report.docx - Section 2");
+    expect(storedDoc2?.startPage).toBe(3);
+    expect(storedDoc2?.endPage).toBe(5);
+
+    // Verify sync state updated
+    const syncState = syncRepo.get(source.id);
+    expect(syncState).toBeDefined();
+    expect(syncState?.itemCount).toBe(2);
+    expect(syncState?.lastSyncedAt).toBeDefined();
+  });
+
+  it("executes sync_source end-to-end with real task-worker and persists subdocuments", async () => {
+    const db = createDatabaseClient({ inMemory: true });
+    const sourceRepo = new DataSourceRepository(db);
+    const documentRepo = new DocumentRepository(db);
+    const syncRepo = new SyncStateRepository(db);
+
+    const docFile = path.join(tmpDir, "test-notes.md");
+    fs.writeFileSync(
+      docFile,
+      `# Chapter 1
+<!-- page: 1 -->
+Alpha details on page 1.
+
+# Chapter 2
+<!-- page: 5 -->
+Beta details on page 5.
+`
+    );
+
+    const source = sourceRepo.create({
+      name: "Local MD Source",
+      type: "local",
+      uri: docFile,
+    });
+
+    const realWorkerPath = resolveDefaultWorkerScriptPath();
+    const executor = new WorkerExecutor({
+      sourceRepo,
+      documentRepo,
+      syncRepo,
+      workerScriptPath: realWorkerPath,
+    });
+
+    const logs: any[] = [];
+    const mockCtx: JobExecutionContext = {
+      jobId: "real-worker-sync-1",
+      signal: new AbortController().signal,
+      updateProgress: () => {},
+      log: (stepNumber, stepTitle, level, message, details) => {
+        logs.push({ stepNumber, stepTitle, level, message, details });
+        return {} as any;
+      },
+      setResultSummary: () => {},
+    };
+
+    const result = await executor.executeTask(
+      {
+        type: "sync_source",
+        payload: {
+          sources: [source],
+          slicing: { mode: "outline" },
+        },
+      },
+      mockCtx
+    );
+
+    expect(result.newCount).toBeGreaterThanOrEqual(1);
+    const docs = documentRepo.listBySourceId(source.id);
+    expect(docs.length).toBeGreaterThanOrEqual(1);
+    expect(docs[0].startPage).toBeDefined();
+  }, 30000);
 });

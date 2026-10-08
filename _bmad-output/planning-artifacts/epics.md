@@ -1244,6 +1244,66 @@ All tests enforce a strict 3-second timeout and return `{ success: boolean, mess
 - **And** `npm test` passes across all monorepo packages.
 - **And** `npm run lint` and `npm run typecheck` execute with zero errors or warnings.
 
+## Epic 17: Rich Document Ingestion (PDF/Word), Media-Aware EPUB Publishing & Dashboard Persistence
+
+**Goal:** Transform Flashcard Master into a rich, resilient document learning workstation by enabling local PDF and DOCX ingestion with user-configurable chunking into Document Catalog subdocuments, bundling external images into offline-ready EPUB eBooks (fixing Milan's .NET Weekly export), and guaranteeing zero data loss or selection resets upon browser reloads.
+
+### Story 17.1: Database Path Unification & LocalStorage State Persistence
+**ID:** `17-1-database-path-unification-and-localstorage-state-persistence`
+**Description:** Unify the default SQLite database path to `~/.flashcard-master/data.sqlite` across all monorepo packages (`core`, `adapters`, `cli`, `web`). Persist generator selections, source filters, and active tab in `localStorage` so browser reloads restore state without data loss.
+**Acceptance Criteria:**
+- **Given** the CLI, Web server, and background workers
+- **When** initializing database connections without explicit overrides
+- **Then** all services connect to `~/.flashcard-master/data.sqlite` with WAL mode enabled.
+- **And** when a user reloads the browser tab in Generate Studio or Dashboard, previously selected documents, source filters, and active view tabs are restored from `localStorage`.
+
+### Story 17.2: Pure-JS PDF and DOCX Parsing Adapters
+**ID:** `17-2-pure-js-pdf-and-docx-parsing-adapters`
+**Description:** Implement pure-JS parsing adapters in `@flashcard-master/adapters` for `.pdf` (using `unpdf` or `pdf-parse`) and `.docx` (using `mammoth`) without native binary dependencies. Convert Word headings and tables to clean Markdown, and detect scanned image-only PDFs early with clear validation errors.
+**Acceptance Criteria:**
+- **Given** valid `.pdf` and `.docx` files
+- **When** processed by the parsing adapters
+- **Then** clean text and Markdown tables are extracted into `CleanTextDocument` records.
+- **And** legacy pre-2007 `.doc` files are rejected with an explicit error.
+- **And** image-only scanned PDFs with zero selectable text fail fast with a friendly validation warning indicating OCR is unsupported.
+
+### Story 17.3: Configurable Document Slicing Engine & Catalog Integration
+**ID:** `17-3-configurable-document-slicing-engine-and-catalog-integration`
+**Description:** Implement the dual-slicing engine supporting semantic outline splitting and page-budget window chunking. Insert subdocument rows with page boundaries into the SQLite `documents` table and propagate coordinates to flashcard `sourceLocator`.
+**Acceptance Criteria:**
+- **Given** a multi-page PDF or Word document
+- **When** ingested with a selected slicing strategy (Semantic Outline or Page-Budget window)
+- **Then** distinct subdocument records are persisted to SQLite with hierarchical titles and page bounds (`startPage`, `endPage`).
+- **And** flashcards generated from subdocuments have formatted `sourceLocator` references (e.g. `Calculus.pdf - Page 14, Section 2.1`).
+
+### Story 17.4: Remote Media Localization & Packaging for EPUB Exports
+**ID:** `17-4-remote-media-localization-and-packaging-for-epub-exports`
+**Description:** Extend `DocumentExportService` and `MediaService` to scan external `http(s)://` image URLs in document text (e.g. Milan's .NET Weekly RSS). Download, cache, and bundle remote images into `OEBPS/images/` and rewrite chapter XHTML image tags for offline-ready EPUBs.
+**Acceptance Criteria:**
+- **Given** documents containing remote image URLs in clean text
+- **When** exported to EPUB 3.0
+- **Then** the exporter fetches images via `MediaService`, stores them in `OEBPS/images/`, and registers them in `content.opf`.
+- **And** chapter XHTML files reference local relative image paths, rendering illustrations properly in offline e-readers.
+
+### Story 17.5: Decoupled Async Background Worker Ingestion Pipeline
+**ID:** `17-5-decoupled-async-background-worker-ingestion-pipeline`
+**Description:** Decouple file upload from extraction with fast <50ms disk ACK, streaming page-by-page progress events via SSE to Task Center. Enforce worker heap limits, cancellation, and execution timeouts to prevent Node.js event-loop freezes and OOM crashes.
+**Acceptance Criteria:**
+- **Given** a user uploading large documents (e.g. 50+ pages)
+- **When** the upload request is received
+- **Then** the HTTP endpoint writes the raw file to disk and responds in <50ms with an ingestion job ID.
+- **And** the background task worker extracts pages incrementally, streaming progress to the UI Task Center without blocking the server.
+
+### Story 17.6: UI & CLI Slicing Controls & Monorepo Test Suite
+**ID:** `17-6-ui-and-cli-slicing-controls-and-monorepo-test-suite`
+**Description:** Update `AddSourceModal.svelte`, `SourceDocumentInspector.svelte`, and CLI `sources add` command with slicing configuration and subdocument displays. Implement end-to-end integration tests verifying PDF/Word ingestion, EPUB image packaging, and state retention across all packages.
+**Acceptance Criteria:**
+- **Given** the Web UI and CLI
+- **When** adding a local PDF or DOCX file
+- **Then** the user can configure slicing mode and chunk thresholds.
+- **And** the Document Inspector renders the subdocument hierarchy with page badges and word counts.
+- **And** the full monorepo test suite passes (`npm test`, `npm run lint`, `npm run typecheck`).
+
 
 
 

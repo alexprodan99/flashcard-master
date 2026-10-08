@@ -1,0 +1,65 @@
+- id: "17-1"
+  title: Database Path Unification & LocalStorage State Persistence
+  description: >-
+    Unify the default SQLite database path to ~/.flashcard-master/data.sqlite across all monorepo packages.
+    Persist generator selections, filters, and active tab in localStorage so browser reloads restore state without data loss.
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: >-
+    Ensure packages/cli/src/app.ts and packages/web/src/server.ts both resolve ~/.flashcard-master/data.sqlite by default.
+    Hydrate selectedDocIds and selectedSourceIds in generateStore.svelte.ts on mount.
+
+- id: "17-2"
+  title: Pure-JS PDF and DOCX Parsing Adapters
+  description: >-
+    Implement pure-JS parsing adapters in @flashcard-master/adapters for .pdf and .docx documents without native binary dependencies.
+    Convert Word headings and tables to clean Markdown, and detect scanned image-only PDFs early with clear validation errors.
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: >-
+    Use mammoth for .docx extraction and unpdf or pdf-parse for .pdf extraction.
+    Reject ancient binary .doc files with an explicit validation error.
+
+- id: "17-3"
+  title: Configurable Document Slicing Engine & Catalog Integration
+  description: >-
+    Implement the dual-slicing engine supporting semantic outline splitting and page-budget window chunking.
+    Insert subdocument rows with page boundaries into the SQLite documents table and propagate coordinates to flashcard sourceLocator.
+  spec_checkpoint: false
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Follow CAP-3 and CAP-4: ensure startPage and endPage are stored and formatted into sourceLocator citations
+    (e.g., "Calculus.pdf - Page 14, Section 2.1").
+
+- id: "17-4"
+  title: Remote Media Localization & Packaging for EPUB Exports
+  description: >-
+    Extend DocumentExportService and MediaService to scan external http(s):// image URLs in document text.
+    Download, cache, and bundle remote images into OEBPS/images/ and rewrite chapter XHTML image tags for offline-ready EPUBs.
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: >-
+    Test specifically against RSS markdown fixtures containing external images (like Milan's .NET Weekly).
+    Register all images in OEBPS/content.opf manifest with valid MIME types.
+
+- id: "17-5"
+  title: Decoupled Async Background Worker Ingestion Pipeline
+  description: >-
+    Decouple file upload from extraction with fast <50ms disk ACK, streaming page-by-page progress events via SSE to Task Center.
+    Enforce worker heap limits, cancellation, and execution timeouts to prevent Node.js event-loop freezes and OOM crashes.
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: >-
+    Verify that uploading a multi-page document returns an immediate HTTP response while the Task Center displays
+    live page extraction progress.
+
+- id: "17-6"
+  title: UI & CLI Slicing Controls & Monorepo Test Suite
+  description: >-
+    Update AddSourceModal, SourceDocumentInspector, and CLI sources add command with slicing configuration and subdocument displays.
+    Implement end-to-end integration tests verifying PDF/Word ingestion, EPUB image packaging, and state retention.
+  spec_checkpoint: false
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Ensure the UI displays subdocument trees under parent files with page badges and word counts.
+    Run full monorepo test suite verifying zero regressions across all packages.

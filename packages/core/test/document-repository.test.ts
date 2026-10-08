@@ -487,5 +487,54 @@ describe("DocumentRepository", () => {
     const fetchedUpdated = docRepo.getById(doc.id);
     expect(fetchedUpdated?.rawContent).toBe(updatedRaw);
   });
+
+  it("persists and hydrates startPage and endPage coordinates across upsert and upsertBatch", () => {
+    const singleDoc = docRepo.upsert({
+      sourceId: testSourceId,
+      title: "Calculus Chapter 1",
+      url: "file:///docs/calc.pdf#page=1-5",
+      textContent: "Limits and Derivatives",
+      startPage: 1,
+      endPage: 5,
+    });
+
+    expect(singleDoc.startPage).toBe(1);
+    expect(singleDoc.endPage).toBe(5);
+
+    const fetchedSingle = docRepo.getById(singleDoc.id);
+    expect(fetchedSingle).not.toBeNull();
+    expect(fetchedSingle?.startPage).toBe(1);
+    expect(fetchedSingle?.endPage).toBe(5);
+
+    // Test upsertBatch
+    docRepo.upsertBatch([
+      {
+        id: "batch-subdoc-1",
+        sourceId: testSourceId,
+        title: "Calculus Chapter 2",
+        url: "file:///docs/calc.pdf#page=6-10",
+        textContent: "Integrals",
+        startPage: 6,
+        endPage: 10,
+      },
+      {
+        id: "batch-subdoc-2",
+        sourceId: testSourceId,
+        title: "Calculus Chapter 3",
+        url: "file:///docs/calc.pdf#page=11-12",
+        textContent: "Series",
+        startPage: 11,
+        endPage: 12,
+      },
+    ]);
+
+    const batchDoc1 = docRepo.getById("batch-subdoc-1");
+    expect(batchDoc1?.startPage).toBe(6);
+    expect(batchDoc1?.endPage).toBe(10);
+
+    const batchDoc2 = docRepo.getById("batch-subdoc-2");
+    expect(batchDoc2?.startPage).toBe(11);
+    expect(batchDoc2?.endPage).toBe(12);
+  });
 });
 

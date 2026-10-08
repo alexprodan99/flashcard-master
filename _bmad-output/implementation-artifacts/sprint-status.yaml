@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 08-30-2026 20:47
-last_updated: 09-20-2026 15:54
+last_updated: 10-07-2026 13:33
 project: flashcard-master
 project_key: NOKEY
 tracking_system: file-system
@@ -172,6 +172,15 @@ development_status:
   16-5-legacy-sanitizer-deprecation-and-monorepo-test-suite: done
   16-6-question-explorer-keywords-and-anki-export-integration: done
   epic-16-retrospective: done
+
+  epic-17: done
+  17-1-database-path-unification-and-localstorage-state-persistence: done
+  17-2-pure-js-pdf-and-docx-parsing-adapters: done
+  17-3-configurable-document-slicing-engine-and-catalog-integration: done
+  17-4-remote-media-localization-and-packaging-for-epub-exports: done
+  17-5-decoupled-async-background-worker-ingestion-pipeline: done
+  17-6-ui-and-cli-slicing-controls-and-monorepo-test-suite: done
+  epic-17-retrospective: done
 action_items:
   - id: "epic-14-retro-item-1-add-progressive-exponential-backoff-and"
     epic: 14
@@ -201,3 +210,24 @@ action_items:
     owner: "dev"
     status: open
     ref: "_bmad-output/implementation-artifacts/epic-13-retro-2026-09-07.md"
+  - id: "epic-17-retro-item-5-purge-or-replace-previously-generated-su"
+    epic: 17
+    action: "Purge or replace previously generated subdocuments in SQLite documents
+      table when a data source is re-synced with altered slicing parameters"
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-17-retro-2026-10-07.md"
+  - id: "epic-17-retro-item-6-support-base64-content-decoding-for-bina"
+    epic: 17
+    action: "Support Base64 content decoding for binary files uploaded through JSON
+      payload in POST /api/sources/upload"
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-17-retro-2026-10-07.md"
+  - id: "epic-17-retro-item-7-index-subdocument-page-coordinates-start"
+    epic: 17
+    action: "Index subdocument page coordinates (startPage, endPage) in Generate Studio
+      text search filter"
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-17-retro-2026-10-07.md"

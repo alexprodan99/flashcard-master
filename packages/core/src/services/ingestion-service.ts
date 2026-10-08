@@ -1,9 +1,10 @@
-import type { DataSource, CleanTextDocument } from "../domain/models.js";
+import type { DataSource, CleanTextDocument, DiscoveredDocument } from "../domain/models.js";
 import type { DataSourceRepository } from "../storage/source-repository.js";
 import type { SyncStateRepository } from "../storage/sync-state-repository.js";
 import type { DocumentRepository } from "../storage/document-repository.js";
 import type { StrategyRegistry } from "./strategy-registry.js";
 import type { IngestionOptions } from "../ports/index.js";
+import { DocumentSlicingEngine } from "./document-slicing-engine.js";
 import crypto from "node:crypto";
 
 export interface SyncResult {
@@ -17,13 +18,32 @@ export interface SyncResult {
   error?: string;
 }
 
+function extractPageBounds(text: string): { startPage: number | null; endPage: number | null } {
+  const pageMatches = Array.from(text.matchAll(/<!--\s*page:\s*(\d+)\s*-->/gi));
+  if (pageMatches.length > 0) {
+    const pageNumbers = pageMatches.map((m) => parseInt(m[1], 10)).filter((n) => !isNaN(n));
+    if (pageNumbers.length > 0) {
+      return {
+        startPage: Math.min(...pageNumbers),
+        endPage: Math.max(...pageNumbers),
+      };
+    }
+  }
+  return { startPage: null, endPage: null };
+}
+
 export class IngestionService {
+  private readonly slicingEngine: DocumentSlicingEngine;
+
   constructor(
     private readonly sourceRepo: DataSourceRepository,
     private readonly syncRepo: SyncStateRepository,
     private readonly strategyRegistry: StrategyRegistry,
-    private readonly docRepo?: DocumentRepository
-  ) {}
+    private readonly docRepo?: DocumentRepository,
+    slicingEngine?: DocumentSlicingEngine
+  ) {
+    this.slicingEngine = slicingEngine ?? new DocumentSlicingEngine();
+  }
 
   async syncSource(sourceId: string, options?: IngestionOptions): Promise<SyncResult> {
     const startTime = Date.now();
@@ -68,6 +88,8 @@ export class IngestionService {
       let latestGuid = lastSync?.lastGuid ?? null;
       let latestContentHash = lastSync?.contentHash ?? null;
 
+      const isSlicingActive = Boolean(options?.slicing && options.slicing.mode !== "none");
+
       // Extract and filter for incremental delta
       for (const raw of rawDocs) {
         const cleanDoc = strategy.extractCleanText(raw);
@@ -80,7 +102,46 @@ export class IngestionService {
           continue;
         }
 
-        newDocuments.push(cleanDoc);
+        if (cleanDoc.startPage == null && cleanDoc.textContent) {
+          const bounds = extractPageBounds(cleanDoc.textContent);
+          if (bounds.startPage !== null) {
+            cleanDoc.startPage = bounds.startPage;
+            cleanDoc.endPage = bounds.endPage;
+          }
+        }
+
+        if (isSlicingActive) {
+          const docUrl =
+            cleanDoc.originUrl ||
+            raw.originUrl ||
+            (source.type === "web" ? source.uri : null);
+          const slices = this.slicingEngine.slice(
+            {
+              sourceId: source.id,
+              title: cleanDoc.title || "Untitled Document",
+              textContent: cleanDoc.textContent,
+              rawContent: raw.rawContent || cleanDoc.rawContent || null,
+              url: docUrl,
+              originUrl: docUrl,
+            },
+            options!.slicing
+          );
+          for (const slice of slices) {
+            newDocuments.push({
+              id: slice.id,
+              sourceId: slice.sourceId,
+              title: slice.title,
+              textContent: slice.textContent,
+              rawContent: slice.rawContent || undefined,
+              originUrl: slice.url || undefined,
+              contentHash: slice.contentHash,
+              startPage: slice.startPage ?? null,
+              endPage: slice.endPage ?? null,
+            });
+          }
+        } else {
+          newDocuments.push(cleanDoc);
+        }
 
         // Track most recent item
         if (raw.guid) latestGuid = raw.guid;
@@ -89,33 +150,78 @@ export class IngestionService {
 
       // Persist discovered documents into repository
       if (this.docRepo && rawDocs.length > 0) {
-        const docsToPersist = rawDocs.map((raw) => {
+        const docsToPersist: Array<
+          Partial<DiscoveredDocument> & { sourceId: string; title: string; textContent: string }
+        > = [];
+
+        for (const raw of rawDocs) {
           const cleanDoc = strategy.extractCleanText(raw);
+          if (cleanDoc.startPage == null && cleanDoc.textContent) {
+            const bounds = extractPageBounds(cleanDoc.textContent);
+            if (bounds.startPage !== null) {
+              cleanDoc.startPage = bounds.startPage;
+              cleanDoc.endPage = bounds.endPage;
+            }
+          }
           const docUrl =
             cleanDoc.originUrl ||
             raw.originUrl ||
             (source.type === "web" ? source.uri : null);
-          const uniqueKey = docUrl || raw.guid || cleanDoc.title;
-          const deterministicId = crypto
-            .createHash("sha256")
-            .update(`${source.id}:${uniqueKey}`)
-            .digest("hex")
-            .slice(0, 32);
 
-          const wordCount = cleanDoc.textContent.trim()
-            ? cleanDoc.textContent.trim().split(/\s+/).length
-            : 0;
-          return {
-            id: deterministicId,
-            sourceId: source.id,
-            title: cleanDoc.title || "Untitled Document",
-            url: docUrl,
-            textContent: cleanDoc.textContent,
-            rawContent: raw.rawContent || cleanDoc.rawContent || null,
-            contentHash: cleanDoc.contentHash || null,
-            wordCount,
-          };
-        });
+          if (isSlicingActive) {
+            const slices = this.slicingEngine.slice(
+              {
+                sourceId: source.id,
+                title: cleanDoc.title || "Untitled Document",
+                textContent: cleanDoc.textContent,
+                rawContent: raw.rawContent || cleanDoc.rawContent || null,
+                url: docUrl,
+                originUrl: docUrl,
+              },
+              options!.slicing
+            );
+
+            for (const slice of slices) {
+              docsToPersist.push({
+                id: slice.id,
+                sourceId: slice.sourceId,
+                title: slice.title,
+                url: slice.url,
+                textContent: slice.textContent,
+                rawContent: slice.rawContent || null,
+                contentHash: slice.contentHash,
+                wordCount: slice.wordCount,
+                startPage: slice.startPage ?? null,
+                endPage: slice.endPage ?? null,
+              });
+            }
+          } else {
+            const uniqueKey = docUrl || raw.guid || cleanDoc.title;
+            const deterministicId = crypto
+              .createHash("sha256")
+              .update(`${source.id}:${uniqueKey}`)
+              .digest("hex")
+              .slice(0, 32);
+
+            const wordCount = cleanDoc.textContent.trim()
+              ? cleanDoc.textContent.trim().split(/\s+/).length
+              : 0;
+
+            docsToPersist.push({
+              id: deterministicId,
+              sourceId: source.id,
+              title: cleanDoc.title || "Untitled Document",
+              url: docUrl,
+              textContent: cleanDoc.textContent,
+              rawContent: raw.rawContent || cleanDoc.rawContent || null,
+              contentHash: cleanDoc.contentHash || null,
+              wordCount,
+              startPage: cleanDoc.startPage ?? null,
+              endPage: cleanDoc.endPage ?? null,
+            });
+          }
+        }
+
         this.docRepo.upsertBatch(docsToPersist);
       }
 

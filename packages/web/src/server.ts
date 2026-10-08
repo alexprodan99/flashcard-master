@@ -29,6 +29,7 @@ import {
   createDatabaseClient,
   MediaService,
   CardGenerationService,
+  type DocumentSlicingOptions,
 } from "@flashcard-master/core";
 import { createLLMAdapter, DocumentExportService, ProviderVerifier } from "@flashcard-master/adapters";
 import { JobManager, type ConcurrencyLimits, type JobManagerOptions } from "./jobs/index.js";
@@ -65,6 +66,8 @@ export interface WebServerOptions {
   mediaService?: MediaService;
   localFilesDir?: string;
   createLLMAdapterFn?: (config: any) => any;
+  defaultTaskTimeoutMs?: number;
+  maxWorkerHeapMb?: number;
   ankiConnectAdapter?: {
     checkHealth(): Promise<AnkiConnectHealthCheck>;
     syncCards(cards: any[], options?: any): Promise<any>;
@@ -125,9 +128,12 @@ export class WebServer {
       this.workerExecutor = new WorkerExecutor({
         cardRepo: options.cardRepo,
         sourceRepo: options.sourceRepo,
+        syncRepo: options.syncRepo,
         dedupService: options.dedupService,
         ingestionService: options.ingestionService,
         documentRepo: options.documentRepo,
+        defaultTimeoutMs: options.defaultTaskTimeoutMs,
+        maxWorkerHeapMb: options.maxWorkerHeapMb,
       });
     }
   }
@@ -2085,21 +2091,41 @@ export class WebServer {
           if (pathname.startsWith("/api/sync/") && method === "POST") {
             const sourceId = pathname.slice("/api/sync/".length);
             const source = this.options.sourceRepo.getById(sourceId);
+            if (!source) {
+              this.sendJson(res, 404, { error: `Source "${sourceId}" not found` });
+              return;
+            }
+
+            const body = await this.parseBody(req).catch(() => ({}));
+            let slicing: DocumentSlicingOptions | undefined = body?.slicing;
+            if (typeof slicing === "string") {
+              try {
+                slicing = JSON.parse(slicing);
+              } catch {
+                slicing = { mode: slicing as any };
+              }
+            } else if (!slicing && typeof parsedUrl.query.slicing === "string") {
+              try {
+                slicing = JSON.parse(parsedUrl.query.slicing);
+              } catch {
+                slicing = { mode: parsedUrl.query.slicing as any };
+              }
+            }
 
             if (this.jobManager && parsedUrl.query.sync !== "true") {
-              if (!source) {
-                this.sendJson(res, 404, { error: `Source "${sourceId}" not found` });
-                return;
-              }
               const job = await this.jobManager.enqueueJob(
                 "sync_source",
                 `Sync source: ${source.name}`,
-                { sourceId, sourceName: source.name },
+                { sourceId, sourceName: source.name, slicing },
                 async (_j, ctx) => {
+                  const explicitTimeout = typeof (slicing as any)?.timeoutMs === "number" && (slicing as any).timeoutMs >= 0 ? (slicing as any).timeoutMs : undefined;
+                  const syncTimeoutMs = explicitTimeout !== undefined
+                    ? explicitTimeout
+                    : (this.options.defaultTaskTimeoutMs ?? 1_800_000);
                   return await this.workerExecutor.executeTask(
                     {
                       type: "sync_source",
-                      payload: { sources: [source] },
+                      payload: { sources: [source], slicing, timeoutMs: syncTimeoutMs },
                     },
                     ctx
                   );
@@ -2116,7 +2142,7 @@ export class WebServer {
             }
 
             if (this.options.ingestionService) {
-              const syncRes = await this.options.ingestionService.syncSource(sourceId);
+              const syncRes = await this.options.ingestionService.syncSource(sourceId, { slicing });
               this.sendJson(res, syncRes.error && syncRes.totalFetched === 0 ? 404 : 200, syncRes);
             } else {
               this.sendJson(res, 200, { sourceId, newCount: 0, totalFetched: 0 });
@@ -2128,16 +2154,39 @@ export class WebServer {
           if (pathname === "/api/sync" && method === "POST") {
             const activeSources = this.options.sourceRepo.list().filter((s) => s.isActive);
 
+            const body = await this.parseBody(req).catch(() => ({}));
+            let slicing: DocumentSlicingOptions | undefined = body?.slicing;
+            if (typeof slicing === "string") {
+              try {
+                slicing = JSON.parse(slicing);
+              } catch {
+                slicing = { mode: slicing as any };
+              }
+            } else if (!slicing && typeof parsedUrl.query.slicing === "string") {
+              try {
+                slicing = JSON.parse(parsedUrl.query.slicing);
+              } catch {
+                slicing = { mode: parsedUrl.query.slicing as any };
+              }
+            }
+
             if (this.jobManager && parsedUrl.query.sync !== "true") {
               const job = await this.jobManager.enqueueJob(
                 "sync_all",
                 `Sync all sources (${activeSources.length} active)`,
-                { sourceCount: activeSources.length },
+                { sourceCount: activeSources.length, slicing },
                 async (_j, ctx) => {
+                  const explicitTimeout = typeof (slicing as any)?.timeoutMs === "number" && (slicing as any).timeoutMs >= 0 ? (slicing as any).timeoutMs : undefined;
+                  const syncTimeoutMs = explicitTimeout !== undefined
+                    ? explicitTimeout
+                    : Math.max(
+                        this.options.defaultTaskTimeoutMs ?? 1_800_000,
+                        (activeSources.length || 1) * 10 * 60 * 1000
+                      );
                   return await this.workerExecutor.executeTask(
                     {
                       type: "sync_all",
-                      payload: { sources: activeSources },
+                      payload: { sources: activeSources, slicing, timeoutMs: syncTimeoutMs },
                     },
                     ctx
                   );
@@ -2154,7 +2203,7 @@ export class WebServer {
             }
 
             if (this.options.ingestionService) {
-              const syncResults = await this.options.ingestionService.syncAllActive();
+              const syncResults = await this.options.ingestionService.syncAllActive({ slicing });
               this.sendJson(res, 200, syncResults);
             } else {
               this.sendJson(res, 200, []);
@@ -2200,6 +2249,8 @@ export class WebServer {
                 title: string;
                 textContent: string;
                 originUrl?: string;
+                startPage?: number | null;
+                endPage?: number | null;
               }> = [];
 
               if (Array.isArray(body.documentIds) && body.documentIds.length > 0 && this.options.documentRepo) {
@@ -2212,6 +2263,8 @@ export class WebServer {
                       title: doc.title,
                       textContent: doc.textContent,
                       originUrl: doc.url || undefined,
+                      startPage: doc.startPage ?? null,
+                      endPage: doc.endPage ?? null,
                     });
                   }
                 }
@@ -2236,6 +2289,8 @@ export class WebServer {
                         title: doc.title,
                         textContent: doc.textContent,
                         originUrl: doc.url || undefined,
+                        startPage: doc.startPage ?? null,
+                        endPage: doc.endPage ?? null,
                       });
                     }
                   }
@@ -2255,6 +2310,13 @@ export class WebServer {
                   targetDeck: targetDeckOverride,
                 },
                 async (_j, ctx) => {
+                  const explicitTimeout = typeof body?.timeoutMs === "number" && body.timeoutMs >= 0 ? body.timeoutMs : undefined;
+                  const dynamicTimeoutMs = explicitTimeout !== undefined
+                    ? explicitTimeout
+                    : Math.max(
+                        this.options.defaultTaskTimeoutMs ?? 3_600_000,
+                        docCount * 3 * 60 * 1000 // 3 minutes per document
+                      );
                   return await this.workerExecutor.executeTask(
                     {
                       type: "generation",
@@ -2272,7 +2334,7 @@ export class WebServer {
                         limit,
                         targetDeckOverride,
                         enforceGrounding,
-                        timeoutMs: typeof body?.timeoutMs === "number" && body.timeoutMs > 0 ? body.timeoutMs : undefined,
+                        timeoutMs: dynamicTimeoutMs,
                       },
                     },
                     ctx
@@ -2322,6 +2384,8 @@ export class WebServer {
                     textContent: doc.textContent,
                     originUrl: doc.url || undefined,
                     contentHash: doc.contentHash || "",
+                    startPage: doc.startPage ?? null,
+                    endPage: doc.endPage ?? null,
                   };
                   const drafts = await genService.generateFromDocument(cleanDoc, {
                     difficulty,
@@ -2349,6 +2413,8 @@ export class WebServer {
                       sourceQuote: draft.sourceQuote,
                       sourceOriginUrl: draft.originUrl || doc.url || (parentSource?.type === "web" || parentSource?.type === "rss" || parentSource?.type === "sitemap" || parentSource?.type === "llms-txt" ? parentSource.uri : null),
                       documentTitle: draft.documentTitle || doc.title,
+                      keywords: draft.keywords || [],
+                      sourceLocator: draft.sourceLocator || "",
                       difficulty: draft.difficulty,
                       personaUsed: persona,
                       targetDeck,
@@ -2407,6 +2473,8 @@ export class WebServer {
                         sourceQuote: draft.sourceQuote,
                         sourceOriginUrl: draft.originUrl || (s.type === "web" || s.type === "rss" || s.type === "sitemap" || s.type === "llms-txt" ? s.uri : null),
                         documentTitle: draft.documentTitle || s.name,
+                        keywords: draft.keywords || [],
+                        sourceLocator: draft.sourceLocator || "",
                         difficulty: draft.difficulty,
                         personaUsed: persona,
                         targetDeck,
@@ -2513,10 +2581,31 @@ export class WebServer {
 
             // Validate file extension
             const ext = path.extname(safeFilename).toLowerCase();
-            const ALLOWED_EXTS = [".md", ".markdown", ".txt"];
+            if (ext === ".doc") {
+              this.sendJson(res, 400, {
+                error: "Legacy pre-2007 Word (.doc) files are not supported. Please convert to .docx or .pdf before uploading.",
+              });
+              return;
+            }
+
+            const ALLOWED_EXTS = [".md", ".markdown", ".txt", ".pdf", ".docx"];
             if (!ALLOWED_EXTS.includes(ext)) {
               this.sendJson(res, 400, {
-                error: `Unsupported file type "${ext}". Only .md, .markdown, and .txt files are supported.`,
+                error: `Unsupported file type "${ext}". Only .md, .markdown, .txt, .pdf, and .docx files are supported.`,
+              });
+              return;
+            }
+
+            // Check for legacy OLE binary magic bytes (0xD0CF11E0) spoofed as .docx or other extensions
+            if (
+              fileBuffer.length >= 4 &&
+              fileBuffer[0] === 0xd0 &&
+              fileBuffer[1] === 0xcf &&
+              fileBuffer[2] === 0x11 &&
+              fileBuffer[3] === 0xe0
+            ) {
+              this.sendJson(res, 400, {
+                error: "Legacy binary Word (.doc) format detected via file signature. Please convert to .docx or .pdf before uploading.",
               });
               return;
             }
@@ -3128,8 +3217,18 @@ export class WebServer {
       this.server.on("error", reject);
 
       this.server.listen(listenPort, this.host, () => {
-        const addr = this.server?.address();
-        const actualPort = typeof addr === "object" && addr ? addr.port : listenPort;
+        let addr = this.server?.address();
+        let actualPort = typeof addr === "object" && addr && addr.port ? addr.port : listenPort;
+        if ((!actualPort || actualPort === 0) && this.server) {
+          addr = this.server.address();
+          if (typeof addr === "object" && addr && addr.port) {
+            actualPort = addr.port;
+          }
+        }
+        if (!actualPort || actualPort === 0) {
+          reject(new Error("WebServer failed to bind to a valid port (port is 0)"));
+          return;
+        }
         resolve({
           port: actualPort,
           url: `http://${this.host}:${actualPort}`,
@@ -3141,6 +3240,9 @@ export class WebServer {
   async close(): Promise<void> {
     return new Promise((resolve) => {
       if (this.server) {
+        if (typeof (this.server as any).closeAllConnections === "function") {
+          (this.server as any).closeAllConnections();
+        }
         this.server.close(() => {
           this.server = null;
           resolve();

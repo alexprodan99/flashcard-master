@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { createDatabaseClient } from "../src/storage/db.js";
+import {
+  createDatabaseClient,
+  getDefaultDatabasePath,
+  migrateLegacyDatabaseIfNeeded,
+} from "../src/storage/db.js";
 import { DataSourceSchema } from "../src/domain/models.js";
 import fs from "node:fs";
 import path from "node:path";
@@ -16,7 +20,9 @@ describe("SQLite Database Client", () => {
 
   afterEach(() => {
     if (fs.existsSync(tempDir)) {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+      try {
+        fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+      } catch {}
     }
   });
 
@@ -234,6 +240,189 @@ describe("SQLite Database Client", () => {
     const mixedCard = migratedDb.prepare("SELECT * FROM flashcards WHERE id = 'c-2'").get() as any;
     expect(mixedCard).toBeDefined();
     expect(mixedCard.difficulty).toBe("mixed");
+
+    migratedDb.close();
+  });
+
+  it("resolves canonical database path pointing to ~/.flashcard-master/data.sqlite", () => {
+    const canonical = getDefaultDatabasePath();
+    expect(canonical.endsWith(path.join(".flashcard-master", "data.sqlite"))).toBe(true);
+  });
+
+  it("migrates legacy flashcards.db to data.sqlite non-destructively preserving all records", () => {
+    const legacyDbPath = path.join(tempDir, "flashcards.db");
+    const canonicalDbPath = path.join(tempDir, "data.sqlite");
+
+    // 1. Create legacy DB with data
+    const legacyDb = createDatabaseClient({ dbPath: legacyDbPath });
+    legacyDb.prepare(`
+      INSERT INTO data_sources (id, name, type, uri, target_deck)
+      VALUES ('legacy-src-1', 'Legacy Tech Feed', 'rss', 'https://example.com/rss', 'Default')
+    `).run();
+    legacyDb.prepare(`
+      INSERT INTO flashcards (id, source_id, question, answer, source_quote, difficulty)
+      VALUES ('legacy-card-1', 'legacy-src-1', 'Legacy Q', 'Legacy A', 'Legacy quote', 'beginner')
+    `).run();
+    legacyDb.close();
+
+    expect(fs.existsSync(legacyDbPath)).toBe(true);
+    expect(fs.existsSync(canonicalDbPath)).toBe(false);
+
+    // 2. Open canonical database - should detect legacy and copy
+    const client = createDatabaseClient({ dbPath: canonicalDbPath });
+    expect(fs.existsSync(canonicalDbPath)).toBe(true);
+
+    const source = client.prepare("SELECT * FROM data_sources WHERE id = 'legacy-src-1'").get() as any;
+    expect(source).toBeDefined();
+    expect(source.name).toBe("Legacy Tech Feed");
+
+    const card = client.prepare("SELECT * FROM flashcards WHERE id = 'legacy-card-1'").get() as any;
+    expect(card).toBeDefined();
+    expect(card.question).toBe("Legacy Q");
+
+    // Verify WAL mode on canonical database
+    const journalMode = client.pragma("journal_mode", { simple: true });
+    expect(journalMode).toBe("wal");
+
+    client.close();
+    // Legacy file should also remain intact (non-destructive)
+    expect(fs.existsSync(legacyDbPath)).toBe(true);
+  });
+
+  it("does not overwrite data.sqlite if both legacy and canonical databases exist", () => {
+    const legacyDbPath = path.join(tempDir, "flashcards.db");
+    const canonicalDbPath = path.join(tempDir, "data.sqlite");
+
+    // 1. Create legacy DB
+    // 1. Create canonical DB first with value 'canonical'
+    const canonicalDb = createDatabaseClient({ dbPath: canonicalDbPath });
+    canonicalDb.prepare(`
+      INSERT INTO app_settings (key, value) VALUES ('version', 'canonical')
+    `).run();
+    canonicalDb.close();
+
+    // 2. Create legacy DB with value 'legacy'
+    const legacyDb = createDatabaseClient({ dbPath: legacyDbPath });
+    legacyDb.prepare(`
+      INSERT INTO app_settings (key, value) VALUES ('version', 'legacy')
+    `).run();
+    legacyDb.close();
+
+    // 3. Run migration helper - should detect canonical already exists and refuse to overwrite
+    const result = migrateLegacyDatabaseIfNeeded(legacyDbPath, canonicalDbPath);
+    expect(result).toBe(false);
+
+    // 4. Verify canonical DB was NOT overwritten
+    const checkDb = createDatabaseClient({ dbPath: canonicalDbPath });
+    const setting = checkDb.prepare("SELECT value FROM app_settings WHERE key = 'version'").get() as any;
+    expect(setting.value).toBe("canonical");
+    checkDb.close();
+  });
+
+  it("migrates legacy flashcards.db if canonical data.sqlite exists but contains zero user records", () => {
+    const legacyDbPath = path.join(tempDir, "flashcards.db");
+    const canonicalDbPath = path.join(tempDir, "data.sqlite");
+
+    // 1. Create canonical DB with schema initialized but zero rows in any table
+    const canonicalDb = createDatabaseClient({ dbPath: canonicalDbPath });
+    canonicalDb.close();
+
+    // 2. Create legacy DB with real data
+    const legacyDb = createDatabaseClient({ dbPath: legacyDbPath });
+    legacyDb.prepare(`
+      INSERT INTO data_sources (id, name, type, uri, target_deck)
+      VALUES ('legacy-src-2', 'Populated Feed', 'rss', 'https://example.com/feed', 'Default')
+    `).run();
+    legacyDb.close();
+
+    // 3. Trigger migration - should detect canonical is unpopulated and migrate legacy
+    const result = migrateLegacyDatabaseIfNeeded(legacyDbPath, canonicalDbPath);
+    expect(result).toBe(true);
+
+    // 4. Verify canonical DB now has the legacy data
+    const checkDb = createDatabaseClient({ dbPath: canonicalDbPath });
+    const source = checkDb.prepare("SELECT * FROM data_sources WHERE id = 'legacy-src-2'").get() as any;
+    expect(source).toBeDefined();
+    expect(source.name).toBe("Populated Feed");
+    checkDb.close();
+  });
+
+  it("migrates legacy flashcards.db-wal to data.sqlite-wal when WAL sidecar exists", () => {
+    const legacyDbPath = path.join(tempDir, "flashcards.db");
+    const legacyWalPath = `${legacyDbPath}-wal`;
+    const canonicalDbPath = path.join(tempDir, "data.sqlite");
+    const canonicalWalPath = `${canonicalDbPath}-wal`;
+
+    // 1. Create legacy DB
+    const legacyDb = createDatabaseClient({ dbPath: legacyDbPath });
+    legacyDb.close();
+
+    // 2. Simulate WAL sidecar file
+    fs.writeFileSync(legacyWalPath, "simulated-wal-content");
+
+    expect(fs.existsSync(legacyDbPath)).toBe(true);
+    expect(fs.existsSync(legacyWalPath)).toBe(true);
+    expect(fs.existsSync(canonicalDbPath)).toBe(false);
+    expect(fs.existsSync(canonicalWalPath)).toBe(false);
+
+    // 3. Trigger migration
+    const migrated = migrateLegacyDatabaseIfNeeded(legacyDbPath, canonicalDbPath);
+    expect(migrated).toBe(true);
+    expect(fs.existsSync(canonicalDbPath)).toBe(true);
+    expect(fs.existsSync(canonicalWalPath)).toBe(true);
+    expect(fs.readFileSync(canonicalWalPath, "utf-8")).toBe("simulated-wal-content");
+  });
+
+  it("migrates existing database missing start_page and end_page without data loss", () => {
+    const dbFile = path.join(tempDir, "legacy-docs.sqlite");
+    const rawDb = new (require("better-sqlite3"))(dbFile);
+
+    // Create minimal data_sources table
+    rawDb.exec(`
+      CREATE TABLE data_sources (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL,
+        uri TEXT NOT NULL,
+        target_deck TEXT NOT NULL DEFAULT 'Default',
+        tags TEXT NOT NULL DEFAULT '[]',
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+      );
+      INSERT INTO data_sources (id, name, type, uri) VALUES ('src-1', 'Source 1', 'local', 'file:///test');
+
+      CREATE TABLE documents (
+        id TEXT PRIMARY KEY,
+        source_id TEXT NOT NULL REFERENCES data_sources(id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        url TEXT,
+        text_content TEXT NOT NULL,
+        raw_content TEXT,
+        content_hash TEXT,
+        word_count INTEGER DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+      );
+      INSERT INTO documents (id, source_id, title, text_content) VALUES ('doc-legacy', 'src-1', 'Old Doc', 'Legacy text content');
+    `);
+    rawDb.close();
+
+    // Now open via createDatabaseClient which executes runMigrations
+    const migratedDb = createDatabaseClient({ dbPath: dbFile });
+
+    const columns = migratedDb.prepare("PRAGMA table_info(documents)").all() as Array<{ name: string }>;
+    const colNames = columns.map((c) => c.name);
+    expect(colNames).toContain("start_page");
+    expect(colNames).toContain("end_page");
+
+    // Verify data was preserved
+    const row = migratedDb.prepare("SELECT * FROM documents WHERE id = 'doc-legacy'").get() as any;
+    expect(row).toBeDefined();
+    expect(row.title).toBe("Old Doc");
+    expect(row.text_content).toBe("Legacy text content");
+    expect(row.start_page).toBeNull();
+    expect(row.end_page).toBeNull();
 
     migratedDb.close();
   });

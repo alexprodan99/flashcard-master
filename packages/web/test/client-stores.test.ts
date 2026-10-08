@@ -1,11 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { GenerateStore, generateStore } from '../client/src/stores/generateStore.svelte.js';
+import { GenerateStore, generateStore, SELECTION_STORAGE_KEY, STORAGE_KEY } from '../client/src/stores/generateStore.svelte.js';
 import { SourcesStore, sourcesStore } from '../client/src/stores/sourcesStore.svelte.js';
 import { ExplorerStore } from '../client/src/stores/explorerStore.svelte.js';
 import { ExportStore } from '../client/src/stores/exportStore.svelte.js';
 import { TaskStore } from '../client/src/stores/taskStore.svelte.js';
 import { SettingsStore, settingsStore } from '../client/src/stores/settingsStore.svelte.js';
-import type { DataSource, Flashcard, GenerationResult, Job } from '../client/src/lib/types.js';
+import { loadCachedStats, saveCachedStats, DASHBOARD_STATS_STORAGE_KEY } from '../client/src/lib/dashboard-cache.js';
+import type { DataSource, Flashcard, GenerationResult, Job, DashboardStats, DiscoveredDocument, DocumentSlicingOptions, SlicingMode } from '../client/src/lib/types.js';
+import { syncSource, syncAllSources } from '../client/src/lib/api.js';
+import { formatPageBadge } from '../client/src/lib/formatters.js';
 
 describe('Svelte 5 Universal Client Stores (Epic 14.4)', () => {
   let localStorageMock: Record<string, string> = {};
@@ -107,6 +110,93 @@ describe('Svelte 5 Universal Client Stores (Epic 14.4)', () => {
       expect(store.generationResult?.cardsCreated).toBe(2);
       expect(store.createdCards.length).toBe(1);
       expect(store.createdCards[0].question).toBe('What is SQLite WAL?');
+    });
+
+    it('persists active document selections, source accordions, and filter queries across reloads', () => {
+      const store1 = new GenerateStore();
+
+      store1.selectAllDocsForSource('src-10', ['doc-1', 'doc-2']);
+      store1.toggleExpandSource('src-10');
+      store1.setSourceFilterQuery('src-10', 'concurrency');
+
+      // Verify localStorage storage
+      const raw = localStorageMock[SELECTION_STORAGE_KEY];
+      expect(raw).toBeDefined();
+      const parsed = JSON.parse(raw);
+      expect(parsed.selectedSourceIds).toContain('src-10');
+      expect(parsed.selectedDocIds['doc-1']).toBe(true);
+      expect(parsed.selectedDocIds['doc-2']).toBe(true);
+      expect(parsed.expandedSources['src-10']).toBe(true);
+      expect(parsed.sourceFilterQuery['src-10']).toBe('concurrency');
+
+      // Simulate page reload (F5) by creating a new store instance with existing localStorage
+      const store2 = new GenerateStore();
+      expect(store2.selectedSourceIds).toContain('src-10');
+      expect(store2.selectedDocIds['doc-1']).toBe(true);
+      expect(store2.selectedDocIds['doc-2']).toBe(true);
+      expect(store2.expandedSources['src-10']).toBe(true);
+      expect(store2.sourceFilterQuery['src-10']).toBe('concurrency');
+    });
+
+    it('prunes dead source and document IDs safely', () => {
+      const store = new GenerateStore();
+      store.selectAllDocsForSource('src-valid', ['doc-valid', 'doc-dead']);
+      store.selectAllDocsForSource('src-dead', ['doc-other']);
+      store.toggleExpandSource('src-valid');
+      store.toggleExpandSource('src-dead');
+      store.setSourceFilterQuery('src-dead', 'query');
+
+      expect(store.selectedSourceIds).toContain('src-dead');
+      expect(store.expandedSources['src-dead']).toBe(true);
+
+      // Prune dead sources and documents
+      store.pruneDeadIds(['src-valid'], ['doc-valid']);
+
+      expect(store.selectedSourceIds).toEqual(['src-valid']);
+      expect(store.expandedSources['src-dead']).toBeUndefined();
+      expect(store.sourceFilterQuery['src-dead']).toBeUndefined();
+      expect(store.selectedDocIds['doc-dead']).toBeUndefined();
+      expect(store.selectedDocIds['doc-valid']).toBe(true);
+
+      // Verify pruned state was persisted
+      const parsed = JSON.parse(localStorageMock[SELECTION_STORAGE_KEY]);
+      expect(parsed.selectedSourceIds).toEqual(['src-valid']);
+      expect(parsed.expandedSources['src-dead']).toBeUndefined();
+    });
+
+    it('handles localStorage errors gracefully without crashing (SecurityError / QuotaExceededError)', () => {
+      // Stub setItem to throw QuotaExceededError
+      vi.stubGlobal('localStorage', {
+        getItem: (key: string) => localStorageMock[key] || null,
+        setItem: () => {
+          throw new Error('QuotaExceededError: DOM Exception 22');
+        },
+        removeItem: vi.fn(),
+        clear: vi.fn(),
+      });
+
+      const store = new GenerateStore();
+      // Should not throw
+      expect(() => {
+        store.selectAllDocsForSource('src-1', ['doc-1']);
+        store.toggleDoc('doc-1');
+        store.toggleExpandSource('src-1');
+        store.setSourceFilterQuery('src-1', 'test');
+        store.save();
+      }).not.toThrow();
+
+      // Stub getItem to throw SecurityError (private browsing)
+      vi.stubGlobal('localStorage', {
+        getItem: () => {
+          throw new Error('SecurityError: The operation is insecure.');
+        },
+        setItem: vi.fn(),
+        removeItem: vi.fn(),
+        clear: vi.fn(),
+      });
+
+      // Instantiating with blocked localStorage should not crash
+      expect(() => new GenerateStore()).not.toThrow();
     });
   });
 
@@ -806,4 +896,221 @@ describe('Svelte 5 Universal Client Stores (Epic 14.4)', () => {
       expect(store.testResults.anthropic).toBeNull();
     });
   });
+
+  describe('Dashboard Telemetry SWR Cache (Story 17.1)', () => {
+    it('persists and restores dashboard stats via loadCachedStats and saveCachedStats', () => {
+      const mockStats: DashboardStats = {
+        totalCards: 42,
+        totalSources: 3,
+        activeSources: 2,
+        totalDecks: 2,
+        decks: { Systems: 42 },
+        difficulties: { beginner: 10, intermediate: 20, expert: 12, mixed: 0 },
+        recentSources: [
+          {
+            id: 's1',
+            name: 'Distributed Systems',
+            type: 'local',
+            uri: '/books/dist.md',
+            targetDeck: 'Systems',
+            tags: [],
+            isActive: true,
+            createdAt: '',
+            updatedAt: '',
+          },
+        ],
+      };
+
+      // Save via exported helper
+      saveCachedStats(mockStats);
+
+      // Verify raw storage
+      const raw = localStorageMock[DASHBOARD_STATS_STORAGE_KEY];
+      expect(raw).toBeDefined();
+
+      // Read back via exported helper (simulating initial SWR render on reload)
+      const loaded = loadCachedStats();
+      expect(loaded).toBeDefined();
+      expect(loaded?.totalCards).toBe(42);
+      expect(loaded?.activeSources).toBe(2);
+      expect(loaded?.recentSources[0].name).toBe('Distributed Systems');
+    });
+
+    it('tolerates corrupt JSON in dashboard cache gracefully', () => {
+      localStorageMock[DASHBOARD_STATS_STORAGE_KEY] = '{invalid-json';
+      expect(loadCachedStats()).toBeNull();
+    });
+
+    it('tolerates localStorage throwing SecurityError or QuotaExceededError', () => {
+      vi.stubGlobal('localStorage', {
+        getItem: () => {
+          throw new Error('SecurityError: The operation is insecure.');
+        },
+        setItem: () => {
+          throw new Error('QuotaExceededError: DOM Exception 22');
+        },
+        removeItem: vi.fn(),
+        clear: vi.fn(),
+      });
+
+      expect(() => loadCachedStats()).not.toThrow();
+      expect(loadCachedStats()).toBeNull();
+
+      const mockStats: DashboardStats = {
+        totalCards: 1,
+        totalSources: 1,
+        activeSources: 1,
+        totalDecks: 1,
+        decks: { Default: 1 },
+        difficulties: { beginner: 1, intermediate: 0, expert: 0, mixed: 0 },
+        recentSources: [],
+      };
+      expect(() => saveCachedStats(mockStats)).not.toThrow();
+    });
+  });
+
+  describe('Story 17.6: UI & CLI Slicing Controls & Page Bound Badges', () => {
+    it('preserves startPage and endPage metadata on DiscoveredDocument', () => {
+      const docWithPages: DiscoveredDocument = {
+        id: 'doc-1',
+        sourceId: 'src-1',
+        title: 'Rich PDF Section',
+        textContent: 'Content...',
+        wordCount: 1200,
+        startPage: 14,
+        endPage: 18,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      expect(docWithPages.startPage).toBe(14);
+      expect(docWithPages.endPage).toBe(18);
+
+      const docWithoutPages: DiscoveredDocument = {
+        id: 'doc-2',
+        sourceId: 'src-1',
+        title: 'Legacy Markdown',
+        textContent: 'Content...',
+        wordCount: 500,
+        startPage: null,
+        endPage: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      expect(docWithoutPages.startPage).toBeNull();
+      expect(docWithoutPages.endPage).toBeNull();
+    });
+
+    it('formats page coordinate badges correctly according to spec rules', () => {
+      const baseDoc: DiscoveredDocument = {
+        id: 'doc-test',
+        sourceId: 'src-1',
+        title: 'Test',
+        textContent: '',
+        wordCount: 100,
+        createdAt: '',
+        updatedAt: '',
+      };
+
+      // Multi-page range: startPage !== endPage -> "Pages 14-18"
+      expect(formatPageBadge({ ...baseDoc, startPage: 14, endPage: 18 })).toBe('Pages 14-18');
+
+      // Single-page range: startPage === endPage -> "Page 14"
+      expect(formatPageBadge({ ...baseDoc, startPage: 14, endPage: 14 })).toBe('Page 14');
+
+      // Single-page when endPage is null or less than startPage -> "Page 7"
+      expect(formatPageBadge({ ...baseDoc, startPage: 7, endPage: null })).toBe('Page 7');
+      expect(formatPageBadge({ ...baseDoc, startPage: 10, endPage: 8 })).toBe('Page 10');
+
+      // startPage null or undefined -> null (graceful omit)
+      expect(formatPageBadge({ ...baseDoc, startPage: null, endPage: null })).toBeNull();
+      expect(formatPageBadge({ ...baseDoc, startPage: undefined, endPage: undefined })).toBeNull();
+    });
+
+    it('transmits slicing options in POST body via syncSource API helper', async () => {
+      const originalFetch = globalThis.fetch;
+      const fetchCalls: { url: string; options: RequestInit }[] = [];
+
+      globalThis.fetch = vi.fn(async (url: any, options: any) => {
+        fetchCalls.push({ url: String(url), options });
+        return {
+          ok: true,
+          json: async () => ({ success: true, sourceId: 'src-pdf', newCount: 3, totalFetched: 3 }),
+        } as Response;
+      });
+
+      try {
+        // Budget mode slicing
+        const budgetOpts: DocumentSlicingOptions = {
+          mode: 'budget',
+          pagesPerChunk: 5,
+          wordsPerChunk: 1500,
+        };
+        await syncSource('src-pdf', { slicing: budgetOpts });
+
+        expect(fetchCalls.length).toBe(1);
+        expect(fetchCalls[0].url).toBe('/api/sync/src-pdf');
+        expect(fetchCalls[0].options.method).toBe('POST');
+        expect(JSON.parse(fetchCalls[0].options.body as string)).toEqual({
+          slicing: { mode: 'budget', pagesPerChunk: 5, wordsPerChunk: 1500 },
+        });
+
+        // Outline mode slicing
+        const outlineOpts: DocumentSlicingOptions = {
+          mode: 'outline',
+          minChunkWords: 250,
+          pagesPerChunk: 5,
+        };
+        await syncSource('src-pdf-2', { slicing: outlineOpts });
+
+        expect(fetchCalls.length).toBe(2);
+        expect(fetchCalls[1].url).toBe('/api/sync/src-pdf-2');
+        expect(JSON.parse(fetchCalls[1].options.body as string)).toEqual({
+          slicing: { mode: 'outline', minChunkWords: 250, pagesPerChunk: 5 },
+        });
+
+        // Omitted slicing maintains backward-compatible undefined body
+        await syncSource('src-legacy');
+        expect(fetchCalls.length).toBe(3);
+        expect(fetchCalls[2].url).toBe('/api/sync/src-legacy');
+        expect(fetchCalls[2].options.body).toBeUndefined();
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it('transmits slicing options in POST body via syncAllSources API helper', async () => {
+      const originalFetch = globalThis.fetch;
+      const fetchCalls: { url: string; options: RequestInit }[] = [];
+
+      globalThis.fetch = vi.fn(async (url: any, options: any) => {
+        fetchCalls.push({ url: String(url), options });
+        return {
+          ok: true,
+          json: async () => [{ success: true, sourceId: 'src-1', newCount: 1, totalFetched: 1 }],
+        } as Response;
+      });
+
+      try {
+        const slicingOpts: DocumentSlicingOptions = { mode: 'none' };
+        await syncAllSources({ slicing: slicingOpts });
+
+        expect(fetchCalls.length).toBe(1);
+        expect(fetchCalls[0].url).toBe('/api/sync');
+        expect(fetchCalls[0].options.method).toBe('POST');
+        expect(JSON.parse(fetchCalls[0].options.body as string)).toEqual({
+          slicing: { mode: 'none' },
+        });
+
+        // Without slicing
+        await syncAllSources();
+        expect(fetchCalls.length).toBe(2);
+        expect(fetchCalls[1].options.body).toBeUndefined();
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+  });
 });
+

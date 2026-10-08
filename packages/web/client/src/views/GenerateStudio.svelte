@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { fetchSources, fetchSourceDocuments, fetchDocuments, fetchDocumentDetails, syncSource, generateCards, fetchJobDetails } from '../lib/api';
   import type { DataSource, DiscoveredDocument, Flashcard, GenerationResult, DifficultyLevel, PersonaType, CardDepthMode } from '../lib/types';
+  import { formatPageBadge } from '../lib/formatters.js';
   import GenerationConfigFields from '../components/GenerationConfigFields.svelte';
   import DocumentPreviewModal from '../components/DocumentPreviewModal.svelte';
   import { generateStore, toastStore, taskStore } from '../stores/index.js';
@@ -46,6 +47,15 @@
     generateStore.save();
   });
 
+  // Auto-save selections, expanded accordions, and filters to localStorage
+  $effect(() => {
+    JSON.stringify(generateStore.selectedDocIds);
+    JSON.stringify(generateStore.selectedSourceIds);
+    JSON.stringify(generateStore.expandedSources);
+    JSON.stringify(generateStore.sourceFilterQuery);
+    generateStore.saveSelections();
+  });
+
   async function loadSources() {
     try {
       const all = await fetchSources();
@@ -84,6 +94,10 @@
           generateStore.selectedSourceIds = sources.map((s) => s.id);
         }
       }
+
+      // Prune dead source IDs that no longer exist
+      const activeSourceIds = sources.map((s) => s.id);
+      generateStore.pruneDeadIds(activeSourceIds);
 
       // If any sources are currently marked as expanded, ensure their documents are loaded and up to date
       for (const s of sources) {
@@ -849,6 +863,11 @@
                                       {doc.title}
                                     </div>
                                     <div class="tray-doc-meta-row">
+                                      {#if formatPageBadge(doc)}
+                                        <span class="meta-item page-badge">
+                                          📄 {formatPageBadge(doc)}
+                                        </span>
+                                      {/if}
                                       <span class="meta-item word-count">
                                         📝 {(doc.wordCount || 0).toLocaleString()} words
                                       </span>
@@ -1527,6 +1546,15 @@
     display: inline-flex;
     align-items: center;
     gap: 3px;
+  }
+
+  .meta-item.page-badge {
+    color: #38bdf8;
+    background: rgba(14, 165, 233, 0.12);
+    padding: 1px 5px;
+    border-radius: 3px;
+    border: 1px solid rgba(14, 165, 233, 0.25);
+    font-weight: 500;
   }
 
   .meta-item.word-count {

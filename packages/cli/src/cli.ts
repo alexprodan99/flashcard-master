@@ -9,6 +9,8 @@ import {
   type DifficultyLevel,
   type PersonaType,
   type CardDepthMode,
+  type SlicingMode,
+  type DocumentSlicingOptions,
   CardGenerationService,
 } from "@flashcard-master/core";
 import { createLLMAdapter, DocumentExportService } from "@flashcard-master/adapters";
@@ -34,22 +36,33 @@ export function createCli(providedContext?: AppContext): Command {
     .option("--max-generation-workers <number>", "Max concurrent generation workers", "3")
     .option("--max-sync-workers <number>", "Max concurrent sync workers", "2")
     .option("--max-export-workers <number>", "Max concurrent export workers", "2")
+    .option("--task-timeout <minutes>", "Default worker task timeout in minutes (0 to disable)", "60")
+    .option("--max-worker-heap <mb>", "Max memory heap per worker thread in MB", "512")
     .action(async (options: {
       port: string;
       host: string;
       maxGenerationWorkers?: string;
       maxSyncWorkers?: string;
       maxExportWorkers?: string;
+      taskTimeout?: string;
+      maxWorkerHeap?: string;
     }) => {
       try {
         const port = parseInt(options.port, 10) || 3000;
         const maxGenerationWorkers = options.maxGenerationWorkers ? Math.max(1, parseInt(options.maxGenerationWorkers, 10) || 1) : 3;
         const maxSyncWorkers = options.maxSyncWorkers ? Math.max(1, parseInt(options.maxSyncWorkers, 10) || 1) : 2;
         const maxExportWorkers = options.maxExportWorkers ? Math.max(1, parseInt(options.maxExportWorkers, 10) || 1) : 2;
+        const taskTimeoutMinutes = options.taskTimeout !== undefined ? parseInt(options.taskTimeout, 10) : 60;
+        const defaultTaskTimeoutMs = !isNaN(taskTimeoutMinutes) && taskTimeoutMinutes >= 0
+          ? taskTimeoutMinutes * 60 * 1000
+          : undefined;
+        const maxWorkerHeapMb = options.maxWorkerHeap ? parseInt(options.maxWorkerHeap, 10) : undefined;
 
         const server = createWebServer({
           port,
           host: options.host,
+          defaultTaskTimeoutMs,
+          maxWorkerHeapMb,
           sourceRepo: context.sourceRepo,
           syncRepo: context.syncRepo,
           cardRepo: context.cardRepo,
@@ -74,7 +87,7 @@ export function createCli(providedContext?: AppContext): Command {
 
         const { url } = await server.listen(port);
         console.log(`\n🎴 Flashcard Master Web UI is running at: ${url}`);
-        console.log(`⚡ Background Task Concurrency: Generation=${maxGenerationWorkers}, Sync=${maxSyncWorkers}, Export=${maxExportWorkers}`);
+        console.log(`⚡ Background Task Concurrency: Generation=${maxGenerationWorkers}, Sync=${maxSyncWorkers}, Export=${maxExportWorkers} | Task Timeout=${taskTimeoutMinutes === 0 ? "Disabled" : `${taskTimeoutMinutes}m`}`);
         console.log("Press Ctrl+C to stop.\n");
       } catch (err: any) {
         console.error(`Failed to start Web UI server: ${err.message}`);
@@ -92,7 +105,20 @@ export function createCli(providedContext?: AppContext): Command {
     .description("Register a new data source")
     .option("-d, --deck <deck>", "Target deck name", "Default")
     .option("-t, --tags <tags>", "Comma-separated list of tags", "")
-    .action((name: string, type: string, uri: string, options: { deck: string; tags: string }) => {
+    .option("--slicing-mode <mode>", "Document slicing mode: outline | budget | none")
+    .option("--pages-per-chunk <count>", "Page budget chunk size (number of pages)")
+    .option("--words-per-chunk <count>", "Word budget chunk size (number of words)")
+    .option("--min-chunk-words <count>", "Minimum section words for outline slicing")
+    .option("--sync", "Immediately trigger ingestion sync upon adding")
+    .action(async (name: string, type: string, uri: string, options: {
+      deck: string;
+      tags: string;
+      slicingMode?: string;
+      pagesPerChunk?: string;
+      wordsPerChunk?: string;
+      minChunkWords?: string;
+      sync?: boolean;
+    }) => {
       try {
         const validTypes: DataSourceType[] = ["rss", "web", "local", "sitemap", "llms-txt", "notion"];
         if (!validTypes.includes(type as DataSourceType)) {
@@ -115,6 +141,40 @@ export function createCli(providedContext?: AppContext): Command {
         });
 
         console.log(`✅ Successfully added data source: [${source.id}] "${source.name}" (${source.type}) -> Deck: ${source.targetDeck}`);
+
+        if (options.slicingMode && !["outline", "budget", "none"].includes(options.slicingMode)) {
+          console.error(`Error: Invalid slicing mode "${options.slicingMode}". Must be one of: outline, budget, none`);
+          process.exitCode = 1;
+          return;
+        }
+
+        let slicing: DocumentSlicingOptions | undefined;
+        if (options.slicingMode || options.pagesPerChunk || options.wordsPerChunk || options.minChunkWords) {
+          const parsedPages = options.pagesPerChunk ? parseInt(options.pagesPerChunk, 10) : undefined;
+          const parsedWords = options.wordsPerChunk ? parseInt(options.wordsPerChunk, 10) : undefined;
+          const parsedMinWords = options.minChunkWords ? parseInt(options.minChunkWords, 10) : undefined;
+
+          slicing = {
+            mode: (options.slicingMode as SlicingMode) || (parsedPages || parsedWords ? "budget" : parsedMinWords ? "outline" : undefined),
+            pagesPerChunk: parsedPages && !isNaN(parsedPages) && parsedPages > 0 ? parsedPages : undefined,
+            wordsPerChunk: parsedWords && !isNaN(parsedWords) && parsedWords > 0 ? parsedWords : undefined,
+            minChunkWords: parsedMinWords && !isNaN(parsedMinWords) && parsedMinWords > 0 ? parsedMinWords : undefined,
+          };
+        }
+
+        if (slicing && !options.sync) {
+          console.warn("⚠️  Warning: Slicing options require '--sync' to take effect upon adding. Use 'flashcard-master sync <sourceId>' with slicing options to ingest.");
+        }
+
+        if (options.sync) {
+          console.log(`Starting ingestion synchronization for source [${source.id}]...`);
+          const syncRes = await context.ingestionService.syncSource(source.id, { slicing });
+          if (syncRes.error) {
+            console.warn(`⚠️ [${syncRes.sourceName}] Sync error: ${syncRes.error}`);
+          } else {
+            console.log(`✅ [${syncRes.sourceName}] Ingested ${syncRes.newCount} new items (Total fetched: ${syncRes.totalFetched})`);
+          }
+        }
       } catch (err: any) {
         console.error(`Error adding data source: ${err.message}`);
         process.exitCode = 1;
@@ -219,6 +279,12 @@ export function createCli(providedContext?: AppContext): Command {
           console.log(`• ${doc.title}`);
           console.log(`  ID:    ${doc.id}`);
           if (doc.url) console.log(`  URL:   ${doc.url}`);
+          if (doc.startPage != null) {
+            const pageLabel = doc.endPage != null && doc.endPage !== doc.startPage
+              ? `Pages: ${doc.startPage}-${doc.endPage}`
+              : `Page: ${doc.startPage}`;
+            console.log(`  ${pageLabel}`);
+          }
           console.log(`  Words: ${(doc.wordCount ?? 0).toLocaleString()} | Generated Cards: ${doc.cardCount}`);
           console.log("--------------------------------------------------------------------------------");
         }
@@ -282,34 +348,77 @@ export function createCli(providedContext?: AppContext): Command {
     });
 
 
+  const runSync = async (
+    sourceId: string | undefined,
+    options: {
+      slicingMode?: string;
+      pagesPerChunk?: string;
+      wordsPerChunk?: string;
+      minChunkWords?: string;
+    }
+  ) => {
+    try {
+      console.log(`Starting ingestion synchronization${sourceId ? ` for source [${sourceId}]` : " for all active sources"}...`);
+      if (options.slicingMode && !["outline", "budget", "none"].includes(options.slicingMode)) {
+        console.error(`Error: Invalid slicing mode "${options.slicingMode}". Must be one of: outline, budget, none`);
+        process.exitCode = 1;
+        return;
+      }
+
+      let slicing: DocumentSlicingOptions | undefined;
+      if (options.slicingMode || options.pagesPerChunk || options.wordsPerChunk || options.minChunkWords) {
+        const parsedPages = options.pagesPerChunk ? parseInt(options.pagesPerChunk, 10) : undefined;
+        const parsedWords = options.wordsPerChunk ? parseInt(options.wordsPerChunk, 10) : undefined;
+        const parsedMinWords = options.minChunkWords ? parseInt(options.minChunkWords, 10) : undefined;
+
+        slicing = {
+          mode: (options.slicingMode as SlicingMode) || (parsedPages || parsedWords ? "budget" : parsedMinWords ? "outline" : undefined),
+          pagesPerChunk: parsedPages && !isNaN(parsedPages) && parsedPages > 0 ? parsedPages : undefined,
+          wordsPerChunk: parsedWords && !isNaN(parsedWords) && parsedWords > 0 ? parsedWords : undefined,
+          minChunkWords: parsedMinWords && !isNaN(parsedMinWords) && parsedMinWords > 0 ? parsedMinWords : undefined,
+        };
+      }
+
+      const results = sourceId
+        ? [await context.ingestionService.syncSource(sourceId, { slicing })]
+        : await context.ingestionService.syncAllActive({ slicing });
+
+      let totalNewItems = 0;
+      for (const r of results) {
+        if (r.error) {
+          console.warn(`⚠️ [${r.sourceName}] Sync error: ${r.error}`);
+        } else {
+          console.log(`✅ [${r.sourceName}] Ingested ${r.newCount} new items (Total fetched: ${r.totalFetched})`);
+          totalNewItems += r.newCount;
+        }
+      }
+      console.log(`Sync complete. Total new items fetched: ${totalNewItems}`);
+    } catch (err: any) {
+      console.error(`Sync failure: ${err.message}`);
+      process.exitCode = 1;
+    }
+  };
+
+  sourcesCmd
+    .command("sync [sourceId]")
+    .description("Synchronize and fetch new text documents from registered sources")
+    .option("--slicing-mode <mode>", "Document slicing mode: outline | budget | none")
+    .option("--pages-per-chunk <count>", "Page budget chunk size (number of pages)")
+    .option("--words-per-chunk <count>", "Word budget chunk size (number of words)")
+    .option("--min-chunk-words <count>", "Minimum section words for outline slicing")
+    .action(runSync);
+
   // ==========================================
   // SYNC COMMAND
   // ==========================================
   program
     .command("sync [sourceId]")
     .description("Synchronize and fetch new text documents from registered sources")
-    .action(async (sourceId?: string) => {
-      try {
-        console.log(`Starting ingestion synchronization${sourceId ? ` for source [${sourceId}]` : " for all active sources"}...`);
-        const results = sourceId
-          ? [await context.ingestionService.syncSource(sourceId)]
-          : await context.ingestionService.syncAllActive();
-
-        let totalNewItems = 0;
-        for (const r of results) {
-          if (r.error) {
-            console.warn(`⚠️ [${r.sourceName}] Sync error: ${r.error}`);
-          } else {
-            console.log(`✅ [${r.sourceName}] Ingested ${r.newCount} new items (Total fetched: ${r.totalFetched})`);
-            totalNewItems += r.newCount;
-          }
-        }
-        console.log(`Sync complete. Total new items fetched: ${totalNewItems}`);
-      } catch (err: any) {
-        console.error(`Sync failure: ${err.message}`);
-        process.exitCode = 1;
-      }
-    });
+    .option("--slicing-mode <mode>", "Document slicing mode: outline | budget | none")
+    .option("--pages-per-chunk <count>", "Page budget chunk size (number of pages)")
+    .option("--words-per-chunk <count>", "Word budget chunk size (number of words)")
+    .option("--min-chunk-words <count>", "Minimum section words for outline slicing")
+    .action(runSync);
 
   // ==========================================
   // GENERATE COMMAND

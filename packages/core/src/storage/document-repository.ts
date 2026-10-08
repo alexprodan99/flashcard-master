@@ -21,6 +21,8 @@ export class DocumentRepository {
       rawContent: row.raw_content !== undefined && row.raw_content !== null ? row.raw_content : null,
       contentHash: row.content_hash || null,
       wordCount: typeof row.word_count === "number" ? row.word_count : 0,
+      startPage: Number.isInteger(row.start_page) ? row.start_page : null,
+      endPage: Number.isInteger(row.end_page) ? row.end_page : null,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     });
@@ -58,8 +60,8 @@ export class DocumentRepository {
         : 0;
 
     const stmt = this.db.prepare(`
-      INSERT INTO documents (id, source_id, title, url, text_content, raw_content, content_hash, word_count)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO documents (id, source_id, title, url, text_content, raw_content, content_hash, word_count, start_page, end_page)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         title = excluded.title,
         url = excluded.url,
@@ -67,6 +69,8 @@ export class DocumentRepository {
         raw_content = excluded.raw_content,
         content_hash = excluded.content_hash,
         word_count = excluded.word_count,
+        start_page = excluded.start_page,
+        end_page = excluded.end_page,
         updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
     `);
 
@@ -78,7 +82,9 @@ export class DocumentRepository {
       rawDoc.textContent,
       rawDoc.rawContent || null,
       rawDoc.contentHash || null,
-      wordCount
+      wordCount,
+      Number.isInteger(rawDoc.startPage) ? rawDoc.startPage : null,
+      Number.isInteger(rawDoc.endPage) ? rawDoc.endPage : null
     );
 
     const created = this.getById(id);
@@ -104,8 +110,8 @@ export class DocumentRepository {
     const findByTitleStmt = this.db.prepare("SELECT id FROM documents WHERE source_id = ? AND url IS NULL AND title = ?");
 
     const stmt = this.db.prepare(`
-      INSERT INTO documents (id, source_id, title, url, text_content, raw_content, content_hash, word_count)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO documents (id, source_id, title, url, text_content, raw_content, content_hash, word_count, start_page, end_page)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         title = excluded.title,
         url = excluded.url,
@@ -113,6 +119,8 @@ export class DocumentRepository {
         raw_content = excluded.raw_content,
         content_hash = excluded.content_hash,
         word_count = excluded.word_count,
+        start_page = excluded.start_page,
+        end_page = excluded.end_page,
         updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
     `);
 
@@ -156,7 +164,9 @@ export class DocumentRepository {
           rawDoc.textContent,
           rawDoc.rawContent || null,
           rawDoc.contentHash || null,
-          wordCount
+          wordCount,
+          Number.isInteger(rawDoc.startPage) ? rawDoc.startPage : null,
+          Number.isInteger(rawDoc.endPage) ? rawDoc.endPage : null
         );
       }
     });

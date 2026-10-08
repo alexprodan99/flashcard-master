@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS documents (
     raw_content TEXT,
     content_hash TEXT,
     word_count INTEGER DEFAULT 0,
+    start_page INTEGER DEFAULT NULL,
+    end_page INTEGER DEFAULT NULL,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
@@ -104,13 +106,147 @@ export interface DatabaseClientOptions {
   inMemory?: boolean;
 }
 
+function hasUserData(filePath: string): boolean {
+  try {
+    if (!fs.existsSync(filePath)) return false;
+    const stats = fs.statSync(filePath);
+    if (stats.size === 0) return false;
+    let testDb: Database.Database | null = null;
+    try {
+      testDb = new Database(filePath, { readonly: true, fileMustExist: true });
+      const sourceCount = (testDb.prepare("SELECT count(*) as c FROM data_sources").get() as any)?.c ?? 0;
+      const cardCount = (testDb.prepare("SELECT count(*) as c FROM flashcards").get() as any)?.c ?? 0;
+      const docCount = (testDb.prepare("SELECT count(*) as c FROM documents").get() as any)?.c ?? 0;
+      const settingsCount = (testDb.prepare("SELECT count(*) as c FROM app_settings").get() as any)?.c ?? 0;
+      return sourceCount > 0 || cardCount > 0 || docCount > 0 || settingsCount > 0;
+    } catch {
+      if (testDb) {
+        try {
+          const tables = testDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all() as any[];
+          for (const t of tables) {
+            const count = (testDb.prepare(`SELECT count(*) as c FROM "${t.name}"`).get() as any)?.c ?? 0;
+            if (count > 0) return true;
+          }
+        } catch {}
+      }
+      return false;
+    } finally {
+      if (testDb) {
+        try {
+          testDb.close();
+        } catch {}
+      }
+    }
+  } catch {
+    return true; // Fail-safe: if unreadable, assume it has data
+  }
+}
+
+export function migrateLegacyDatabaseIfNeeded(
+  legacyPath?: string,
+  canonicalPath?: string
+): boolean {
+  const home = os.homedir();
+  const defaultDir = path.join(home, ".flashcard-master");
+  const actualLegacy = legacyPath || path.join(defaultDir, "flashcards.db");
+  const actualCanonical = canonicalPath || path.join(defaultDir, "data.sqlite");
+  const tempCanonical = `${actualCanonical}.tmp`;
+
+  try {
+    const legacyExists = fs.existsSync(actualLegacy);
+    if (!legacyExists) {
+      return false;
+    }
+
+    const canonicalExists = fs.existsSync(actualCanonical);
+    const shouldMigrate =
+      !canonicalExists ||
+      (!hasUserData(actualCanonical) && hasUserData(actualLegacy));
+
+    if (shouldMigrate) {
+      const destDir = path.dirname(actualCanonical);
+      if (!fs.existsSync(destDir)) {
+        fs.mkdirSync(destDir, { recursive: true });
+      }
+
+      // Clean up stale .tmp file if left over from a previous interrupted run
+      if (fs.existsSync(tempCanonical)) {
+        try {
+          fs.unlinkSync(tempCanonical);
+        } catch {}
+      }
+
+      // Safe atomic copy: copy to temporary file first
+      fs.copyFileSync(actualLegacy, tempCanonical);
+
+      // If legacy WAL/SHM files exist, copy them as well if present
+      const legacyWal = `${actualLegacy}-wal`;
+      const canonicalWal = `${actualCanonical}-wal`;
+      if (fs.existsSync(legacyWal)) {
+        try {
+          fs.copyFileSync(legacyWal, `${tempCanonical}-wal`);
+        } catch {}
+      }
+
+      const legacyShm = `${actualLegacy}-shm`;
+      const canonicalShm = `${actualCanonical}-shm`;
+      if (fs.existsSync(legacyShm)) {
+        try {
+          fs.copyFileSync(legacyShm, `${tempCanonical}-shm`);
+        } catch {}
+      }
+
+      // If replacing an unpopulated canonical file, clean up its sidecars first
+      if (canonicalExists) {
+        try {
+          if (fs.existsSync(canonicalWal)) fs.unlinkSync(canonicalWal);
+          if (fs.existsSync(canonicalShm)) fs.unlinkSync(canonicalShm);
+          fs.unlinkSync(actualCanonical);
+        } catch {}
+      }
+
+      // Atomic rename from .tmp to canonical destination
+      fs.renameSync(tempCanonical, actualCanonical);
+      if (fs.existsSync(`${tempCanonical}-wal`)) {
+        try {
+          fs.renameSync(`${tempCanonical}-wal`, canonicalWal);
+        } catch {}
+      }
+      if (fs.existsSync(`${tempCanonical}-shm`)) {
+        try {
+          fs.renameSync(`${tempCanonical}-shm`, canonicalShm);
+        } catch {}
+      }
+
+      return true;
+    }
+  } catch (err) {
+    if (fs.existsSync(tempCanonical)) {
+      try {
+        fs.unlinkSync(tempCanonical);
+      } catch {}
+    }
+    console.warn(
+      `[db] Failed to migrate legacy database from ${actualLegacy} to ${actualCanonical}:`,
+      err
+    );
+  }
+
+  return false;
+}
+
 export function getDefaultDatabasePath(): string {
   const home = os.homedir();
   const dir = path.join(home, ".flashcard-master");
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
-  return path.join(dir, "data.sqlite");
+  const canonicalPath = path.join(dir, "data.sqlite");
+  const legacyPath = path.join(dir, "flashcards.db");
+
+  migrateLegacyDatabaseIfNeeded(legacyPath, canonicalPath);
+
+  return canonicalPath;
 }
 
 export function getDefaultMediaDirectory(): string {
@@ -132,6 +268,10 @@ export function createDatabaseClient(options: DatabaseClientOptions = {}): Datab
     const parentDir = path.dirname(dbLocation);
     if (!fs.existsSync(parentDir)) {
       fs.mkdirSync(parentDir, { recursive: true });
+    }
+    if (path.basename(dbLocation) === "data.sqlite") {
+      const legacyPath = path.join(parentDir, "flashcards.db");
+      migrateLegacyDatabaseIfNeeded(legacyPath, dbLocation);
     }
   }
 
@@ -256,6 +396,13 @@ export function runMigrations(db: Database.Database): void {
 
   if (docsRow && docsRow.sql && docsRow.sql.includes("_data_sources_old")) {
     db.transaction(() => {
+      const oldCols = (db.prepare("PRAGMA table_info(documents)").all() as Array<{ name: string }>).map((c) =>
+        c.name.toLowerCase()
+      );
+      const hasRaw = oldCols.includes("raw_content") ? "raw_content" : "NULL AS raw_content";
+      const hasStart = oldCols.includes("start_page") ? "start_page" : "NULL AS start_page";
+      const hasEnd = oldCols.includes("end_page") ? "end_page" : "NULL AS end_page";
+
       db.exec("ALTER TABLE documents RENAME TO _documents_old;");
       db.exec(`
         CREATE TABLE documents (
@@ -267,13 +414,15 @@ export function runMigrations(db: Database.Database): void {
             raw_content TEXT,
             content_hash TEXT,
             word_count INTEGER DEFAULT 0,
+            start_page INTEGER DEFAULT NULL,
+            end_page INTEGER DEFAULT NULL,
             created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
             updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
         );
       `);
       db.exec(`
-        INSERT INTO documents (id, source_id, title, url, text_content, raw_content, content_hash, word_count, created_at, updated_at)
-        SELECT id, source_id, title, url, text_content, raw_content, content_hash, word_count, created_at, updated_at FROM _documents_old;
+        INSERT INTO documents (id, source_id, title, url, text_content, raw_content, content_hash, word_count, start_page, end_page, created_at, updated_at)
+        SELECT id, source_id, title, url, text_content, ${hasRaw}, content_hash, word_count, ${hasStart}, ${hasEnd}, created_at, updated_at FROM _documents_old;
       `);
       db.exec("DROP TABLE _documents_old;");
       db.exec("CREATE INDEX IF NOT EXISTS idx_documents_source_id ON documents(source_id);");
@@ -315,6 +464,8 @@ export function runMigrations(db: Database.Database): void {
         raw_content TEXT,
         content_hash TEXT,
         word_count INTEGER DEFAULT 0,
+        start_page INTEGER DEFAULT NULL,
+        end_page INTEGER DEFAULT NULL,
         created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
         updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
@@ -328,13 +479,29 @@ export function runMigrations(db: Database.Database): void {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_source_url ON documents(source_id, url) WHERE url IS NOT NULL;
   `);
 
-  // 7. Ensure raw_content column exists in documents table for existing databases
+  // 7. Ensure raw_content, start_page, and end_page columns exist in documents table for existing databases
   const docCols = db.prepare("PRAGMA table_info(documents)").all() as Array<{ name: string }>;
-  if (docCols && docCols.length > 0 && !docCols.some((c) => c.name === "raw_content")) {
-    try {
-      db.exec("ALTER TABLE documents ADD COLUMN raw_content TEXT;");
-    } catch {
-      // Catch "duplicate column" or other non-fatal migration errors cleanly
+  if (docCols && docCols.length > 0) {
+    if (!docCols.some((c) => c.name === "raw_content")) {
+      try {
+        db.exec("ALTER TABLE documents ADD COLUMN raw_content TEXT;");
+      } catch {
+        // Catch "duplicate column" or other non-fatal migration errors cleanly
+      }
+    }
+    if (!docCols.some((c) => c.name === "start_page")) {
+      try {
+        db.exec("ALTER TABLE documents ADD COLUMN start_page INTEGER DEFAULT NULL;");
+      } catch {
+        // Catch "duplicate column" or other non-fatal migration errors cleanly
+      }
+    }
+    if (!docCols.some((c) => c.name === "end_page")) {
+      try {
+        db.exec("ALTER TABLE documents ADD COLUMN end_page INTEGER DEFAULT NULL;");
+      } catch {
+        // Catch "duplicate column" or other non-fatal migration errors cleanly
+      }
     }
   }
 

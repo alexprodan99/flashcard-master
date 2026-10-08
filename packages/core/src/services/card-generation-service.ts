@@ -20,6 +20,55 @@ export interface GeneratedCardDraft extends CardGenerationDraft {
   documentTitle?: string;
 }
 
+export function formatCardSourceLocator(
+  docTitle: string,
+  startPage?: number | null,
+  endPage?: number | null,
+  draftLocator?: string
+): string {
+  let cleanTitle = (docTitle || "Document").trim();
+  let cleanDraft = (draftLocator || "").trim();
+
+  // If cleanDraft starts with cleanTitle, strip cleanTitle prefix before formatting
+  if (cleanDraft.startsWith(cleanTitle)) {
+    cleanDraft = cleanDraft.slice(cleanTitle.length).replace(/^[\s\-:,]+/, "").trim();
+  }
+
+  const hasPageInDraft = /\bpages?\s*\d+/i.test(cleanDraft);
+
+  // If cleanDraft specifies a page, strip any chunk page range suffix from cleanTitle
+  // to avoid redundant locators like "Book - Pages 26-30 - Page 27"
+  if (hasPageInDraft) {
+    cleanTitle = cleanTitle.replace(/\s*[-–—]\s*Pages?\s*\d+(?:\s*[-–—]\s*\d+)?\s*$/i, "").trim();
+    if (cleanDraft.startsWith(cleanTitle)) {
+      cleanDraft = cleanDraft.slice(cleanTitle.length).replace(/^[\s\-:,]+/, "").trim();
+    }
+  }
+
+  let pagePart = "";
+  if (typeof startPage === "number" && startPage > 0) {
+    pagePart =
+      typeof endPage === "number" && endPage > startPage
+        ? `Pages ${startPage}-${endPage}`
+        : `Page ${startPage}`;
+  }
+
+  // If cleanTitle already contains pagePart, do NOT duplicate pagePart
+  if (pagePart && cleanTitle.toLowerCase().includes(pagePart.toLowerCase())) {
+    pagePart = "";
+  }
+
+  if (!cleanDraft) {
+    return pagePart ? `${cleanTitle} - ${pagePart}` : cleanTitle;
+  }
+
+  if (pagePart && !hasPageInDraft) {
+    return `${cleanTitle} - ${pagePart}, ${cleanDraft}`;
+  }
+
+  return `${cleanTitle} - ${cleanDraft}`;
+}
+
 export class CardGenerationService {
   private readonly chunker: TextChunker;
   private readonly promptBuilder: PromptBuilder;
@@ -119,7 +168,12 @@ export class CardGenerationService {
             citation: draft.citation || draft.sourceQuote,
             difficulty: draft.difficulty || difficulty,
             keywords: draft.keywords || [],
-            sourceLocator: draft.sourceLocator || "",
+            sourceLocator: formatCardSourceLocator(
+              doc.title,
+              doc.startPage,
+              doc.endPage,
+              draft.sourceLocator
+            ),
             sourceId: doc.sourceId,
             originUrl: doc.originUrl,
             documentTitle: doc.title,

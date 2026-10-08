@@ -123,7 +123,9 @@ describe("Job Queue, Streaming SSE & Logging Endpoints", () => {
     if (server) {
       await server.close();
     }
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    } catch {}
   });
 
   it("POST /api/generate enqueues background job asynchronously in < 50ms", async () => {

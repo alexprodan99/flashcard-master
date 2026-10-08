@@ -7,15 +7,22 @@ describe("CLI Application", () => {
   let context: AppContext;
   let logs: string[] = [];
   let errors: string[] = [];
+  let warnings: string[] = [];
 
   const originalLog = console.log;
   const originalError = console.error;
+  const originalWarn = console.warn;
 
   beforeEach(() => {
     logs = [];
     errors = [];
+    warnings = [];
     console.log = vi.fn((...args: any[]) => logs.push(args.join(" ")));
     console.error = vi.fn((...args: any[]) => errors.push(args.join(" ")));
+    console.warn = vi.fn((...args: any[]) => {
+      warnings.push(args.join(" "));
+      logs.push(args.join(" "));
+    });
 
     context = createAppContext({ inMemory: true });
   });
@@ -23,6 +30,7 @@ describe("CLI Application", () => {
   afterEach(() => {
     console.log = originalLog;
     console.error = originalError;
+    console.warn = originalWarn;
     context.close();
   });
 
@@ -233,6 +241,176 @@ describe("CLI Application", () => {
     expect(logs.some((l) => l.includes("# Cloud Knowledge - Knowledge Base"))).toBe(true);
     expect(logs.some((l) => l.includes("## 📑 Table of Contents"))).toBe(true);
     expect(logs.some((l) => l.includes("Kubernetes Ingress Controllers"))).toBe(true);
+  });
+
+  it("registers and immediately syncs a local source with outline slicing flags (Story 17.6)", async () => {
+    const syncSpy = vi.spyOn(context.ingestionService, "syncSource").mockResolvedValueOnce({
+      sourceId: "mock-id",
+      sourceName: "Book",
+      newCount: 3,
+      totalFetched: 3,
+      newDocuments: [],
+      skippedCount: 0,
+      durationMs: 50,
+    });
+
+    const cli = createCli(context);
+    cli.exitOverride();
+
+    await cli.parseAsync([
+      "node",
+      "flashcard-master",
+      "sources",
+      "add",
+      "Book",
+      "local",
+      "./book.pdf",
+      "--slicing-mode",
+      "outline",
+      "--pages-per-chunk",
+      "5",
+      "--min-chunk-words",
+      "250",
+      "--sync",
+    ]);
+
+    expect(logs.some((l) => l.includes("Successfully added data source"))).toBe(true);
+    expect(logs.some((l) => l.includes("Ingested 3 new items"))).toBe(true);
+    expect(syncSpy).toHaveBeenCalledTimes(1);
+    expect(syncSpy).toHaveBeenCalledWith(expect.any(String), {
+      slicing: {
+        mode: "outline",
+        pagesPerChunk: 5,
+        wordsPerChunk: undefined,
+        minChunkWords: 250,
+      },
+    });
+  });
+
+  it("renders page bounds in sources docs output for subdocuments with page coordinates (Story 17.6)", async () => {
+    const source = context.sourceRepo.create({
+      name: "Biology Textbook",
+      type: "local",
+      uri: "./bio.pdf",
+    });
+
+    // Multi-page bounds: Pages: 14-18
+    context.docRepo.upsert({
+      sourceId: source.id,
+      title: "Chapter 2: Cell Division",
+      textContent: "Cell division text...",
+      startPage: 14,
+      endPage: 18,
+    });
+
+    // Single-page bounds: Page: 25
+    context.docRepo.upsert({
+      sourceId: source.id,
+      title: "Glossary: Terms",
+      textContent: "Glossary terms text...",
+      startPage: 25,
+      endPage: 25,
+    });
+
+    // Document without page bounds: graceful omit
+    context.docRepo.upsert({
+      sourceId: source.id,
+      title: "Appendix: Notes",
+      textContent: "Appendix notes text...",
+    });
+
+    const cli = createCli(context);
+    cli.exitOverride();
+
+    logs = [];
+    await cli.parseAsync(["node", "flashcard-master", "sources", "docs", source.id]);
+
+    expect(logs.some((l) => l.includes("Pages: 14-18"))).toBe(true);
+    expect(logs.some((l) => l.includes("Page: 25"))).toBe(true);
+    expect(logs.some((l) => l.includes("Chapter 2: Cell Division"))).toBe(true);
+    expect(logs.some((l) => l.includes("Glossary: Terms"))).toBe(true);
+    expect(logs.some((l) => l.includes("Appendix: Notes"))).toBe(true);
+  });
+
+  it("executes sync command with budget slicing flags (Story 17.6)", async () => {
+    const syncSpy = vi.spyOn(context.ingestionService, "syncSource").mockResolvedValueOnce({
+      sourceId: "s-1",
+      sourceName: "Local Manual",
+      newCount: 2,
+      totalFetched: 2,
+      newDocuments: [],
+      skippedCount: 0,
+      durationMs: 50,
+    });
+
+    const cli = createCli(context);
+    cli.exitOverride();
+
+    logs = [];
+    await cli.parseAsync([
+      "node",
+      "flashcard-master",
+      "sync",
+      "s-1",
+      "--slicing-mode",
+      "budget",
+      "--pages-per-chunk",
+      "4",
+      "--words-per-chunk",
+      "1200",
+    ]);
+
+    expect(logs.some((l) => l.includes("Ingested 2 new items"))).toBe(true);
+    expect(syncSpy).toHaveBeenCalledWith("s-1", {
+      slicing: {
+        mode: "budget",
+        pagesPerChunk: 4,
+        wordsPerChunk: 1200,
+        minChunkWords: undefined,
+      },
+    });
+  });
+
+  it("warns when slicing flags are passed to sources add without --sync", async () => {
+    const cli = createCli(context);
+    cli.exitOverride();
+
+    logs = [];
+    errors = [];
+    await cli.parseAsync([
+      "node",
+      "flashcard-master",
+      "sources",
+      "add",
+      "Unsynced PDF",
+      "local",
+      "./doc.pdf",
+      "--slicing-mode",
+      "outline",
+    ]);
+
+    expect(logs.some((l) => l.includes("Successfully added data source"))).toBe(true);
+    expect(logs.some((l) => l.includes("Slicing options require '--sync'"))).toBe(true);
+  });
+
+  it("rejects invalid slicing mode with error message", async () => {
+    const cli = createCli(context);
+    cli.exitOverride();
+
+    errors = [];
+    await cli.parseAsync([
+      "node",
+      "flashcard-master",
+      "sources",
+      "add",
+      "Bad Mode PDF",
+      "local",
+      "./doc.pdf",
+      "--slicing-mode",
+      "invalid-mode",
+    ]);
+
+    expect(errors.some((e) => e.includes('Invalid slicing mode "invalid-mode"'))).toBe(true);
   });
 });
 

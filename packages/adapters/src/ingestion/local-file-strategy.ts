@@ -3,9 +3,14 @@ import fs from "node:fs";
 import path from "node:path";
 import fg from "fast-glob";
 import crypto from "node:crypto";
+import { DocxParser, UnsupportedDocumentError } from "./docx-parser.js";
+import { PdfParser, ScannedDocumentError } from "./pdf-parser.js";
 
 export class LocalFileStrategy implements IngestionStrategy {
   readonly type = "local" as const;
+
+  private docxParser = new DocxParser();
+  private pdfParser = new PdfParser();
 
   async fetch(source: DataSource, lastSync?: SyncState): Promise<RawDocument[]> {
     const targetPath = source.uri;
@@ -21,28 +26,53 @@ export class LocalFileStrategy implements IngestionStrategy {
 
       if (stats.isFile()) {
         const ext = path.extname(targetPath).toLowerCase();
-        if ([".md", ".markdown", ".txt"].includes(ext)) {
-          const doc = this.readFileAsDocument(targetPath, source.id, stats);
+        if (ext === ".doc") {
+          throw new UnsupportedDocumentError(
+            "Legacy binary .doc is not supported. Please convert to .docx or .pdf"
+          );
+        }
+
+        if ([".md", ".markdown", ".txt", ".pdf", ".docx"].includes(ext)) {
+          const doc = await this.readFileAsDocument(targetPath, source.id, stats);
           if (doc) docs.push(doc);
         }
       } else if (stats.isDirectory()) {
         // Find all matching files in directory tree
-        const pattern = "**/*.{md,markdown,txt}";
+        const pattern = "**/*.{md,markdown,txt,pdf,docx}";
         const normalizedTarget = targetPath.replace(/\\/g, "/");
         const files = await fg(pattern, {
           cwd: normalizedTarget,
           absolute: true,
+          caseSensitiveMatch: false,
           ignore: ["**/node_modules/**", "**/.git/**", "**/dist/**"],
           onlyFiles: true,
         });
 
         for (const filePath of files) {
-          const fileStat = fs.statSync(filePath);
-          const doc = this.readFileAsDocument(filePath, source.id, fileStat);
-          if (doc) docs.push(doc);
+          let fileStat: fs.Stats;
+          try {
+            fileStat = fs.statSync(filePath);
+          } catch (statErr: any) {
+            console.warn(`[LocalFileStrategy] Skipping unreadable file ${filePath}: ${statErr.message}`);
+            continue;
+          }
+
+          try {
+            const doc = await this.readFileAsDocument(filePath, source.id, fileStat);
+            if (doc) docs.push(doc);
+          } catch (docErr: any) {
+            if (docErr instanceof UnsupportedDocumentError || docErr instanceof ScannedDocumentError) {
+              console.warn(`[LocalFileStrategy] Skipping file ${filePath}: ${docErr.message}`);
+              continue;
+            }
+            console.warn(`[LocalFileStrategy] Error reading ${filePath}: ${docErr.message}`);
+          }
         }
       }
     } catch (err: any) {
+      if (err instanceof UnsupportedDocumentError || err instanceof ScannedDocumentError) {
+        throw err;
+      }
       console.warn(`[LocalFileStrategy] Error reading local path ${targetPath}:`, err.message);
       return [];
     }
@@ -50,12 +80,43 @@ export class LocalFileStrategy implements IngestionStrategy {
     return docs;
   }
 
-  private readFileAsDocument(filePath: string, sourceId: string, stats: fs.Stats): RawDocument | null {
+  private async readFileAsDocument(
+    filePath: string,
+    sourceId: string,
+    stats: fs.Stats
+  ): Promise<RawDocument | null> {
     try {
-      const content = fs.readFileSync(filePath, "utf8");
-      const title = this.extractTitle(content, filePath);
+      const ext = path.extname(filePath).toLowerCase();
+      let content = "";
+      let title = "";
+
+      if (ext === ".doc") {
+        throw new UnsupportedDocumentError(
+          "Legacy binary .doc is not supported. Please convert to .docx or .pdf"
+        );
+      } else if (ext === ".docx") {
+        const buffer = fs.readFileSync(filePath);
+        const result = await this.docxParser.parse(buffer, path.basename(filePath));
+        if (!result) return null;
+        title = result.title;
+        content = result.markdown;
+      } else if (ext === ".pdf") {
+        const buffer = fs.readFileSync(filePath);
+        const result = await this.pdfParser.parse(buffer, path.basename(filePath));
+        if (!result) return null;
+        title = result.title;
+        content = result.text;
+      } else {
+        content = fs.readFileSync(filePath, "utf8");
+        title = this.extractTitle(content, filePath);
+      }
+
       const normalizedPath = filePath.replace(/\\/g, "/");
-      const docId = crypto.createHash("sha256").update(`${sourceId}:${normalizedPath}`).digest("hex").slice(0, 32);
+      const docId = crypto
+        .createHash("sha256")
+        .update(`${sourceId}:${normalizedPath}`)
+        .digest("hex")
+        .slice(0, 32);
 
       return {
         id: docId,
@@ -67,6 +128,9 @@ export class LocalFileStrategy implements IngestionStrategy {
         guid: normalizedPath,
       };
     } catch (err: any) {
+      if (err instanceof UnsupportedDocumentError || err instanceof ScannedDocumentError) {
+        throw err;
+      }
       console.warn(`[LocalFileStrategy] Failed to read file ${filePath}:`, err.message);
       return null;
     }

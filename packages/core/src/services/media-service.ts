@@ -23,6 +23,7 @@ export class MediaService {
   private readonly webpQuality: number;
   private readonly maxWidth?: number;
   private readonly maxHeight?: number;
+  private readonly urlCache = new Map<string, Promise<MediaAsset | null>>();
 
   constructor(options: MediaServiceOptions = {}) {
     this.mediaDir = options.mediaDir || getDefaultMediaDirectory();
@@ -103,6 +104,17 @@ export class MediaService {
         case "image/vnd.microsoft.icon":
           return "ico";
         case "application/octet-stream":
+          if (url) {
+            try {
+              const parsed = new URL(url, "https://dummy.local");
+              const ext = path.extname(parsed.pathname).toLowerCase().replace(/^\./, "");
+              if (["png", "jpg", "jpeg", "webp", "gif", "svg", "avif", "ico", "bin", "tiff", "bmp"].includes(ext)) {
+                return ext === "jpeg" ? "jpg" : ext;
+              }
+            } catch {
+              // Ignore
+            }
+          }
           return "bin";
       }
     }
@@ -313,6 +325,31 @@ export class MediaService {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  async fetchAndCacheMedia(url: string, originUrl?: string): Promise<MediaAsset | null> {
+    let targetUrl = url?.trim();
+    if (!targetUrl) return null;
+
+    if (originUrl) {
+      try {
+        targetUrl = new URL(targetUrl, originUrl).href;
+      } catch {
+        // Keep targetUrl if URL resolution fails
+      }
+    }
+
+    if (this.urlCache.has(targetUrl)) {
+      return this.urlCache.get(targetUrl)!;
+    }
+
+    const promise = this.downloadAndSave(targetUrl);
+    this.urlCache.set(targetUrl, promise);
+    return promise;
+  }
+
+  clearUrlCache(): void {
+    this.urlCache.clear();
   }
 
   async hasMedia(filename: string): Promise<boolean> {

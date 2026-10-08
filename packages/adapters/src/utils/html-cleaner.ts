@@ -39,7 +39,11 @@ export function normalizeCleanText(text: string): string {
   return result.trim();
 }
 
-function walkDom(node: Node, baseUrl?: string): string {
+export interface HtmlCleanOptions {
+  preserveInlineFormatting?: boolean;
+}
+
+function walkDom(node: Node, baseUrl?: string, options?: HtmlCleanOptions): string {
   if (node.nodeType === 3) {
     // Node.TEXT_NODE: ignore whitespace-only text nodes inside list/table containers
     const parentTag = (node as any).parentElement?.tagName?.toLowerCase();
@@ -81,7 +85,7 @@ function walkDom(node: Node, baseUrl?: string): string {
   const walkChildren = (): string => {
     let result = "";
     for (const child of Array.from(el.childNodes)) {
-      result += walkDom(child, baseUrl);
+      result += walkDom(child, baseUrl, options);
     }
     return result;
   };
@@ -100,10 +104,48 @@ function walkDom(node: Node, baseUrl?: string): string {
     case "h6":
       return `\n\n###### ${walkChildren().trim()}\n\n`;
     case "p":
-      if (el.parentElement?.tagName.toLowerCase() === "li") {
+      if (["li", "td", "th"].includes(el.parentElement?.tagName.toLowerCase() || "")) {
         return walkChildren();
       }
       return `\n\n${walkChildren().trim()}\n\n`;
+    case "table":
+      return renderTableToMarkdown(el, baseUrl);
+    case "thead":
+    case "tbody":
+    case "tfoot":
+    case "tr":
+    case "th":
+    case "td":
+      return walkChildren();
+    case "strong":
+    case "b": {
+      const text = walkChildren();
+      if (options?.preserveInlineFormatting) {
+        return text.trim() ? `**${text.trim()}**` : text;
+      }
+      return text;
+    }
+    case "em":
+    case "i": {
+      const text = walkChildren();
+      if (options?.preserveInlineFormatting) {
+        return text.trim() ? `*${text.trim()}*` : text;
+      }
+      return text;
+    }
+    case "a": {
+      let href = (el.getAttribute("href") || "").trim();
+      const text = walkChildren().trim();
+      if (options?.preserveInlineFormatting && href) {
+        if (baseUrl && !href.startsWith("http://") && !href.startsWith("https://") && !href.startsWith("#") && !href.startsWith("mailto:")) {
+          try {
+            href = new URL(href, baseUrl).href;
+          } catch {}
+        }
+        return `[${text || href}](${href})`;
+      }
+      return text;
+    }
     case "img": {
       let src = (el.getAttribute("src") || el.getAttribute("data-src") || "").trim();
       const alt = (el.getAttribute("alt") || el.getAttribute("title") || "").trim();
@@ -162,7 +204,70 @@ function walkDom(node: Node, baseUrl?: string): string {
   }
 }
 
-export function htmlToCleanText(html: string, baseUrl?: string): string {
+function renderTableToMarkdown(tableEl: HTMLElement, baseUrl?: string): string {
+  const rows: HTMLElement[] = [];
+  const findRows = (parent: HTMLElement) => {
+    for (const child of Array.from(parent.children)) {
+      const tag = child.tagName.toLowerCase();
+      if (tag === "tr") {
+        rows.push(child as HTMLElement);
+      } else if (["thead", "tbody", "tfoot"].includes(tag)) {
+        findRows(child as HTMLElement);
+      }
+    }
+  };
+  findRows(tableEl);
+
+  if (rows.length === 0) {
+    return "";
+  }
+
+  const tableData: string[][] = [];
+  for (const row of rows) {
+    const rowCells: string[] = [];
+    for (const cell of Array.from(row.children)) {
+      const cellTag = cell.tagName.toLowerCase();
+      if (cellTag === "th" || cellTag === "td") {
+        const text = walkDom(cell, baseUrl).trim().replace(/\r?\n+/g, " ").replace(/\|/g, "\\|");
+        rowCells.push(text);
+      }
+    }
+    if (rowCells.length > 0) {
+      tableData.push(rowCells);
+    }
+  }
+
+  if (tableData.length === 0) {
+    return "";
+  }
+
+  const maxCols = tableData.reduce((max, r) => Math.max(max, r.length), 0);
+  if (maxCols === 0) {
+    return "";
+  }
+
+  const normalizedRows = tableData.map((r) => {
+    const padded = [...r];
+    while (padded.length < maxCols) {
+      padded.push("");
+    }
+    return padded;
+  });
+
+  const headerRow = normalizedRows[0];
+  const separatorRow = new Array(maxCols).fill("---");
+  const dataRows = normalizedRows.slice(1);
+
+  let md = `\n\n| ${headerRow.join(" | ")} |\n| ${separatorRow.join(" | ")} |`;
+  for (const row of dataRows) {
+    md += `\n| ${row.join(" | ")} |`;
+  }
+  md += "\n\n";
+
+  return md;
+}
+
+export function htmlToCleanText(html: string, baseUrl?: string, options?: HtmlCleanOptions): string {
   if (!html || typeof html !== "string") {
     return "";
   }
@@ -182,7 +287,7 @@ export function htmlToCleanText(html: string, baseUrl?: string): string {
       url: baseUrl || "https://local.document",
     });
     const body = dom.window.document.body;
-    const rawMarkdown = walkDom(body, baseUrl);
+    const rawMarkdown = walkDom(body, baseUrl, options);
     return normalizeCleanText(rawMarkdown);
   } catch {
     // Fallback if DOM parsing fails

@@ -27,9 +27,15 @@
   let fileInputRef = $state<HTMLInputElement | null>(null);
 
   async function handleFileReplace(file: File) {
-    const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
-    if (!['.md', '.markdown', '.txt'].includes(ext)) {
-      errorMessage = 'Only .md, .markdown, and .txt files are supported.';
+    const lastDot = file.name.lastIndexOf('.');
+    const ext = lastDot >= 0 ? file.name.slice(lastDot).toLowerCase() : '';
+    if (ext === '.doc') {
+      errorMessage = 'Legacy pre-2007 Word (.doc) files are not supported. Please convert to .docx or .pdf before uploading.';
+      return;
+    }
+    const ALLOWED_EXTS = ['.md', '.markdown', '.txt', '.pdf', '.docx'];
+    if (!ALLOWED_EXTS.includes(ext)) {
+      errorMessage = 'Only .md, .markdown, .txt, .pdf, and .docx files are supported.';
       return;
     }
 
@@ -40,7 +46,7 @@
       const result = await uploadSourceFile(file);
       uri = result.path;
       if (!name.trim()) {
-        name = result.filename.replace(/\.(md|markdown|txt)$/i, '');
+        name = result.filename.replace(/\.(md|markdown|txt|pdf|docx)$/i, '');
       }
     } catch (err: any) {
       errorMessage = err.message || 'Failed to upload file';
@@ -215,7 +221,7 @@
                 <input
                   bind:this={fileInputRef}
                   type="file"
-                  accept=".md,.markdown,.txt"
+                  accept=".md,.markdown,.txt,.pdf,.docx"
                   onchange={handleFileSelect}
                   disabled={isSubmitting || isUploadingFile}
                   hidden

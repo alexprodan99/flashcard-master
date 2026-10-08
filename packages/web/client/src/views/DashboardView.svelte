@@ -9,19 +9,34 @@
 
   let { onNavigate }: Props = $props();
 
-  let stats = $state<DashboardStats | null>(null);
-  let loading = $state(true);
+  import { loadCachedStats, saveCachedStats } from '../lib/dashboard-cache.js';
+
+  const cached = loadCachedStats();
+  let stats = $state<DashboardStats | null>(cached);
+  let loading = $state(!cached);
+  let isRefreshing = $state(false);
   let error = $state<string | null>(null);
 
   async function loadData() {
-    loading = true;
+    if (!stats) {
+      loading = true;
+    } else {
+      isRefreshing = true;
+    }
     error = null;
     try {
-      stats = await fetchStats();
+      const freshStats = await fetchStats();
+      stats = freshStats;
+      saveCachedStats(freshStats);
     } catch (err: any) {
-      error = err.message || 'Failed to load dashboard metrics';
+      if (!stats) {
+        error = err.message || 'Failed to load dashboard metrics';
+      } else {
+        console.warn('Background dashboard refresh failed:', err);
+      }
     } finally {
       loading = false;
+      isRefreshing = false;
     }
   }
 
@@ -36,8 +51,8 @@
       <h1 class="view-title">Dashboard Overview</h1>
       <p class="view-subtitle">Monitor knowledge ingestion, generation metrics, and active decks.</p>
     </div>
-    <button class="btn btn-secondary" onclick={loadData}>
-      🔄 Refresh
+    <button class="btn btn-secondary" onclick={loadData} disabled={isRefreshing || loading}>
+      🔄 {isRefreshing ? 'Refreshing...' : 'Refresh'}
     </button>
   </div>
 
