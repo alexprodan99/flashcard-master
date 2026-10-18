@@ -1304,6 +1304,64 @@ All tests enforce a strict 3-second timeout and return `{ success: boolean, mess
 - **And** the Document Inspector renders the subdocument hierarchy with page badges and word counts.
 - **And** the full monorepo test suite passes (`npm test`, `npm run lint`, `npm run typecheck`).
 
+---
+
+## Epic 18: Knowledge-First Data Sources, EPUB Ingestion & Publishing, and Unified UI Settings Studio
+
+**Goal:** Transform Flashcard Master into a truly content-first learning workstation by decoupling flashcard decks from data sources (designating Generate Studio as the single canonical source of truth for deck routing with smart autocomplete), centralizing all application parameters and environment overrides into an interactive UI Settings Studio (including AnkiConnect configuration, live testing, and AI defaults), introducing pure-JS EPUB eBook ingestion with automatic chapter slicing and media localization, and publishing curated flashcard decks as interactive EPUB 3.0 study guide eBooks for e-readers.
+
+### Story 18.1: Decouple Decks from Data Sources & Centralize Deck Selection in Generate Studio
+**ID:** `18-1-decouple-decks-from-data-sources-and-centralize-deck-selection`
+**Description:** Decouple flashcard decks from data sources by making `data_sources.target_deck` optional and deprecated in SQLite schema and repository layers. Remove "Target Deck" input fields from `AddSourceModal.svelte` and `EditSourceModal.svelte`, and remove deck badges from `SourcesView.svelte`. Make `GenerateStudio.svelte` and Document Inspector the single source of truth where the destination deck is specified, enhanced with an auto-suggesting deck selector dropdown populated from `cardRepo.listDecks()` alongside custom new deck entry.
+**Acceptance Criteria:**
+- **Given** the Add Source modal in the Web UI
+- **When** the user adds a new data source (local file, RSS, Web Reader, Notion, or sitemap)
+- **Then** no Target Deck field is displayed or required, and the source persists successfully.
+- **And** no deck badges are displayed on the data source cards in Sources View or Dashboard.
+- **And** Generate Studio provides a deck selector that autocompletes from existing cards in SQLite while supporting new deck names.
+- **And** generated cards are saved to SQLite with the target deck chosen in Generate Studio.
+
+### Story 18.2: Centralized System Settings & Integrations Studio (Replacing .env Fallbacks)
+**ID:** `18-2-centralized-system-settings-and-integrations-studio`
+**Description:** Build a unified System Settings management architecture in `@flashcard-master/core` and the Web UI Settings panel backed by the SQLite `app_settings` key-value table. Implement the strict hierarchical fallback chain (`SQLite app_settings -> process.env fallback -> hardcoded default`). Expose REST API endpoints to read, write, and test configurations. In `SettingsView.svelte`, construct dedicated, intuitive sections for Anki Desktop Integration (endpoint URL, optional API key token, connection timeout, live connection tester), AI Generation Defaults (default provider, model, persona, difficulty, card count, grounding toggle), Worker Pool & Task Processing (concurrency limits, task timeout), Document Ingestion & Slicing Defaults (slicing mode, page budget), and EPUB Publishing Metadata (default author, publisher).
+**Acceptance Criteria:**
+- **Given** the Settings View in the Web UI
+- **When** navigating to the Settings page
+- **Then** the user sees sections for AI Providers, AI Defaults, Anki Desktop, Worker Processing, and Logging.
+- **And** user can input a custom AnkiConnect endpoint URL, click "Test Connection", and receive live health feedback.
+- **And** newly opened Generate Studio sessions automatically hydrate with the configured AI generation defaults.
+- **And** background task workers immediately respect updated worker concurrency limits.
+
+### Story 18.3: Local EPUB Ingestion Strategy & Chapter Slicing Engine
+**ID:** `18-3-local-epub-ingestion-strategy-and-chapter-slicing-engine`
+**Description:** Implement a pure-JavaScript `EpubParser` in `@flashcard-master/adapters` utilizing libraries already bundled in the monorepo (`jszip`, `fast-xml-parser`, `jsdom`). Ingest EPUB 2 and EPUB 3 publications by parsing container manifests, reading spine order, and TOC navigation (`nav.xhtml` & `toc.ncx`). Extract chapters in reading order, convert XHTML to clean GitHub-Flavored Markdown, extract embedded images into `MediaService`, and integrate with the Document Slicing Engine to register discrete subdocuments in the SQLite `documents` catalog with chapter titles, page/chapter coordinates, and word counts.
+**Acceptance Criteria:**
+- **Given** a valid DRM-free `.epub` file
+- **When** uploaded via the Add Source modal or CLI
+- **Then** the file uploads in <50ms and queues an asynchronous ingestion task in Task Center.
+- **And** the worker thread extracts chapters in proper spine order, converts XHTML to clean Markdown, preserves embedded illustrations, and registers subdocuments in the Document Catalog.
+- **And** flashcards generated from the EPUB source include exact chapter titles in `sourceLocator`.
+
+### Story 18.4: Flashcard Deck EPUB Study Guide Exporter
+**ID:** `18-4-flashcard-deck-epub-study-guide-exporter`
+**Description:** Implement `EpubFlashcardExporter` in `@flashcard-master/adapters` conforming to `ExporterPort`. Synthesize flashcard decks into a standards-compliant EPUB 3.0 study guide eBook with e-reader friendly typography, interactive HTML5 collapsible reveal cards (`<details><summary>Q: ...</summary><div>A: ...</div></details>`), Table of Contents grouped by Deck and Difficulty, rich metadata tags, verbatim quotes, and source locator references. Expose in `ExportCenter.svelte` with a 1-click download button and CLI `export --format epub`.
+**Acceptance Criteria:**
+- **Given** curated flashcards in the database
+- **When** the user clicks "Download EPUB" in Export Center
+- **Then** the browser downloads a valid `.epub` file named after the selected deck (or `all-decks-flashcards.epub`).
+- **And** the EPUB package conforms strictly to EPUB 3.0 standards (STORE uncompressed `mimetype` at byte offset 0, valid OPF and NAV).
+- **And** opening the file in e-readers (Kindle, Kobo, Apple Books, Calibre) presents an interactive study guide with reveal toggles, difficulty tags, and citations.
+
+### Story 18.5: Monorepo Integration & End-to-End Verification
+**ID:** `18-5-monorepo-integration-and-end-to-end-verification`
+**Description:** Implement comprehensive integration and regression test coverage across all monorepo packages (`core`, `adapters`, `web`, `cli`). Verify data source deck decoupling, settings persistence and live Anki testing, EPUB file ingestion, chapter slicing, flashcard EPUB exporting, and monorepo build gates.
+**Acceptance Criteria:**
+- **Given** the monorepo test suite
+- **When** executing `npm test`
+- **Then** 100% of tests pass across `core`, `adapters`, `web`, and `cli`.
+- **And** `npm run lint` and `npm run typecheck` execute with zero errors or warnings.
+
+
 
 
 
