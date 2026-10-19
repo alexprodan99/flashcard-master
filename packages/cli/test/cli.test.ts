@@ -46,8 +46,6 @@ describe("CLI Application", () => {
       "Tech Blog",
       "rss",
       "https://example.com/feed.xml",
-      "--deck",
-      "Engineering",
       "--tags",
       "tech,software",
     ]);
@@ -57,7 +55,7 @@ describe("CLI Application", () => {
     const sources = context.sourceRepo.list();
     expect(sources.length).toBe(1);
     expect(sources[0].name).toBe("Tech Blog");
-    expect(sources[0].targetDeck).toBe("Engineering");
+    expect((sources[0] as any).targetDeck).toBeUndefined();
     expect(sources[0].tags).toEqual(["tech", "software"]);
 
     // List command
@@ -73,8 +71,6 @@ describe("CLI Application", () => {
       "Tech Sitemap",
       "sitemap",
       "https://example.com/sitemap.xml",
-      "--deck",
-      "Architecture",
     ]);
     expect(logs.some((l) => l.includes("Tech Sitemap"))).toBe(true);
 
@@ -87,8 +83,6 @@ describe("CLI Application", () => {
       "Tech LLMs Catalog",
       "llms-txt",
       "https://example.com/llms-full.txt",
-      "--deck",
-      "DotNet",
     ]);
     expect(logs.some((l) => l.includes("Tech LLMs Catalog"))).toBe(true);
 
@@ -101,8 +95,6 @@ describe("CLI Application", () => {
       "Biology Workspace",
       "notion",
       "https://www.notion.so/workspace/Bio-Notes-123456781234123412341234567890ab",
-      "--deck",
-      "Biology",
       "--tags",
       "notion,biology",
     ]);

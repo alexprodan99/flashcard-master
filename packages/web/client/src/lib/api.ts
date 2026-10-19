@@ -35,7 +35,6 @@ export async function createSource(payload: {
   name: string;
   type: string;
   uri: string;
-  targetDeck?: string;
   tags?: string[];
   config?: Record<string, unknown>;
 }): Promise<DataSource> {

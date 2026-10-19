@@ -687,12 +687,13 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        targetDeck: "AdvancedWeb",
+        tags: ["advanced-web"],
       }),
     });
     expect(putRes.status).toBe(200);
     const putUpdated = await putRes.json();
-    expect(putUpdated.targetDeck).toBe("AdvancedWeb");
+    expect(putUpdated.tags).toContain("advanced-web");
+    expect((putUpdated as any).targetDeck).toBeUndefined();
   });
 
   it("deletes single and bulk documents via REST API while preserving all flashcards intact", async () => {
@@ -701,7 +702,6 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       name: "Distributed Systems Course",
       type: "web",
       uri: "https://example.com/systems",
-      targetDeck: "Systems",
       tags: ["distributed"],
       isActive: true,
     });
@@ -1559,7 +1559,6 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
           name: "Async Note",
           type: "local",
           uri: tempLocalFilesDir,
-          targetDeck: "Notes",
         });
 
         const syncRes = await fetch(`${jmServerUrl}/api/sync/${source.id}`, {
@@ -1592,7 +1591,7 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       expect(data.error).toContain("not found");
     });
 
-    it("creates data source via POST /api/sources without targetDeck and defaults to 'Default' (Story 18.1)", async () => {
+    it("creates data source via POST /api/sources without targetDeck (completely decoupled in Story 18.1)", async () => {
       const createRes = await fetch(`${serverUrl}/api/sources`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1608,7 +1607,7 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       const created = (await createRes.json()) as any;
       expect(created.id).toBeDefined();
       expect(created.name).toBe("Decoupled Knowledge Source");
-      expect(created.targetDeck).toBe("Default");
+      expect(created.targetDeck).toBeUndefined();
 
       // Verify PATCH /api/sources/:id without targetDeck
       const patchRes = await fetch(`${serverUrl}/api/sources/${created.id}`, {
@@ -1622,7 +1621,7 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       expect(patchRes.status).toBe(200);
       const updated = (await patchRes.json()) as any;
       expect(updated.name).toBe("Renamed Knowledge Source");
-      expect(updated.targetDeck).toBe("Default");
+      expect(updated.targetDeck).toBeUndefined();
 
       // Verify GET /api/decks
       const decksRes = await fetch(`${serverUrl}/api/decks`);

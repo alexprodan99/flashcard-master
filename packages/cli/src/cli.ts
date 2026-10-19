@@ -103,7 +103,6 @@ export function createCli(providedContext?: AppContext): Command {
   sourcesCmd
     .command("add <name> <type> <uri>")
     .description("Register a new data source")
-    .option("-d, --deck <deck>", "Target deck name (optional, deprecated)")
     .option("-t, --tags <tags>", "Comma-separated list of tags", "")
     .option("--slicing-mode <mode>", "Document slicing mode: outline | budget | none")
     .option("--pages-per-chunk <count>", "Page budget chunk size (number of pages)")
@@ -111,7 +110,6 @@ export function createCli(providedContext?: AppContext): Command {
     .option("--min-chunk-words <count>", "Minimum section words for outline slicing")
     .option("--sync", "Immediately trigger ingestion sync upon adding")
     .action(async (name: string, type: string, uri: string, options: {
-      deck?: string;
       tags: string;
       slicingMode?: string;
       pagesPerChunk?: string;
@@ -135,13 +133,11 @@ export function createCli(providedContext?: AppContext): Command {
           name,
           type: type as DataSourceType,
           uri,
-          targetDeck: options.deck,
           tags,
           isActive: true,
         });
 
-        const deckMsg = options.deck ? ` -> Deck: ${source.targetDeck}` : "";
-        console.log(`✅ Successfully added data source: [${source.id}] "${source.name}" (${source.type})${deckMsg}`);
+        console.log(`✅ Successfully added data source: [${source.id}] "${source.name}" (${source.type})`);
 
         if (options.slicingMode && !["outline", "budget", "none"].includes(options.slicingMode)) {
           console.error(`Error: Invalid slicing mode "${options.slicingMode}". Must be one of: outline, budget, none`);
@@ -207,7 +203,7 @@ export function createCli(providedContext?: AppContext): Command {
           console.log(`  Name:   ${s.name}`);
           console.log(`  Type:   ${s.type.toUpperCase()}`);
           console.log(`  URI:    ${s.uri}`);
-          console.log(`  Deck:   ${s.targetDeck}${tagsStr}`);
+          console.log(`  Tags:   ${s.tags.length > 0 ? s.tags.join(", ") : "None"}`);
           console.log(`  Active: ${s.isActive ? "Yes" : "No"}`);
           console.log("--------------------------------------------------------------------------------");
         }
@@ -487,7 +483,7 @@ export function createCli(providedContext?: AppContext): Command {
             });
 
             // Target deck
-            const targetDeck = options.deck || s.targetDeck || "Default";
+            const targetDeck = options.deck || "Default";
 
             // Deduplicate against existing cards
             const existingDeckCards = context.cardRepo.list({ targetDeck });
@@ -602,7 +598,6 @@ export function createCli(providedContext?: AppContext): Command {
         const sourceName = (await question("1. First data source name (e.g. 'Tech Blog'): ")) || "Tech Blog";
         const sourceType = (await question("2. Source type (rss, web, local, sitemap, llms-txt, notion) [rss]: ")) || "rss";
         const sourceUri = (await question("3. Source URI / feed URL / folder path: ")) || "https://news.ycombinator.com/rss";
-        const targetDeck = (await question("4. Target Deck name ['Computer Science']: ")) || "Computer Science";
 
         const validTypes: DataSourceType[] = ["rss", "web", "local", "sitemap", "llms-txt", "notion"];
         const finalType = validTypes.includes(sourceType as DataSourceType)
@@ -613,13 +608,12 @@ export function createCli(providedContext?: AppContext): Command {
           name: sourceName,
           type: finalType,
           uri: sourceUri,
-          targetDeck,
           tags: ["initial-setup"],
           isActive: true,
         });
 
         console.log("\n🎉 Setup complete!");
-        console.log(`Created initial data source: "${created.name}" (${created.type}) -> Deck: "${created.targetDeck}"`);
+        console.log(`Created initial data source: "${created.name}" (${created.type})`);
         console.log("\nNext Steps:");
         console.log("  • Run 'flashcard-master sync' to ingest articles");
         console.log("  • Run 'flashcard-master generate' to create flashcards");

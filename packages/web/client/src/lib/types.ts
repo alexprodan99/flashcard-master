@@ -9,7 +9,6 @@ export interface DataSource {
   name: string;
   type: DataSourceType;
   uri: string;
-  targetDeck: string;
   tags: string[];
   isActive: boolean;
   createdAt: string;

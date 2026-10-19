@@ -625,13 +625,12 @@ export class WebServer {
               <th>Name</th>
               <th>Type</th>
               <th>URI / Endpoint</th>
-              <th>Target Deck</th>
               <th>Status</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody id="sources-tbody">
-            <tr><td colspan="6" style="text-align:center; color: var(--text-muted);">Loading sources...</td></tr>
+            <tr><td colspan="5" style="text-align:center; color: var(--text-muted);">Loading sources...</td></tr>
           </tbody>
         </table>
       </div>
@@ -900,10 +899,6 @@ export class WebServer {
           <input class="form-input" id="src-uri" placeholder="https://example.com/rss.xml" required />
         </div>
         <div class="form-group">
-          <label>Target Deck</label>
-          <input class="form-input" id="src-deck" placeholder="Default" />
-        </div>
-        <div class="form-group">
           <label>Tags (comma-separated)</label>
           <input class="form-input" id="src-tags" placeholder="tech, cloud" />
         </div>
@@ -1051,7 +1046,7 @@ export class WebServer {
         const tbody = document.getElementById('sources-tbody');
 
         if (!sources || sources.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color: var(--text-muted);">No data sources configured. Click "+ Add Data Source" to add one.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color: var(--text-muted);">No data sources configured. Click "+ Add Data Source" to add one.</td></tr>';
           return;
         }
 
@@ -1065,7 +1060,6 @@ export class WebServer {
             '<td><strong>' + escapeHtml(s.name) + '</strong></td>' +
             '<td>' + typeBadge + '</td>' +
             '<td style="font-family: monospace; font-size: 12px; color: var(--text-muted);">' + escapeHtml(s.uri) + '</td>' +
-            '<td><span class="badge badge-deck">' + escapeHtml(s.targetDeck) + '</span></td>' +
             '<td>' + statusBadge + '</td>' +
             '<td>' +
               '<button class="btn btn-secondary btn-sm" data-id="' + escapeAttr(s.id) + '" onclick="syncSingleSource(this.dataset.id)">🔄 Sync</button> ' +
@@ -1446,7 +1440,6 @@ export class WebServer {
             '<input type="checkbox" class="gen-source-checkbox" value="' + escapeAttr(s.id) + '" checked onchange="updateSelectedSourcesCount()" />' +
             '<span style="font-weight: 500;">' + escapeHtml(s.name) + '</span>' +
             '<span class="badge badge-diff" style="font-size: 10px; padding: 1px 6px;">' + escapeHtml(s.type) + '</span>' +
-            '<span style="color: var(--text-muted); font-size: 11px; margin-left: auto;">Deck: ' + escapeHtml(s.targetDeck || 'Default') + '</span>' +
           '</label>';
         });
         container.innerHTML = html;
@@ -1570,7 +1563,6 @@ export class WebServer {
       const name = document.getElementById('src-name').value;
       const type = document.getElementById('src-type').value;
       const uri = document.getElementById('src-uri').value;
-      const targetDeck = document.getElementById('src-deck').value || 'Default';
       const tagsStr = document.getElementById('src-tags').value;
       const tags = tagsStr ? tagsStr.split(',').map(function(t) { return t.trim(); }).filter(Boolean) : [];
 
@@ -1578,7 +1570,7 @@ export class WebServer {
         const res = await fetch('/api/sources', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, type, uri, targetDeck, tags, isActive: true })
+          body: JSON.stringify({ name, type, uri, tags, isActive: true })
         });
         if (res.ok) {
           closeAddSourceModal();
@@ -2397,7 +2389,7 @@ export class WebServer {
                   });
                   totalDrafts += drafts.length;
 
-                  const targetDeck = targetDeckOverride || parentSource?.targetDeck || "Default";
+                  const targetDeck = targetDeckOverride || "Default";
                   const existingCards = this.options.cardRepo.list({ targetDeck });
                   const dedupResult = this.options.dedupService
                     ? this.options.dedupService.filterUnique(drafts, existingCards)
@@ -2457,7 +2449,7 @@ export class WebServer {
                     });
                     totalDrafts += drafts.length;
 
-                    const targetDeck = targetDeckOverride || s.targetDeck || "Default";
+                    const targetDeck = targetDeckOverride || "Default";
                     const existingCards = this.options.cardRepo.list({ targetDeck });
                     const dedupResult = this.options.dedupService
                       ? this.options.dedupService.filterUnique(drafts, existingCards)

@@ -54,9 +54,9 @@ describe("SQLite Database Client", () => {
 
     // Verify inserting and querying a data source
     db.prepare(`
-      INSERT INTO data_sources (id, name, type, uri, target_deck, tags)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", "Test Feed", "rss", "https://example.com/feed.xml", "Default", JSON.stringify(["tech"]));
+      INSERT INTO data_sources (id, name, type, uri, tags)
+      VALUES (?, ?, ?, ?, ?)
+    `).run("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", "Test Feed", "rss", "https://example.com/feed.xml", JSON.stringify(["tech"]));
 
     const row = db.prepare("SELECT * FROM data_sources WHERE id = ?").get("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11") as any;
     expect(row).toBeDefined();
@@ -69,7 +69,6 @@ describe("SQLite Database Client", () => {
       name: row.name,
       type: row.type,
       uri: row.uri,
-      targetDeck: row.target_deck,
       tags: JSON.parse(row.tags),
       isActive: Boolean(row.is_active),
       createdAt: row.created_at,
@@ -256,8 +255,8 @@ describe("SQLite Database Client", () => {
     // 1. Create legacy DB with data
     const legacyDb = createDatabaseClient({ dbPath: legacyDbPath });
     legacyDb.prepare(`
-      INSERT INTO data_sources (id, name, type, uri, target_deck)
-      VALUES ('legacy-src-1', 'Legacy Tech Feed', 'rss', 'https://example.com/rss', 'Default')
+      INSERT INTO data_sources (id, name, type, uri)
+      VALUES ('legacy-src-1', 'Legacy Tech Feed', 'rss', 'https://example.com/rss')
     `).run();
     legacyDb.prepare(`
       INSERT INTO flashcards (id, source_id, question, answer, source_quote, difficulty)
@@ -330,8 +329,8 @@ describe("SQLite Database Client", () => {
     // 2. Create legacy DB with real data
     const legacyDb = createDatabaseClient({ dbPath: legacyDbPath });
     legacyDb.prepare(`
-      INSERT INTO data_sources (id, name, type, uri, target_deck)
-      VALUES ('legacy-src-2', 'Populated Feed', 'rss', 'https://example.com/feed', 'Default')
+      INSERT INTO data_sources (id, name, type, uri)
+      VALUES ('legacy-src-2', 'Populated Feed', 'rss', 'https://example.com/feed')
     `).run();
     legacyDb.close();
 

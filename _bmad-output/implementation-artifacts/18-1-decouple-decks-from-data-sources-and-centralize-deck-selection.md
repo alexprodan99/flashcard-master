@@ -45,40 +45,47 @@ context:
 
 ## Code Map
 
-- `packages/core/src/storage/schema.sql` -- Make `target_deck` nullable or default in `data_sources` table.
-- `packages/core/src/storage/source-repository.ts` -- Make `targetDeck` optional in `CreateDataSourceInput` and `UpdateDataSourceInput`.
-- `packages/core/src/storage/card-repository.ts` -- Ensure `listDecks()` returns sorted list of distinct non-empty decks.
-- `packages/web/src/server.ts` -- Update `/api/sources` request validation schema so `targetDeck` is optional.
-- `packages/web/client/src/components/AddSourceModal.svelte` -- Remove "Target Deck" input field.
-- `packages/web/client/src/components/EditSourceModal.svelte` -- Remove "Target Deck" input field.
-- `packages/web/client/src/views/SourcesView.svelte` -- Remove deck badge from source card header.
-- `packages/web/client/src/views/DashboardView.svelte` -- Remove deck badge from sources list.
-- `packages/web/client/src/components/GenerationConfigFields.svelte` -- Add suggestions datalist / dropdown for existing decks.
-- `packages/web/client/src/components/SourceDocumentInspector.svelte` -- Remove source deck badge; ensure generation modal has deck selector.
-- `packages/cli/src/cli.ts` -- Make `--deck` optional on `sources add` command.
+- `packages/core/src/domain/models.ts` -- Removed `targetDeck` completely from `DataSourceSchema` and `DataSource` type.
+- `packages/core/src/storage/schema.sql` -- Removed `target_deck` column from `data_sources` table.
+- `packages/core/src/storage/db.ts` -- Removed `target_deck` column from `SCHEMA_SQL` and added automatic migration dropping `target_deck` from existing `data_sources` tables.
+- `packages/core/src/storage/source-repository.ts` -- Removed `targetDeck` from `CreateSourceInputSchema`, `UpdateSourceInputSchema`, row mapping, inserts, and updates.
+- `packages/core/src/storage/card-repository.ts` -- Retained `targetDeck` on `flashcards` and ensured `listDecks()` returns sorted list of distinct non-empty decks.
+- `packages/web/src/server.ts` -- Removed `targetDeck` from source templates, decoupled card generation fallback from sources, and integrated `/api/decks`.
+- `packages/web/client/src/lib/types.ts` -- Removed `targetDeck` from `DataSource` interface.
+- `packages/web/client/src/lib/api.ts` -- Added `fetchDecks()` and removed `targetDeck` from `createSource()`.
+- `packages/web/client/src/components/AddSourceModal.svelte` -- Removed "Target Deck" input field and payload.
+- `packages/web/client/src/components/EditSourceModal.svelte` -- Removed "Target Deck" input field and payload.
+- `packages/web/client/src/views/SourcesView.svelte` -- Removed deck badge and column from source table.
+- `packages/web/client/src/views/DashboardView.svelte` -- Removed deck badge from sources list.
+- `packages/web/client/src/components/GenerationConfigFields.svelte` -- Added suggestions datalist / dropdown for existing decks.
+- `packages/web/client/src/components/SourceDocumentInspector.svelte` -- Removed source deck badge; defaulted generation modal to active studio deck.
+- `packages/cli/src/cli.ts` -- Removed `--deck` option from `sources add` and removed deck prompt from `init` onboarding wizard.
 
 ## Tasks & Acceptance
 
 **Execution:**
-- [x] `packages/core/src/storage/source-repository.ts` -- Update Zod schemas to make `targetDeck` optional on source creation and update.
-- [x] `packages/core/src/storage/schema.sql` & `db.ts` -- Verify data source schema permits null/default target deck without regressions.
-- [x] `packages/web/src/server.ts` -- Allow source creation without `targetDeck` payload.
+- [x] `packages/core/src/domain/models.ts` -- Remove `targetDeck` from `DataSourceSchema`.
+- [x] `packages/core/src/storage/source-repository.ts` -- Remove `targetDeck` from Zod schemas, row mapping, and SQL operations.
+- [x] `packages/core/src/storage/schema.sql` & `db.ts` -- Remove `target_deck` column and provide automatic column drop migration for existing databases.
+- [x] `packages/web/src/server.ts` -- Decouple generation target deck routing from parent sources.
+- [x] `packages/web/client/src/lib/types.ts` & `api.ts` -- Remove `targetDeck` from client DataSource types and APIs.
 - [x] `packages/web/client/src/components/AddSourceModal.svelte` & `EditSourceModal.svelte` -- Remove target deck input fields.
 - [x] `packages/web/client/src/views/SourcesView.svelte` & `DashboardView.svelte` -- Remove target deck badges from source cards.
 - [x] `packages/web/client/src/components/GenerationConfigFields.svelte` -- Enhance deck selector with existing deck autocomplete options.
 - [x] `packages/web/client/src/components/SourceDocumentInspector.svelte` -- Update generation modal with standalone deck input.
-- [x] `packages/cli/src/cli.ts` -- Update CLI `sources add` command to make `--deck` optional.
+- [x] `packages/cli/src/cli.ts` -- Remove `--deck` option from `sources add` and interactive `init`.
 
 **Acceptance Criteria:**
 - **Given** the Add Source modal in the Web UI,
   - **When** the user adds a new data source (local file, RSS, Web Reader, Notion, or sitemap),
-  - **Then** no Target Deck field is displayed or required, and the source persists successfully.
+  - **Then** no Target Deck field is displayed or required, and the source persists successfully without any deck property.
 - **Given** the Sources View and Dashboard,
   - **When** viewing existing data sources,
-  - **Then** no deck badges are displayed on the data source cards.
+  - **Then** no deck badges or deck columns are displayed on data source cards or tables.
 - **Given** Generate Studio,
   - **When** configuring flashcard generation parameters,
-  - **Then** the user can choose a target deck from an autocomplete dropdown of existing decks or enter a custom deck name.
+  - **Then** the user chooses the target deck from an autocomplete dropdown of existing decks or enters a custom deck name.
 - **Given** generated flashcards,
   - **When** saved to SQLite,
   - **Then** the cards are assigned the target deck selected in Generate Studio, regardless of which data sources were used.
+

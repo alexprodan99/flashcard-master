@@ -16,7 +16,7 @@ describe("DataSourceRepository", () => {
     db.close();
   });
 
-  it("creates and retrieves a data source with default deck and serialized tags", () => {
+  it("creates and retrieves a data source with serialized tags", () => {
     const created = repo.create({
       name: "Substack Newsletter",
       type: "rss",
@@ -28,7 +28,7 @@ describe("DataSourceRepository", () => {
     expect(created.name).toBe("Substack Newsletter");
     expect(created.type).toBe("rss");
     expect(created.uri).toBe("https://example.substack.com/feed");
-    expect(created.targetDeck).toBe("Default");
+    expect((created as any).targetDeck).toBeUndefined();
     expect(created.tags).toEqual(["tech", "ai"]);
     expect(created.isActive).toBe(true);
 
@@ -66,13 +66,12 @@ describe("DataSourceRepository", () => {
 
     const updated = repo.update(created.id, {
       name: "New Name",
-      targetDeck: "Computer Science",
       tags: ["distributed-systems"],
     });
 
     expect(updated).toBeDefined();
     expect(updated?.name).toBe("New Name");
-    expect(updated?.targetDeck).toBe("Computer Science");
+    expect((updated as any)?.targetDeck).toBeUndefined();
     expect(updated?.tags).toEqual(["distributed-systems"]);
   });
 
@@ -88,20 +87,19 @@ describe("DataSourceRepository", () => {
     expect(repo.delete(created.id)).toBe(false);
   });
 
-  it("decouples deck from data source creation and supports optional targetDeck", () => {
-    const createdWithoutDeck = repo.create({
+  it("completely decouples deck from data source (data source has no targetDeck property)", () => {
+    const created = repo.create({
       name: "Knowledge Doc",
       type: "local",
       uri: "./handbook.md",
     });
-    expect(createdWithoutDeck.id).toBeDefined();
-    expect(createdWithoutDeck.targetDeck).toBe("Default");
+    expect(created.id).toBeDefined();
+    expect((created as any).targetDeck).toBeUndefined();
 
-    // Updating without targetDeck maintains previous or default
-    const updated = repo.update(createdWithoutDeck.id, {
+    const updated = repo.update(created.id, {
       name: "Updated Handbook",
     });
     expect(updated?.name).toBe("Updated Handbook");
-    expect(updated?.targetDeck).toBe("Default");
+    expect((updated as any)?.targetDeck).toBeUndefined();
   });
 });

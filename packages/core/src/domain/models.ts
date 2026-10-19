@@ -8,7 +8,6 @@ export const DataSourceSchema = z.object({
   name: z.string().min(1),
   type: DataSourceTypeSchema,
   uri: z.string().min(1),
-  targetDeck: z.string().default("Default"),
   tags: z.array(z.string()).default([]),
   isActive: z.boolean().default(true),
   createdAt: z.string().datetime().optional(),
