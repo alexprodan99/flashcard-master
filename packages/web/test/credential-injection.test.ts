@@ -47,7 +47,6 @@ describe("Automatic Credential Injection (Story 15.4)", () => {
       name: "Test Source",
       type: "rss",
       uri: "https://example.com/feed.xml",
-      targetDeck: "Engineering",
       tags: ["tech"],
     });
     createdSourceId = src.id;

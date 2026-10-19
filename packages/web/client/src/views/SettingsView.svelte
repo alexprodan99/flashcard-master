@@ -5,7 +5,7 @@
     toastStore,
     ALL_SECRET_PROVIDERS,
   } from '../stores/index.js';
-  import type { SecretProvider, ProviderKeyStatus } from '../lib/types.js';
+  import type { SecretProvider, ProviderKeyStatus, DifficultyLevel, PersonaType } from '../lib/types.js';
 
   interface ProviderMeta {
     id: SecretProvider;
@@ -272,6 +272,57 @@
       key: candidateKey,
       endpoint: candidateEndpoint,
     });
+  }
+
+  // --- General Settings & Integrations Studio ---
+  let formGeneral = $state({ ...settingsStore.general });
+  let candidateAnkiKey = $state('');
+  let showAnkiKey = $state(false);
+
+  $effect(() => {
+    formGeneral = { ...settingsStore.general };
+  });
+
+  function getGeneralSourceBadge(key: string, envVarName: string) {
+    const source = settingsStore.generalSources[key] || 'default';
+    if (source === 'database') {
+      return { label: 'Database', cssClass: 'badge-db', icon: '🟢' };
+    }
+    if (source === 'environment') {
+      return { label: `Env: ${envVarName}`, cssClass: 'badge-env', icon: '🟡' };
+    }
+    return { label: 'Default', cssClass: 'badge-default', icon: '⚪' };
+  }
+
+  async function handleSaveGeneral(sectionName?: string) {
+    const payload: any = { ...formGeneral };
+    if (candidateAnkiKey.trim().length > 0) {
+      payload.ankiconnectApiKey = candidateAnkiKey.trim();
+    }
+    try {
+      await settingsStore.saveGeneral(payload);
+      candidateAnkiKey = '';
+      if (sectionName) {
+        toastStore.success(`Saved ${sectionName} settings.`);
+      }
+    } catch {}
+  }
+
+  async function handleTestAnki() {
+    await settingsStore.testAnki({
+      endpointUrl: formGeneral.ankiconnectUrl,
+      apiKey: candidateAnkiKey.trim() || undefined,
+      timeoutMs: formGeneral.ankiconnectTimeoutMs,
+    });
+  }
+
+  async function handleClearAnkiKey() {
+    if (!confirm('Remove stored AnkiConnect API key from database?')) return;
+    try {
+      await settingsStore.saveGeneral({ ankiconnectApiKey: '' });
+      candidateAnkiKey = '';
+      toastStore.info('Cleared stored AnkiConnect API key.');
+    } catch {}
   }
 </script>
 
@@ -704,6 +755,564 @@
             {/if}
           </div>
         {/each}
+      </div>
+    </section>
+
+    <!-- Section 3: Anki Desktop Integration -->
+    <section class="settings-section" id="section-anki">
+      <div class="section-header">
+        <div class="section-title-wrap">
+          <span class="section-icon">🎴</span>
+          <h2 class="section-title">Anki Desktop Integration</h2>
+          {#if settingsStore.ankiTestResult}
+            {#if settingsStore.ankiTestResult.online}
+              <span class="badge badge-db">
+                <span class="badge-dot">🟢</span>
+                Online (v{settingsStore.ankiTestResult.version ?? 6})
+              </span>
+            {:else}
+              <span class="badge badge-none">
+                <span class="badge-dot">🔴</span>
+                Offline
+              </span>
+            {/if}
+          {:else}
+            <span class="badge badge-ready">
+              <span class="badge-dot">🔵</span>
+              AnkiConnect
+            </span>
+          {/if}
+        </div>
+        <p class="section-desc">
+          Configure connection endpoint and security credentials for direct two-way flashcard synchronization with Anki Desktop.
+        </p>
+      </div>
+
+      <div class="card provider-card" id="card-ankiconnect">
+        <div class="card-header">
+          <div class="provider-info">
+            <span class="provider-avatar">🎴</span>
+            <div class="provider-name-wrap">
+              <h3 class="provider-name">AnkiConnect Bridge</h3>
+              <span class="badge {getGeneralSourceBadge('ankiconnectUrl', 'ANKI_CONNECT_URL').cssClass}">
+                <span class="badge-dot">{getGeneralSourceBadge('ankiconnectUrl', 'ANKI_CONNECT_URL').icon}</span>
+                {getGeneralSourceBadge('ankiconnectUrl', 'ANKI_CONNECT_URL').label}
+              </span>
+            </div>
+          </div>
+          <a
+            href="https://ankiweb.net/shared/info/2055492159"
+            target="_blank"
+            rel="noreferrer noopener"
+            class="guide-link"
+          >
+            <span>AnkiConnect Plugin #2055492159</span>
+            <span class="arrow">↗</span>
+          </a>
+        </div>
+
+        <p class="provider-desc">
+          Direct synchronization to your local or remote Anki collection via the AnkiConnect add-on HTTP bridge.
+        </p>
+
+        <!-- Active Token Masked Preview -->
+        {#if settingsStore.maskedAnkiKey}
+          <div class="masked-preview-row">
+            <span class="preview-label">Active API Key Token:</span>
+            <code class="preview-code">{settingsStore.maskedAnkiKey}</code>
+            <span class="source-tag">Source: {settingsStore.generalSources['ankiconnectApiKey'] || 'database'}</span>
+            <button
+              type="button"
+              class="btn-text-danger"
+              onclick={handleClearAnkiKey}
+              title="Remove stored token from database"
+            >
+              Clear
+            </button>
+          </div>
+        {/if}
+
+        <div class="inputs-container">
+          <div class="input-row-grid">
+            <!-- Anki Endpoint URL -->
+            <div class="input-group">
+              <label for="anki-url" class="input-label">
+                Endpoint URL
+                <span class="badge-mini {getGeneralSourceBadge('ankiconnectUrl', 'ANKI_CONNECT_URL').cssClass}">
+                  {getGeneralSourceBadge('ankiconnectUrl', 'ANKI_CONNECT_URL').label}
+                </span>
+              </label>
+              <input
+                id="anki-url"
+                type="text"
+                class="text-input"
+                bind:value={formGeneral.ankiconnectUrl}
+                placeholder="http://127.0.0.1:8765"
+              />
+            </div>
+
+            <!-- Connection Timeout (ms) -->
+            <div class="input-group">
+              <label for="anki-timeout" class="input-label">
+                Timeout (ms)
+                <span class="badge-mini {getGeneralSourceBadge('ankiconnectTimeoutMs', 'ANKI_CONNECT_TIMEOUT_MS').cssClass}">
+                  {getGeneralSourceBadge('ankiconnectTimeoutMs', 'ANKI_CONNECT_TIMEOUT_MS').label}
+                </span>
+              </label>
+              <input
+                id="anki-timeout"
+                type="number"
+                min="500"
+                max="30000"
+                step="500"
+                class="text-input"
+                bind:value={formGeneral.ankiconnectTimeoutMs}
+                placeholder="3000"
+              />
+            </div>
+          </div>
+
+          <!-- Optional API Key / Secret Token -->
+          <div class="input-group">
+            <label for="anki-token" class="input-label">
+              AnkiConnect API Token (Optional)
+              {#if settingsStore.maskedAnkiKey}
+                <span class="label-subtext">(Enter new value to update)</span>
+              {/if}
+              <span class="badge-mini {getGeneralSourceBadge('ankiconnectApiKey', 'ANKI_CONNECT_API_KEY').cssClass}">
+                {getGeneralSourceBadge('ankiconnectApiKey', 'ANKI_CONNECT_API_KEY').label}
+              </span>
+            </label>
+            <div class="input-with-action">
+              <input
+                id="anki-token"
+                type={showAnkiKey ? 'text' : 'password'}
+                class="text-input"
+                bind:value={candidateAnkiKey}
+                placeholder={settingsStore.maskedAnkiKey ? '••••••••••••••••' : 'Optional apiKey configured in AnkiConnect'}
+                autocomplete="off"
+              />
+              <button
+                type="button"
+                class="reveal-btn"
+                onclick={() => showAnkiKey = !showAnkiKey}
+                aria-label={showAnkiKey ? 'Hide Token' : 'Show Token'}
+              >
+                {showAnkiKey ? 'Hide' : 'Show'}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Anki Diagnostic Test Results Banner -->
+        {#if settingsStore.ankiTestResult}
+          <div
+            class="banner banner-diagnostic"
+            class:banner-success={settingsStore.ankiTestResult.online}
+            class:banner-error={!settingsStore.ankiTestResult.online}
+          >
+            <span class="icon">{settingsStore.ankiTestResult.online ? '✓' : '✗'}</span>
+            <div class="banner-content">
+              <strong>{settingsStore.ankiTestResult.online ? 'AnkiConnect Reachable' : 'Connection Failed'}:</strong>
+              {#if settingsStore.ankiTestResult.online}
+                Detected AnkiConnect version {settingsStore.ankiTestResult.version ?? 6} (Latency: {settingsStore.ankiTestResult.latencyMs ?? 0}ms).
+              {:else}
+                {settingsStore.ankiTestResult.error || 'Connection refused'}. Ensure Anki is running with AnkiConnect enabled.
+              {/if}
+            </div>
+          </div>
+        {/if}
+
+        <div class="form-actions">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            onclick={handleTestAnki}
+            disabled={settingsStore.testingAnki}
+          >
+            <span class="icon" class:spinning={settingsStore.testingAnki}>🔌</span>
+            <span>{settingsStore.testingAnki ? 'Pinging Anki...' : 'Test Connection'}</span>
+          </button>
+          <button
+            type="button"
+            class="btn btn-primary"
+            onclick={() => handleSaveGeneral('Anki Desktop')}
+            disabled={settingsStore.savingGeneral}
+          >
+            <span class="icon">💾</span>
+            <span>{settingsStore.savingGeneral ? 'Saving...' : 'Save Anki Settings'}</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 4: AI Generation Defaults -->
+    <section class="settings-section" id="section-ai-defaults">
+      <div class="section-header">
+        <div class="section-title-wrap">
+          <span class="section-icon">⚡</span>
+          <h2 class="section-title">AI Generation Studio Defaults</h2>
+        </div>
+        <p class="section-desc">
+          Configure default AI parameters automatically applied when opening Generate Studio or executing automated card syntheses.
+        </p>
+      </div>
+
+      <div class="card provider-card">
+        <div class="inputs-container">
+          <div class="input-row-grid">
+            <!-- Default AI Provider -->
+            <div class="input-group">
+              <label for="default-provider" class="input-label">
+                Default LLM Provider
+                <span class="badge-mini {getGeneralSourceBadge('defaultAiProvider', 'DEFAULT_AI_PROVIDER').cssClass}">
+                  {getGeneralSourceBadge('defaultAiProvider', 'DEFAULT_AI_PROVIDER').label}
+                </span>
+              </label>
+              <select
+                id="default-provider"
+                class="select-input"
+                bind:value={formGeneral.defaultAiProvider}
+              >
+                <option value="ollama">🦙 Ollama (Local / Remote)</option>
+                <option value="openai">🤖 OpenAI</option>
+                <option value="anthropic">🧠 Anthropic Claude</option>
+                <option value="gemini">✨ Google Gemini</option>
+              </select>
+            </div>
+
+            <!-- Default Model -->
+            <div class="input-group">
+              <label for="default-model" class="input-label">
+                Default Model Name
+                <span class="badge-mini {getGeneralSourceBadge('defaultAiModel', 'DEFAULT_AI_MODEL').cssClass}">
+                  {getGeneralSourceBadge('defaultAiModel', 'DEFAULT_AI_MODEL').label}
+                </span>
+              </label>
+              <input
+                id="default-model"
+                type="text"
+                class="text-input"
+                bind:value={formGeneral.defaultAiModel}
+                placeholder="phi4-mini, gpt-4o-mini, etc."
+              />
+            </div>
+          </div>
+
+          <div class="input-row-grid">
+            <!-- Default Persona -->
+            <div class="input-group">
+              <label for="default-persona" class="input-label">
+                Default Persona
+                <span class="badge-mini {getGeneralSourceBadge('defaultPersona', 'DEFAULT_PERSONA').cssClass}">
+                  {getGeneralSourceBadge('defaultPersona', 'DEFAULT_PERSONA').label}
+                </span>
+              </label>
+              <select
+                id="default-persona"
+                class="select-input"
+                bind:value={formGeneral.defaultPersona}
+              >
+                <option value="socratic-mentor">🏛️ Socratic Mentor (Concept-first, probing questions)</option>
+                <option value="strict-examiner">🎓 Strict Examiner (Rigorous, test-style precision)</option>
+                <option value="analogy-builder">💡 Analogy Builder (Metaphors & intuitive models)</option>
+              </select>
+            </div>
+
+            <!-- Default Difficulty -->
+            <div class="input-group">
+              <label for="default-difficulty" class="input-label">
+                Default Difficulty
+                <span class="badge-mini {getGeneralSourceBadge('defaultDifficulty', 'DEFAULT_DIFFICULTY').cssClass}">
+                  {getGeneralSourceBadge('defaultDifficulty', 'DEFAULT_DIFFICULTY').label}
+                </span>
+              </label>
+              <select
+                id="default-difficulty"
+                class="select-input"
+                bind:value={formGeneral.defaultDifficulty}
+              >
+                <option value="beginner">🌱 Beginner (Foundational terms)</option>
+                <option value="intermediate">⚖️ Intermediate (Mechanisms & concepts)</option>
+                <option value="expert">🔥 Expert (Edge cases & deep analysis)</option>
+                <option value="mixed">🎯 Mixed (Multi-tiered coverage)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="input-row-grid">
+            <!-- Default Card Limit -->
+            <div class="input-group">
+              <label for="default-card-limit" class="input-label">
+                Default Card Batch Limit
+                <span class="badge-mini {getGeneralSourceBadge('defaultCardLimit', 'DEFAULT_CARD_LIMIT').cssClass}">
+                  {getGeneralSourceBadge('defaultCardLimit', 'DEFAULT_CARD_LIMIT').label}
+                </span>
+              </label>
+              <input
+                id="default-card-limit"
+                type="number"
+                min="1"
+                max="50"
+                class="text-input"
+                bind:value={formGeneral.defaultCardLimit}
+                placeholder="5"
+              />
+            </div>
+
+            <!-- Grounding Enforced -->
+            <div class="input-group">
+              <label for="default-grounding" class="input-label">
+                Verbatim Grounding Guard
+                <span class="badge-mini {getGeneralSourceBadge('defaultGroundingEnforced', 'DEFAULT_GROUNDING_ENFORCED').cssClass}">
+                  {getGeneralSourceBadge('defaultGroundingEnforced', 'DEFAULT_GROUNDING_ENFORCED').label}
+                </span>
+              </label>
+              <div class="grounding-toggle-wrap">
+                <button
+                  type="button"
+                  id="default-grounding"
+                  class="btn-toggle-switch"
+                  class:checked={formGeneral.defaultGroundingEnforced}
+                  onclick={() => formGeneral.defaultGroundingEnforced = !formGeneral.defaultGroundingEnforced}
+                  role="switch"
+                  aria-checked={formGeneral.defaultGroundingEnforced}
+                  aria-label="Toggle verbatim grounding guard"
+                >
+                  <span class="switch-handle"></span>
+                </button>
+                <span class="toggle-status-text" class:status-active={formGeneral.defaultGroundingEnforced}>
+                  {formGeneral.defaultGroundingEnforced ? 'Strict Verification Active' : 'Permissive (Ungrounded Allowed)'}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-actions right-align">
+          <button
+            type="button"
+            class="btn btn-primary"
+            onclick={() => handleSaveGeneral('AI Generation')}
+            disabled={settingsStore.savingGeneral}
+          >
+            <span class="icon">💾</span>
+            <span>{settingsStore.savingGeneral ? 'Saving...' : 'Save AI Defaults'}</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 5: Worker Pool & Concurrency Limits -->
+    <section class="settings-section" id="section-worker-pool">
+      <div class="section-header">
+        <div class="section-title-wrap">
+          <span class="section-icon">⚙️</span>
+          <h2 class="section-title">Worker Pool & Concurrency Limits</h2>
+        </div>
+        <p class="section-desc">
+          Dynamically tune parallel task slots for background workers without restarting the server.
+        </p>
+      </div>
+
+      <div class="card provider-card">
+        <div class="inputs-container">
+          <div class="input-row-grid">
+            <!-- Generation Workers -->
+            <div class="input-group">
+              <label for="max-gen-workers" class="input-label">
+                Generation Workers (1–16)
+                <span class="badge-mini {getGeneralSourceBadge('maxGenerationWorkers', 'MAX_GENERATION_WORKERS').cssClass}">
+                  {getGeneralSourceBadge('maxGenerationWorkers', 'MAX_GENERATION_WORKERS').label}
+                </span>
+              </label>
+              <input
+                id="max-gen-workers"
+                type="number"
+                min="1"
+                max="16"
+                class="text-input"
+                bind:value={formGeneral.maxGenerationWorkers}
+              />
+              <span class="input-hint">Parallel LLM synthesis job slots</span>
+            </div>
+
+            <!-- Sync Workers -->
+            <div class="input-group">
+              <label for="max-sync-workers" class="input-label">
+                Sync Ingestion Workers (1–16)
+                <span class="badge-mini {getGeneralSourceBadge('maxSyncWorkers', 'MAX_SYNC_WORKERS').cssClass}">
+                  {getGeneralSourceBadge('maxSyncWorkers', 'MAX_SYNC_WORKERS').label}
+                </span>
+              </label>
+              <input
+                id="max-sync-workers"
+                type="number"
+                min="1"
+                max="16"
+                class="text-input"
+                bind:value={formGeneral.maxSyncWorkers}
+              />
+              <span class="input-hint">Parallel data source crawls & parsing</span>
+            </div>
+          </div>
+
+          <div class="input-row-grid">
+            <!-- Export Workers -->
+            <div class="input-group">
+              <label for="max-export-workers" class="input-label">
+                Export Workers (1–16)
+                <span class="badge-mini {getGeneralSourceBadge('maxExportWorkers', 'MAX_EXPORT_WORKERS').cssClass}">
+                  {getGeneralSourceBadge('maxExportWorkers', 'MAX_EXPORT_WORKERS').label}
+                </span>
+              </label>
+              <input
+                id="max-export-workers"
+                type="number"
+                min="1"
+                max="16"
+                class="text-input"
+                bind:value={formGeneral.maxExportWorkers}
+              />
+              <span class="input-hint">Parallel APKG, PDF & EPUB packaging</span>
+            </div>
+
+            <!-- Task Timeout -->
+            <div class="input-group">
+              <label for="worker-timeout" class="input-label">
+                Task Execution Timeout (Minutes)
+                <span class="badge-mini {getGeneralSourceBadge('workerTimeoutMinutes', 'WORKER_TIMEOUT_MINUTES').cssClass}">
+                  {getGeneralSourceBadge('workerTimeoutMinutes', 'WORKER_TIMEOUT_MINUTES').label}
+                </span>
+              </label>
+              <input
+                id="worker-timeout"
+                type="number"
+                min="1"
+                max="120"
+                class="text-input"
+                bind:value={formGeneral.workerTimeoutMinutes}
+              />
+              <span class="input-hint">Max execution duration before auto-cancel</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-actions right-align">
+          <button
+            type="button"
+            class="btn btn-primary"
+            onclick={() => handleSaveGeneral('Worker Pool')}
+            disabled={settingsStore.savingGeneral}
+          >
+            <span class="icon">💾</span>
+            <span>{settingsStore.savingGeneral ? 'Saving...' : 'Apply Worker Limits'}</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 6: Document Slicing & EPUB Defaults -->
+    <section class="settings-section" id="section-slicing-epub">
+      <div class="section-header">
+        <div class="section-title-wrap">
+          <span class="section-icon">📄</span>
+          <h2 class="section-title">Document Slicing & EPUB Publishing Defaults</h2>
+        </div>
+        <p class="section-desc">
+          Configure default document chapter chunking rules and e-book publishing metadata.
+        </p>
+      </div>
+
+      <div class="card provider-card">
+        <div class="inputs-container">
+          <div class="input-row-grid">
+            <!-- Slicing Strategy -->
+            <div class="input-group">
+              <label for="slicing-mode" class="input-label">
+                Default Chapter Slicing Mode
+                <span class="badge-mini {getGeneralSourceBadge('defaultSlicingMode', 'DEFAULT_SLICING_MODE').cssClass}">
+                  {getGeneralSourceBadge('defaultSlicingMode', 'DEFAULT_SLICING_MODE').label}
+                </span>
+              </label>
+              <select
+                id="slicing-mode"
+                class="select-input"
+                bind:value={formGeneral.defaultSlicingMode}
+              >
+                <option value="outline">📑 Semantic Outline (Headings & Table of Contents)</option>
+                <option value="budget">📄 Fixed Page Budget (Pages per chunk)</option>
+                <option value="none">📦 Entire Document (Single chunk)</option>
+              </select>
+            </div>
+
+            <!-- Page Budget -->
+            <div class="input-group">
+              <label for="page-budget" class="input-label">
+                Default Page Budget (Pages per Chunk)
+                <span class="badge-mini {getGeneralSourceBadge('defaultPageBudget', 'DEFAULT_PAGE_BUDGET').cssClass}">
+                  {getGeneralSourceBadge('defaultPageBudget', 'DEFAULT_PAGE_BUDGET').label}
+                </span>
+              </label>
+              <input
+                id="page-budget"
+                type="number"
+                min="1"
+                max="100"
+                class="text-input"
+                bind:value={formGeneral.defaultPageBudget}
+              />
+            </div>
+          </div>
+
+          <div class="input-row-grid">
+            <!-- EPUB Default Author -->
+            <div class="input-group">
+              <label for="epub-author" class="input-label">
+                EPUB Default Author
+                <span class="badge-mini {getGeneralSourceBadge('epubDefaultAuthor', 'EPUB_DEFAULT_AUTHOR').cssClass}">
+                  {getGeneralSourceBadge('epubDefaultAuthor', 'EPUB_DEFAULT_AUTHOR').label}
+                </span>
+              </label>
+              <input
+                id="epub-author"
+                type="text"
+                class="text-input"
+                bind:value={formGeneral.epubDefaultAuthor}
+                placeholder="Flashcard Master"
+              />
+            </div>
+
+            <!-- EPUB Default Publisher -->
+            <div class="input-group">
+              <label for="epub-publisher" class="input-label">
+                EPUB Default Publisher
+                <span class="badge-mini {getGeneralSourceBadge('epubDefaultPublisher', 'EPUB_DEFAULT_PUBLISHER').cssClass}">
+                  {getGeneralSourceBadge('epubDefaultPublisher', 'EPUB_DEFAULT_PUBLISHER').label}
+                </span>
+              </label>
+              <input
+                id="epub-publisher"
+                type="text"
+                class="text-input"
+                bind:value={formGeneral.epubDefaultPublisher}
+                placeholder="Flashcard Master Studio"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div class="form-actions right-align">
+          <button
+            type="button"
+            class="btn btn-primary"
+            onclick={() => handleSaveGeneral('Slicing & EPUB')}
+            disabled={settingsStore.savingGeneral}
+          >
+            <span class="icon">💾</span>
+            <span>{settingsStore.savingGeneral ? 'Saving...' : 'Save Slicing & EPUB Settings'}</span>
+          </button>
+        </div>
       </div>
     </section>
 
@@ -1512,5 +2121,78 @@
   .log-level-select:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .input-row-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+  }
+
+  .badge-mini {
+    display: inline-flex;
+    align-items: center;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 9999px;
+    margin-left: 6px;
+  }
+
+  .badge-default {
+    background: rgba(148, 163, 184, 0.12);
+    color: #94a3b8;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+  }
+
+  .select-input {
+    width: 100%;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 9px 12px;
+    font-size: 13px;
+    color: #f1f5f9;
+    outline: none;
+    transition: border-color 0.15s ease;
+    cursor: pointer;
+  }
+
+  .select-input:focus {
+    border-color: #6366f1;
+    box-shadow: 0 0 0 1px #6366f1;
+  }
+
+  .grounding-toggle-wrap {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 7px 0;
+  }
+
+  .form-actions.right-align {
+    justify-content: flex-end;
+  }
+
+  .input-hint {
+    font-size: 11px;
+    color: #64748b;
+  }
+
+  .btn-text-danger {
+    background: transparent;
+    border: none;
+    color: #f87171;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: background 0.15s;
+    margin-left: auto;
+  }
+
+  .btn-text-danger:hover {
+    background: rgba(239, 68, 68, 0.15);
   }
 </style>

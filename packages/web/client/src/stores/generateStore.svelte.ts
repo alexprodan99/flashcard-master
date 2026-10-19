@@ -5,6 +5,7 @@ import type {
   GenerationResult,
   Flashcard,
 } from '../lib/types.js';
+import { fetchGeneralSettings } from '../lib/api.js';
 
 export const STORAGE_KEY = 'fc_generation_settings';
 export const LEGACY_STORAGE_KEY = 'fcm_generator_settings';
@@ -166,6 +167,30 @@ export class GenerateStore {
     const rawFilter = savedSelections.sourceFilterQuery || saved.sourceFilterQuery;
     if (rawFilter && typeof rawFilter === 'object' && !Array.isArray(rawFilter)) {
       this.sourceFilterQuery = { ...rawFilter };
+    }
+  }
+
+  async loadSystemDefaultsIfEmpty(): Promise<void> {
+    const saved = loadPersistedSettings();
+    const hasSavedConfig = Boolean(
+      saved.provider || saved.model || saved.persona || saved.difficulty || saved.limit
+    );
+    if (!hasSavedConfig) {
+      try {
+        const { settings } = await fetchGeneralSettings();
+        if (settings) {
+          if (!saved.provider && settings.defaultAiProvider) this.provider = settings.defaultAiProvider;
+          if (!saved.model && settings.defaultAiModel) this.model = settings.defaultAiModel;
+          if (!saved.persona && settings.defaultPersona) this.persona = settings.defaultPersona as PersonaType;
+          if (!saved.difficulty && settings.defaultDifficulty) this.difficulty = settings.defaultDifficulty as DifficultyLevel;
+          if (!saved.limit && settings.defaultCardLimit) this.limit = settings.defaultCardLimit;
+          if (saved.enforceGrounding === undefined && settings.defaultGroundingEnforced !== undefined) {
+            this.enforceGrounding = settings.defaultGroundingEnforced;
+          }
+        }
+      } catch {
+        // Fall back to default state
+      }
     }
   }
 

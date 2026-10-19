@@ -13,6 +13,7 @@ export interface ConcurrencyLimits {
   maxGenerationWorkers?: number;
   maxSyncWorkers?: number;
   maxExportWorkers?: number;
+  workerTimeoutMinutes?: number;
 }
 
 export interface JobManagerOptions extends ConcurrencyLimits {
@@ -40,9 +41,10 @@ interface QueuedItem {
 }
 
 export class JobManager extends EventEmitter {
-  private readonly maxGenerationWorkers: number;
-  private readonly maxSyncWorkers: number;
-  private readonly maxExportWorkers: number;
+  private maxGenerationWorkers: number;
+  private maxSyncWorkers: number;
+  private maxExportWorkers: number;
+  private workerTimeoutMinutes: number;
 
   private activeGenerationCount = 0;
   private activeSyncCount = 0;
@@ -71,6 +73,9 @@ export class JobManager extends EventEmitter {
     this.maxExportWorkers = options.maxExportWorkers !== undefined && options.maxExportWorkers > 0
       ? options.maxExportWorkers
       : 2;
+    this.workerTimeoutMinutes = options.workerTimeoutMinutes !== undefined && options.workerTimeoutMinutes > 0
+      ? options.workerTimeoutMinutes
+      : 15;
     this.isVerboseFn = options.isVerbose ?? (() => {
       const v = process.env.VERBOSE?.toLowerCase();
       const d = process.env.DEBUG?.toLowerCase();
@@ -137,12 +142,37 @@ export class JobManager extends EventEmitter {
     }
   }
 
-  getLimits(): { maxGenerationWorkers: number; maxSyncWorkers: number; maxExportWorkers: number } {
+  getLimits(): {
+    maxGenerationWorkers: number;
+    maxSyncWorkers: number;
+    maxExportWorkers: number;
+    workerTimeoutMinutes: number;
+  } {
     return {
       maxGenerationWorkers: this.maxGenerationWorkers,
       maxSyncWorkers: this.maxSyncWorkers,
       maxExportWorkers: this.maxExportWorkers,
+      workerTimeoutMinutes: this.workerTimeoutMinutes,
     };
+  }
+
+  updateConcurrencyLimits(limits: ConcurrencyLimits): void {
+    if (limits.maxGenerationWorkers !== undefined && limits.maxGenerationWorkers > 0) {
+      this.maxGenerationWorkers = Math.max(1, Math.min(16, limits.maxGenerationWorkers));
+    }
+    if (limits.maxSyncWorkers !== undefined && limits.maxSyncWorkers > 0) {
+      this.maxSyncWorkers = Math.max(1, Math.min(16, limits.maxSyncWorkers));
+    }
+    if (limits.maxExportWorkers !== undefined && limits.maxExportWorkers > 0) {
+      this.maxExportWorkers = Math.max(1, Math.min(16, limits.maxExportWorkers));
+    }
+    if (limits.workerTimeoutMinutes !== undefined && limits.workerTimeoutMinutes > 0) {
+      this.workerTimeoutMinutes = Math.max(1, Math.min(120, limits.workerTimeoutMinutes));
+    }
+
+    this.dispatchNext("generation");
+    this.dispatchNext("sync");
+    this.dispatchNext("export");
   }
 
   getActiveCounts(): { generation: number; sync: number; export: number } {
@@ -303,6 +333,16 @@ export class JobManager extends EventEmitter {
       },
     };
 
+    // Enforce worker task timeout
+    let timeoutTimer: NodeJS.Timeout | null = null;
+    if (this.workerTimeoutMinutes > 0) {
+      const timeoutMs = this.workerTimeoutMinutes * 60 * 1000;
+      timeoutTimer = setTimeout(() => {
+        this.printConsole("warn", item.jobId, `Job exceeded execution timeout limit (${this.workerTimeoutMinutes}m)`);
+        item.abortController.abort();
+      }, timeoutMs);
+    }
+
     // Execute handler
     item.handler(runningJob, ctx)
       .then((result) => {
@@ -353,6 +393,10 @@ export class JobManager extends EventEmitter {
         }
       })
       .finally(() => {
+        if (timeoutTimer) {
+          clearTimeout(timeoutTimer);
+        }
+
         // Free slot
         if (pool === "generation") this.activeGenerationCount--;
         else if (pool === "sync") this.activeSyncCount--;
@@ -396,8 +440,8 @@ export class JobManager extends EventEmitter {
       pool === "generation"
         ? this.generationQueue
         : pool === "sync"
-        ? this.syncQueue
-        : this.exportQueue;
+          ? this.syncQueue
+          : this.exportQueue;
 
     const idx = queue.findIndex((q) => q.jobId === id);
     if (idx !== -1) {

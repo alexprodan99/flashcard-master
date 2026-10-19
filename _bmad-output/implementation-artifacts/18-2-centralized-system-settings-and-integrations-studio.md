@@ -2,7 +2,7 @@
 title: 'Story 18.2: Centralized System Settings & Integrations Studio (Replacing .env Fallbacks)'
 type: 'feature'
 created: '2026-10-18'
-status: 'todo'
+status: 'done'
 context:
   - '_bmad-output/implementation-artifacts/epic-18-context.md'
 ---
@@ -59,13 +59,13 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `packages/core/src/domain/models.ts` -- Implement `GeneralSettingsSchema` and TypeScript interfaces.
-- [ ] `packages/core/src/services/settings-service.ts` -- Implement `getGeneralSettings()`, `saveGeneralSettings()`, and AnkiConnect resolution.
-- [ ] `packages/adapters/src/export/ankiconnect-adapter.ts` -- Enable dynamic endpoint and API key injection from settings.
-- [ ] `packages/web/src/server.ts` -- Implement REST endpoints for general settings CRUD and Anki health test.
-- [ ] `packages/web/src/jobs/job-manager.ts` -- Wire worker concurrency limits to settings.
-- [ ] `packages/web/client/src/stores/settingsStore.svelte.ts` -- Wire client state for general settings.
-- [ ] `packages/web/client/src/views/SettingsView.svelte` -- Implement intuitive settings cards and test connection buttons.
+- [x] `packages/core/src/domain/models.ts` -- Implement `GeneralSettingsSchema` and TypeScript interfaces.
+- [x] `packages/core/src/services/settings-service.ts` -- Implement `getGeneralSettings()`, `saveGeneralSettings()`, and AnkiConnect resolution.
+- [x] `packages/adapters/src/export/ankiconnect-adapter.ts` -- Enable dynamic endpoint and API key injection from settings.
+- [x] `packages/web/src/server.ts` -- Implement REST endpoints for general settings CRUD and Anki health test.
+- [x] `packages/web/src/jobs/job-manager.ts` -- Wire worker concurrency limits to settings.
+- [x] `packages/web/client/src/stores/settingsStore.svelte.ts` -- Wire client state for general settings.
+- [x] `packages/web/client/src/views/SettingsView.svelte` -- Implement intuitive settings cards and test connection buttons.
 
 **Acceptance Criteria:**
 - **Given** the Settings View in the Web UI,

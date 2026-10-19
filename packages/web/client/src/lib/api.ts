@@ -11,6 +11,9 @@ import type {
   KeySource,
   LoggingSettings,
   DocumentSlicingOptions,
+  GeneralSettings,
+  GeneralSettingsResponse,
+  AnkiTestResult,
 } from './types.js';
 
 export async function fetchStats(): Promise<DashboardStats> {
@@ -482,4 +485,46 @@ export async function updateLoggingSettings(payload: {
     throw new Error(data.error || 'Failed to update logging settings');
   }
   return res.json();
-}
+}
+
+export async function fetchGeneralSettings(): Promise<GeneralSettingsResponse> {
+  const res = await fetch('/api/settings/general');
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to fetch general settings');
+  }
+  return res.json();
+}
+
+export async function updateGeneralSettings(
+  updates: Partial<GeneralSettings>
+): Promise<GeneralSettingsResponse> {
+  const res = await fetch('/api/settings/general', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to update general settings');
+  }
+  return res.json();
+}
+
+export async function testAnkiConnect(options?: {
+  endpointUrl?: string;
+  apiKey?: string;
+  timeoutMs?: number;
+}): Promise<AnkiTestResult> {
+  const res = await fetch('/api/settings/anki/test', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(options || {}),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to test AnkiConnect');
+  }
+  return res.json();
+}
+

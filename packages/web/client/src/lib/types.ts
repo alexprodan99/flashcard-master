@@ -141,4 +141,40 @@ export interface ProviderVerificationResult {
 export interface LoggingSettings {
   verbose: boolean;
   logLevel: 'debug' | 'info' | 'warn' | 'error';
-}
+}
+
+export type SettingSource = 'database' | 'environment' | 'default';
+
+export interface GeneralSettings {
+  ankiconnectUrl: string;
+  ankiconnectApiKey: string;
+  ankiconnectTimeoutMs: number;
+  defaultAiProvider: string;
+  defaultAiModel: string;
+  defaultPersona: string;
+  defaultDifficulty: DifficultyLevel;
+  defaultCardLimit: number;
+  defaultGroundingEnforced: boolean;
+  maxGenerationWorkers: number;
+  maxSyncWorkers: number;
+  maxExportWorkers: number;
+  workerTimeoutMinutes: number;
+  defaultSlicingMode: 'outline' | 'budget' | 'none';
+  defaultPageBudget: number;
+  epubDefaultAuthor: string;
+  epubDefaultPublisher: string;
+}
+
+export interface GeneralSettingsResponse {
+  settings: GeneralSettings;
+  sources: Record<string, SettingSource>;
+  maskedApiKey: string;
+}
+
+export interface AnkiTestResult {
+  online: boolean;
+  version?: number;
+  error?: string;
+  latencyMs?: number;
+}
+

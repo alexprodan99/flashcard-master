@@ -108,7 +108,6 @@ describe("RssIngestionStrategy", () => {
       name: "Broken Feed",
       type: "rss",
       uri: "https://example.com/404.xml",
-      targetDeck: "Default",
       tags: [],
       isActive: true,
     };

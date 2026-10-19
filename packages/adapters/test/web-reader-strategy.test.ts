@@ -120,7 +120,6 @@ describe("WebReaderStrategy", () => {
       name: "Broken Web URL",
       type: "web",
       uri: "https://example.com/500",
-      targetDeck: "Default",
       tags: [],
       isActive: true,
     };
@@ -200,7 +199,6 @@ describe("WebReaderStrategy", () => {
         name: "Multi Source",
         type: "web",
         uri: JSON.stringify(["https://example.com/1", "https://example.com/2", "https://example.com/3"]),
-        targetDeck: "Default",
         tags: [],
         isActive: true,
       };
@@ -235,7 +233,6 @@ describe("WebReaderStrategy", () => {
         name: "Resilient Multi Source",
         type: "web",
         uri: JSON.stringify(["https://example.com/fail", "https://example.com/ok"]),
-        targetDeck: "Default",
         tags: [],
         isActive: true,
       };
@@ -269,7 +266,6 @@ describe("WebReaderStrategy", () => {
         name: "Concurrency Test",
         type: "web",
         uri: JSON.stringify(urls),
-        targetDeck: "Default",
         tags: [],
         isActive: true,
       };
@@ -340,7 +336,6 @@ describe("WebReaderStrategy", () => {
         name: "Media Source",
         type: "web",
         uri: "https://example.com/article",
-        targetDeck: "Default",
         tags: [],
         isActive: true,
       };
@@ -416,7 +411,6 @@ describe("WebReaderStrategy", () => {
         name: "Corrupt Source",
         type: "web",
         uri: "https://example.com/article",
-        targetDeck: "Default",
         tags: [],
         isActive: true,
       };
@@ -483,7 +477,6 @@ describe("WebReaderStrategy", () => {
         name: "Fail Source",
         type: "web",
         uri: "https://example.com/article-404-img",
-        targetDeck: "Default",
         tags: [],
         isActive: true,
       };

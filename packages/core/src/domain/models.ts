@@ -234,3 +234,44 @@ export const ProviderVerificationResultSchema = z.object({
 });
 export type ProviderVerificationResult = z.infer<typeof ProviderVerificationResultSchema>;
 
+export const SettingSourceSchema = z.enum(["database", "environment", "default"]);
+export type SettingSource = z.infer<typeof SettingSourceSchema>;
+
+export const GeneralSettingsSchema = z.object({
+  // Anki Desktop Integration
+  ankiconnectUrl: z.string().default("http://127.0.0.1:8765"),
+  ankiconnectApiKey: z.string().default(""),
+  ankiconnectTimeoutMs: z.number().int().positive().default(3000),
+
+  // AI Generation Defaults
+  defaultAiProvider: z.string().default("ollama"),
+  defaultAiModel: z.string().default("phi4-mini"),
+  defaultPersona: z.string().default("socratic-mentor"),
+  defaultDifficulty: DifficultyLevelSchema.default("intermediate"),
+  defaultCardLimit: z.number().int().min(1).max(50).default(5),
+  defaultGroundingEnforced: z.boolean().default(true),
+
+  // Worker Pool & Task Processing
+  maxGenerationWorkers: z.number().int().min(1).max(16).default(2),
+  maxSyncWorkers: z.number().int().min(1).max(16).default(2),
+  maxExportWorkers: z.number().int().min(1).max(16).default(2),
+  workerTimeoutMinutes: z.number().int().min(1).max(120).default(15),
+
+  // Slicing Defaults
+  defaultSlicingMode: z.enum(["outline", "budget", "none"]).default("outline"),
+  defaultPageBudget: z.number().int().min(1).max(100).default(10),
+
+  // EPUB Publishing Metadata
+  epubDefaultAuthor: z.string().default("Flashcard Master"),
+  epubDefaultPublisher: z.string().default("Flashcard Master Studio"),
+});
+export type GeneralSettings = z.infer<typeof GeneralSettingsSchema>;
+
+export const GeneralSettingsResponseSchema = z.object({
+  settings: GeneralSettingsSchema,
+  sources: z.record(z.string(), SettingSourceSchema),
+  maskedApiKey: z.string(),
+});
+export type GeneralSettingsResponse = z.infer<typeof GeneralSettingsResponseSchema>;
+
+

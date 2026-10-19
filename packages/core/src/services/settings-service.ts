@@ -2,7 +2,12 @@ import type { SettingsRepository } from "../ports/index.js";
 import {
   type ProviderKeyStatus,
   type SecretProvider,
+  type GeneralSettings,
+  type GeneralSettingsResponse,
+  type SettingSource,
   ProviderKeyStatusSchema,
+  GeneralSettingsSchema,
+  GeneralSettingsResponseSchema,
 } from "../domain/models.js";
 
 export const SUPPORTED_PROVIDERS: SecretProvider[] = [
@@ -28,6 +33,162 @@ const ENV_ENDPOINT_MAP: Record<SecretProvider, string[]> = {
   notion: [],
   ollama: ["OLLAMA_HOST", "OLLAMA_BASE_URL"],
 };
+
+export interface GeneralSettingMeta<T> {
+  key: keyof GeneralSettings;
+  dbKey: string;
+  envKeys: string[];
+  defaultValue: T;
+  parse: (val: string) => T;
+}
+
+export const GENERAL_SETTINGS_REGISTRY: GeneralSettingMeta<any>[] = [
+  // Anki Desktop Integration
+  {
+    key: "ankiconnectUrl",
+    dbKey: "ankiconnect_url",
+    envKeys: ["ANKI_CONNECT_URL", "ANKICONNECT_URL"],
+    defaultValue: "http://127.0.0.1:8765",
+    parse: (v: string) => v.trim(),
+  },
+  {
+    key: "ankiconnectApiKey",
+    dbKey: "ankiconnect_api_key",
+    envKeys: ["ANKI_CONNECT_API_KEY", "ANKICONNECT_API_KEY"],
+    defaultValue: "",
+    parse: (v: string) => v.trim(),
+  },
+  {
+    key: "ankiconnectTimeoutMs",
+    dbKey: "ankiconnect_timeout_ms",
+    envKeys: ["ANKI_CONNECT_TIMEOUT_MS", "ANKICONNECT_TIMEOUT_MS"],
+    defaultValue: 3000,
+    parse: (v: string) => {
+      const n = parseInt(v, 10);
+      return Number.isNaN(n) || n <= 0 ? 3000 : n;
+    },
+  },
+  // AI Generation Defaults
+  {
+    key: "defaultAiProvider",
+    dbKey: "default_ai_provider",
+    envKeys: ["DEFAULT_AI_PROVIDER"],
+    defaultValue: "ollama",
+    parse: (v: string) => v.trim(),
+  },
+  {
+    key: "defaultAiModel",
+    dbKey: "default_ai_model",
+    envKeys: ["DEFAULT_AI_MODEL"],
+    defaultValue: "phi4-mini",
+    parse: (v: string) => v.trim(),
+  },
+  {
+    key: "defaultPersona",
+    dbKey: "default_persona",
+    envKeys: ["DEFAULT_PERSONA"],
+    defaultValue: "socratic-mentor",
+    parse: (v: string) => v.trim(),
+  },
+  {
+    key: "defaultDifficulty",
+    dbKey: "default_difficulty",
+    envKeys: ["DEFAULT_DIFFICULTY"],
+    defaultValue: "intermediate",
+    parse: (v: string) => (["beginner", "intermediate", "expert", "mixed"].includes(v.trim()) ? v.trim() : "intermediate"),
+  },
+  {
+    key: "defaultCardLimit",
+    dbKey: "default_card_limit",
+    envKeys: ["DEFAULT_CARD_LIMIT"],
+    defaultValue: 5,
+    parse: (v: string) => {
+      const n = parseInt(v, 10);
+      return Number.isNaN(n) ? 5 : Math.max(1, Math.min(50, n));
+    },
+  },
+  {
+    key: "defaultGroundingEnforced",
+    dbKey: "default_grounding_enforced",
+    envKeys: ["DEFAULT_GROUNDING_ENFORCED"],
+    defaultValue: true,
+    parse: (v: string) => v === "true" || v === "1",
+  },
+  // Worker Pool & Task Processing
+  {
+    key: "maxGenerationWorkers",
+    dbKey: "max_generation_workers",
+    envKeys: ["MAX_GENERATION_WORKERS"],
+    defaultValue: 2,
+    parse: (v: string) => {
+      const n = parseInt(v, 10);
+      return Number.isNaN(n) ? 2 : Math.max(1, Math.min(16, n));
+    },
+  },
+  {
+    key: "maxSyncWorkers",
+    dbKey: "max_sync_workers",
+    envKeys: ["MAX_SYNC_WORKERS"],
+    defaultValue: 2,
+    parse: (v: string) => {
+      const n = parseInt(v, 10);
+      return Number.isNaN(n) ? 2 : Math.max(1, Math.min(16, n));
+    },
+  },
+  {
+    key: "maxExportWorkers",
+    dbKey: "max_export_workers",
+    envKeys: ["MAX_EXPORT_WORKERS"],
+    defaultValue: 2,
+    parse: (v: string) => {
+      const n = parseInt(v, 10);
+      return Number.isNaN(n) ? 2 : Math.max(1, Math.min(16, n));
+    },
+  },
+  {
+    key: "workerTimeoutMinutes",
+    dbKey: "worker_timeout_minutes",
+    envKeys: ["WORKER_TIMEOUT_MINUTES"],
+    defaultValue: 15,
+    parse: (v: string) => {
+      const n = parseInt(v, 10);
+      return Number.isNaN(n) ? 15 : Math.max(1, Math.min(120, n));
+    },
+  },
+  // Slicing Defaults
+  {
+    key: "defaultSlicingMode",
+    dbKey: "default_slicing_mode",
+    envKeys: ["DEFAULT_SLICING_MODE"],
+    defaultValue: "outline",
+    parse: (v: string) => (["outline", "budget", "none"].includes(v.trim()) ? v.trim() : "outline"),
+  },
+  {
+    key: "defaultPageBudget",
+    dbKey: "default_page_budget",
+    envKeys: ["DEFAULT_PAGE_BUDGET"],
+    defaultValue: 10,
+    parse: (v: string) => {
+      const n = parseInt(v, 10);
+      return Number.isNaN(n) ? 10 : Math.max(1, Math.min(100, n));
+    },
+  },
+  // EPUB Publishing Metadata
+  {
+    key: "epubDefaultAuthor",
+    dbKey: "epub_default_author",
+    envKeys: ["EPUB_DEFAULT_AUTHOR"],
+    defaultValue: "Flashcard Master",
+    parse: (v: string) => v.trim(),
+  },
+  {
+    key: "epubDefaultPublisher",
+    dbKey: "epub_default_publisher",
+    envKeys: ["EPUB_DEFAULT_PUBLISHER"],
+    defaultValue: "Flashcard Master Studio",
+    parse: (v: string) => v.trim(),
+  },
+];
 
 export class SettingsService {
   constructor(
@@ -246,4 +407,134 @@ export class SettingsService {
       }
     }
   }
-}
+
+  getRawAnkiApiKey(): string | undefined {
+    const dbKey = this.settingsRepo.get("ankiconnect_api_key");
+    if (dbKey && dbKey.trim().length > 0) {
+      return dbKey.trim();
+    }
+    const envKey = this.getEnvValue(["ANKI_CONNECT_API_KEY", "ANKICONNECT_API_KEY"]);
+    if (envKey && envKey.trim().length > 0) {
+      return envKey.trim();
+    }
+    return undefined;
+  }
+
+  getGeneralSettings(): GeneralSettingsResponse {
+    const settings: Record<string, any> = {};
+    const sources: Record<string, SettingSource> = {};
+
+    for (const meta of GENERAL_SETTINGS_REGISTRY) {
+      const dbVal = this.settingsRepo.get(meta.dbKey);
+      if (dbVal !== null && dbVal.trim().length > 0) {
+        settings[meta.key] = meta.parse(dbVal);
+        sources[meta.key] = "database";
+      } else {
+        const envVal = this.getEnvValue(meta.envKeys);
+        if (envVal !== null && envVal.trim().length > 0) {
+          settings[meta.key] = meta.parse(envVal);
+          sources[meta.key] = "environment";
+        } else {
+          settings[meta.key] = meta.defaultValue;
+          sources[meta.key] = "default";
+        }
+      }
+    }
+
+    const rawApiKey = this.getRawAnkiApiKey() || "";
+    const maskedApiKey = this.maskSecret(rawApiKey);
+    settings.ankiconnectApiKey = maskedApiKey;
+
+    return GeneralSettingsResponseSchema.parse({
+      settings: GeneralSettingsSchema.parse(settings),
+      sources,
+      maskedApiKey,
+    });
+  }
+
+  updateGeneralSettings(updates: Partial<GeneralSettings>): GeneralSettingsResponse {
+    for (const meta of GENERAL_SETTINGS_REGISTRY) {
+      if (!(meta.key in updates)) continue;
+      const val = (updates as any)[meta.key];
+
+      if (meta.key === "ankiconnectApiKey") {
+        if (typeof val === "string") {
+          const trimmed = val.trim();
+          if (trimmed.startsWith("***") || trimmed === "****") {
+            continue;
+          }
+          if (trimmed.length === 0) {
+            this.settingsRepo.delete(meta.dbKey);
+          } else {
+            this.settingsRepo.set(meta.dbKey, trimmed);
+          }
+        } else if (val === null) {
+          this.settingsRepo.delete(meta.dbKey);
+        }
+        continue;
+      }
+
+      if (val === null || val === undefined) {
+        this.settingsRepo.delete(meta.dbKey);
+      } else {
+        const parsed = meta.parse(String(val));
+        this.settingsRepo.set(meta.dbKey, String(parsed));
+      }
+    }
+
+    return this.getGeneralSettings();
+  }
+
+  getAnkiConnectOptions(): { endpointUrl: string; apiKey?: string; timeoutMs: number } {
+    const general = this.getGeneralSettings().settings;
+    return {
+      endpointUrl: general.ankiconnectUrl,
+      apiKey: this.getRawAnkiApiKey(),
+      timeoutMs: general.ankiconnectTimeoutMs,
+    };
+  }
+
+  getWorkerConcurrencyLimits(): {
+    maxGenerationWorkers: number;
+    maxSyncWorkers: number;
+    maxExportWorkers: number;
+    workerTimeoutMinutes: number;
+  } {
+    const s = this.getGeneralSettings().settings;
+    return {
+      maxGenerationWorkers: s.maxGenerationWorkers,
+      maxSyncWorkers: s.maxSyncWorkers,
+      maxExportWorkers: s.maxExportWorkers,
+      workerTimeoutMinutes: s.workerTimeoutMinutes,
+    };
+  }
+
+  getAiDefaults() {
+    const s = this.getGeneralSettings().settings;
+    return {
+      provider: s.defaultAiProvider,
+      model: s.defaultAiModel,
+      persona: s.defaultPersona,
+      difficulty: s.defaultDifficulty,
+      cardLimit: s.defaultCardLimit,
+      groundingEnforced: s.defaultGroundingEnforced,
+    };
+  }
+
+  getSlicingDefaults() {
+    const s = this.getGeneralSettings().settings;
+    return {
+      mode: s.defaultSlicingMode,
+      pageBudget: s.defaultPageBudget,
+    };
+  }
+
+  getEpubDefaults() {
+    const s = this.getGeneralSettings().settings;
+    return {
+      author: s.epubDefaultAuthor,
+      publisher: s.epubDefaultPublisher,
+    };
+  }
+}
+

@@ -8,7 +8,6 @@ describe("SitemapIngestionStrategy", () => {
     name: "Tech Blog Sitemap",
     type: "sitemap",
     uri: "https://example.com/sitemap.xml",
-    targetDeck: "Software Engineering",
     tags: ["tech", "architecture"],
     isActive: true,
   };

@@ -8,7 +8,6 @@ describe("LlmsTxtIngestionStrategy", () => {
     name: "Tech Architecture LLMs Catalog",
     type: "llms-txt",
     uri: "https://example.com/llms-full.txt",
-    targetDeck: "DotNet Architecture",
     tags: ["dotnet", "architecture"],
     isActive: true,
   };

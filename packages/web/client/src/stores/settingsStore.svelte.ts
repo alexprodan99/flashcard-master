@@ -3,6 +3,10 @@ import type {
   KeySource,
   ProviderKeyStatus,
   ProviderVerificationResult,
+  GeneralSettings,
+  GeneralSettingsResponse,
+  SettingSource,
+  AnkiTestResult,
 } from '../lib/types.js';
 import {
   fetchSettingsKeys,
@@ -11,6 +15,9 @@ import {
   testSettingsKey,
   fetchLoggingSettings,
   updateLoggingSettings,
+  fetchGeneralSettings,
+  updateGeneralSettings,
+  testAnkiConnect,
 } from '../lib/api.js';
 import { toastStore } from './toastStore.svelte.js';
 
@@ -29,6 +36,28 @@ function createInitialKeys(): Record<SecretProvider, ProviderKeyStatus> {
     gemini: { provider: 'gemini', isConfigured: false, maskedValue: '', source: 'none', endpoint: null },
     ollama: { provider: 'ollama', isConfigured: false, maskedValue: '', source: 'none', endpoint: null },
     notion: { provider: 'notion', isConfigured: false, maskedValue: '', source: 'none', endpoint: null },
+  };
+}
+
+function createInitialGeneralSettings(): GeneralSettings {
+  return {
+    ankiconnectUrl: 'http://127.0.0.1:8765',
+    ankiconnectApiKey: '',
+    ankiconnectTimeoutMs: 3000,
+    defaultAiProvider: 'ollama',
+    defaultAiModel: 'phi4-mini',
+    defaultPersona: 'socratic-mentor',
+    defaultDifficulty: 'intermediate',
+    defaultCardLimit: 5,
+    defaultGroundingEnforced: true,
+    maxGenerationWorkers: 2,
+    maxSyncWorkers: 2,
+    maxExportWorkers: 2,
+    workerTimeoutMinutes: 15,
+    defaultSlicingMode: 'outline',
+    defaultPageBudget: 10,
+    epubDefaultAuthor: 'Flashcard Master',
+    epubDefaultPublisher: 'Flashcard Master Studio',
   };
 }
 
@@ -65,6 +94,15 @@ export class SettingsStore {
   logLevel = $state<'debug' | 'info' | 'warn' | 'error'>('info');
   savingLogging = $state(false);
 
+  // General Settings & Integrations
+  general = $state<GeneralSettings>(createInitialGeneralSettings());
+  generalSources = $state<Record<string, SettingSource>>({});
+  maskedAnkiKey = $state('');
+  loadingGeneral = $state(false);
+  savingGeneral = $state(false);
+  testingAnki = $state(false);
+  ankiTestResult = $state<AnkiTestResult | null>(null);
+
   async loadKeys(): Promise<void> {
     this.loading = true;
     this.error = null;
@@ -74,11 +112,71 @@ export class SettingsStore {
         this.keys = { ...createInitialKeys(), ...data.keys };
       }
       await this.loadLogging();
+      await this.loadGeneral();
     } catch (err: any) {
       this.error = err.message || 'Failed to load settings';
     } finally {
       this.loading = false;
       this.hasLoaded = true;
+    }
+  }
+
+  async loadGeneral(): Promise<void> {
+    this.loadingGeneral = true;
+    try {
+      const data = await fetchGeneralSettings();
+      if (data && data.settings) {
+        this.general = { ...createInitialGeneralSettings(), ...data.settings };
+        this.generalSources = data.sources || {};
+        this.maskedAnkiKey = data.maskedApiKey || '';
+      }
+    } catch (err: any) {
+      console.error('Failed to load general settings:', err);
+    } finally {
+      this.loadingGeneral = false;
+    }
+  }
+
+  async saveGeneral(updates: Partial<GeneralSettings>): Promise<void> {
+    this.savingGeneral = true;
+    try {
+      const res = await updateGeneralSettings(updates);
+      if (res && res.settings) {
+        this.general = { ...this.general, ...res.settings };
+        this.generalSources = res.sources || {};
+        this.maskedAnkiKey = res.maskedApiKey || '';
+      }
+      toastStore.success('Settings saved successfully.');
+    } catch (err: any) {
+      toastStore.error(err.message || 'Failed to save settings');
+      throw err;
+    } finally {
+      this.savingGeneral = false;
+    }
+  }
+
+  async testAnki(options?: { endpointUrl?: string; apiKey?: string; timeoutMs?: number }): Promise<AnkiTestResult> {
+    this.testingAnki = true;
+    this.ankiTestResult = null;
+    try {
+      const res = await testAnkiConnect(options);
+      this.ankiTestResult = res;
+      if (res.online) {
+        toastStore.success(`✓ AnkiConnect Online (v${res.version ?? 6})${res.latencyMs !== undefined ? ` • ${res.latencyMs}ms` : ''}`);
+      } else {
+        toastStore.error(`✗ AnkiConnect Offline: ${res.error || 'Connection failed'}`);
+      }
+      return res;
+    } catch (err: any) {
+      const failRes: AnkiTestResult = {
+        online: false,
+        error: err.message || 'Connection test failed',
+      };
+      this.ankiTestResult = failRes;
+      toastStore.error(`✗ AnkiConnect: ${failRes.error}`);
+      return failRes;
+    } finally {
+      this.testingAnki = false;
     }
   }
 

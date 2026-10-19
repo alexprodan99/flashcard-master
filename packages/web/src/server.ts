@@ -31,7 +31,7 @@ import {
   CardGenerationService,
   type DocumentSlicingOptions,
 } from "@flashcard-master/core";
-import { createLLMAdapter, DocumentExportService, ProviderVerifier } from "@flashcard-master/adapters";
+import { createLLMAdapter, DocumentExportService, ProviderVerifier, AnkiConnectAdapter } from "@flashcard-master/adapters";
 import { JobManager, type ConcurrencyLimits, type JobManagerOptions } from "./jobs/index.js";
 import { WorkerExecutor } from "./workers/index.js";
 
@@ -85,6 +85,10 @@ export class WebServer {
   private readonly settingsRepo: SettingsRepository | null;
   private readonly settingsService: SettingsService;
   private readonly providerVerifier: ProviderVerifierPort;
+  private readonly ankiConnectAdapter: {
+    checkHealth(): Promise<AnkiConnectHealthCheck>;
+    syncCards(cards: any[], options?: any): Promise<any>;
+  };
 
   constructor(private readonly options: WebServerOptions) {
     this.port = options.port !== undefined ? options.port : 3000;
@@ -104,10 +108,21 @@ export class WebServer {
       this.settingsService = new SettingsService(this.settingsRepo);
     }
 
+    if (options.ankiConnectAdapter) {
+      this.ankiConnectAdapter = options.ankiConnectAdapter;
+    } else {
+      this.ankiConnectAdapter = new AnkiConnectAdapter(() => this.settingsService.getAnkiConnectOptions());
+    }
+
+    const concurrencyLimits = this.settingsService.getWorkerConcurrencyLimits();
     if (options.jobManager) {
       this.jobManager = options.jobManager;
     } else if (options.jobRepo) {
       this.jobManager = new JobManager(options.jobRepo, {
+        maxGenerationWorkers: concurrencyLimits.maxGenerationWorkers,
+        maxSyncWorkers: concurrencyLimits.maxSyncWorkers,
+        maxExportWorkers: concurrencyLimits.maxExportWorkers,
+        workerTimeoutMinutes: concurrencyLimits.workerTimeoutMinutes,
         ...options.concurrency,
         isVerbose: options.concurrency?.isVerbose ?? (() => this.settingsService.isVerboseLogging()),
         logToConsole: options.concurrency?.logToConsole,
@@ -2944,23 +2959,8 @@ export class WebServer {
 
           // 12. AnkiConnect Status Endpoint: GET /api/ankiconnect/status
           if (pathname === "/api/ankiconnect/status" && method === "GET") {
-            if (this.options.ankiConnectAdapter) {
-              const health = await this.options.ankiConnectAdapter.checkHealth();
-              this.sendJson(res, 200, health);
-            } else {
-              try {
-                const checkRes = await fetch("http://127.0.0.1:8765", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ action: "version", version: 6 }),
-                  signal: AbortSignal.timeout(2000),
-                });
-                const data = (await checkRes.json()) as any;
-                this.sendJson(res, 200, { isOnline: !data.error, version: data.result || 6 });
-              } catch {
-                this.sendJson(res, 200, { isOnline: false, error: "AnkiConnect unreachable" });
-              }
-            }
+            const health = await this.ankiConnectAdapter.checkHealth();
+            this.sendJson(res, 200, health);
             return;
           }
 
@@ -2972,20 +2972,10 @@ export class WebServer {
               tag: body.tag || undefined,
             };
             const cards = this.options.cardRepo.list(filter);
-
-            if (this.options.ankiConnectAdapter) {
-              const syncRes = await this.options.ankiConnectAdapter.syncCards(cards, {
-                targetDeck: body.targetDeck,
-              });
-              this.sendJson(res, 200, syncRes);
-            } else {
-              this.sendJson(res, 200, {
-                totalCards: cards.length,
-                addedCards: 0,
-                duplicateOrFailedCards: cards.length,
-                error: "AnkiConnect adapter not configured",
-              });
-            }
+            const syncRes = await this.ankiConnectAdapter.syncCards(cards, {
+              targetDeck: body.targetDeck,
+            });
+            this.sendJson(res, 200, syncRes);
             return;
           }
 
@@ -3196,6 +3186,100 @@ export class WebServer {
             const verbose = this.settingsService.isVerboseLogging();
             const logLevel = this.settingsService.getLogLevel();
             this.sendJson(res, 200, { success: true, verbose, logLevel });
+            return;
+          }
+
+          // 15g. GET /api/settings/general
+          if (pathname === "/api/settings/general" && method === "GET") {
+            const general = this.settingsService.getGeneralSettings();
+            this.sendJson(res, 200, general);
+            return;
+          }
+
+          // 15h. PUT /api/settings/general & POST /api/settings/general
+          if (pathname === "/api/settings/general" && (method === "PUT" || method === "POST")) {
+            const body = await this.parseBody(req);
+            if (!body || typeof body !== "object") {
+              this.sendJson(res, 400, { error: "Request body must be an object." });
+              return;
+            }
+
+            const updated = this.settingsService.updateGeneralSettings(body);
+            if (this.jobManager) {
+              this.jobManager.updateConcurrencyLimits(this.settingsService.getWorkerConcurrencyLimits());
+            }
+            this.sendJson(res, 200, updated);
+            return;
+          }
+
+          // 15i. POST /api/settings/anki/test
+          if (pathname === "/api/settings/anki/test" && method === "POST") {
+            const body = await this.parseBody(req);
+            const configured = this.settingsService.getAnkiConnectOptions();
+
+            const endpointUrl = typeof body?.endpointUrl === "string" && body.endpointUrl.trim().length > 0
+              ? body.endpointUrl.trim()
+              : configured.endpointUrl;
+
+            const apiKey = typeof body?.apiKey === "string" && !body.apiKey.startsWith("***") && body.apiKey.trim().length > 0
+              ? body.apiKey.trim()
+              : configured.apiKey;
+
+            const timeoutMs = typeof body?.timeoutMs === "number" && body.timeoutMs > 0
+              ? Math.max(500, Math.min(30000, body.timeoutMs))
+              : configured.timeoutMs;
+
+            const startTime = Date.now();
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+            try {
+              const payload: Record<string, any> = { action: "version", version: 6 };
+              if (apiKey) payload.key = apiKey;
+
+              const ankiRes = await fetch(endpointUrl, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+                signal: controller.signal,
+              });
+
+              const latencyMs = Date.now() - startTime;
+              if (!ankiRes.ok) {
+                this.sendJson(res, 200, {
+                  online: false,
+                  error: `AnkiConnect HTTP error: ${ankiRes.status} ${ankiRes.statusText}`,
+                  latencyMs,
+                });
+                return;
+              }
+
+              const json = (await ankiRes.json()) as any;
+              if (json.error) {
+                this.sendJson(res, 200, {
+                  online: false,
+                  error: json.error,
+                  latencyMs,
+                });
+                return;
+              }
+
+              this.sendJson(res, 200, {
+                online: true,
+                version: json.result ?? 6,
+                latencyMs,
+              });
+            } catch (err: any) {
+              const latencyMs = Date.now() - startTime;
+              const isTimeout = err.name === "AbortError";
+              this.sendJson(res, 200, {
+                online: false,
+                error: isTimeout ? `Connection to AnkiConnect timed out after ${timeoutMs}ms.` : (err.message || "Failed to reach AnkiConnect"),
+                latencyMs,
+              });
+            } finally {
+              clearTimeout(timer);
+            }
             return;
           }
 

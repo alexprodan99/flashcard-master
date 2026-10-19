@@ -37,7 +37,6 @@ Two-phase commit (2PC) ensures all nodes either commit or abort.
       name: "My Note",
       type: "local",
       uri: filePath,
-      targetDeck: "Default",
       tags: [],
       isActive: true,
     };
@@ -62,7 +61,6 @@ Two-phase commit (2PC) ensures all nodes either commit or abort.
       name: "Vault",
       type: "local",
       uri: tempDir,
-      targetDeck: "Default",
       tags: [],
       isActive: true,
     };
@@ -133,7 +131,6 @@ interface Message {
       name: "Missing",
       type: "local",
       uri: path.join(tempDir, "does-not-exist"),
-      targetDeck: "Default",
       tags: [],
       isActive: true,
     };

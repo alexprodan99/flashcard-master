@@ -119,7 +119,6 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       name: "Engineering Blog",
       type: "rss",
       uri: "https://example.com/rss",
-      targetDeck: "Engineering",
       tags: [],
       isActive: true,
     });
@@ -848,7 +847,6 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
         name: "Cloud Architecture",
         type: "web",
         uri: "https://example.com/cloud",
-        targetDeck: "Cloud",
         tags: [],
         isActive: true,
       });
@@ -896,7 +894,6 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
         name: "Database Systems",
         type: "web",
         uri: "https://example.com/db",
-        targetDeck: "DB",
         tags: [],
         isActive: true,
       });
@@ -931,7 +928,6 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
         name: "Security Guidelines",
         type: "web",
         uri: "https://example.com/sec",
-        targetDeck: "Sec",
         tags: [],
         isActive: true,
       });
@@ -973,7 +969,6 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
         name: "Kubernetes Handbook",
         type: "web",
         uri: "https://example.com/k8s",
-        targetDeck: "K8s",
         tags: [],
         isActive: true,
       });
@@ -1037,7 +1032,6 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
         name: "GET Export Source",
         type: "web",
         uri: "https://example.com/get-export",
-        targetDeck: "Test",
         tags: [],
         isActive: true,
       });
@@ -1060,7 +1054,6 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
         name: "List All Docs Source",
         type: "web",
         uri: "https://example.com/list-all",
-        targetDeck: "Test",
         tags: [],
         isActive: true,
       });
@@ -1117,7 +1110,6 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
         name: "Media Export Source",
         type: "web",
         uri: "https://example.com/media-export",
-        targetDeck: "Test",
         tags: [],
         isActive: true,
       });
@@ -1168,7 +1160,6 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
         name: "Grayscale Source",
         type: "web",
         uri: "https://example.com/gray",
-        targetDeck: "Test",
         tags: [],
         isActive: true,
       });
@@ -1213,7 +1204,6 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
         name: "Split ZIP Media Source",
         type: "web",
         uri: "https://example.com/split-zip-media",
-        targetDeck: "Test",
         tags: [],
         isActive: true,
       });

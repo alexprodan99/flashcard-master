@@ -292,7 +292,6 @@ describe("Document Parsers (Story 17.2)", () => {
         name: "Mixed Vault",
         type: "local",
         uri: tempDir,
-        targetDeck: "Default",
         tags: [],
         isActive: true,
       };
@@ -332,7 +331,6 @@ describe("Document Parsers (Story 17.2)", () => {
         name: "Legacy Doc",
         type: "local",
         uri: docPath,
-        targetDeck: "Default",
         tags: [],
         isActive: true,
       };
@@ -356,7 +354,6 @@ describe("Document Parsers (Story 17.2)", () => {
         name: "Folder with Scanned PDF",
         type: "local",
         uri: tempDir,
-        targetDeck: "Default",
         tags: [],
         isActive: true,
       };
@@ -380,7 +377,6 @@ describe("Document Parsers (Story 17.2)", () => {
         name: "Uploaded Docx",
         type: "local",
         uri: singleDocxPath,
-        targetDeck: "Default",
         tags: [],
         isActive: true,
       };
@@ -402,7 +398,6 @@ describe("Document Parsers (Story 17.2)", () => {
         name: "Uploaded PDF",
         type: "local",
         uri: singlePdfPath,
-        targetDeck: "Default",
         tags: [],
         isActive: true,
       };
@@ -424,7 +419,6 @@ describe("Document Parsers (Story 17.2)", () => {
         name: "Single Scanned PDF",
         type: "local",
         uri: singleScannedPath,
-        targetDeck: "Default",
         tags: [],
         isActive: true,
       };
