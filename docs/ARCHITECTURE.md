@@ -119,13 +119,12 @@ The database client uses **`better-sqlite3`** with Write-Ahead Logging (`WAL`) m
 ### Core Tables:
 
 ```sql
--- 1. Ingestion Sources
+-- 1. Ingestion Sources (Knowledge-First, decoupled from flashcard decks)
 CREATE TABLE data_sources (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    type TEXT NOT NULL CHECK(type IN ('rss', 'web', 'local', 'sitemap', 'llms-txt')),
+    type TEXT NOT NULL CHECK(type IN ('rss', 'web', 'local', 'sitemap', 'llms-txt', 'notion')),
     uri TEXT NOT NULL,
-    target_deck TEXT NOT NULL DEFAULT 'Default',
     tags TEXT NOT NULL DEFAULT '[]',
     is_active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
@@ -154,7 +153,7 @@ CREATE TABLE sync_state (
     item_count INTEGER NOT NULL DEFAULT 0
 );
 
--- 4. Flashcards Database
+-- 4. Flashcards Database (Deck routing designated at generation time)
 CREATE TABLE flashcards (
     id TEXT PRIMARY KEY,
     source_id TEXT REFERENCES data_sources(id) ON DELETE SET NULL,
@@ -170,7 +169,29 @@ CREATE TABLE flashcards (
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
+
+-- 5. System Settings & Credentials Store
+CREATE TABLE app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
 ```
+
+---
+
+## 6. Centralized Settings & Configuration Precedence
+
+Flashcard Master unifies application configurations through `SettingsService` in `@flashcard-master/core`. It follows a strict 3-tier precedence hierarchy:
+
+```
+SQLite app_settings  ──▶  process.env Fallback  ──▶  Hardcoded Default
+```
+
+* **Dynamic Resolvers:** Components such as `AnkiConnectAdapter` and `JobManager` accept dynamic settings resolvers, enabling instant runtime updates (e.g., changing AnkiConnect port or worker pool concurrency) without restarting the Node.js server.
+* **Secret Protection:** API keys and sensitive tokens are masked when sent over REST endpoints and never output to console logs.
+* **Origin Metadata:** Every configuration item tracks its effective origin (`database`, `env`, or `default`), exposed directly to the UI with visual source badges.
+For a complete registry of configuration keys, see [Centralized Settings & Configuration Guide](settings-configuration.md).
 
 ---
 
