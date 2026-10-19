@@ -183,7 +183,7 @@ development_status:
   epic-17-retrospective: done
 
   epic-18: in-progress
-  18-1-decouple-decks-from-data-sources-and-centralize-deck-selection: ready-for-dev
+  18-1-decouple-decks-from-data-sources-and-centralize-deck-selection: done
   18-2-centralized-system-settings-and-integrations-studio: ready-for-dev
   18-3-local-epub-ingestion-strategy-and-chapter-slicing-engine: ready-for-dev
   18-4-flashcard-deck-epub-study-guide-exporter: ready-for-dev

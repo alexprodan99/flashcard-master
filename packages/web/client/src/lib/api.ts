@@ -25,6 +25,12 @@ export async function fetchSources(): Promise<DataSource[]> {
   return res.json();
 }
 
+export async function fetchDecks(): Promise<string[]> {
+  const res = await fetch('/api/decks');
+  if (!res.ok) throw new Error('Failed to fetch decks');
+  return res.json();
+}
+
 export async function createSource(payload: {
   name: string;
   type: string;

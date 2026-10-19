@@ -319,7 +319,6 @@
           <tr>
             <th>Type</th>
             <th>Name & URI</th>
-            <th>Target Deck</th>
             <th>Tags</th>
             <th>Active</th>
             <th class="text-right">Actions</th>
@@ -342,9 +341,6 @@
                     {/if}
                   </div>
                 </div>
-              </td>
-              <td>
-                <span class="deck-badge">{s.targetDeck || 'Default'}</span>
               </td>
               <td>
                 <div class="tags-container">

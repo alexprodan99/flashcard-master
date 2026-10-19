@@ -87,4 +87,21 @@ describe("DataSourceRepository", () => {
     // Deleting again returns false
     expect(repo.delete(created.id)).toBe(false);
   });
+
+  it("decouples deck from data source creation and supports optional targetDeck", () => {
+    const createdWithoutDeck = repo.create({
+      name: "Knowledge Doc",
+      type: "local",
+      uri: "./handbook.md",
+    });
+    expect(createdWithoutDeck.id).toBeDefined();
+    expect(createdWithoutDeck.targetDeck).toBe("Default");
+
+    // Updating without targetDeck maintains previous or default
+    const updated = repo.update(createdWithoutDeck.id, {
+      name: "Updated Handbook",
+    });
+    expect(updated?.name).toBe("Updated Handbook");
+    expect(updated?.targetDeck).toBe("Default");
+  });
 });

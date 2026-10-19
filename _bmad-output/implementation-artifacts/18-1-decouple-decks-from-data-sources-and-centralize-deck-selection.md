@@ -2,7 +2,8 @@
 title: 'Story 18.1: Decouple Decks from Data Sources & Centralize Deck Selection in Generate Studio'
 type: 'feature'
 created: '2026-10-18'
-status: 'todo'
+status: 'done'
+baseline_commit: '3ccda4e4dccf34d1b7a9d69a0795f131af9a0347'
 context:
   - '_bmad-output/implementation-artifacts/epic-18-context.md'
 ---
@@ -59,14 +60,14 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `packages/core/src/storage/source-repository.ts` -- Update Zod schemas to make `targetDeck` optional on source creation and update.
-- [ ] `packages/core/src/storage/schema.sql` & `db.ts` -- Verify data source schema permits null/default target deck without regressions.
-- [ ] `packages/web/src/server.ts` -- Allow source creation without `targetDeck` payload.
-- [ ] `packages/web/client/src/components/AddSourceModal.svelte` & `EditSourceModal.svelte` -- Remove target deck input fields.
-- [ ] `packages/web/client/src/views/SourcesView.svelte` & `DashboardView.svelte` -- Remove target deck badges from source cards.
-- [ ] `packages/web/client/src/components/GenerationConfigFields.svelte` -- Enhance deck selector with existing deck autocomplete options.
-- [ ] `packages/web/client/src/components/SourceDocumentInspector.svelte` -- Update generation modal with standalone deck input.
-- [ ] `packages/cli/src/cli.ts` -- Update CLI `sources add` command to make `--deck` optional.
+- [x] `packages/core/src/storage/source-repository.ts` -- Update Zod schemas to make `targetDeck` optional on source creation and update.
+- [x] `packages/core/src/storage/schema.sql` & `db.ts` -- Verify data source schema permits null/default target deck without regressions.
+- [x] `packages/web/src/server.ts` -- Allow source creation without `targetDeck` payload.
+- [x] `packages/web/client/src/components/AddSourceModal.svelte` & `EditSourceModal.svelte` -- Remove target deck input fields.
+- [x] `packages/web/client/src/views/SourcesView.svelte` & `DashboardView.svelte` -- Remove target deck badges from source cards.
+- [x] `packages/web/client/src/components/GenerationConfigFields.svelte` -- Enhance deck selector with existing deck autocomplete options.
+- [x] `packages/web/client/src/components/SourceDocumentInspector.svelte` -- Update generation modal with standalone deck input.
+- [x] `packages/cli/src/cli.ts` -- Update CLI `sources add` command to make `--deck` optional.
 
 **Acceptance Criteria:**
 - **Given** the Add Source modal in the Web UI,

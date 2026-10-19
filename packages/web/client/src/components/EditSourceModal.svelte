@@ -19,7 +19,6 @@
   let uri = $state('');
   let webUrls = $state<string[]>([]);
   let notionRecursive = $state(false);
-  let targetDeck = $state('Default');
   let tagsInput = $state('');
   let isSubmitting = $state(false);
   let errorMessage = $state<string | null>(null);
@@ -71,7 +70,6 @@
   $effect(() => {
     if (isOpen && source) {
       name = source.name || '';
-      targetDeck = source.targetDeck || 'Default';
       tagsInput = (source.tags || []).join(', ');
       errorMessage = null;
 
@@ -151,7 +149,6 @@
       const updated = await updateSource(source.id, {
         name: name.trim(),
         uri: finalUri,
-        targetDeck: targetDeck.trim() || 'Default',
         tags,
       });
 
@@ -299,26 +296,14 @@
           </div>
         {/if}
 
-        <div class="form-row">
-          <div class="form-group">
-            <label for="edit-src-deck">Target Deck</label>
-            <input
-              id="edit-src-deck"
-              type="text"
-              placeholder="Default"
-              bind:value={targetDeck}
-            />
-          </div>
-
-          <div class="form-group">
-            <label for="edit-src-tags">Tags (comma-separated)</label>
-            <input
-              id="edit-src-tags"
-              type="text"
-              placeholder="tech, distributed-systems"
-              bind:value={tagsInput}
-            />
-          </div>
+        <div class="form-group">
+          <label for="edit-src-tags">Tags (comma-separated)</label>
+          <input
+            id="edit-src-tags"
+            type="text"
+            placeholder="tech, distributed-systems"
+            bind:value={tagsInput}
+          />
         </div>
 
         <div class="modal-footer">

@@ -153,7 +153,6 @@
                 <span class="source-name">{s.name}</span>
               </div>
               <div class="source-meta">
-                <span class="deck-tag">Deck: {s.targetDeck}</span>
                 <span class="status-pill" class:active={s.isActive}>
                   {s.isActive ? 'Active' : 'Paused'}
                 </span>

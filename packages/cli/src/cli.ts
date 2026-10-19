@@ -103,7 +103,7 @@ export function createCli(providedContext?: AppContext): Command {
   sourcesCmd
     .command("add <name> <type> <uri>")
     .description("Register a new data source")
-    .option("-d, --deck <deck>", "Target deck name", "Default")
+    .option("-d, --deck <deck>", "Target deck name (optional, deprecated)")
     .option("-t, --tags <tags>", "Comma-separated list of tags", "")
     .option("--slicing-mode <mode>", "Document slicing mode: outline | budget | none")
     .option("--pages-per-chunk <count>", "Page budget chunk size (number of pages)")
@@ -111,7 +111,7 @@ export function createCli(providedContext?: AppContext): Command {
     .option("--min-chunk-words <count>", "Minimum section words for outline slicing")
     .option("--sync", "Immediately trigger ingestion sync upon adding")
     .action(async (name: string, type: string, uri: string, options: {
-      deck: string;
+      deck?: string;
       tags: string;
       slicingMode?: string;
       pagesPerChunk?: string;
@@ -140,7 +140,8 @@ export function createCli(providedContext?: AppContext): Command {
           isActive: true,
         });
 
-        console.log(`✅ Successfully added data source: [${source.id}] "${source.name}" (${source.type}) -> Deck: ${source.targetDeck}`);
+        const deckMsg = options.deck ? ` -> Deck: ${source.targetDeck}` : "";
+        console.log(`✅ Successfully added data source: [${source.id}] "${source.name}" (${source.type})${deckMsg}`);
 
         if (options.slicingMode && !["outline", "budget", "none"].includes(options.slicingMode)) {
           console.error(`Error: Invalid slicing mode "${options.slicingMode}". Must be one of: outline, budget, none`);

@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import type { DifficultyLevel, PersonaType, CardDepthMode, SecretProvider } from '../lib/types';
   import { settingsStore } from '../stores/index.js';
+  import { fetchDecks } from '../lib/api.js';
 
   interface Props {
     provider?: string;
@@ -34,6 +35,7 @@
   }: Props = $props();
 
   let showApiKey = $state(false);
+  let availableDecks = $state<string[]>([]);
 
   let normalizedProvider = $derived((provider || 'ollama').trim().toLowerCase());
 
@@ -101,10 +103,15 @@
     savePreferences();
   }
 
-  onMount(() => {
+  onMount(async () => {
     loadPreferences();
     if (!settingsStore.hasLoaded && !settingsStore.loading) {
       settingsStore.loadKeys().catch(() => {});
+    }
+    try {
+      availableDecks = await fetchDecks();
+    } catch {
+      // Ignore if server unreachable
     }
   });
 </script>
@@ -343,14 +350,20 @@
       </div>
 
       <div class="form-group">
-        <label for="target-deck-input">Target Deck Override (Optional)</label>
+        <label for="target-deck-input">Target Deck</label>
         <input
           id="target-deck-input"
+          list="available-decks-list"
           type="text"
-          placeholder="e.g. Systems Design"
+          placeholder="Default, or e.g. Systems Design"
           bind:value={targetDeck}
           onchange={savePreferences}
         />
+        <datalist id="available-decks-list">
+          {#each availableDecks as deck}
+            <option value={deck}></option>
+          {/each}
+        </datalist>
       </div>
     </div>
 

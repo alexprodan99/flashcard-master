@@ -1591,6 +1591,46 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       const data = (await syncRes.json()) as any;
       expect(data.error).toContain("not found");
     });
+
+    it("creates data source via POST /api/sources without targetDeck and defaults to 'Default' (Story 18.1)", async () => {
+      const createRes = await fetch(`${serverUrl}/api/sources`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Decoupled Knowledge Source",
+          type: "local",
+          uri: tempLocalFilesDir,
+          tags: ["docs", "epics"],
+        }),
+      });
+
+      expect(createRes.status).toBe(201);
+      const created = (await createRes.json()) as any;
+      expect(created.id).toBeDefined();
+      expect(created.name).toBe("Decoupled Knowledge Source");
+      expect(created.targetDeck).toBe("Default");
+
+      // Verify PATCH /api/sources/:id without targetDeck
+      const patchRes = await fetch(`${serverUrl}/api/sources/${created.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Renamed Knowledge Source",
+        }),
+      });
+
+      expect(patchRes.status).toBe(200);
+      const updated = (await patchRes.json()) as any;
+      expect(updated.name).toBe("Renamed Knowledge Source");
+      expect(updated.targetDeck).toBe("Default");
+
+      // Verify GET /api/decks
+      const decksRes = await fetch(`${serverUrl}/api/decks`);
+      expect(decksRes.status).toBe(200);
+      const decks = (await decksRes.json()) as string[];
+      expect(Array.isArray(decks)).toBe(true);
+    });
   });
 });
+
 

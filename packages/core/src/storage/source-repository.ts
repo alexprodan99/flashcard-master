@@ -7,7 +7,7 @@ export const CreateSourceInputSchema = z.object({
   name: z.string().min(1, "Name is required"),
   type: DataSourceTypeSchema,
   uri: z.string().min(1, "URI is required"),
-  targetDeck: z.string().default("Default"),
+  targetDeck: z.string().optional().default("Default"),
   tags: z.array(z.string()).default([]),
   isActive: z.boolean().default(true),
 });
@@ -17,7 +17,7 @@ export const UpdateSourceInputSchema = z.object({
   name: z.string().min(1).optional(),
   type: DataSourceTypeSchema.optional(),
   uri: z.string().min(1).optional(),
-  targetDeck: z.string().min(1).optional(),
+  targetDeck: z.string().optional(),
   tags: z.array(z.string()).optional(),
   isActive: z.boolean().optional(),
 });
