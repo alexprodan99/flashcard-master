@@ -641,16 +641,33 @@ describe("Settings Keys REST API (/api/settings/keys)", () => {
       });
       expect(settingsService.getRawAnkiApiKey()).toBe("original-secret-token-value");
 
-      // Next send update with masked token
+      // Verify GET returns masked token
+      const getRes = await fetch(`${serverUrl}/api/settings/general`);
+      const getData = await getRes.json();
+      expect(getData.settings.ankiconnectApiKey).toBe("ori...alue");
+
+      // Next send update echoing back the masked token from GET response
       const res = await fetch(`${serverUrl}/api/settings/general`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ankiconnectApiKey: "***",
+          ...getData.settings,
           defaultCardLimit: 8,
         }),
       });
       expect(res.status).toBe(200);
+      expect(settingsService.getRawAnkiApiKey()).toBe("original-secret-token-value");
+
+      // Also verify explicit '***' token
+      const resAsterisks = await fetch(`${serverUrl}/api/settings/general`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ankiconnectApiKey: "***",
+          defaultCardLimit: 9,
+        }),
+      });
+      expect(resAsterisks.status).toBe(200);
       expect(settingsService.getRawAnkiApiKey()).toBe("original-secret-token-value");
     });
 

@@ -194,7 +194,7 @@ export class SettingsService {
   constructor(
     private readonly settingsRepo: SettingsRepository,
     private readonly env: NodeJS.ProcessEnv = process.env
-  ) {}
+  ) { }
 
   private getEnvValue(keys: string[]): string | null {
     for (const k of keys) {
@@ -236,7 +236,7 @@ export class SettingsService {
   getEndpoint(provider: string): string | null {
     const p = (provider || "").trim().toLowerCase() as SecretProvider;
     const dbKeyName = p === "ollama" ? "ollama_host" : `${p}_endpoint`;
-    
+
     // 1. Check SQLite database
     const dbEndpoint = this.settingsRepo.get(dbKeyName);
     if (dbEndpoint && dbEndpoint.trim().length > 0) {
@@ -259,6 +259,9 @@ export class SettingsService {
 
   setProviderSecret(provider: string, secret?: string | null, endpoint?: string | null): void {
     const p = (provider || "").trim().toLowerCase();
+    if (!SUPPORTED_PROVIDERS.includes(p as SecretProvider)) {
+      throw new Error(`Unsupported secret provider: "${provider}". Must be one of: ${SUPPORTED_PROVIDERS.join(", ")}`);
+    }
     if (secret !== undefined) {
       if (secret !== null && secret.trim().length > 0) {
         this.settingsRepo.set(`${p}_api_key`, secret.trim());
@@ -460,7 +463,12 @@ export class SettingsService {
       if (meta.key === "ankiconnectApiKey") {
         if (typeof val === "string") {
           const trimmed = val.trim();
-          if (trimmed.startsWith("***") || trimmed === "****") {
+          if (
+            trimmed.startsWith("***") ||
+            trimmed === "****" ||
+            trimmed.includes("...") ||
+            (trimmed.length >= 7 && trimmed.slice(3, -4) === "...")
+          ) {
             continue;
           }
           if (trimmed.length === 0) {
@@ -554,4 +562,4 @@ export class SettingsService {
   }
 }
 
-
+

@@ -180,9 +180,15 @@ export class LocalFileStrategy implements IngestionStrategy {
       const filename = path.basename(filePath);
 
       return result.chapters.map((chapter) => {
+        const chapterAnchor = chapter.href
+          ? chapter.href
+          : chapter.id
+            ? `id-${chapter.id}`
+            : `order-${chapter.order}`;
+
         const docId = crypto
           .createHash("sha256")
-          .update(`${sourceId}:${normalizedPath}:${chapter.href || chapter.id}`)
+          .update(`${sourceId}:${normalizedPath}:${chapterAnchor}:${chapter.order}`)
           .digest("hex")
           .slice(0, 32);
 
@@ -195,9 +201,9 @@ export class LocalFileStrategy implements IngestionStrategy {
           sourceId,
           title: displayTitle,
           rawContent: chapter.markdown,
-          originUrl: `file://${normalizedPath}#${chapter.href}`,
+          originUrl: `file://${normalizedPath}#${chapterAnchor}`,
           publishedAt: stats.mtime.toISOString(),
-          guid: `${normalizedPath}#${chapter.href}`,
+          guid: `${normalizedPath}#${chapterAnchor}`,
         };
       });
     } catch (err: any) {

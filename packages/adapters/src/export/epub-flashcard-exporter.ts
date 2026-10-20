@@ -193,6 +193,11 @@ export class EpubFlashcardExporter implements ExporterPort {
     // Italic: *text* or _text_
     escaped = escaped.replace(/\*([^*]+)\*/g, "<em>$1</em>");
     escaped = escaped.replace(/_([^_]+)_/g, "<em>$1</em>");
+    // Inline images: ![alt](url)
+    escaped = escaped.replace(
+      /!\[([^\]]*)\]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/g,
+      '<img src="$2" alt="$1" class="inline-card-img" />'
+    );
     // Markdown link: [label](url)
     escaped = escaped.replace(
       /(?<!\!)\[([^\]]+)\]\((https?:\/\/[^\s)]+|\/[^\s)]+|\.\/[^\s)]+)\)/g,
@@ -312,6 +317,11 @@ body {
   color: #b91c1c;
 }
 
+.badge-mixed {
+  border-color: #6366f1;
+  color: #4f46e5;
+}
+
 .badge-persona {
   border-color: #7c3aed;
   color: #6d28d9;
@@ -354,6 +364,10 @@ details[open] summary.card-question::before {
   font-weight: 800;
   color: #0284c7;
   margin-right: 6px;
+}
+
+.q-content {
+  display: inline;
 }
 
 .reveal-hint {
@@ -462,6 +476,13 @@ figure.card-figure img {
   border-radius: 4px;
 }
 
+img.inline-card-img {
+  max-width: 100%;
+  height: auto;
+  vertical-align: middle;
+  border-radius: 4px;
+}
+
 figcaption {
   font-size: 0.8rem;
   color: #6b7280;
@@ -545,7 +566,8 @@ nav#toc a {
       bookTitle = "Curated Flashcards - Interactive Study Guide";
     }
 
-    const bookUuid = crypto.randomUUID();
+    const cardIdSeed = cards.map((c) => c.id).sort().join(":");
+    const bookUuid = crypto.createHash("sha256").update(`${bookTitle}:${cardIdSeed}`).digest("hex").slice(0, 32);
     const now = new Date();
     const dateStr = now.toISOString().split("T")[0];
     const modifiedTimestamp = now.toISOString().replace(/\.\d+Z$/, "Z");
@@ -613,6 +635,8 @@ nav#toc a {
     }
 
     const includeCitations = options.includeCitations !== false;
+    const includeBadges = options.includeBadges !== false;
+    const includeToc = options.includeToc !== false;
     const chapters: { id: string; filename: string; title: string; count: number }[] = [];
     let chapterIndex = 1;
 
@@ -698,18 +722,23 @@ nav#toc a {
               tagsHtml = `<div class="card-tags">${tagSpans}</div>`;
             }
 
-            return `
-      <section class="card-item" id="card-${this.escapeAttr(card.id)}">
+            let badgesHtml = "";
+            if (includeBadges) {
+              badgesHtml = `
         <div class="card-badges">
           <span class="badge badge-difficulty badge-${diffClass}">Card #${idx + 1} &bull; ${this.escapeXml(
-              card.difficulty
-            )}</span>
+                card.difficulty
+              )}</span>
           ${personaBadge}
-        </div>
+        </div>`;
+            }
+
+            return `
+      <section class="card-item" id="card-${this.escapeAttr(card.id)}">${badgesHtml}
         <details class="flashcard">
           <summary class="card-question">
             <span class="q-prefix">Q:</span>
-            <div class="q-content">${qXhtml}</div>
+            <span class="q-content">${this.formatInlineMarkdown(localizedQ)}</span>
             <span class="reveal-hint">(Tap to reveal answer)</span>
           </summary>
           <div class="card-answer">
@@ -767,7 +796,7 @@ ${cardsHtml}
   <link rel="stylesheet" type="text/css" href="styles.css" />
 </head>
 <body>
-  <nav epub:type="toc" id="toc">
+  <nav epub:type="toc" id="toc"${includeToc ? "" : ' hidden=""'}>
     <h1>Table of Contents</h1>
     <ol>
 ${navItems}

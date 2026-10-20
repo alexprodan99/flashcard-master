@@ -170,9 +170,15 @@ export class JobManager extends EventEmitter {
       this.workerTimeoutMinutes = Math.max(1, Math.min(120, limits.workerTimeoutMinutes));
     }
 
-    this.dispatchNext("generation");
-    this.dispatchNext("sync");
-    this.dispatchNext("export");
+    while (this.activeGenerationCount < this.maxGenerationWorkers && this.generationQueue.length > 0) {
+      this.dispatchNext("generation");
+    }
+    while (this.activeSyncCount < this.maxSyncWorkers && this.syncQueue.length > 0) {
+      this.dispatchNext("sync");
+    }
+    while (this.activeExportCount < this.maxExportWorkers && this.exportQueue.length > 0) {
+      this.dispatchNext("export");
+    }
   }
 
   getActiveCounts(): { generation: number; sync: number; export: number } {

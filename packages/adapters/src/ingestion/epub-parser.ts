@@ -52,6 +52,14 @@ interface ManifestItem {
   properties?: string;
 }
 
+function safeDecodeURIComponent(str: string): string {
+  try {
+    return decodeURIComponent(str);
+  } catch {
+    return str;
+  }
+}
+
 function normalizeZipPath(...parts: string[]): string {
   const joined = parts.filter(Boolean).join("/").replace(/\\/g, "/");
   const segments = joined.split("/");
@@ -141,7 +149,7 @@ export class EpubParser {
       throw new InvalidEpubError("Package document full-path not specified in container.xml.");
     }
 
-    const opfPath = normalizeZipPath(decodeURIComponent(opfPathRaw));
+    const opfPath = normalizeZipPath(safeDecodeURIComponent(opfPathRaw));
     const opfDir = getZipDir(opfPath);
     const opfEntry = this.findZipFile(zip, opfPath);
 
@@ -209,7 +217,7 @@ export class EpubParser {
       const properties = item["@_properties"] || "";
 
       if (id && href) {
-        const decodedHref = decodeURIComponent(href);
+        const decodedHref = safeDecodeURIComponent(href);
         const fullZipPath = normalizeZipPath(opfDir, decodedHref);
         manifestMap.set(id, {
           id,
@@ -326,7 +334,7 @@ export class EpubParser {
       return null;
     }
 
-    const buffer = fs.readFileSync(filePath);
+    const buffer = await fs.promises.readFile(filePath);
     return await this.parse(buffer, path.basename(filePath));
   }
 
@@ -362,7 +370,7 @@ export class EpubParser {
               const label = a.textContent?.trim();
               if (hrefRaw && label) {
                 const [filePathPart, anchor] = hrefRaw.split("#");
-                const resolved = normalizeZipPath(navDir, decodeURIComponent(filePathPart));
+                const resolved = normalizeZipPath(navDir, safeDecodeURIComponent(filePathPart));
                 if (!tocMap.has(resolved)) {
                   tocMap.set(resolved, label);
                 }
@@ -412,7 +420,7 @@ export class EpubParser {
               const src = np.content?.["@_src"];
               if (text && src) {
                 const [filePathPart, anchor] = String(src).split("#");
-                const resolved = normalizeZipPath(ncxDir, decodeURIComponent(filePathPart));
+                const resolved = normalizeZipPath(ncxDir, safeDecodeURIComponent(filePathPart));
                 if (!tocMap.has(resolved)) {
                   tocMap.set(resolved, text);
                 }
@@ -469,7 +477,7 @@ export class EpubParser {
       }
 
       const cleanSrc = rawSrc.split("#")[0].split("?")[0];
-      const decodedSrc = decodeURIComponent(cleanSrc);
+      const decodedSrc = safeDecodeURIComponent(cleanSrc);
       const imgZipPath = normalizeZipPath(chapterDir, decodedSrc);
       const imgEntry = this.findZipFile(zip, imgZipPath);
 
@@ -484,7 +492,13 @@ export class EpubParser {
           else if (ext === ".svg") mimeType = "image/svg+xml";
 
           const saved = await this.mediaService.saveMedia(imgBuffer, mimeType);
-          img.setAttribute("src", `/api/media/${saved.filename}`);
+          const isSvgImage = img.tagName.toLowerCase() === "image";
+          if (isSvgImage) {
+            img.setAttribute("href", `/api/media/${saved.filename}`);
+            img.setAttribute("xlink:href", `/api/media/${saved.filename}`);
+          } else {
+            img.setAttribute("src", `/api/media/${saved.filename}`);
+          }
         } catch {
           // Gracefully continue if media optimization/saving fails
         }

@@ -3268,7 +3268,12 @@ export class WebServer {
               ? body.endpointUrl.trim()
               : configured.endpointUrl;
 
-            const apiKey = typeof body?.apiKey === "string" && !body.apiKey.startsWith("***") && body.apiKey.trim().length > 0
+            const isMaskedApiKey = typeof body?.apiKey === "string" && (
+              body.apiKey.startsWith("***") ||
+              body.apiKey === "****" ||
+              body.apiKey.includes("...")
+            );
+            const apiKey = typeof body?.apiKey === "string" && !isMaskedApiKey && body.apiKey.trim().length > 0
               ? body.apiKey.trim()
               : configured.apiKey;
 

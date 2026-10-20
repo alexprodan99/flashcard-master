@@ -306,4 +306,62 @@ describe("EpubFlashcardExporter", () => {
     expect(opf).toContain(`href="images/${asset.filename}"`);
     expect(opf).toContain('media-type="image/png"');
   });
+
+  it("respects includeBadges: false by omitting card-badges container", async () => {
+    const exporter = new EpubFlashcardExporter();
+    const result = await exporter.export(sampleCards, { includeBadges: false });
+    const zip = await JSZip.loadAsync(result.data as Buffer);
+    const xhtml = await zip.file("OEBPS/deck_1.xhtml")?.async("string");
+
+    expect(xhtml).toBeDefined();
+    expect(xhtml).not.toContain('class="card-badges"');
+  });
+
+  it("respects includeToc: false by hiding toc nav element", async () => {
+    const exporter = new EpubFlashcardExporter();
+    const result = await exporter.export(sampleCards, { includeToc: false });
+    const zip = await JSZip.loadAsync(result.data as Buffer);
+    const nav = await zip.file("OEBPS/nav.xhtml")?.async("string");
+
+    expect(nav).toBeDefined();
+    expect(nav).toContain('epub:type="toc" id="toc" hidden=""');
+  });
+
+  it("renders badge-mixed styling class for mixed difficulty cards", async () => {
+    const mixedCard = createMockCard({
+      id: "card-mixed-1",
+      difficulty: "mixed",
+      question: "Mixed difficulty card?",
+      answer: "Mixed answer.",
+      targetDeck: "General",
+    });
+
+    const exporter = new EpubFlashcardExporter();
+    const result = await exporter.export([mixedCard]);
+    const zip = await JSZip.loadAsync(result.data as Buffer);
+
+    const xhtml = await zip.file("OEBPS/deck_1.xhtml")?.async("string");
+    expect(xhtml).toContain("badge-mixed");
+
+    const css = await zip.file("OEBPS/styles.css")?.async("string");
+    expect(css).toContain(".badge-mixed");
+  });
+
+  it("generates deterministic book identifier across multiple exports of the same deck", async () => {
+    const exporter = new EpubFlashcardExporter();
+    const result1 = await exporter.export(sampleCards);
+    const result2 = await exporter.export(sampleCards);
+
+    const zip1 = await JSZip.loadAsync(result1.data as Buffer);
+    const zip2 = await JSZip.loadAsync(result2.data as Buffer);
+
+    const opf1 = await zip1.file("OEBPS/content.opf")?.async("string");
+    const opf2 = await zip2.file("OEBPS/content.opf")?.async("string");
+
+    const idMatch1 = opf1?.match(/<dc:identifier id="BookId">([^<]+)<\/dc:identifier>/);
+    const idMatch2 = opf2?.match(/<dc:identifier id="BookId">([^<]+)<\/dc:identifier>/);
+
+    expect(idMatch1?.[1]).toBeDefined();
+    expect(idMatch1?.[1]).toBe(idMatch2?.[1]);
+  });
 });

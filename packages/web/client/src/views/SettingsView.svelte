@@ -295,7 +295,8 @@
   }
 
   async function handleSaveGeneral(sectionName?: string) {
-    const payload: any = { ...formGeneral };
+    const { ankiconnectApiKey: _masked, ...cleanGeneral } = formGeneral;
+    const payload: any = { ...cleanGeneral };
     if (candidateAnkiKey.trim().length > 0) {
       payload.ankiconnectApiKey = candidateAnkiKey.trim();
     }

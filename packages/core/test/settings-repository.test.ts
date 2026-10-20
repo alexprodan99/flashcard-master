@@ -201,6 +201,13 @@ describe("SqliteSettingsRepository & SettingsService", () => {
       service.deleteProviderSecret("ollama");
       expect(service.getEndpoint("ollama")).toBe("http://ollama-remote:11434");
     });
+
+    it("rejects unknown providers with an explicit error", () => {
+      const service = new SettingsService(repo, {});
+      expect(() => {
+        service.setProviderSecret("invalid-vendor", "secret");
+      }).toThrow(/Unsupported secret provider/);
+    });
   });
 
   describe("SettingsService - General Settings (3-Tier Fallback & Studio Defaults)", () => {
