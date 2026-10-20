@@ -523,7 +523,7 @@ export function createCli(providedContext?: AppContext): Command {
   // ==========================================
   program
     .command("export <format>")
-    .description("Export flashcards (apkg, ankiconnect, csv, tsv, markdown, html, pdf)")
+    .description("Export flashcards (apkg, ankiconnect, csv, tsv, markdown, html, pdf, epub)")
     .option("-d, --deck <deck>", "Filter by target deck name")
     .option("-t, --tag <tag>", "Filter by tag")
     .option("--difficulty <diff>", "Filter by difficulty (beginner, intermediate, expert, mixed)")

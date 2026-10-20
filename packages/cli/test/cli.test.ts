@@ -404,5 +404,46 @@ describe("CLI Application", () => {
 
     expect(errors.some((e) => e.includes('Invalid slicing mode "invalid-mode"'))).toBe(true);
   });
+
+  it("exports cards to epub via CLI export command", async () => {
+    context.cardRepo.create({
+      question: "What is an EPUB?",
+      answer: "Electronic publication standard.",
+      sourceQuote: "EPUB is an electronic publication standard.",
+      difficulty: "beginner",
+      targetDeck: "Tech",
+    });
+
+    const exportSpy = vi.spyOn(context.exportService, "export").mockResolvedValueOnce({
+      format: "epub",
+      successCount: 1,
+      outputPath: "./output.epub",
+      message: "Successfully exported 1 cards to EPUB: ./output.epub",
+    });
+
+    const cli = createCli(context);
+    cli.exitOverride();
+
+    logs = [];
+    await cli.parseAsync([
+      "node",
+      "flashcard-master",
+      "export",
+      "epub",
+      "-d",
+      "Tech",
+      "-o",
+      "./output.epub",
+    ]);
+
+    expect(exportSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        format: "epub",
+        filter: expect.objectContaining({ targetDeck: "Tech" }),
+      })
+    );
+    expect(logs.some((l) => l.includes("Successfully exported 1 cards to EPUB"))).toBe(true);
+  });
 });
+
 

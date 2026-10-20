@@ -31,11 +31,17 @@ import {
   CardGenerationService,
   type DocumentSlicingOptions,
 } from "@flashcard-master/core";
-import { createLLMAdapter, DocumentExportService, ProviderVerifier, AnkiConnectAdapter } from "@flashcard-master/adapters";
+import {
+  createLLMAdapter,
+  DocumentExportService,
+  EpubFlashcardExporter,
+  ProviderVerifier,
+  AnkiConnectAdapter,
+} from "@flashcard-master/adapters";
 import { JobManager, type ConcurrencyLimits, type JobManagerOptions } from "./jobs/index.js";
 import { WorkerExecutor } from "./workers/index.js";
 
-export type ExportFormat = "apkg" | "csv" | "tsv" | "markdown" | "html" | "pdf";
+export type ExportFormat = "apkg" | "csv" | "tsv" | "markdown" | "html" | "pdf" | "epub";
 
 export interface AnkiConnectHealthCheck {
   isOnline: boolean;
@@ -2994,8 +3000,26 @@ export class WebServer {
             const cards = this.options.cardRepo.list(filter);
 
             if (this.options.exportService) {
-              const result = await this.options.exportService.export({ format, filter });
-              const filename = `flashcards.${format === "markdown" ? "md" : format === "pdf" ? "html" : format}`;
+              const author = this.settingsService?.get("epub_default_author") || undefined;
+              const publisher = this.settingsService?.get("epub_default_publisher") || undefined;
+              const result = await this.options.exportService.export({
+                format,
+                filter,
+                options: {
+                  author,
+                  publisher,
+                  targetDeck: query.deck as string,
+                },
+              });
+
+              const deckName = query.deck ? String(query.deck).trim() : undefined;
+              const defaultName = deckName
+                ? `${deckName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "deck"}-flashcards`
+                : "all-decks-flashcards";
+              const filename =
+                format === "epub"
+                  ? `${defaultName}.epub`
+                  : `flashcards.${format === "markdown" ? "md" : format === "pdf" ? "html" : format}`;
 
               let contentType = "text/plain";
               if (format === "apkg") contentType = "application/octet-stream";
@@ -3003,6 +3027,7 @@ export class WebServer {
               else if (format === "tsv") contentType = "text/tab-separated-values; charset=utf-8";
               else if (format === "markdown") contentType = "text/markdown; charset=utf-8";
               else if (format === "html" || format === "pdf") contentType = "text/html; charset=utf-8";
+              else if (format === "epub") contentType = "application/epub+zip";
 
               res.writeHead(200, {
                 "Content-Type": contentType,
@@ -3015,6 +3040,28 @@ export class WebServer {
               } else {
                 res.end("");
               }
+              return;
+            } else if (format === "epub") {
+              const exporter = new EpubFlashcardExporter(this.settingsService, this.mediaService);
+              const author = this.settingsService?.get("epub_default_author") || undefined;
+              const publisher = this.settingsService?.get("epub_default_publisher") || undefined;
+              const result = await exporter.export(cards, {
+                targetDeck: query.deck as string,
+                author,
+                publisher,
+              });
+              const deckName = query.deck ? String(query.deck).trim() : undefined;
+              const defaultName = deckName
+                ? `${deckName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "deck"}-flashcards`
+                : "all-decks-flashcards";
+              const filename = `${defaultName}.epub`;
+
+              res.writeHead(200, {
+                "Content-Type": "application/epub+zip",
+                "Content-Disposition": `attachment; filename="${filename}"`,
+                "Access-Control-Allow-Origin": "*",
+              });
+              res.end(result.data || "");
               return;
             } else {
               // Fallback simple CSV export

@@ -536,5 +536,22 @@ export class SettingsService {
       publisher: s.epubDefaultPublisher,
     };
   }
+
+  get(key: string): string | null {
+    const meta = GENERAL_SETTINGS_REGISTRY.find((m) => m.dbKey === key || m.key === key);
+    if (meta) {
+      const dbVal = this.settingsRepo.get(meta.dbKey);
+      if (dbVal !== null && dbVal.trim().length > 0) return dbVal.trim();
+      const envVal = this.getEnvValue(meta.envKeys);
+      if (envVal !== null && envVal.trim().length > 0) return envVal.trim();
+      return String(meta.defaultValue);
+    }
+    const dbVal = this.settingsRepo.get(key);
+    if (dbVal !== null && dbVal.trim().length > 0) return dbVal.trim();
+    const envVal = this.env[key] || this.env[key.toUpperCase()];
+    if (envVal && typeof envVal === "string" && envVal.trim().length > 0) return envVal.trim();
+    return null;
+  }
 }
+
 

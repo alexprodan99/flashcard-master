@@ -18,6 +18,7 @@ export * from "./export/ankiconnect-adapter.js";
 export * from "./export/delimited-exporter.js";
 export * from "./export/markdown-exporter.js";
 export * from "./export/html-study-guide-exporter.js";
+export * from "./export/epub-flashcard-exporter.js";
 export * from "./export/document-export-service.js";
 export * from "./verification/provider-verifier.js";
 

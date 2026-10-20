@@ -26,6 +26,7 @@ import {
   MarkdownExporter,
   HtmlStudyGuideExporter,
   PdfStudyGuideExporter,
+  EpubFlashcardExporter,
   AnkiPackageExporter,
   AnkiConnectAdapter,
   LocalFileStrategy,
@@ -110,6 +111,7 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     exporterRegistry.register(new HtmlStudyGuideExporter());
     exporterRegistry.register(new PdfStudyGuideExporter());
     exporterRegistry.register(new AnkiPackageExporter());
+    exporterRegistry.register(new EpubFlashcardExporter());
     exportService = new ExportService(cardRepo, exporterRegistry);
 
     ankiConnectAdapter = new AnkiConnectAdapter({ endpointUrl: "http://127.0.0.1:9999" }); // unreachable mock port
@@ -1636,7 +1638,37 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       const decks = (await decksRes.json()) as string[];
       expect(Array.isArray(decks)).toBe(true);
     });
+
+    it("streams compiled EPUB flashcard study guide via GET /api/export/epub?deck=Engineering", async () => {
+      const res = await fetch(`${serverUrl}/api/export/epub?deck=Engineering`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("application/epub+zip");
+      expect(res.headers.get("content-disposition")).toContain('filename="engineering-flashcards.epub"');
+
+      const arrayBuffer = await res.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      expect(buffer.length).toBeGreaterThan(100);
+
+      // Verify EPUB magic bytes and uncompressed mimetype at byte offset 8 (STORE compression)
+      expect(buffer.toString("ascii", 0, 2)).toBe("PK");
+      expect(buffer.readUInt16LE(8)).toBe(0);
+      expect(buffer.toString("utf-8", 30, 58)).toBe("mimetypeapplication/epub+zip");
+    });
+
+    it("streams all decks EPUB flashcard study guide via GET /api/export?format=epub", async () => {
+      const res = await fetch(`${serverUrl}/api/export?format=epub`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("application/epub+zip");
+      expect(res.headers.get("content-disposition")).toContain('filename="all-decks-flashcards.epub"');
+
+      const arrayBuffer = await res.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      expect(buffer.length).toBeGreaterThan(100);
+      expect(buffer.toString("ascii", 0, 2)).toBe("PK");
+      expect(buffer.toString("utf-8", 30, 58)).toBe("mimetypeapplication/epub+zip");
+    });
   });
 });
+
 
 

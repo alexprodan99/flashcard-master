@@ -186,7 +186,7 @@ development_status:
   18-1-decouple-decks-from-data-sources-and-centralize-deck-selection: done
   18-2-centralized-system-settings-and-integrations-studio: done
   18-3-local-epub-ingestion-strategy-and-chapter-slicing-engine: done
-  18-4-flashcard-deck-epub-study-guide-exporter: ready-for-dev
+  18-4-flashcard-deck-epub-study-guide-exporter: done
   18-5-monorepo-integration-and-end-to-end-verification: ready-for-dev
   epic-18-retrospective: optional
 action_items:

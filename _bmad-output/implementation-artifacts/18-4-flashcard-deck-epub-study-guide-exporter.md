@@ -2,7 +2,7 @@
 title: 'Story 18.4: Flashcard Deck EPUB Study Guide Exporter'
 type: 'feature'
 created: '2026-10-18'
-status: 'todo'
+status: 'done'
 context:
   - '_bmad-output/implementation-artifacts/epic-18-context.md'
 ---
@@ -59,12 +59,12 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `packages/adapters/src/export/epub-flashcard-exporter.ts` -- Build `EpubFlashcardExporter` synthesizing cards into interactive EPUB 3.0 packages.
-- [ ] `packages/core/src/ports/index.ts` & `export-service.ts` -- Register `EpubFlashcardExporter` in Monorepo ExporterRegistry.
-- [ ] `packages/web/src/server.ts` -- Add REST endpoints for downloading flashcard EPUBs.
-- [ ] `packages/web/client/src/views/ExportCenter.svelte` -- Implement UI card and download handler for EPUB flashcards.
-- [ ] `packages/cli/src/cli.ts` -- Add EPUB format to CLI export flags.
-- [ ] `packages/adapters/test/epub-flashcard-exporter.test.ts` -- Write unit tests checking ZIP compression, STORE mimetype, OPF manifest, and card markup.
+- [x] `packages/adapters/src/export/epub-flashcard-exporter.ts` -- Build `EpubFlashcardExporter` synthesizing cards into interactive EPUB 3.0 packages.
+- [x] `packages/core/src/ports/index.ts` & `export-service.ts` -- Register `EpubFlashcardExporter` in Monorepo ExporterRegistry.
+- [x] `packages/web/src/server.ts` -- Add REST endpoints for downloading flashcard EPUBs.
+- [x] `packages/web/client/src/views/ExportCenter.svelte` -- Implement UI card and download handler for EPUB flashcards.
+- [x] `packages/cli/src/cli.ts` -- Add EPUB format to CLI export flags.
+- [x] `packages/adapters/test/epub-flashcard-exporter.test.ts` -- Write unit tests checking ZIP compression, STORE mimetype, OPF manifest, and card markup.
 
 **Acceptance Criteria:**
 - **Given** flashcards in the database,

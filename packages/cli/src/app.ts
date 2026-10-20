@@ -39,6 +39,7 @@ import {
   MarkdownExporter,
   HtmlStudyGuideExporter,
   PdfStudyGuideExporter,
+  EpubFlashcardExporter,
   ProviderVerifier,
 } from "@flashcard-master/adapters";
 import type Database from "better-sqlite3";
@@ -111,6 +112,7 @@ export function createAppContext(options: AppOptions = {}): AppContext {
   exporterRegistry.register(new MarkdownExporter());
   exporterRegistry.register(new HtmlStudyGuideExporter());
   exporterRegistry.register(new PdfStudyGuideExporter());
+  exporterRegistry.register(new EpubFlashcardExporter(settingsService, mediaService));
 
   const exportService = new ExportService(cardRepo, exporterRegistry);
 
