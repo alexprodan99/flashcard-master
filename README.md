@@ -2,7 +2,7 @@
 
 > **Local-First, Grounded AI Flashcard Generation & Study Knowledge Base**
 
-Flashcard Master automatically turns your learning materials—RSS/Atom feeds, web articles, and local Markdown notes—into high-quality, hallucination-free active-recall flashcards with cognitive personas, multi-tier difficulty scaling, a local Web UI dashboard, and 1-click export to Anki, CSV, Markdown, and printable study sheets.
+Flashcard Master automatically turns your learning materials—RSS/Atom feeds, web articles, EPUB e-books, and local Markdown notes—into high-quality, hallucination-free active-recall flashcards with cognitive personas, multi-tier difficulty scaling, a local Web UI dashboard, and 1-click export to Anki, CSV, Markdown, and printable study sheets.
 
 ---
 
@@ -112,12 +112,13 @@ npm run cli -- stats
 ## ✨ Features
 
 - **🌐 Multi-Source Ingestion Engine:**
+  - **EPUB E-Books (EPUB 2 & 3):** Ingest local EPUB books, textbooks, and documentation archives with automatic container discovery, hierarchical chapter slicing (preserving book & chapter provenance in card source citations), pure-JS parsing (zero external dependencies), and embedded media localization.
   - **Notion Pages & Databases:** Ingest Notion notes, workspaces, and databases with recursive subpage crawling (up to 3 levels) and automatic expiring S3 media localization into permanent local WebP assets.
   - **RSS / Atom Feeds:** Ingest technical blogs, newsletters, and release feeds.
   - **XML Sitemaps (`<urlset>` & `<sitemapindex>`):** Ingest entire publication archives (e.g. 300+ blog articles) with recursive discovery and concurrency limits.
   - **LLMs.txt Catalogs (`/llms.txt` & `/llms-full.txt`):** Ingest structured AI documentation catalogs with auto-categorized topic tagging.
   - **Web Articles (Reader Mode):** Extract clean, ad-free article text from URLs using readability algorithms.
-  - **Local Markdown & Text Folders:** Crawl local note repositories (e.g. Obsidian vaults, documentation folders).
+  - **Local Markdown, PDF, Word & EPUB Files/Folders:** Crawl local note repositories (e.g. Obsidian vaults, documentation folders, or `.epub`/`.pdf`/`.docx`/`.md` files).
   - **Incremental Delta Sync:** SHA-256 content hashing guarantees zero duplicate document processing.
 
 - **🤖 Hallucination-Free AI Card Generation:**

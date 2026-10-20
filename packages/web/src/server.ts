@@ -2595,10 +2595,10 @@ export class WebServer {
               return;
             }
 
-            const ALLOWED_EXTS = [".md", ".markdown", ".txt", ".pdf", ".docx"];
+            const ALLOWED_EXTS = [".md", ".markdown", ".txt", ".pdf", ".docx", ".epub"];
             if (!ALLOWED_EXTS.includes(ext)) {
               this.sendJson(res, 400, {
-                error: `Unsupported file type "${ext}". Only .md, .markdown, .txt, .pdf, and .docx files are supported.`,
+                error: `Unsupported file type "${ext}". Only .md, .markdown, .txt, .pdf, .docx, and .epub files are supported.`,
               });
               return;
             }

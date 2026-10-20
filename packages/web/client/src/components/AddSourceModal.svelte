@@ -78,9 +78,9 @@
       return;
     }
 
-    const ALLOWED_EXTS = ['.md', '.markdown', '.txt', '.pdf', '.docx'];
+    const ALLOWED_EXTS = ['.md', '.markdown', '.txt', '.pdf', '.docx', '.epub'];
     if (!ALLOWED_EXTS.includes(ext)) {
-      errorMessage = 'Only .md, .markdown, .txt, .pdf, and .docx files are supported.';
+      errorMessage = 'Only .md, .markdown, .txt, .pdf, .docx, and .epub files are supported.';
       return;
     }
 
@@ -97,7 +97,7 @@
       uri = result.path;
 
       if (!name.trim()) {
-        name = result.filename.replace(/\.(md|markdown|txt|pdf|docx)$/i, '');
+        name = result.filename.replace(/\.(md|markdown|txt|pdf|docx|epub)$/i, '');
       }
     } catch (err: any) {
       errorMessage = err.message || 'Failed to upload local file';
@@ -341,13 +341,13 @@
                   <p class="drop-text">Uploading file...</p>
                 {:else}
                   <span class="drop-icon">📁</span>
-                  <p class="drop-text">Drag &amp; drop Markdown, Text, PDF, or Word (.docx) file here, or</p>
+                  <p class="drop-text">Drag &amp; drop Markdown, Text, PDF, Word (.docx), or EPUB (.epub) file here, or</p>
                   <label class="btn-browse">
                     Browse File...
                     <input
                       bind:this={fileInputRef}
                       type="file"
-                      accept=".md,.markdown,.txt,.pdf,.docx"
+                      accept=".md,.markdown,.txt,.pdf,.docx,.epub"
                       onchange={handleFileSelect}
                       hidden
                     />

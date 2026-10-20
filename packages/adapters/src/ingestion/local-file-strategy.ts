@@ -1,16 +1,26 @@
-import type { IngestionStrategy, DataSource, RawDocument, CleanTextDocument, SyncState } from "@flashcard-master/core";
+import type { IngestionStrategy, DataSource, RawDocument, CleanTextDocument, SyncState, MediaService } from "@flashcard-master/core";
 import fs from "node:fs";
 import path from "node:path";
 import fg from "fast-glob";
 import crypto from "node:crypto";
 import { DocxParser, UnsupportedDocumentError } from "./docx-parser.js";
 import { PdfParser, ScannedDocumentError } from "./pdf-parser.js";
+import { EpubParser, DrmProtectedEpubError, InvalidEpubError } from "./epub-parser.js";
+
+export interface LocalFileStrategyOptions {
+  mediaService?: MediaService;
+}
 
 export class LocalFileStrategy implements IngestionStrategy {
   readonly type = "local" as const;
 
   private docxParser = new DocxParser();
   private pdfParser = new PdfParser();
+  private epubParser: EpubParser;
+
+  constructor(options: LocalFileStrategyOptions = {}) {
+    this.epubParser = new EpubParser({ mediaService: options.mediaService });
+  }
 
   async fetch(source: DataSource, lastSync?: SyncState): Promise<RawDocument[]> {
     const targetPath = source.uri;
@@ -32,13 +42,16 @@ export class LocalFileStrategy implements IngestionStrategy {
           );
         }
 
-        if ([".md", ".markdown", ".txt", ".pdf", ".docx"].includes(ext)) {
+        if (ext === ".epub") {
+          const epubDocs = await this.readEpubAsDocuments(targetPath, source.id, stats);
+          docs.push(...epubDocs);
+        } else if ([".md", ".markdown", ".txt", ".pdf", ".docx"].includes(ext)) {
           const doc = await this.readFileAsDocument(targetPath, source.id, stats);
           if (doc) docs.push(doc);
         }
       } else if (stats.isDirectory()) {
         // Find all matching files in directory tree
-        const pattern = "**/*.{md,markdown,txt,pdf,docx}";
+        const pattern = "**/*.{md,markdown,txt,pdf,docx,epub}";
         const normalizedTarget = targetPath.replace(/\\/g, "/");
         const files = await fg(pattern, {
           cwd: normalizedTarget,
@@ -58,10 +71,21 @@ export class LocalFileStrategy implements IngestionStrategy {
           }
 
           try {
-            const doc = await this.readFileAsDocument(filePath, source.id, fileStat);
-            if (doc) docs.push(doc);
+            const ext = path.extname(filePath).toLowerCase();
+            if (ext === ".epub") {
+              const epubDocs = await this.readEpubAsDocuments(filePath, source.id, fileStat);
+              docs.push(...epubDocs);
+            } else {
+              const doc = await this.readFileAsDocument(filePath, source.id, fileStat);
+              if (doc) docs.push(doc);
+            }
           } catch (docErr: any) {
-            if (docErr instanceof UnsupportedDocumentError || docErr instanceof ScannedDocumentError) {
+            if (
+              docErr instanceof UnsupportedDocumentError ||
+              docErr instanceof ScannedDocumentError ||
+              docErr instanceof DrmProtectedEpubError ||
+              docErr instanceof InvalidEpubError
+            ) {
               console.warn(`[LocalFileStrategy] Skipping file ${filePath}: ${docErr.message}`);
               continue;
             }
@@ -70,7 +94,12 @@ export class LocalFileStrategy implements IngestionStrategy {
         }
       }
     } catch (err: any) {
-      if (err instanceof UnsupportedDocumentError || err instanceof ScannedDocumentError) {
+      if (
+        err instanceof UnsupportedDocumentError ||
+        err instanceof ScannedDocumentError ||
+        err instanceof DrmProtectedEpubError ||
+        err instanceof InvalidEpubError
+      ) {
         throw err;
       }
       console.warn(`[LocalFileStrategy] Error reading local path ${targetPath}:`, err.message);
@@ -133,6 +162,50 @@ export class LocalFileStrategy implements IngestionStrategy {
       }
       console.warn(`[LocalFileStrategy] Failed to read file ${filePath}:`, err.message);
       return null;
+    }
+  }
+
+  private async readEpubAsDocuments(
+    filePath: string,
+    sourceId: string,
+    stats: fs.Stats
+  ): Promise<RawDocument[]> {
+    try {
+      const result = await this.epubParser.parseFile(filePath);
+      if (!result || result.chapters.length === 0) {
+        return [];
+      }
+
+      const normalizedPath = filePath.replace(/\\/g, "/");
+      const filename = path.basename(filePath);
+
+      return result.chapters.map((chapter) => {
+        const docId = crypto
+          .createHash("sha256")
+          .update(`${sourceId}:${normalizedPath}:${chapter.href || chapter.id}`)
+          .digest("hex")
+          .slice(0, 32);
+
+        const displayTitle = chapter.title.startsWith(filename)
+          ? chapter.title
+          : `${filename} - ${chapter.title}`;
+
+        return {
+          id: docId,
+          sourceId,
+          title: displayTitle,
+          rawContent: chapter.markdown,
+          originUrl: `file://${normalizedPath}#${chapter.href}`,
+          publishedAt: stats.mtime.toISOString(),
+          guid: `${normalizedPath}#${chapter.href}`,
+        };
+      });
+    } catch (err: any) {
+      if (err instanceof DrmProtectedEpubError || err instanceof InvalidEpubError) {
+        throw err;
+      }
+      console.warn(`[LocalFileStrategy] Failed to read EPUB ${filePath}:`, err.message);
+      return [];
     }
   }
 

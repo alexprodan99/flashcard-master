@@ -3,6 +3,7 @@ export * from "./ingestion/web-reader-strategy.js";
 export * from "./ingestion/local-file-strategy.js";
 export * from "./ingestion/docx-parser.js";
 export * from "./ingestion/pdf-parser.js";
+export * from "./ingestion/epub-parser.js";
 export * from "./ingestion/sitemap-strategy.js";
 export * from "./ingestion/llms-txt-strategy.js";
 export * from "./ingestion/notion-strategy.js";

@@ -2,7 +2,8 @@
 title: 'Story 18.3: Local EPUB Ingestion Strategy & Chapter Slicing Engine'
 type: 'feature'
 created: '2026-10-18'
-status: 'todo'
+status: 'done'
+baseline_commit: 'a14b21796193dc20a3cfc7cae830c86c520bb439'
 context:
   - '_bmad-output/implementation-artifacts/epic-18-context.md'
 ---
@@ -61,11 +62,11 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `packages/adapters/src/ingestion/epub-parser.ts` -- Build pure-JS EPUB 2 & EPUB 3 parser extracting spine items, TOC hierarchy, and media assets.
-- [ ] `packages/adapters/src/ingestion/local-file-strategy.ts` -- Wire `EpubParser` into `LocalFileStrategy` for files and directory scanning.
-- [ ] `packages/web/src/server.ts` -- Accept `.epub` uploads and register MIME types.
-- [ ] `packages/web/client/src/components/AddSourceModal.svelte` & `EditSourceModal.svelte` -- Update file picker and drag-and-drop dropzone.
-- [ ] `packages/adapters/test/epub-parser.test.ts` -- Write unit tests with mock EPUB containers verifying spine ordering, TOC parsing, and image extraction.
+- [x] `packages/adapters/src/ingestion/epub-parser.ts` -- Build pure-JS EPUB 2 & EPUB 3 parser extracting spine items, TOC hierarchy, and media assets.
+- [x] `packages/adapters/src/ingestion/local-file-strategy.ts` -- Wire `EpubParser` into `LocalFileStrategy` for files and directory scanning.
+- [x] `packages/web/src/server.ts` -- Accept `.epub` uploads and register MIME types.
+- [x] `packages/web/client/src/components/AddSourceModal.svelte` & `EditSourceModal.svelte` -- Update file picker and drag-and-drop dropzone.
+- [x] `packages/adapters/test/epub-parser.test.ts` -- Write unit tests with mock EPUB containers verifying spine ordering, TOC parsing, and image extraction.
 
 **Acceptance Criteria:**
 - **Given** a valid DRM-free `.epub` file,

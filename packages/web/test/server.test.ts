@@ -1493,6 +1493,23 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       expect(fs.existsSync(path.join(tempLocalFilesDir, "spoofed.docx"))).toBe(false);
     });
 
+    it("accepts and saves .epub file upload through POST /api/sources/upload", async () => {
+      const epubBuffer = Buffer.from("fake-epub-binary-stream-for-upload-test");
+      const res = await fetch(`${serverUrl}/api/sources/upload`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/epub+zip",
+          "x-filename": "handbook.epub",
+        },
+        body: epubBuffer,
+      });
+
+      expect(res.status).toBe(200);
+      const data = (await res.json()) as any;
+      expect(data.filename).toBe("handbook.epub");
+      expect(fs.existsSync(data.path)).toBe(true);
+    });
+
     it("accepts slicing configuration in POST /api/sync/:id and forwards it to sync pipeline", async () => {
       // Create local note
       const notePath = path.join(tempLocalFilesDir, "sliced-note.md");
