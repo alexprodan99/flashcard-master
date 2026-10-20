@@ -182,12 +182,12 @@ development_status:
   17-6-ui-and-cli-slicing-controls-and-monorepo-test-suite: done
   epic-17-retrospective: done
 
-  epic-18: in-progress
+  epic-18: done
   18-1-decouple-decks-from-data-sources-and-centralize-deck-selection: done
   18-2-centralized-system-settings-and-integrations-studio: done
   18-3-local-epub-ingestion-strategy-and-chapter-slicing-engine: done
   18-4-flashcard-deck-epub-study-guide-exporter: done
-  18-5-monorepo-integration-and-end-to-end-verification: ready-for-dev
+  18-5-monorepo-integration-and-end-to-end-verification: done
   epic-18-retrospective: optional
 action_items:
   - id: "epic-14-retro-item-1-add-progressive-exponential-backoff-and"

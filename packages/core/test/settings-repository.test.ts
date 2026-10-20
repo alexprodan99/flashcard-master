@@ -396,6 +396,26 @@ describe("SqliteSettingsRepository & SettingsService", () => {
         publisher: "Publisher Y",
       });
     });
+
+    it("retrieves individual settings values using get(key) with registry and environment resolution", () => {
+      const service = new SettingsService(repo, {
+        CUSTOM_ENV_KEY: "from-env",
+      });
+
+      // Default value
+      expect(service.get("epub_default_author")).toBe("Flashcard Master");
+
+      // After updating DB
+      service.updateGeneralSettings({ epubDefaultAuthor: "Turing" });
+      expect(service.get("epub_default_author")).toBe("Turing");
+
+      // From environment
+      expect(service.get("custom_env_key")).toBe("from-env");
+
+      // Non-existent key
+      expect(service.get("totally_unknown_key")).toBeNull();
+    });
   });
 });
+
 

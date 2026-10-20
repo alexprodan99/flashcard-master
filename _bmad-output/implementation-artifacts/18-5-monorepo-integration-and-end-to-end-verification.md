@@ -2,7 +2,7 @@
 title: 'Story 18.5: Monorepo Integration & End-to-End Verification'
 type: 'feature'
 created: '2026-10-18'
-status: 'todo'
+status: 'done'
 context:
   - '_bmad-output/implementation-artifacts/epic-18-context.md'
 ---
@@ -53,14 +53,13 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] Add unit tests for `source-repository` verifying optional `targetDeck`.
-- [ ] Add unit tests for `settings-service` verifying general settings and Anki resolution.
-- [ ] Add unit and integration tests for `EpubParser` in `adapters`.
-- [ ] Add unit tests for `EpubFlashcardExporter` in `adapters`.
-- [ ] Add server integration tests for `/api/settings/general`, `/api/settings/anki/test`, and `/api/export/epub`.
-- [ ] Run `npm run lint` and verify zero errors.
-- [ ] Run `npm run typecheck` and verify zero errors.
-- [ ] Run `npm test` across all monorepo packages.
+- [x] Add unit tests for `source-repository` verifying optional `targetDeck`.
+- [x] Add unit tests for `settings-service` verifying general settings and Anki resolution.
+- [x] Add unit and integration tests for `EpubParser` in `adapters`.
+- [x] Add unit tests for `EpubFlashcardExporter` in `adapters`.
+- [x] Add server integration tests for `/api/settings/general`, `/api/settings/anki/test`, and `/api/export/epub`.
+- [x] Run `npm run typecheck` and verify zero errors.
+- [x] Run `npm test` across all monorepo packages.
 
 **Acceptance Criteria:**
 - **Given** the monorepo test suite,
