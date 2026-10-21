@@ -57,7 +57,7 @@ The following table lists all settings managed by the Centralized Settings Servi
 | **`max_generation_workers`** | `MAX_GENERATION_WORKERS`, `WORKER_CONCURRENCY` | `2` | Clamped 1–16 | Maximum simultaneous background worker threads for AI generation jobs. |
 | **`max_sync_workers`** | `MAX_SYNC_WORKERS` | `2` | Clamped 1–16 | Maximum simultaneous background worker threads for source ingestion jobs. |
 | **`max_export_workers`** | `MAX_EXPORT_WORKERS` | `2` | Clamped 1–16 | Maximum simultaneous background worker threads for deck/doc export jobs. |
-| **`worker_timeout_minutes`** | `WORKER_TIMEOUT_MINUTES` | `15` | Clamped 1–120 min | Maximum execution duration before an unresponsive worker job is terminated. |
+| **`worker_timeout_minutes`** | `WORKER_TIMEOUT_MINUTES` | `15` | Clamped 0–120 min (`0` = infinite) | Maximum execution duration before an unresponsive worker job is terminated. Set to `0` to disable automatic timeout for long-running batches. |
 | **`default_slicing_mode`** | `DEFAULT_SLICING_MODE` | `outline` | `outline`, `budget` | Default slicing mode for large documents (Semantic Headings vs Page/Word Budget). |
 | **`default_page_budget`** | `DEFAULT_PAGE_BUDGET` | `10` | Integer $\ge 1$ | Default page or section budget size when budget slicing is active. |
 | **`epub_default_author`** | `EPUB_DEFAULT_AUTHOR` | `Flashcard Master` | Non-empty string | Default author metadata written to generated EPUB eBook study guides. |
@@ -95,7 +95,7 @@ Every configuration card displays an origin badge indicating where the current a
 Adjust your preferred default Provider, Model name, Persona, Difficulty, and Batch limit. When you open **Generate Studio**, these settings automatically pre-populate the synthesizer form.
 
 ### 4. Worker Pool & Concurrency
-Tune worker thread concurrency limits (1 to 16) and execution timeouts (1 to 120 minutes) based on your hardware capabilities and CPU core count.
+Tune worker thread concurrency limits (1 to 16) and execution timeouts (0 to 120 minutes, where `0` disables timeout for long-running batches) based on your hardware capabilities and CPU core count. When set to `0`, worker tasks run indefinitely until finished or manually cancelled via the Task Center.
 
 ---
 

@@ -133,14 +133,15 @@ npm run cli -- stats
 - **🗂️ Embedded Web UI Dashboard:**
   - **Zero-Install SPA:** Native dark-theme Single Page Application served directly by Node.js with zero external framework dependencies or CDN tracking.
   - **📊 Dashboard Overview:** Real-time KPIs for total cards, active sources, and deck categories.
-  - **⚙️ Integrations & Secrets Hub:** Secure, masked storage for Notion and LLM API keys with real-time live credential verification and automatic background worker injection.
+  - **⚙️ Unified Settings & Integrations Studio (`#/settings`):** Centralized control center managing 3-tier configurations (`SQLite -> .env -> defaults`), masked API credentials with live connectivity testing (OpenAI, Anthropic, Gemini, Ollama, Notion, AnkiConnect), AI generation defaults, and dynamic worker pool concurrency and execution timeout limits (see [Settings Guide](docs/settings-configuration.md)).
   - **⚡ AI Generation Studio:** In-browser flashcard synthesizer with provider switching (Ollama, Gemini, OpenAI, Anthropic), model presets (`phi4-mini`, `gemini-3.6-flash`, `gpt-4o-mini`, `claude-haiku-4-5-20251001`), custom model overrides, persona selectors, single/multi-source scope, live spinning execution feedback, and card previews.
   - **🌐 Data Sources Manager:** Add, configure, and synchronize sources with live spinner feedback.
   - **🗂️ Question Explorer:** Search bar, interactive filter chips (Decks, Difficulties, Tag clouds), and click-to-reveal flashcards with source grounding callouts.
   - **✏️ Slide-Over Card Editor:** Smooth slide-in drawer to edit questions, answers, difficulty, tags, and citations with instant optimistic updates.
-  - **🚀 1-Click Export & Anki Center:** Scoped deck/tag filters, direct browser file downloads (.apkg, Markdown, PDF, CSV, TSV), and real-time desktop AnkiConnect status badging with 1-click push sync.
+  - **🚀 1-Click Export & Anki Center:** Scoped deck/tag filters, direct browser file downloads (.apkg, EPUB, Markdown, PDF, CSV, TSV), and real-time desktop AnkiConnect status badging with 1-click push sync.
 
 - **📦 Multi-Format Export & Local Sync:**
+  - 📚 **Interactive EPUB 3.0 Study Guides (`.epub`):** Standards-compliant reflowable eBooks with uncompressed byte-0 STORE `mimetype`, navigation documents, and interactive `<details>/<summary>` card flipping styled for e-readers (Kindle, Kobo, Apple Books).
   - 📦 **Anki Package (`.apkg`):** Native SQLite collection with deck hierarchies, tags, and custom styling.
   - 🔄 **Desktop AnkiConnect Sync:** 1-click push directly to running Anki desktop app via `http://127.0.0.1:8765`.
   - 📄 **Spreadsheet (`.csv` / `.tsv`):** RFC 4180 compliant quote-escaped tables for Excel, Google Sheets, or Quizlet.
