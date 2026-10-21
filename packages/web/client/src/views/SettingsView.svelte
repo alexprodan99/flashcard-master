@@ -1189,12 +1189,20 @@
               <input
                 id="worker-timeout"
                 type="number"
-                min="1"
+                min="0"
                 max="120"
                 class="text-input"
                 bind:value={formGeneral.workerTimeoutMinutes}
               />
-              <span class="input-hint">Max execution duration before auto-cancel</span>
+              <span class="input-hint">Max execution duration before auto-cancel (set 0 for infinite / no auto-timeout)</span>
+              {#if formGeneral.workerTimeoutMinutes === 0}
+                <div class="banner banner-warning timeout-warning" role="alert">
+                  <span class="banner-icon">⚠️</span>
+                  <div class="banner-content">
+                    <strong>No Timeout Limit:</strong> Background worker tasks will run indefinitely until completion. If an LLM endpoint or network socket hangs, use the Task Center to manually cancel the job.
+                  </div>
+                </div>
+              {/if}
             </div>
           </div>
         </div>
@@ -1438,6 +1446,19 @@
     background: rgba(239, 68, 68, 0.12);
     border: 1px solid rgba(239, 68, 68, 0.3);
     color: #fca5a5;
+  }
+
+  .banner-warning {
+    background: rgba(245, 158, 11, 0.12);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    color: #fcd34d;
+  }
+
+  .timeout-warning {
+    margin-top: 8px;
+    padding: 10px 14px;
+    font-size: 13px;
+    line-height: 1.4;
   }
 
   .banner-content {

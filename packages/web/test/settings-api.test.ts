@@ -632,6 +632,23 @@ describe("Settings Keys REST API (/api/settings/keys)", () => {
       expect(getData.settings.ankiconnectApiKey).toBe("sec...2345");
     });
 
+    it("PUT /api/settings/general accepts workerTimeoutMinutes: 0 for infinite execution", async () => {
+      const res = await fetch(`${serverUrl}/api/settings/general`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workerTimeoutMinutes: 0 }),
+      });
+      expect(res.status).toBe(200);
+
+      const data = await res.json();
+      expect(data.settings.workerTimeoutMinutes).toBe(0);
+      expect(data.sources.workerTimeoutMinutes).toBe("database");
+
+      const getRes = await fetch(`${serverUrl}/api/settings/general`);
+      const getData = await getRes.json();
+      expect(getData.settings.workerTimeoutMinutes).toBe(0);
+    });
+
     it("PUT /api/settings/general retains existing secret when receiving masked token", async () => {
       // First save secret
       await fetch(`${serverUrl}/api/settings/general`, {

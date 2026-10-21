@@ -422,6 +422,15 @@ describe("SqliteSettingsRepository & SettingsService", () => {
       // Non-existent key
       expect(service.get("totally_unknown_key")).toBeNull();
     });
+
+    it("parses workerTimeoutMinutes: 0 as infinite execution timeout", () => {
+      const service = new SettingsService(repo);
+      service.updateGeneralSettings({ workerTimeoutMinutes: 0 });
+
+      const res = service.getGeneralSettings();
+      expect(res.settings.workerTimeoutMinutes).toBe(0);
+      expect(service.getWorkerConcurrencyLimits().workerTimeoutMinutes).toBe(0);
+    });
   });
 });
 

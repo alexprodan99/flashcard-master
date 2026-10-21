@@ -73,7 +73,7 @@ export class JobManager extends EventEmitter {
     this.maxExportWorkers = options.maxExportWorkers !== undefined && options.maxExportWorkers > 0
       ? options.maxExportWorkers
       : 2;
-    this.workerTimeoutMinutes = options.workerTimeoutMinutes !== undefined && options.workerTimeoutMinutes > 0
+    this.workerTimeoutMinutes = options.workerTimeoutMinutes !== undefined && options.workerTimeoutMinutes >= 0
       ? options.workerTimeoutMinutes
       : 15;
     this.isVerboseFn = options.isVerbose ?? (() => {
@@ -166,8 +166,8 @@ export class JobManager extends EventEmitter {
     if (limits.maxExportWorkers !== undefined && limits.maxExportWorkers > 0) {
       this.maxExportWorkers = Math.max(1, Math.min(16, limits.maxExportWorkers));
     }
-    if (limits.workerTimeoutMinutes !== undefined && limits.workerTimeoutMinutes > 0) {
-      this.workerTimeoutMinutes = Math.max(1, Math.min(120, limits.workerTimeoutMinutes));
+    if (limits.workerTimeoutMinutes !== undefined && limits.workerTimeoutMinutes >= 0) {
+      this.workerTimeoutMinutes = Math.max(0, Math.min(120, limits.workerTimeoutMinutes));
     }
 
     while (this.activeGenerationCount < this.maxGenerationWorkers && this.generationQueue.length > 0) {

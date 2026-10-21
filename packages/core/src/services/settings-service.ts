@@ -152,7 +152,7 @@ export const GENERAL_SETTINGS_REGISTRY: GeneralSettingMeta<any>[] = [
     defaultValue: 15,
     parse: (v: string) => {
       const n = parseInt(v, 10);
-      return Number.isNaN(n) ? 15 : Math.max(1, Math.min(120, n));
+      return Number.isNaN(n) ? 15 : Math.max(0, Math.min(120, n));
     },
   },
   // Slicing Defaults

@@ -255,7 +255,7 @@ export const GeneralSettingsSchema = z.object({
   maxGenerationWorkers: z.number().int().min(1).max(16).default(2),
   maxSyncWorkers: z.number().int().min(1).max(16).default(2),
   maxExportWorkers: z.number().int().min(1).max(16).default(2),
-  workerTimeoutMinutes: z.number().int().min(1).max(120).default(15),
+  workerTimeoutMinutes: z.number().int().min(0).max(120).default(15),
 
   // Slicing Defaults
   defaultSlicingMode: z.enum(["outline", "budget", "none"]).default("outline"),

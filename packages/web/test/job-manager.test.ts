@@ -338,4 +338,25 @@ describe("JobManager", () => {
       consoleSpy.mockRestore();
     }
   });
+
+  it("permits workerTimeoutMinutes: 0 for infinite/disabled timeout", async () => {
+    jobManager.updateConcurrencyLimits({ workerTimeoutMinutes: 0 });
+    expect(jobManager.getLimits().workerTimeoutMinutes).toBe(0);
+
+    const completedPromise = new Promise<any>((resolve) => {
+      jobManager.once("job_completed", resolve);
+    });
+
+    await jobManager.enqueueJob(
+      "generation",
+      "Infinite Job",
+      {},
+      async () => {
+        return { success: true };
+      }
+    );
+
+    const completed = await completedPromise;
+    expect(completed.status).toBe("completed");
+  });
 });
