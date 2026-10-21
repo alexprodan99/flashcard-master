@@ -21,7 +21,6 @@ describe("DocumentRepository", () => {
       name: "Engineering Blog",
       type: "rss",
       uri: "https://example.com/rss.xml",
-      targetDeck: "Architecture",
       tags: ["tech"],
       isActive: true,
     });

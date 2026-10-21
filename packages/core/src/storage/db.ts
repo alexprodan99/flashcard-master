@@ -9,7 +9,6 @@ CREATE TABLE IF NOT EXISTS data_sources (
     name TEXT NOT NULL,
     type TEXT NOT NULL CHECK(type IN ('rss', 'web', 'local', 'sitemap', 'llms-txt', 'notion')),
     uri TEXT NOT NULL,
-    target_deck TEXT NOT NULL DEFAULT 'Default',
     tags TEXT NOT NULL DEFAULT '[]',
     is_active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
@@ -314,7 +313,6 @@ export function runMigrations(db: Database.Database): void {
             name TEXT NOT NULL,
             type TEXT NOT NULL CHECK(type IN ('rss', 'web', 'local', 'sitemap', 'llms-txt', 'notion')),
             uri TEXT NOT NULL,
-            target_deck TEXT NOT NULL DEFAULT 'Default',
             tags TEXT NOT NULL DEFAULT '[]',
             is_active INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
@@ -322,8 +320,8 @@ export function runMigrations(db: Database.Database): void {
         );
       `);
       db.exec(`
-        INSERT INTO data_sources (id, name, type, uri, target_deck, tags, is_active, created_at, updated_at)
-        SELECT id, name, type, uri, target_deck, tags, is_active, created_at, updated_at FROM _data_sources_old;
+        INSERT INTO data_sources (id, name, type, uri, tags, is_active, created_at, updated_at)
+        SELECT id, name, type, uri, tags, is_active, created_at, updated_at FROM _data_sources_old;
       `);
       db.exec("DROP TABLE _data_sources_old;");
     })();
@@ -608,5 +606,40 @@ export function runMigrations(db: Database.Database): void {
         updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
   `);
+
+  // 8. Decouple target_deck from data_sources (Epic 18)
+  const dsCols = db.prepare("PRAGMA table_info(data_sources)").all() as Array<{ name: string }>;
+  if (dsCols && dsCols.some((c) => c.name.toLowerCase() === "target_deck")) {
+    try {
+      db.exec("ALTER TABLE data_sources DROP COLUMN target_deck;");
+    } catch {
+      // Fallback table rebuild if running on an environment without DROP COLUMN support
+      try {
+        db.transaction(() => {
+          db.exec("ALTER TABLE data_sources RENAME TO _data_sources_drop_deck;");
+          db.exec(`
+            CREATE TABLE data_sources (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                type TEXT NOT NULL CHECK(type IN ('rss', 'web', 'local', 'sitemap', 'llms-txt', 'notion')),
+                uri TEXT NOT NULL,
+                tags TEXT NOT NULL DEFAULT '[]',
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+                updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+            );
+          `);
+          db.exec(`
+            INSERT INTO data_sources (id, name, type, uri, tags, is_active, created_at, updated_at)
+            SELECT id, name, type, uri, tags, is_active, created_at, updated_at FROM _data_sources_drop_deck;
+          `);
+          db.exec("DROP TABLE _data_sources_drop_deck;");
+        })();
+      } catch {
+        // Table might already be migrated
+      }
+    }
+  }
 }
+
 

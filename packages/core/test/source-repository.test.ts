@@ -16,7 +16,7 @@ describe("DataSourceRepository", () => {
     db.close();
   });
 
-  it("creates and retrieves a data source with default deck and serialized tags", () => {
+  it("creates and retrieves a data source with serialized tags", () => {
     const created = repo.create({
       name: "Substack Newsletter",
       type: "rss",
@@ -28,7 +28,7 @@ describe("DataSourceRepository", () => {
     expect(created.name).toBe("Substack Newsletter");
     expect(created.type).toBe("rss");
     expect(created.uri).toBe("https://example.substack.com/feed");
-    expect(created.targetDeck).toBe("Default");
+    expect((created as any).targetDeck).toBeUndefined();
     expect(created.tags).toEqual(["tech", "ai"]);
     expect(created.isActive).toBe(true);
 
@@ -66,13 +66,12 @@ describe("DataSourceRepository", () => {
 
     const updated = repo.update(created.id, {
       name: "New Name",
-      targetDeck: "Computer Science",
       tags: ["distributed-systems"],
     });
 
     expect(updated).toBeDefined();
     expect(updated?.name).toBe("New Name");
-    expect(updated?.targetDeck).toBe("Computer Science");
+    expect((updated as any)?.targetDeck).toBeUndefined();
     expect(updated?.tags).toEqual(["distributed-systems"]);
   });
 
@@ -86,5 +85,21 @@ describe("DataSourceRepository", () => {
 
     // Deleting again returns false
     expect(repo.delete(created.id)).toBe(false);
+  });
+
+  it("completely decouples deck from data source (data source has no targetDeck property)", () => {
+    const created = repo.create({
+      name: "Knowledge Doc",
+      type: "local",
+      uri: "./handbook.md",
+    });
+    expect(created.id).toBeDefined();
+    expect((created as any).targetDeck).toBeUndefined();
+
+    const updated = repo.update(created.id, {
+      name: "Updated Handbook",
+    });
+    expect(updated?.name).toBe("Updated Handbook");
+    expect((updated as any)?.targetDeck).toBeUndefined();
   });
 });

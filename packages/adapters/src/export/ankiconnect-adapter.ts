@@ -21,16 +21,23 @@ export interface AnkiConnectSyncResult {
   error?: string;
 }
 
+export type AnkiConnectOptionsResolver = AnkiConnectOptions | (() => AnkiConnectOptions);
+
 export class AnkiConnectAdapter implements ExporterPort {
   readonly format = "ankiconnect" as const;
-  private readonly endpointUrl: string;
-  private readonly timeoutMs: number;
-  private readonly apiKey?: string;
+  private readonly optionsResolver: AnkiConnectOptionsResolver;
 
-  constructor(options: AnkiConnectOptions = {}) {
-    this.endpointUrl = options.endpointUrl || "http://127.0.0.1:8765";
-    this.timeoutMs = options.timeoutMs || 3000;
-    this.apiKey = options.apiKey;
+  constructor(options: AnkiConnectOptionsResolver = {}) {
+    this.optionsResolver = options;
+  }
+
+  getOptions(): { endpointUrl: string; timeoutMs: number; apiKey?: string } {
+    const opts = typeof this.optionsResolver === "function" ? this.optionsResolver() : this.optionsResolver;
+    return {
+      endpointUrl: opts?.endpointUrl || "http://127.0.0.1:8765",
+      timeoutMs: opts?.timeoutMs || 3000,
+      apiKey: opts?.apiKey,
+    };
   }
 
   private escapeHtml(text: string): string {
@@ -43,8 +50,9 @@ export class AnkiConnectAdapter implements ExporterPort {
   }
 
   async invoke<T = any>(action: string, params: Record<string, any> = {}): Promise<T> {
+    const { endpointUrl, timeoutMs, apiKey } = this.getOptions();
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       const payload: Record<string, any> = {
@@ -53,11 +61,11 @@ export class AnkiConnectAdapter implements ExporterPort {
         params,
       };
 
-      if (this.apiKey) {
-        payload.key = this.apiKey;
+      if (apiKey) {
+        payload.key = apiKey;
       }
 
-      const res = await fetch(this.endpointUrl, {
+      const res = await fetch(endpointUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

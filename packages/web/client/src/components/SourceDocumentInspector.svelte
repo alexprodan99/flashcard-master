@@ -220,8 +220,8 @@
 
   function handleOpenConfigModal(doc: DiscoveredDocument) {
     configDoc = doc;
-    if (source?.targetDeck && !targetDeck) {
-      targetDeck = source.targetDeck;
+    if (!targetDeck) {
+      targetDeck = generateStore.targetDeck || 'Default';
     }
     isConfigModalOpen = true;
   }
@@ -247,7 +247,7 @@
         depthMode,
         chunkMultiplier,
         limit,
-        targetDeck: targetDeck.trim() || source.targetDeck || undefined,
+        targetDeck: targetDeck.trim() || undefined,
         enforceGrounding,
         sync: true,
       });
@@ -280,7 +280,6 @@
         <div class="header-titles">
           <div class="source-badge-row">
             <span class="type-badge {source.type}">{source.type}</span>
-            <span class="deck-badge">📁 {source.targetDeck}</span>
           </div>
           <h2>{source.name}</h2>
           <p class="source-uri" title={source.uri}>{source.uri}</p>

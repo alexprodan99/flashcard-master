@@ -26,6 +26,7 @@ import {
   MarkdownExporter,
   HtmlStudyGuideExporter,
   PdfStudyGuideExporter,
+  EpubFlashcardExporter,
   AnkiPackageExporter,
   AnkiConnectAdapter,
   LocalFileStrategy,
@@ -110,6 +111,7 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     exporterRegistry.register(new HtmlStudyGuideExporter());
     exporterRegistry.register(new PdfStudyGuideExporter());
     exporterRegistry.register(new AnkiPackageExporter());
+    exporterRegistry.register(new EpubFlashcardExporter());
     exportService = new ExportService(cardRepo, exporterRegistry);
 
     ankiConnectAdapter = new AnkiConnectAdapter({ endpointUrl: "http://127.0.0.1:9999" }); // unreachable mock port
@@ -119,7 +121,6 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       name: "Engineering Blog",
       type: "rss",
       uri: "https://example.com/rss",
-      targetDeck: "Engineering",
       tags: [],
       isActive: true,
     });
@@ -687,12 +688,13 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        targetDeck: "AdvancedWeb",
+        tags: ["advanced-web"],
       }),
     });
     expect(putRes.status).toBe(200);
     const putUpdated = await putRes.json();
-    expect(putUpdated.targetDeck).toBe("AdvancedWeb");
+    expect(putUpdated.tags).toContain("advanced-web");
+    expect((putUpdated as any).targetDeck).toBeUndefined();
   });
 
   it("deletes single and bulk documents via REST API while preserving all flashcards intact", async () => {
@@ -701,7 +703,6 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       name: "Distributed Systems Course",
       type: "web",
       uri: "https://example.com/systems",
-      targetDeck: "Systems",
       tags: ["distributed"],
       isActive: true,
     });
@@ -848,7 +849,6 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
         name: "Cloud Architecture",
         type: "web",
         uri: "https://example.com/cloud",
-        targetDeck: "Cloud",
         tags: [],
         isActive: true,
       });
@@ -896,7 +896,6 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
         name: "Database Systems",
         type: "web",
         uri: "https://example.com/db",
-        targetDeck: "DB",
         tags: [],
         isActive: true,
       });
@@ -931,7 +930,6 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
         name: "Security Guidelines",
         type: "web",
         uri: "https://example.com/sec",
-        targetDeck: "Sec",
         tags: [],
         isActive: true,
       });
@@ -973,7 +971,6 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
         name: "Kubernetes Handbook",
         type: "web",
         uri: "https://example.com/k8s",
-        targetDeck: "K8s",
         tags: [],
         isActive: true,
       });
@@ -1037,7 +1034,6 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
         name: "GET Export Source",
         type: "web",
         uri: "https://example.com/get-export",
-        targetDeck: "Test",
         tags: [],
         isActive: true,
       });
@@ -1060,7 +1056,6 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
         name: "List All Docs Source",
         type: "web",
         uri: "https://example.com/list-all",
-        targetDeck: "Test",
         tags: [],
         isActive: true,
       });
@@ -1117,7 +1112,6 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
         name: "Media Export Source",
         type: "web",
         uri: "https://example.com/media-export",
-        targetDeck: "Test",
         tags: [],
         isActive: true,
       });
@@ -1168,7 +1162,6 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
         name: "Grayscale Source",
         type: "web",
         uri: "https://example.com/gray",
-        targetDeck: "Test",
         tags: [],
         isActive: true,
       });
@@ -1213,7 +1206,6 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
         name: "Split ZIP Media Source",
         type: "web",
         uri: "https://example.com/split-zip-media",
-        targetDeck: "Test",
         tags: [],
         isActive: true,
       });
@@ -1503,6 +1495,23 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       expect(fs.existsSync(path.join(tempLocalFilesDir, "spoofed.docx"))).toBe(false);
     });
 
+    it("accepts and saves .epub file upload through POST /api/sources/upload", async () => {
+      const epubBuffer = Buffer.from("fake-epub-binary-stream-for-upload-test");
+      const res = await fetch(`${serverUrl}/api/sources/upload`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/epub+zip",
+          "x-filename": "handbook.epub",
+        },
+        body: epubBuffer,
+      });
+
+      expect(res.status).toBe(200);
+      const data = (await res.json()) as any;
+      expect(data.filename).toBe("handbook.epub");
+      expect(fs.existsSync(data.path)).toBe(true);
+    });
+
     it("accepts slicing configuration in POST /api/sync/:id and forwards it to sync pipeline", async () => {
       // Create local note
       const notePath = path.join(tempLocalFilesDir, "sliced-note.md");
@@ -1559,7 +1568,6 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
           name: "Async Note",
           type: "local",
           uri: tempLocalFilesDir,
-          targetDeck: "Notes",
         });
 
         const syncRes = await fetch(`${jmServerUrl}/api/sync/${source.id}`, {
@@ -1591,6 +1599,76 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       const data = (await syncRes.json()) as any;
       expect(data.error).toContain("not found");
     });
+
+    it("creates data source via POST /api/sources without targetDeck (completely decoupled in Story 18.1)", async () => {
+      const createRes = await fetch(`${serverUrl}/api/sources`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Decoupled Knowledge Source",
+          type: "local",
+          uri: tempLocalFilesDir,
+          tags: ["docs", "epics"],
+        }),
+      });
+
+      expect(createRes.status).toBe(201);
+      const created = (await createRes.json()) as any;
+      expect(created.id).toBeDefined();
+      expect(created.name).toBe("Decoupled Knowledge Source");
+      expect(created.targetDeck).toBeUndefined();
+
+      // Verify PATCH /api/sources/:id without targetDeck
+      const patchRes = await fetch(`${serverUrl}/api/sources/${created.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Renamed Knowledge Source",
+        }),
+      });
+
+      expect(patchRes.status).toBe(200);
+      const updated = (await patchRes.json()) as any;
+      expect(updated.name).toBe("Renamed Knowledge Source");
+      expect(updated.targetDeck).toBeUndefined();
+
+      // Verify GET /api/decks
+      const decksRes = await fetch(`${serverUrl}/api/decks`);
+      expect(decksRes.status).toBe(200);
+      const decks = (await decksRes.json()) as string[];
+      expect(Array.isArray(decks)).toBe(true);
+    });
+
+    it("streams compiled EPUB flashcard study guide via GET /api/export/epub?deck=Engineering", async () => {
+      const res = await fetch(`${serverUrl}/api/export/epub?deck=Engineering`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("application/epub+zip");
+      expect(res.headers.get("content-disposition")).toContain('filename="engineering-flashcards.epub"');
+
+      const arrayBuffer = await res.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      expect(buffer.length).toBeGreaterThan(100);
+
+      // Verify EPUB magic bytes and uncompressed mimetype at byte offset 8 (STORE compression)
+      expect(buffer.toString("ascii", 0, 2)).toBe("PK");
+      expect(buffer.readUInt16LE(8)).toBe(0);
+      expect(buffer.toString("utf-8", 30, 58)).toBe("mimetypeapplication/epub+zip");
+    });
+
+    it("streams all decks EPUB flashcard study guide via GET /api/export?format=epub", async () => {
+      const res = await fetch(`${serverUrl}/api/export?format=epub`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("application/epub+zip");
+      expect(res.headers.get("content-disposition")).toContain('filename="all-decks-flashcards.epub"');
+
+      const arrayBuffer = await res.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      expect(buffer.length).toBeGreaterThan(100);
+      expect(buffer.toString("ascii", 0, 2)).toBe("PK");
+      expect(buffer.toString("utf-8", 30, 58)).toBe("mimetypeapplication/epub+zip");
+    });
   });
 });
+
+
 

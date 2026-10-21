@@ -59,7 +59,7 @@
     }
   }
 
-  function downloadFormat(format: 'apkg' | 'markdown' | 'pdf' | 'csv' | 'tsv') {
+  function downloadFormat(format: 'apkg' | 'markdown' | 'pdf' | 'csv' | 'tsv' | 'epub') {
     if (activeDownloadFormat !== null || isPushing || isKnowledgeExporting) return;
     activeDownloadFormat = format;
     toastStore.info(`Preparing ${format.toUpperCase()} export download...`);
@@ -252,6 +252,28 @@
             <span class="spinner-inline"></span> Exporting...
           {:else}
             ⬇️ Download .apkg
+          {/if}
+        </button>
+      </div>
+
+      <!-- EPUB Study Guide eBook -->
+      <div class="format-card">
+        <div class="format-header">
+          <span class="format-icon">📖</span>
+          <span class="format-ext">.EPUB</span>
+        </div>
+        <h3>EPUB Study Guide eBook</h3>
+        <p>Interactive EPUB 3.0 eBook with collapsible &lt;details&gt; questions and verified citations for e-readers (Kindle, Kobo, Apple Books).</p>
+        <button
+          type="button"
+          class="btn btn-secondary btn-full"
+          disabled={activeDownloadFormat !== null || isPushing || isKnowledgeExporting}
+          onclick={() => downloadFormat('epub')}
+        >
+          {#if activeDownloadFormat === 'epub'}
+            <span class="spinner-inline"></span> Exporting...
+          {:else}
+            ⬇️ Download EPUB
           {/if}
         </button>
       </div>

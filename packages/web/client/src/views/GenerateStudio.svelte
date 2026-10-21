@@ -586,7 +586,8 @@
     }
   }
 
-  onMount(() => {
+  onMount(async () => {
+    await generateStore.loadSystemDefaultsIfEmpty();
     loadSources();
     if (generateStore.isGenerating && generateStore.activeJobId) {
       pollJobCompletion(generateStore.activeJobId);

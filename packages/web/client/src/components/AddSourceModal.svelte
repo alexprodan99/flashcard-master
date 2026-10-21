@@ -19,7 +19,6 @@
   let uri = $state('');
   let webUrls = $state<string[]>([]);
   let notionRecursive = $state(false);
-  let targetDeck = $state('Default');
   let tagsInput = $state('');
   let isSubmitting = $state(false);
   let errorMessage = $state<string | null>(null);
@@ -79,9 +78,9 @@
       return;
     }
 
-    const ALLOWED_EXTS = ['.md', '.markdown', '.txt', '.pdf', '.docx'];
+    const ALLOWED_EXTS = ['.md', '.markdown', '.txt', '.pdf', '.docx', '.epub'];
     if (!ALLOWED_EXTS.includes(ext)) {
-      errorMessage = 'Only .md, .markdown, .txt, .pdf, and .docx files are supported.';
+      errorMessage = 'Only .md, .markdown, .txt, .pdf, .docx, and .epub files are supported.';
       return;
     }
 
@@ -98,7 +97,7 @@
       uri = result.path;
 
       if (!name.trim()) {
-        name = result.filename.replace(/\.(md|markdown|txt|pdf|docx)$/i, '');
+        name = result.filename.replace(/\.(md|markdown|txt|pdf|docx|epub)$/i, '');
       }
     } catch (err: any) {
       errorMessage = err.message || 'Failed to upload local file';
@@ -197,7 +196,6 @@
         name: name.trim(),
         type,
         uri: finalUri,
-        targetDeck: targetDeck.trim() || 'Default',
         tags,
       });
 
@@ -220,7 +218,6 @@
       name = '';
       uri = '';
       webUrls = [];
-      targetDeck = 'Default';
       tagsInput = '';
       selectedLocalFile = null;
       isUploadingFile = false;
@@ -344,13 +341,13 @@
                   <p class="drop-text">Uploading file...</p>
                 {:else}
                   <span class="drop-icon">📁</span>
-                  <p class="drop-text">Drag &amp; drop Markdown, Text, PDF, or Word (.docx) file here, or</p>
+                  <p class="drop-text">Drag &amp; drop Markdown, Text, PDF, Word (.docx), or EPUB (.epub) file here, or</p>
                   <label class="btn-browse">
                     Browse File...
                     <input
                       bind:this={fileInputRef}
                       type="file"
-                      accept=".md,.markdown,.txt,.pdf,.docx"
+                      accept=".md,.markdown,.txt,.pdf,.docx,.epub"
                       onchange={handleFileSelect}
                       hidden
                     />
@@ -545,26 +542,14 @@
           </div>
         {/if}
 
-        <div class="form-row">
-          <div class="form-group">
-            <label for="src-deck">Target Deck</label>
-            <input
-              id="src-deck"
-              type="text"
-              placeholder="Default"
-              bind:value={targetDeck}
-            />
-          </div>
-
-          <div class="form-group">
-            <label for="src-tags">Tags (comma-separated)</label>
-            <input
-              id="src-tags"
-              type="text"
-              placeholder="tech, distributed-systems"
-              bind:value={tagsInput}
-            />
-          </div>
+        <div class="form-group">
+          <label for="src-tags">Tags (comma-separated)</label>
+          <input
+            id="src-tags"
+            type="text"
+            placeholder="tech, distributed-systems"
+            bind:value={tagsInput}
+          />
         </div>
 
         <div class="form-group sync-immediately-group">
@@ -651,10 +636,6 @@
     flex: 1;
   }
 
-  .form-row {
-    display: flex;
-    gap: 12px;
-  }
 
   label {
     font-size: 13px;

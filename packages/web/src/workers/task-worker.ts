@@ -354,7 +354,8 @@ if (parentPort) {
     });
 
     const slicingEngine = new DocumentSlicingEngine();
-    const localStrategy = new LocalFileStrategy();
+    const mediaService = new MediaService();
+    const localStrategy = new LocalFileStrategy({ mediaService });
 
     for (let i = 0; i < totalSources; i++) {
       if (isAborted) {

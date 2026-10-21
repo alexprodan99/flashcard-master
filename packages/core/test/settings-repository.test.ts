@@ -201,5 +201,237 @@ describe("SqliteSettingsRepository & SettingsService", () => {
       service.deleteProviderSecret("ollama");
       expect(service.getEndpoint("ollama")).toBe("http://ollama-remote:11434");
     });
+
+    it("rejects unknown providers with an explicit error", () => {
+      const service = new SettingsService(repo, {});
+      expect(() => {
+        service.setProviderSecret("invalid-vendor", "secret");
+      }).toThrow(/Unsupported secret provider/);
+    });
   });
-});
+
+  describe("SettingsService - General Settings (3-Tier Fallback & Studio Defaults)", () => {
+    it("returns pristine defaults and source='default' when DB and env are empty", () => {
+      const service = new SettingsService(repo, {});
+      const res = service.getGeneralSettings();
+
+      expect(res.settings.ankiconnectUrl).toBe("http://127.0.0.1:8765");
+      expect(res.settings.ankiconnectApiKey).toBe("");
+      expect(res.settings.ankiconnectTimeoutMs).toBe(3000);
+      expect(res.settings.defaultAiProvider).toBe("ollama");
+      expect(res.settings.defaultAiModel).toBe("phi4-mini");
+      expect(res.settings.defaultPersona).toBe("socratic-mentor");
+      expect(res.settings.defaultDifficulty).toBe("intermediate");
+      expect(res.settings.defaultCardLimit).toBe(5);
+      expect(res.settings.defaultGroundingEnforced).toBe(true);
+      expect(res.settings.maxGenerationWorkers).toBe(2);
+      expect(res.settings.maxSyncWorkers).toBe(2);
+      expect(res.settings.maxExportWorkers).toBe(2);
+      expect(res.settings.workerTimeoutMinutes).toBe(15);
+      expect(res.settings.defaultSlicingMode).toBe("outline");
+      expect(res.settings.defaultPageBudget).toBe(10);
+      expect(res.settings.epubDefaultAuthor).toBe("Flashcard Master");
+      expect(res.settings.epubDefaultPublisher).toBe("Flashcard Master Studio");
+
+      // Verify all sources are 'default'
+      for (const [key, source] of Object.entries(res.sources)) {
+        expect(source).toBe("default");
+      }
+    });
+
+    it("respects environment variables when not set in DB", () => {
+      const mockEnv: NodeJS.ProcessEnv = {
+        ANKI_CONNECT_URL: "http://192.168.1.100:8765",
+        ANKI_CONNECT_API_KEY: "secret_anki_password",
+        ANKI_CONNECT_TIMEOUT_MS: "5000",
+        DEFAULT_AI_PROVIDER: "openai",
+        DEFAULT_AI_MODEL: "gpt-4o-mini",
+        MAX_GENERATION_WORKERS: "4",
+        WORKER_TIMEOUT_MINUTES: "30",
+        DEFAULT_SLICING_MODE: "budget",
+        DEFAULT_PAGE_BUDGET: "25",
+        EPUB_DEFAULT_AUTHOR: "Custom Author",
+      };
+      const service = new SettingsService(repo, mockEnv);
+      const res = service.getGeneralSettings();
+
+      expect(res.settings.ankiconnectUrl).toBe("http://192.168.1.100:8765");
+      expect(res.sources.ankiconnectUrl).toBe("environment");
+
+      expect(res.settings.ankiconnectApiKey).toBe("sec...word");
+      expect(res.maskedApiKey).toBe("sec...word");
+      expect(res.sources.ankiconnectApiKey).toBe("environment");
+
+      expect(res.settings.ankiconnectTimeoutMs).toBe(5000);
+      expect(res.sources.ankiconnectTimeoutMs).toBe("environment");
+
+      expect(res.settings.defaultAiProvider).toBe("openai");
+      expect(res.sources.defaultAiProvider).toBe("environment");
+
+      expect(res.settings.defaultAiModel).toBe("gpt-4o-mini");
+      expect(res.sources.defaultAiModel).toBe("environment");
+
+      expect(res.settings.maxGenerationWorkers).toBe(4);
+      expect(res.sources.maxGenerationWorkers).toBe("environment");
+
+      expect(res.settings.workerTimeoutMinutes).toBe(30);
+      expect(res.sources.workerTimeoutMinutes).toBe("environment");
+
+      expect(res.settings.defaultSlicingMode).toBe("budget");
+      expect(res.sources.defaultSlicingMode).toBe("environment");
+
+      expect(res.settings.defaultPageBudget).toBe(25);
+      expect(res.sources.defaultPageBudget).toBe("environment");
+
+      expect(res.settings.epubDefaultAuthor).toBe("Custom Author");
+      expect(res.sources.epubDefaultAuthor).toBe("environment");
+
+      // Unset env vars remain 'default'
+      expect(res.sources.maxSyncWorkers).toBe("default");
+    });
+
+    it("prioritizes SQLite settings over environment variables and defaults", () => {
+      const mockEnv: NodeJS.ProcessEnv = {
+        ANKI_CONNECT_URL: "http://env-host:8765",
+        DEFAULT_AI_PROVIDER: "gemini",
+      };
+      const service = new SettingsService(repo, mockEnv);
+
+      // Save to SQLite
+      service.updateGeneralSettings({
+        ankiconnectUrl: "http://sqlite-host:8765",
+        defaultAiProvider: "anthropic",
+        defaultAiModel: "claude-3-5-sonnet",
+        maxGenerationWorkers: 6,
+      });
+
+      const res = service.getGeneralSettings();
+      expect(res.settings.ankiconnectUrl).toBe("http://sqlite-host:8765");
+      expect(res.sources.ankiconnectUrl).toBe("database");
+
+      expect(res.settings.defaultAiProvider).toBe("anthropic");
+      expect(res.sources.defaultAiProvider).toBe("database");
+
+      expect(res.settings.defaultAiModel).toBe("claude-3-5-sonnet");
+      expect(res.sources.defaultAiModel).toBe("database");
+
+      expect(res.settings.maxGenerationWorkers).toBe(6);
+      expect(res.sources.maxGenerationWorkers).toBe("database");
+    });
+
+    it("protects and masks sensitive AnkiConnect API keys", () => {
+      const service = new SettingsService(repo, {});
+
+      // Set key
+      service.updateGeneralSettings({
+        ankiconnectApiKey: "my-super-secret-anki-token-12345",
+      });
+
+      const res = service.getGeneralSettings();
+      expect(res.settings.ankiconnectApiKey).toBe("my-...2345");
+      expect(res.maskedApiKey).toBe("my-...2345");
+
+      // Unmasked key can be retrieved via helper
+      expect(service.getRawAnkiApiKey()).toBe("my-super-secret-anki-token-12345");
+
+      // If client sends back masked key or starts with ***, existing key is retained
+      service.updateGeneralSettings({
+        ankiconnectApiKey: "***",
+        ankiconnectUrl: "http://localhost:8765",
+      });
+      expect(service.getRawAnkiApiKey()).toBe("my-super-secret-anki-token-12345");
+
+      // Clearing key with empty string
+      service.updateGeneralSettings({
+        ankiconnectApiKey: "",
+      });
+      expect(service.getRawAnkiApiKey()).toBeUndefined();
+      expect(service.getGeneralSettings().settings.ankiconnectApiKey).toBe("");
+    });
+
+    it("provides convenience options and domain helpers", () => {
+      const service = new SettingsService(repo, {});
+      service.updateGeneralSettings({
+        ankiconnectUrl: "http://custom-anki:8765",
+        ankiconnectApiKey: "secret-key",
+        ankiconnectTimeoutMs: 4000,
+        maxGenerationWorkers: 4,
+        maxSyncWorkers: 3,
+        maxExportWorkers: 5,
+        workerTimeoutMinutes: 20,
+        defaultAiProvider: "anthropic",
+        defaultAiModel: "claude-haiku",
+        defaultPersona: "analogy-builder",
+        defaultDifficulty: "expert",
+        defaultCardLimit: 12,
+        defaultGroundingEnforced: false,
+        defaultSlicingMode: "budget",
+        defaultPageBudget: 15,
+        epubDefaultAuthor: "Author X",
+        epubDefaultPublisher: "Publisher Y",
+      });
+
+      expect(service.getAnkiConnectOptions()).toEqual({
+        endpointUrl: "http://custom-anki:8765",
+        apiKey: "secret-key",
+        timeoutMs: 4000,
+      });
+
+      expect(service.getWorkerConcurrencyLimits()).toEqual({
+        maxGenerationWorkers: 4,
+        maxSyncWorkers: 3,
+        maxExportWorkers: 5,
+        workerTimeoutMinutes: 20,
+      });
+
+      expect(service.getAiDefaults()).toEqual({
+        provider: "anthropic",
+        model: "claude-haiku",
+        persona: "analogy-builder",
+        difficulty: "expert",
+        cardLimit: 12,
+        groundingEnforced: false,
+      });
+
+      expect(service.getSlicingDefaults()).toEqual({
+        mode: "budget",
+        pageBudget: 15,
+      });
+
+      expect(service.getEpubDefaults()).toEqual({
+        author: "Author X",
+        publisher: "Publisher Y",
+      });
+    });
+
+    it("retrieves individual settings values using get(key) with registry and environment resolution", () => {
+      const service = new SettingsService(repo, {
+        CUSTOM_ENV_KEY: "from-env",
+      });
+
+      // Default value
+      expect(service.get("epub_default_author")).toBe("Flashcard Master");
+
+      // After updating DB
+      service.updateGeneralSettings({ epubDefaultAuthor: "Turing" });
+      expect(service.get("epub_default_author")).toBe("Turing");
+
+      // From environment
+      expect(service.get("custom_env_key")).toBe("from-env");
+
+      // Non-existent key
+      expect(service.get("totally_unknown_key")).toBeNull();
+    });
+
+    it("parses workerTimeoutMinutes: 0 as infinite execution timeout", () => {
+      const service = new SettingsService(repo);
+      service.updateGeneralSettings({ workerTimeoutMinutes: 0 });
+
+      const res = service.getGeneralSettings();
+      expect(res.settings.workerTimeoutMinutes).toBe(0);
+      expect(service.getWorkerConcurrencyLimits().workerTimeoutMinutes).toBe(0);
+    });
+  });
+});
+
+

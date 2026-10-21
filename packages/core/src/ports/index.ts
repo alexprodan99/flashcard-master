@@ -39,6 +39,9 @@ export interface LLMProviderPort {
 export interface ExportOptions {
   outputPath?: string;
   targetDeck?: string;
+  title?: string;
+  author?: string;
+  publisher?: string;
   includeCitationFootnotes?: boolean;
   includeCitations?: boolean;
   includeToc?: boolean;
@@ -46,6 +49,17 @@ export interface ExportOptions {
   includeBadges?: boolean;
   tags?: string[];
 }
+
+export type FlashcardExportFormat =
+  | "apkg"
+  | "csv"
+  | "tsv"
+  | "markdown"
+  | "md"
+  | "html"
+  | "pdf"
+  | "epub"
+  | "ankiconnect";
 
 export interface ExportResult {
   format: string;

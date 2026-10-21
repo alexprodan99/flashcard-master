@@ -110,7 +110,6 @@ describe('Interactive Notion Source UI & End-to-End Workflows (Story 15.6)', () 
         name: 'Distributed Systems Wiki',
         type: 'notion',
         uri: 'https://notion.so/wiki/distributed-systems-112233445566778899aabbccddeeff00?recursive=true',
-        targetDeck: 'Systems',
         tags: ['distributed', 'systems'],
         isActive: true,
         createdAt: new Date().toISOString(),
@@ -126,11 +125,9 @@ describe('Interactive Notion Source UI & End-to-End Workflows (Story 15.6)', () 
       const updated: DataSource = {
         ...notionSource,
         name: 'Distributed Systems Architecture',
-        targetDeck: 'Advanced Systems',
       };
       store.updateSource(updated);
       expect(store.sources[0].name).toBe('Distributed Systems Architecture');
-      expect(store.sources[0].targetDeck).toBe('Advanced Systems');
 
       // Set syncing state
       store.setSyncing(notionSource.id, true, 'job-notion-sync-1');
@@ -266,7 +263,7 @@ describe('Interactive Notion Source UI & End-to-End Workflows (Story 15.6)', () 
       expect(created.type).toBe('notion');
       expect(created.name).toBe('Notion Course Notes');
       expect(created.uri).toContain('recursive=true');
-      expect(created.targetDeck).toBe('Computer Science');
+      expect((created as any).targetDeck).toBeUndefined();
 
       // Verify list endpoint includes the new Notion source
       const listRes = await fetch(`${baseUrl}/api/sources`);
@@ -277,12 +274,11 @@ describe('Interactive Notion Source UI & End-to-End Workflows (Story 15.6)', () 
       expect(sources[0].id).toBe(created.id);
     });
 
-    it('updates an existing Notion source target deck and tags via PUT /api/sources/:id', async () => {
+    it('updates an existing Notion source tags via PUT /api/sources/:id', async () => {
       const created = sourceRepo.create({
         name: 'Initial Notion Wiki',
         type: 'notion',
         uri: 'https://www.notion.so/workspace/Wiki-112233445566778899aabbccddeeff00',
-        targetDeck: 'General',
         tags: ['wiki'],
       });
 
@@ -292,7 +288,6 @@ describe('Interactive Notion Source UI & End-to-End Workflows (Story 15.6)', () 
         body: JSON.stringify({
           name: 'Updated Notion Knowledge Base',
           uri: 'https://www.notion.so/workspace/Wiki-112233445566778899aabbccddeeff00?recursive=true',
-          targetDeck: 'Engineering',
           tags: ['wiki', 'recursive'],
         }),
       });
@@ -301,7 +296,7 @@ describe('Interactive Notion Source UI & End-to-End Workflows (Story 15.6)', () 
       const updated = await updateRes.json();
       expect(updated.name).toBe('Updated Notion Knowledge Base');
       expect(updated.uri).toContain('recursive=true');
-      expect(updated.targetDeck).toBe('Engineering');
+      expect((updated as any).targetDeck).toBeUndefined();
       expect(updated.tags).toContain('recursive');
     });
 
@@ -310,7 +305,6 @@ describe('Interactive Notion Source UI & End-to-End Workflows (Story 15.6)', () 
         name: 'To Delete Notion',
         type: 'notion',
         uri: 'https://www.notion.so/workspace/Temp-112233445566778899aabbccddeeff00',
-        targetDeck: 'Temp',
       });
 
       const deleteRes = await fetch(`${baseUrl}/api/sources/${created.id}`, {

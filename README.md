@@ -2,7 +2,7 @@
 
 > **Local-First, Grounded AI Flashcard Generation & Study Knowledge Base**
 
-Flashcard Master automatically turns your learning materials—RSS/Atom feeds, web articles, and local Markdown notes—into high-quality, hallucination-free active-recall flashcards with cognitive personas, multi-tier difficulty scaling, a local Web UI dashboard, and 1-click export to Anki, CSV, Markdown, and printable study sheets.
+Flashcard Master automatically turns your learning materials—RSS/Atom feeds, web articles, EPUB e-books, and local Markdown notes—into high-quality, hallucination-free active-recall flashcards with cognitive personas, multi-tier difficulty scaling, a local Web UI dashboard, and 1-click export to Anki, CSV, Markdown, and printable study sheets.
 
 ---
 
@@ -112,12 +112,13 @@ npm run cli -- stats
 ## ✨ Features
 
 - **🌐 Multi-Source Ingestion Engine:**
+  - **EPUB E-Books (EPUB 2 & 3):** Ingest local EPUB books, textbooks, and documentation archives with automatic container discovery, hierarchical chapter slicing (preserving book & chapter provenance in card source citations), pure-JS parsing (zero external dependencies), and embedded media localization.
   - **Notion Pages & Databases:** Ingest Notion notes, workspaces, and databases with recursive subpage crawling (up to 3 levels) and automatic expiring S3 media localization into permanent local WebP assets.
   - **RSS / Atom Feeds:** Ingest technical blogs, newsletters, and release feeds.
   - **XML Sitemaps (`<urlset>` & `<sitemapindex>`):** Ingest entire publication archives (e.g. 300+ blog articles) with recursive discovery and concurrency limits.
   - **LLMs.txt Catalogs (`/llms.txt` & `/llms-full.txt`):** Ingest structured AI documentation catalogs with auto-categorized topic tagging.
   - **Web Articles (Reader Mode):** Extract clean, ad-free article text from URLs using readability algorithms.
-  - **Local Markdown & Text Folders:** Crawl local note repositories (e.g. Obsidian vaults, documentation folders).
+  - **Local Markdown, PDF, Word & EPUB Files/Folders:** Crawl local note repositories (e.g. Obsidian vaults, documentation folders, or `.epub`/`.pdf`/`.docx`/`.md` files).
   - **Incremental Delta Sync:** SHA-256 content hashing guarantees zero duplicate document processing.
 
 - **🤖 Hallucination-Free AI Card Generation:**
@@ -132,14 +133,15 @@ npm run cli -- stats
 - **🗂️ Embedded Web UI Dashboard:**
   - **Zero-Install SPA:** Native dark-theme Single Page Application served directly by Node.js with zero external framework dependencies or CDN tracking.
   - **📊 Dashboard Overview:** Real-time KPIs for total cards, active sources, and deck categories.
-  - **⚙️ Integrations & Secrets Hub:** Secure, masked storage for Notion and LLM API keys with real-time live credential verification and automatic background worker injection.
+  - **⚙️ Unified Settings & Integrations Studio (`#/settings`):** Centralized control center managing 3-tier configurations (`SQLite -> .env -> defaults`), masked API credentials with live connectivity testing (OpenAI, Anthropic, Gemini, Ollama, Notion, AnkiConnect), AI generation defaults, and dynamic worker pool concurrency and execution timeout limits (see [Settings Guide](docs/settings-configuration.md)).
   - **⚡ AI Generation Studio:** In-browser flashcard synthesizer with provider switching (Ollama, Gemini, OpenAI, Anthropic), model presets (`phi4-mini`, `gemini-3.6-flash`, `gpt-4o-mini`, `claude-haiku-4-5-20251001`), custom model overrides, persona selectors, single/multi-source scope, live spinning execution feedback, and card previews.
   - **🌐 Data Sources Manager:** Add, configure, and synchronize sources with live spinner feedback.
   - **🗂️ Question Explorer:** Search bar, interactive filter chips (Decks, Difficulties, Tag clouds), and click-to-reveal flashcards with source grounding callouts.
   - **✏️ Slide-Over Card Editor:** Smooth slide-in drawer to edit questions, answers, difficulty, tags, and citations with instant optimistic updates.
-  - **🚀 1-Click Export & Anki Center:** Scoped deck/tag filters, direct browser file downloads (.apkg, Markdown, PDF, CSV, TSV), and real-time desktop AnkiConnect status badging with 1-click push sync.
+  - **🚀 1-Click Export & Anki Center:** Scoped deck/tag filters, direct browser file downloads (.apkg, EPUB, Markdown, PDF, CSV, TSV), and real-time desktop AnkiConnect status badging with 1-click push sync.
 
 - **📦 Multi-Format Export & Local Sync:**
+  - 📚 **Interactive EPUB 3.0 Study Guides (`.epub`):** Standards-compliant reflowable eBooks with uncompressed byte-0 STORE `mimetype`, navigation documents, and interactive `<details>/<summary>` card flipping styled for e-readers (Kindle, Kobo, Apple Books).
   - 📦 **Anki Package (`.apkg`):** Native SQLite collection with deck hierarchies, tags, and custom styling.
   - 🔄 **Desktop AnkiConnect Sync:** 1-click push directly to running Anki desktop app via `http://127.0.0.1:8765`.
   - 📄 **Spreadsheet (`.csv` / `.tsv`):** RFC 4180 compliant quote-escaped tables for Excel, Google Sheets, or Quizlet.
@@ -168,11 +170,11 @@ Open your browser at **`http://127.0.0.1:3000`** to access the dashboard.
 
 #### 🌐 Web Dashboard Tour:
 1. **📊 Dashboard:** View real-time database KPIs and recent flashcards.
-2. **🌐 Data Sources:** Click `+ Add Data Source` to register an RSS feed (e.g. `https://martinfowler.com/feed.atom`), a web article URL, or a local Markdown directory. Click `🔄 Sync` to ingest documents.
-3. **⚡ Generate Studio:** Pick your AI provider (`Ollama`, `Gemini`, `OpenAI`, `Anthropic`), select your cognitive persona (`Socratic Mentor`, `Strict Examiner`, `Analogy Builder`), customize the model name or use 2026 presets, choose your target data sources, and click `⚡ Start AI Generation` with live progress feedback and instant card previews!
+2. **🌐 Data Sources:** Click `+ Add Data Source` to register an RSS feed (e.g. `https://martinfowler.com/feed.atom`), a web article URL, Notion page/database, or a local Markdown directory. Sources act as pure knowledge repositories decoupled from decks. Click `🔄 Sync` to ingest documents.
+3. **⚡ Generate Studio:** Pick your target flashcard deck (with smart autocomplete over existing decks or instant creation of new ones), choose your AI provider (`Ollama`, `Gemini`, `OpenAI`, `Anthropic`), select your cognitive persona, and customize model settings (all automatically pre-populated from your configured system defaults). Choose your target data sources, and click `⚡ Start AI Generation` with live progress feedback and instant card previews!
 4. **🗂️ Question Explorer:** Search your knowledge base, filter with deck or tag chips, click `👁️ Reveal Answer` for self-testing, and click `✏️ Edit` on any card to open the slide-over editor.
 5. **🚀 Export & Anki:** Filter cards by Deck and Tag, download your `.apkg`, `.csv`, `.tsv`, `.md`, or `.html` file with 1-click, or click `🚀 Push to Anki` if Anki desktop is open with AnkiConnect!
-6. **⚙️ Settings & Integrations:** Store and test API keys for Notion and AI providers with live connection diagnostics and local SQLite encryption/masking.
+6. **⚙️ Settings & Integrations:** Interactive settings studio with live origin badges (`Database`, `Env`, `Default`). Configure custom AnkiConnect endpoints with live connection testing, default AI parameters, background worker pool concurrency limits, task timeouts, document slicing strategies, and secure API key management.
 
 ---
 
@@ -265,7 +267,10 @@ Push cards directly into your open Anki desktop app with zero manual file handli
      }
      ```
    * Click **OK** and restart Anki.
-2. **Push to Anki:**
+2. **Configure Custom Host / API Key (Optional):**
+   * If Anki is running on another machine, local VM, WSL, or Docker (`http://host.docker.internal:8765`), or if you configured an `apiKey` in AnkiConnect, navigate to **⚙️ Settings** (`http://127.0.0.1:3000/#/settings`).
+   * Enter your custom AnkiConnect URL or API key and click **⚡ Test Connection** for instant diagnostics (verifies version and round-trip latency). You can also set `ANKI_CONNECT_URL` or `ANKI_CONNECT_API_KEY`.
+3. **Push to Anki:**
    * **In the Web UI (`http://127.0.0.1:3000`):** Navigate to the **`🚀 Export & Anki`** tab. The badge will show **`🟢 Connected (Port 8765)`**. Select your target deck and click **`🚀 Push to Anki Desktop`**.
    * **In the CLI:** Run `flashcard-master export -f ankiconnect -d "Computer Science"`.
 
@@ -307,6 +312,40 @@ You can switch between local and cloud AI providers seamlessly via CLI flags or 
 | 🔵 **Google Gemini** | `--provider gemini` (**`gemini-3.6-flash`**) | `gemini-3.6-pro`, `gemini-2.5-flash`, `gemini-1.5-pro` | 🟡 Cloud API (~$0.10 / 1M tokens) |
 | 🟢 **OpenAI** | `--provider openai` (**`gpt-4o-mini`**) | `o3-mini`, `gpt-4o`, `gpt-4.5-preview` | 🟡 Cloud API (~$0.15 / 1M tokens) |
 | 🟣 **Anthropic** | `--provider anthropic` (**`claude-haiku-4-5-20251001`**) | `claude-sonnet-5`, `claude-opus-5` | 🟡 Cloud API (~$1.00 / 1M tokens) |
+
+---
+
+## ⚙️ Centralized Settings & Configuration Hierarchy
+
+Flashcard Master unifies application settings, AI defaults, worker concurrency limits, and integration parameters into a centralized settings studio backed by SQLite with a 3-tier fallback chain:
+
+```
+SQLite app_settings  ──▶  process.env Fallback  ──▶  Hardcoded Code Default
+(Configured in Web UI)      (Configured via .env)       (Built-in Safe Fallback)
+```
+
+- **Zero Server Restarts:** Updating settings via the Web UI takes effect immediately at runtime across active background workers and AnkiConnect sync routines.
+- **Visual Origin Badging:** Every setting card displays an origin badge indicating whether the value was loaded from `Database`, an `Env: ...` variable, or the built-in `Default`.
+- **Secret Protection:** Sensitive API keys (OpenAI, Anthropic, Gemini, Notion, AnkiConnect) are stored securely, masked in REST payloads, and never logged to stdout.
+
+### Key Configuration Registry:
+
+| Setting Key | Environment Variable(s) | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `ankiconnect_url` | `ANKI_CONNECT_URL` | `http://127.0.0.1:8765` | Desktop AnkiConnect HTTP endpoint |
+| `ankiconnect_api_key` | `ANKI_CONNECT_API_KEY` | `null` | Optional AnkiConnect security key |
+| `default_ai_provider` | `DEFAULT_AI_PROVIDER` | `ollama` | Default LLM provider for Generate Studio |
+| `default_ai_model` | `DEFAULT_AI_MODEL` | `phi4-mini` | Default model identifier for Generate Studio |
+| `default_persona` | `DEFAULT_PERSONA` | `socratic-mentor` | Default cognitive prompt persona |
+| `default_difficulty` | `DEFAULT_DIFFICULTY` | `intermediate` | Default flashcard difficulty level |
+| `default_card_limit` | `DEFAULT_CARD_LIMIT` | `5` | Default card batch count (1–50) |
+| `default_grounding_enforced` | `DEFAULT_GROUNDING_ENFORCED` | `true` | Enforce verbatim source quote verification |
+| `max_generation_workers` | `MAX_GENERATION_WORKERS` | `2` | Background AI generation worker limit (1–16) |
+| `max_sync_workers` | `MAX_SYNC_WORKERS` | `2` | Background source ingestion worker limit (1–16) |
+| `max_export_workers` | `MAX_EXPORT_WORKERS` | `2` | Background export worker limit (1–16) |
+| `worker_timeout_minutes` | `WORKER_TIMEOUT_MINUTES` | `15` | Worker task execution timeout (1–120 min) |
+
+👉 For full configuration details, REST API endpoints, and setup examples, see the [Centralized Settings & Configuration Guide](docs/settings-configuration.md).
 
 ---
 

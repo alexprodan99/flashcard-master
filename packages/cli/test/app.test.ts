@@ -63,7 +63,6 @@ describe("CLI App Context and Canonical Database Resolution (Story 17.1)", () =>
       name: "CLI Source",
       type: "rss",
       uri: "https://example.com/rss",
-      targetDeck: "Default",
       tags: ["cli"],
       isActive: true,
     });

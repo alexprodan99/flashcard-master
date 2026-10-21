@@ -7,7 +7,6 @@ export const CreateSourceInputSchema = z.object({
   name: z.string().min(1, "Name is required"),
   type: DataSourceTypeSchema,
   uri: z.string().min(1, "URI is required"),
-  targetDeck: z.string().default("Default"),
   tags: z.array(z.string()).default([]),
   isActive: z.boolean().default(true),
 });
@@ -17,7 +16,6 @@ export const UpdateSourceInputSchema = z.object({
   name: z.string().min(1).optional(),
   type: DataSourceTypeSchema.optional(),
   uri: z.string().min(1).optional(),
-  targetDeck: z.string().min(1).optional(),
   tags: z.array(z.string()).optional(),
   isActive: z.boolean().optional(),
 });
@@ -32,7 +30,6 @@ export class DataSourceRepository {
       name: row.name,
       type: row.type,
       uri: row.uri,
-      targetDeck: row.target_deck,
       tags: typeof row.tags === "string" ? JSON.parse(row.tags) : row.tags,
       isActive: Boolean(row.is_active),
       createdAt: row.created_at,
@@ -47,11 +44,11 @@ export class DataSourceRepository {
     const isActiveInt = input.isActive ? 1 : 0;
 
     const stmt = this.db.prepare(`
-      INSERT INTO data_sources (id, name, type, uri, target_deck, tags, is_active)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO data_sources (id, name, type, uri, tags, is_active)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
 
-    stmt.run(id, input.name, input.type, input.uri, input.targetDeck, tagsJson, isActiveInt);
+    stmt.run(id, input.name, input.type, input.uri, tagsJson, isActiveInt);
 
     const created = this.getById(id);
     if (!created) {
@@ -109,10 +106,6 @@ export class DataSourceRepository {
     if (input.uri !== undefined) {
       updates.push("uri = ?");
       params.push(input.uri);
-    }
-    if (input.targetDeck !== undefined) {
-      updates.push("target_deck = ?");
-      params.push(input.targetDeck);
     }
     if (input.tags !== undefined) {
       updates.push("tags = ?");

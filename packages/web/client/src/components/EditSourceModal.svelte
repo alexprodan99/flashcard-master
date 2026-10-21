@@ -19,7 +19,6 @@
   let uri = $state('');
   let webUrls = $state<string[]>([]);
   let notionRecursive = $state(false);
-  let targetDeck = $state('Default');
   let tagsInput = $state('');
   let isSubmitting = $state(false);
   let errorMessage = $state<string | null>(null);
@@ -33,9 +32,9 @@
       errorMessage = 'Legacy pre-2007 Word (.doc) files are not supported. Please convert to .docx or .pdf before uploading.';
       return;
     }
-    const ALLOWED_EXTS = ['.md', '.markdown', '.txt', '.pdf', '.docx'];
+    const ALLOWED_EXTS = ['.md', '.markdown', '.txt', '.pdf', '.docx', '.epub'];
     if (!ALLOWED_EXTS.includes(ext)) {
-      errorMessage = 'Only .md, .markdown, .txt, .pdf, and .docx files are supported.';
+      errorMessage = 'Only .md, .markdown, .txt, .pdf, .docx, and .epub files are supported.';
       return;
     }
 
@@ -46,7 +45,7 @@
       const result = await uploadSourceFile(file);
       uri = result.path;
       if (!name.trim()) {
-        name = result.filename.replace(/\.(md|markdown|txt|pdf|docx)$/i, '');
+        name = result.filename.replace(/\.(md|markdown|txt|pdf|docx|epub)$/i, '');
       }
     } catch (err: any) {
       errorMessage = err.message || 'Failed to upload file';
@@ -71,7 +70,6 @@
   $effect(() => {
     if (isOpen && source) {
       name = source.name || '';
-      targetDeck = source.targetDeck || 'Default';
       tagsInput = (source.tags || []).join(', ');
       errorMessage = null;
 
@@ -151,7 +149,6 @@
       const updated = await updateSource(source.id, {
         name: name.trim(),
         uri: finalUri,
-        targetDeck: targetDeck.trim() || 'Default',
         tags,
       });
 
@@ -221,7 +218,7 @@
                 <input
                   bind:this={fileInputRef}
                   type="file"
-                  accept=".md,.markdown,.txt,.pdf,.docx"
+                  accept=".md,.markdown,.txt,.pdf,.docx,.epub"
                   onchange={handleFileSelect}
                   disabled={isSubmitting || isUploadingFile}
                   hidden
@@ -299,26 +296,14 @@
           </div>
         {/if}
 
-        <div class="form-row">
-          <div class="form-group">
-            <label for="edit-src-deck">Target Deck</label>
-            <input
-              id="edit-src-deck"
-              type="text"
-              placeholder="Default"
-              bind:value={targetDeck}
-            />
-          </div>
-
-          <div class="form-group">
-            <label for="edit-src-tags">Tags (comma-separated)</label>
-            <input
-              id="edit-src-tags"
-              type="text"
-              placeholder="tech, distributed-systems"
-              bind:value={tagsInput}
-            />
-          </div>
+        <div class="form-group">
+          <label for="edit-src-tags">Tags (comma-separated)</label>
+          <input
+            id="edit-src-tags"
+            type="text"
+            placeholder="tech, distributed-systems"
+            bind:value={tagsInput}
+          />
         </div>
 
         <div class="modal-footer">

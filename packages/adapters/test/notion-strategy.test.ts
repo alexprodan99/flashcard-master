@@ -141,7 +141,6 @@ describe("NotionStrategy Ingestion", () => {
     name: "Notion Knowledge Base",
     type: "notion",
     uri: "https://www.notion.so/workspace/Study-Guide-a1b2c3d4e5f60718293a4b5c6d7e8f90",
-    targetDeck: "Biology",
     tags: ["exam", "biology"],
     isActive: true,
   };
@@ -754,7 +753,6 @@ describe("NotionStrategy Ingestion", () => {
         name: "Deep Hierarchy Source",
         type: "notion",
         uri: "https://www.notion.so/workspace/p1-a1b2c3d4e5f60718293a4b5c6d7e8f90?recursive=true&depth=5",
-        targetDeck: "AI",
         tags: [],
         isActive: true,
         createdAt: "2026-03-01T00:00:00.000Z",
@@ -844,7 +842,6 @@ describe("NotionStrategy Ingestion", () => {
         name: "Source with Child DB",
         type: "notion",
         uri: "https://www.notion.so/workspace/p1-a1b2c3d4e5f60718293a4b5c6d7e8f90?recursive=true",
-        targetDeck: "AI",
         tags: [],
         isActive: true,
         createdAt: "2026-03-01T00:00:00.000Z",

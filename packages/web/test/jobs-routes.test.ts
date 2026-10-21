@@ -91,7 +91,6 @@ describe("Job Queue, Streaming SSE & Logging Endpoints", () => {
       name: "Test Docs",
       type: "local",
       uri: "/tmp/docs",
-      targetDeck: "Default",
       tags: [],
       isActive: true,
     });

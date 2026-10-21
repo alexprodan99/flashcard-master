@@ -538,4 +538,209 @@ describe("Settings Keys REST API (/api/settings/keys)", () => {
       expect(data.error).toContain("Field 'logLevel' must be one of: debug, info, warn, error");
     });
   });
+
+  describe("General Settings REST API (/api/settings/general & /api/settings/anki/test)", () => {
+    it("GET /api/settings/general returns default settings and sources", async () => {
+      const res = await fetch(`${serverUrl}/api/settings/general`);
+      expect(res.status).toBe(200);
+
+      const data = await res.json();
+      expect(data.settings).toBeDefined();
+      expect(data.sources).toBeDefined();
+      expect(data.settings.ankiconnectUrl).toBe("http://127.0.0.1:8765");
+      expect(data.settings.defaultAiProvider).toBe("ollama");
+      expect(data.settings.defaultAiModel).toBe("phi4-mini");
+      expect(data.settings.maxGenerationWorkers).toBe(2);
+      expect(data.settings.workerTimeoutMinutes).toBe(15);
+      expect(data.sources.ankiconnectUrl).toBe("default");
+      expect(data.sources.defaultAiProvider).toBe("default");
+    });
+
+    it("GET /api/settings/general respects environment variables with source='environment'", async () => {
+      mockEnv.ANKI_CONNECT_URL = "http://remote-anki:8765";
+      mockEnv.DEFAULT_AI_PROVIDER = "anthropic";
+      mockEnv.DEFAULT_AI_MODEL = "claude-haiku-4-5-20251001";
+      mockEnv.MAX_GENERATION_WORKERS = "4";
+
+      const res = await fetch(`${serverUrl}/api/settings/general`);
+      expect(res.status).toBe(200);
+
+      const data = await res.json();
+      expect(data.settings.ankiconnectUrl).toBe("http://remote-anki:8765");
+      expect(data.sources.ankiconnectUrl).toBe("environment");
+      expect(data.settings.defaultAiProvider).toBe("anthropic");
+      expect(data.sources.defaultAiProvider).toBe("environment");
+      expect(data.settings.defaultAiModel).toBe("claude-haiku-4-5-20251001");
+      expect(data.settings.maxGenerationWorkers).toBe(4);
+      expect(data.sources.maxGenerationWorkers).toBe("environment");
+    });
+
+    it("PUT /api/settings/general updates settings in SQLite and syncs concurrency limits", async () => {
+      const updatePayload = {
+        ankiconnectUrl: "http://custom-desktop:8765",
+        ankiconnectApiKey: "secret-desktop-key-12345",
+        ankiconnectTimeoutMs: 5000,
+        defaultAiProvider: "gemini",
+        defaultAiModel: "gemini-3.6-flash",
+        defaultPersona: "analogy-builder",
+        defaultDifficulty: "expert",
+        defaultCardLimit: 10,
+        defaultGroundingEnforced: false,
+        maxGenerationWorkers: 5,
+        maxSyncWorkers: 4,
+        maxExportWorkers: 3,
+        workerTimeoutMinutes: 30,
+        defaultSlicingMode: "budget",
+        defaultPageBudget: 20,
+        epubDefaultAuthor: "Custom Author",
+        epubDefaultPublisher: "Custom Publisher",
+      };
+
+      const res = await fetch(`${serverUrl}/api/settings/general`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updatePayload),
+      });
+      expect(res.status).toBe(200);
+
+      const data = await res.json();
+      expect(data.settings.ankiconnectUrl).toBe("http://custom-desktop:8765");
+      expect(data.sources.ankiconnectUrl).toBe("database");
+
+      // API key is masked in response
+      expect(data.settings.ankiconnectApiKey).toBe("sec...2345");
+      expect(data.maskedApiKey).toBe("sec...2345");
+      expect(data.sources.ankiconnectApiKey).toBe("database");
+
+      expect(data.settings.defaultAiProvider).toBe("gemini");
+      expect(data.settings.defaultAiModel).toBe("gemini-3.6-flash");
+      expect(data.settings.defaultPersona).toBe("analogy-builder");
+      expect(data.settings.defaultDifficulty).toBe("expert");
+      expect(data.settings.defaultCardLimit).toBe(10);
+      expect(data.settings.defaultGroundingEnforced).toBe(false);
+      expect(data.settings.maxGenerationWorkers).toBe(5);
+      expect(data.settings.workerTimeoutMinutes).toBe(30);
+
+      // Verify server's settingsService has unmasked token
+      expect(settingsService.getRawAnkiApiKey()).toBe("secret-desktop-key-12345");
+
+      // Verify GET returns updated settings
+      const getRes = await fetch(`${serverUrl}/api/settings/general`);
+      const getData = await getRes.json();
+      expect(getData.settings.ankiconnectUrl).toBe("http://custom-desktop:8765");
+      expect(getData.settings.maxGenerationWorkers).toBe(5);
+      expect(getData.settings.ankiconnectApiKey).toBe("sec...2345");
+    });
+
+    it("PUT /api/settings/general accepts workerTimeoutMinutes: 0 for infinite execution", async () => {
+      const res = await fetch(`${serverUrl}/api/settings/general`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workerTimeoutMinutes: 0 }),
+      });
+      expect(res.status).toBe(200);
+
+      const data = await res.json();
+      expect(data.settings.workerTimeoutMinutes).toBe(0);
+      expect(data.sources.workerTimeoutMinutes).toBe("database");
+
+      const getRes = await fetch(`${serverUrl}/api/settings/general`);
+      const getData = await getRes.json();
+      expect(getData.settings.workerTimeoutMinutes).toBe(0);
+    });
+
+    it("PUT /api/settings/general retains existing secret when receiving masked token", async () => {
+      // First save secret
+      await fetch(`${serverUrl}/api/settings/general`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ankiconnectApiKey: "original-secret-token-value" }),
+      });
+      expect(settingsService.getRawAnkiApiKey()).toBe("original-secret-token-value");
+
+      // Verify GET returns masked token
+      const getRes = await fetch(`${serverUrl}/api/settings/general`);
+      const getData = await getRes.json();
+      expect(getData.settings.ankiconnectApiKey).toBe("ori...alue");
+
+      // Next send update echoing back the masked token from GET response
+      const res = await fetch(`${serverUrl}/api/settings/general`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...getData.settings,
+          defaultCardLimit: 8,
+        }),
+      });
+      expect(res.status).toBe(200);
+      expect(settingsService.getRawAnkiApiKey()).toBe("original-secret-token-value");
+
+      // Also verify explicit '***' token
+      const resAsterisks = await fetch(`${serverUrl}/api/settings/general`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ankiconnectApiKey: "***",
+          defaultCardLimit: 9,
+        }),
+      });
+      expect(resAsterisks.status).toBe(200);
+      expect(settingsService.getRawAnkiApiKey()).toBe("original-secret-token-value");
+    });
+
+    it("POST /api/settings/anki/test pings endpoint and returns health result", async () => {
+      const origFetch = global.fetch;
+      try {
+        global.fetch = vi.fn().mockImplementation(async (input: any) => {
+          if (String(input).includes("/api/settings/anki/test")) {
+            return origFetch(input);
+          }
+          return new Response(JSON.stringify({ result: 6, error: null }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        });
+
+        const res = await origFetch(`${serverUrl}/api/settings/anki/test`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpointUrl: "http://127.0.0.1:8765" }),
+        });
+        expect(res.status).toBe(200);
+
+        const data = await res.json();
+        expect(data.online).toBe(true);
+        expect(data.version).toBe(6);
+        expect(data.latencyMs).toBeDefined();
+      } finally {
+        global.fetch = origFetch;
+      }
+    });
+
+    it("POST /api/settings/anki/test handles network errors gracefully", async () => {
+      const origFetch = global.fetch;
+      try {
+        global.fetch = vi.fn().mockImplementation(async (input: any) => {
+          if (String(input).includes("/api/settings/anki/test")) {
+            return origFetch(input);
+          }
+          throw new Error("ECONNREFUSED 127.0.0.1:8765");
+        });
+
+        const res = await origFetch(`${serverUrl}/api/settings/anki/test`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpointUrl: "http://127.0.0.1:8765" }),
+        });
+        expect(res.status).toBe(200);
+
+        const data = await res.json();
+        expect(data.online).toBe(false);
+        expect(data.error).toContain("ECONNREFUSED");
+      } finally {
+        global.fetch = origFetch;
+      }
+    });
+  });
 });
+
