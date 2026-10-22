@@ -1361,6 +1361,68 @@ All tests enforce a strict 3-second timeout and return `{ success: boolean, mess
 - **Then** 100% of tests pass across `core`, `adapters`, `web`, and `cli`.
 - **And** `npm run lint` and `npm run typecheck` execute with zero errors or warnings.
 
+---
+
+## Epic 19: Deck Lifecycle Management, Partial Exports, and UI Performance Hardening
+
+**Goal:** Empower users with granular control over their flashcard knowledge base by introducing deck lifecycle operations (cloning decks, automatic batch splitting, and selective card movement), partial and time-scoped export capabilities (date-range filtering, random subsampling, card limit budgets), asynchronous background subdocument synthesis with real-time Task Center feedback, an interactive tag selector for data sources, and performance/layout hardening across the application (Question Explorer infinite scrolling and responsive text overflow protection).
+
+### Story 19.1: Question Explorer Infinite Scroll & Backend Pagination
+**ID:** `19-1-question-explorer-infinite-scroll-and-lazy-loading`
+**Description:** Upgrade the Question Explorer from loading all flashcards into memory at once to scalable backend pagination and client-side infinite scrolling. Extend `FlashcardRepository.list` and `GET /api/cards` with `limit`, `offset`, and total matching count metadata. In `QuestionExplorer.svelte`, implement an intersection observer to lazily fetch and append batches of 25–50 cards as the user scrolls, retaining active filters (deck, difficulty, search query) seamlessly across pagination pages and preserving card selection states.
+**Acceptance Criteria:**
+- `GET /api/cards?limit=25&offset=0` returns paginated card slices and total count metadata.
+- Question Explorer renders the initial page of cards swiftly without lagging on large card collections (e.g. 1,000+ cards).
+- Scrolling toward the bottom automatically fetches and appends the next batch without flickering or loss of scroll position.
+- Changing search filters, deck chips, or difficulty tiers resets the cursor and fetches the first filtered page.
+- Bulk selections (`Select All Filtered`) correctly track and operate across paginated datasets.
+
+### Story 19.2: Deck Operations: Clone, Batch Split & Selective Card Moving
+**ID:** `19-2-deck-operations-clone-split-and-selective-card-moving`
+**Description:** Implement comprehensive deck management capabilities in `@flashcard-master/core` and the Web UI. Support (1) **Clone Deck**: duplicates an entire deck under a new name with fresh UUIDs and preserved metadata; (2) **Automatic Batch Splitting**: divides a large deck into equal-sized sub-decks with a configurable card batch size (e.g., 25 cards per sub-deck named `Deck - Part 1`, `Deck - Part 2`); and (3) **Selective Card Movement**: allows users to select specific cards in Question Explorer and move them to an existing or newly created deck via a batch action dropdown. Expose REST endpoints `POST /api/decks/clone`, `POST /api/decks/split`, and `POST /api/decks/move-cards`.
+**Acceptance Criteria:**
+- User can click "Clone Deck" in Question Explorer or Export Center to create a duplicate deck under a specified name.
+- User can click "Split Deck" to specify a batch size (e.g. 20 cards) and automatically divide the deck into numbered sub-decks.
+- In Question Explorer, selecting cards reveals a "Move to Deck" bulk action allowing instant reassignment to another deck.
+- SQLite transactions guarantee atomic deck modifications with zero card loss or citation corruption.
+
+### Story 19.3: Partial, Date-Filtered & Randomized Export Engine
+**ID:** `19-3-partial-date-filtered-and-randomized-export-engine`
+**Description:** Enhance `ExportService`, exporter implementations, and `ExportCenter.svelte` with advanced export scoping. Support exporting cards by: (1) **Generation Date Range**: preset filters ("Last 24 Hours", "Last 7 Days", "Last 30 Days", "Custom Range") filtering by `created_at`; (2) **Random Subsampling & Shuffling**: export a random subset of $N$ cards in randomized order for practice sessions; and (3) **Card Count Limit / Budget**: specify a partial export limit (e.g., export top $N$ cards from a deck). Update CLI `export` with flags `--after`, `--before`, `--limit`, and `--shuffle`.
+**Acceptance Criteria:**
+- Export Center UI provides a "Time & Scope Filter" accordion allowing date range selection, partial count limit, and random shuffle toggle.
+- Exporting with "Last 7 Days" filters cards whose `createdAt` falls within the specified range across all export formats (`apkg`, `epub`, `markdown`, `html`, `csv`, `tsv`).
+- Exporting with "Random Sample" of size $N$ randomly samples $N$ cards from the filtered deck in shuffled order.
+- CLI commands `flashcard-master export --after 2026-10-01 --limit 50 --shuffle` execute correctly.
+
+### Story 19.4: Interactive Tag Selector for Data Sources
+**ID:** `19-4-interactive-tag-selector-for-data-sources`
+**Description:** Replace the comma-separated text input for tags in `AddSourceModal.svelte` and `EditSourceModal.svelte` with a modern, interactive tag pill component. Query distinct tags already present in the SQLite database (`GET /api/sources/tags`) to provide an autocomplete suggestion dropdown. Allow users to click suggestions to add tags, press Enter to create custom tags, and click `✕` on pills to remove tags. Enforce tag normalization (trimmed, lowercased, deduplicated).
+**Acceptance Criteria:**
+- Adding or editing a data source displays interactive tag pills instead of a plain comma-separated text box.
+- Focusing the tag input displays an auto-suggest list of existing tags across sources in SQLite.
+- Typing a new tag and pressing Enter adds a new pill tag.
+- Clicking the `✕` on any pill immediately removes the tag.
+- Tags persist cleanly to SQLite as JSON arrays without whitespace issues or duplicates.
+
+### Story 19.5: Asynchronous Subdocument Generation via Task Center
+**ID:** `19-5-asynchronous-subdocument-generation-via-task-center`
+**Description:** Resolve the subdocument generation failure in `SourceDocumentInspector.svelte` and unify all document-level synthesis into the asynchronous background worker queue. When clicking "⚡ Generate" from the Document Inspector or Document Preview modal: (1) validate document existence and settings; (2) dispatch an asynchronous job to `JobManager` (`POST /api/generate` with `async: true` / non-blocking); (3) immediately open the Task Center drawer with active progress streaming and SSE event logs; and (4) reactively update document card count badges upon job completion.
+**Acceptance Criteria:**
+- Clicking "⚡ Generate" on any subdocument in `SourceDocumentInspector.svelte` immediately enqueues a background task in `JobManager`.
+- The Task Center drawer opens with live step progress, token counts, and streaming logs.
+- The UI does not freeze or block during LLM synthesis.
+- Upon job completion, document card count badges in the inspector refresh automatically without requiring a full page reload.
+
+### Story 19.6: Monorepo Responsive Layout & Text Overflow Hardening
+**ID:** `19-6-monorepo-responsive-layout-and-overflow-hardening`
+**Description:** Fix text loss, text truncation, and viewport resize bugs across all major UI surfaces. Ensure graceful text wrapping, markdown code-block overflow scrolling, and resilient responsive flex/grid layouts in: (1) **Question Explorer card grid**: fix card text overflow, prevent clipping of long questions/answers/quotes, and support smooth expansion; (2) **Document Inspector & Preview modal**: add horizontal scroll containers for wide code blocks and responsive modal width; (3) **Slide-Over Drawers** (`CardEditorDrawer`, `TaskCenterDrawer`): fix viewport width clipping and drawer resizing on medium/small viewports; (4) **Generate Studio**: fix horizontal overflow on the source/subdocument tree hierarchy. Add automated regression tests across packages.
+**Acceptance Criteria:**
+- Extremely long questions, answers, and verbatim quotes in Question Explorer wrap cleanly without clipping or text loss.
+- Preformatted code blocks and tables in the Document Preview modal scroll horizontally without expanding the modal beyond viewport width.
+- Slide-over drawers scale smoothly on window resize without causing horizontal viewport scrollbars on the main dashboard.
+- Full monorepo test suite passes (`npm test`, `npm run typecheck`, `npm run build`).
+
 
 
 
