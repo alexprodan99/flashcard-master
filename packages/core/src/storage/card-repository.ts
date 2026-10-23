@@ -25,6 +25,16 @@ export interface CardFilter {
   difficulty?: DifficultyLevel;
   tag?: string;
   search?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface PaginatedFlashcardsResult {
+  cards: Flashcard[];
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
 }
 
 export class FlashcardRepository {
@@ -167,7 +177,7 @@ export class FlashcardRepository {
     return this.mapRowToFlashcard(row);
   }
 
-  list(filter: CardFilter = {}): Flashcard[] {
+  private buildFilterConditions(filter: CardFilter = {}): { conditions: string[]; params: any[] } {
     const conditions: string[] = [];
     const params: any[] = [];
 
@@ -187,6 +197,16 @@ export class FlashcardRepository {
       conditions.push("(question LIKE ? OR answer LIKE ? OR keywords LIKE ? OR source_locator LIKE ?)");
       params.push(`%${filter.search}%`, `%${filter.search}%`, `%${filter.search}%`, `%${filter.search}%`);
     }
+    if (filter.tag) {
+      conditions.push("(json_valid(flashcards.tags) AND EXISTS (SELECT 1 FROM json_each(flashcards.tags) WHERE value = ?))");
+      params.push(filter.tag);
+    }
+
+    return { conditions, params };
+  }
+
+  list(filter: CardFilter = {}): Flashcard[] {
+    const { conditions, params } = this.buildFilterConditions(filter);
 
     let sql = "SELECT * FROM flashcards";
     if (conditions.length > 0) {
@@ -194,14 +214,20 @@ export class FlashcardRepository {
     }
     sql += " ORDER BY created_at DESC";
 
-    const rows = this.db.prepare(sql).all(...params) as any[];
-    let cards = rows.map((r) => this.mapRowToFlashcard(r));
-
-    if (filter.tag) {
-      cards = cards.filter((c) => c.tags.includes(filter.tag!));
+    if (filter.limit !== undefined) {
+      sql += " LIMIT ?";
+      params.push(Math.max(0, filter.limit));
+      if (filter.offset !== undefined) {
+        sql += " OFFSET ?";
+        params.push(Math.max(0, filter.offset));
+      }
+    } else if (filter.offset !== undefined) {
+      sql += " LIMIT -1 OFFSET ?";
+      params.push(Math.max(0, filter.offset));
     }
 
-    return cards;
+    const rows = this.db.prepare(sql).all(...params) as any[];
+    return rows.map((r) => this.mapRowToFlashcard(r));
   }
 
   update(id: string, updates: Partial<Omit<Flashcard, "id" | "createdAt">>): Flashcard | null {
@@ -319,6 +345,26 @@ export class FlashcardRepository {
   }
 
   count(filter: CardFilter = {}): number {
-    return this.list(filter).length;
+    const { conditions, params } = this.buildFilterConditions(filter);
+    let sql = "SELECT COUNT(*) as count FROM flashcards";
+    if (conditions.length > 0) {
+      sql += " WHERE " + conditions.join(" AND ");
+    }
+    const row = this.db.prepare(sql).get(...params) as { count: number };
+    return row ? row.count : 0;
+  }
+
+  listPaginated(filter: CardFilter = {}): PaginatedFlashcardsResult {
+    const total = this.count(filter);
+    const limit = filter.limit !== undefined ? Math.max(1, filter.limit) : 25;
+    const offset = filter.offset !== undefined ? Math.max(0, filter.offset) : 0;
+    const cards = this.list({ ...filter, limit, offset });
+    return {
+      cards,
+      total,
+      limit,
+      offset,
+      hasMore: offset + cards.length < total,
+    };
   }
 }

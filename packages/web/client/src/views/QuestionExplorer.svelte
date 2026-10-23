@@ -1,46 +1,25 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { fetchCards, deleteCardsBulk } from '../lib/api';
+  import { fetchCardsPaginated, fetchDecks, deleteCardsBulk } from '../lib/api';
   import type { Flashcard, DifficultyLevel } from '../lib/types';
   import CardEditorDrawer from '../components/CardEditorDrawer.svelte';
   import { explorerStore, toastStore } from '../stores/index.js';
 
   let cards = $derived(explorerStore.cards);
+  let total = $derived(explorerStore.total);
   let loading = $derived(explorerStore.loading);
+  let loadingMore = $derived(explorerStore.loadingMore);
+  let hasMore = $derived(explorerStore.hasMore);
   let error = $derived(explorerStore.error);
 
   let editingCard = $state<Flashcard | null>(null);
   let isDrawerOpen = $state(false);
+  let availableDecks = $state<string[]>([]);
+  let sentinelEl: HTMLDivElement | null = $state(null);
+  let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
-  // Derived filters
-  let availableDecks = $derived(
-    Array.from(new Set(cards.map((c) => c.targetDeck || 'Default'))).sort()
-  );
-
-  let filteredCards = $derived(
-    cards.filter((c) => {
-      if (explorerStore.selectedDeck !== 'all' && (c.targetDeck || 'Default') !== explorerStore.selectedDeck) {
-        return false;
-      }
-      if (explorerStore.selectedDifficulty !== 'all' && c.difficulty !== explorerStore.selectedDifficulty) {
-        return false;
-      }
-      if (explorerStore.searchQuery.trim()) {
-        const q = explorerStore.searchQuery.toLowerCase();
-        const inQuestion = c.question.toLowerCase().includes(q);
-        const inAnswer = c.answer.toLowerCase().includes(q);
-        const inQuote = (c.sourceQuote || '').toLowerCase().includes(q);
-        const inTags = (c.tags || []).some((t) => t.toLowerCase().includes(q));
-        const inKeywords = (c.keywords || []).some((k) => k.toLowerCase().includes(q));
-        const inLocator = (c.sourceLocator || '').toLowerCase().includes(q);
-        return inQuestion || inAnswer || inQuote || inTags || inKeywords || inLocator;
-      }
-      return true;
-    })
-  );
-
-  let allFilteredSelected = $derived(
-    filteredCards.length > 0 && filteredCards.every((c) => explorerStore.selectedIds.includes(c.id))
+  let allLoadedSelected = $derived(
+    cards.length > 0 && cards.every((c) => explorerStore.selectedIds.includes(c.id))
   );
 
   function toggleSelectCard(id: string) {
@@ -48,12 +27,12 @@
     explorerStore.toggleSelect(id);
   }
 
-  function toggleSelectAllFiltered() {
+  function toggleSelectAllLoaded() {
     if (explorerStore.isBulkDeleting) return;
-    if (allFilteredSelected) {
-      explorerStore.deselectAll(filteredCards.map((c) => c.id));
+    if (allLoadedSelected) {
+      explorerStore.deselectAll(cards.map((c) => c.id));
     } else {
-      explorerStore.selectAll(filteredCards.map((c) => c.id));
+      explorerStore.selectAll(cards.map((c) => c.id));
     }
   }
 
@@ -68,11 +47,11 @@
     try {
       const idsToDelete = [...explorerStore.selectedIds];
       const res = await deleteCardsBulk(idsToDelete);
-      const deletedSet = new Set(idsToDelete);
-      explorerStore.cards = explorerStore.cards.filter((c) => !deletedSet.has(c.id));
+      explorerStore.removeCardsBulk(idsToDelete);
       toastStore.success(`Successfully deleted ${res.deletedCount} flashcard${res.deletedCount === 1 ? '' : 's'}.`);
       explorerStore.clearSelection();
       explorerStore.showBulkDeleteConfirm = false;
+      await loadDecks();
     } catch (err: any) {
       toastStore.error(`Failed to delete cards: ${err.message}`);
     } finally {
@@ -80,18 +59,29 @@
     }
   }
 
-  async function loadCards(isUserRefresh = false) {
-    if (explorerStore.cards.length === 0 || isUserRefresh) {
-      explorerStore.loading = true;
+  async function loadDecks() {
+    try {
+      availableDecks = await fetchDecks();
+    } catch (err: any) {
+      console.error('Failed to load decks:', err);
     }
+  }
+
+  async function loadInitialCards(isUserRefresh = false) {
+    explorerStore.loading = true;
     explorerStore.error = null;
     try {
-      const fetched = await fetchCards();
-      explorerStore.setCards(fetched);
-      const fetchedIdSet = new Set(fetched.map((c) => c.id));
-      explorerStore.selectedIds = explorerStore.selectedIds.filter((id) => fetchedIdSet.has(id));
+      const result = await fetchCardsPaginated({
+        deck: explorerStore.selectedDeck,
+        difficulty: explorerStore.selectedDifficulty,
+        q: explorerStore.searchQuery.trim() || undefined,
+        limit: explorerStore.limit,
+        offset: 0,
+      });
+      explorerStore.setInitialCards(result.cards, result.total, explorerStore.limit);
       if (isUserRefresh) {
         toastStore.info('⚡ Flashcards refreshed.');
+        await loadDecks();
       }
     } catch (err: any) {
       explorerStore.error = err.message || 'Failed to load cards';
@@ -103,9 +93,52 @@
     }
   }
 
+  async function loadNextPage() {
+    if (!explorerStore.hasMore || explorerStore.loading || explorerStore.loadingMore) return;
+    explorerStore.loadingMore = true;
+    try {
+      const result = await fetchCardsPaginated({
+        deck: explorerStore.selectedDeck,
+        difficulty: explorerStore.selectedDifficulty,
+        q: explorerStore.searchQuery.trim() || undefined,
+        limit: explorerStore.limit,
+        offset: explorerStore.offset,
+      });
+      explorerStore.appendCards(result.cards, result.total);
+    } catch (err: any) {
+      toastStore.error(`Failed to load more cards: ${err.message}`);
+    } finally {
+      explorerStore.loadingMore = false;
+    }
+  }
+
+  function handleFilterChange(type: 'deck' | 'difficulty', value: string) {
+    if (type === 'deck') {
+      explorerStore.selectedDeck = value;
+    } else {
+      explorerStore.selectedDifficulty = value;
+    }
+    loadInitialCards();
+  }
+
+  function handleSearchInput(e: Event) {
+    const target = e.target as HTMLInputElement;
+    explorerStore.searchQuery = target.value;
+    if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(() => {
+      loadInitialCards();
+    }, 250);
+  }
+
+  function handleClearSearch() {
+    explorerStore.searchQuery = '';
+    if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+    loadInitialCards();
+  }
+
   async function handleRefresh() {
     if (explorerStore.loading || explorerStore.isBulkDeleting) return;
-    await loadCards(true);
+    await loadInitialCards(true);
   }
 
   function toggleReveal(id: string) {
@@ -120,15 +153,33 @@
   function handleCardUpdated(updated: Flashcard) {
     explorerStore.updateCard(updated);
     toastStore.success('Flashcard updated successfully.');
+    loadDecks();
   }
 
   function handleCardDeleted(id: string) {
     explorerStore.removeCard(id);
     toastStore.info('Flashcard deleted.');
+    loadDecks();
   }
 
+  // IntersectionObserver for infinite scrolling
+  $effect(() => {
+    if (!sentinelEl) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && explorerStore.hasMore && !explorerStore.loading && !explorerStore.loadingMore) {
+          loadNextPage();
+        }
+      },
+      { rootMargin: '300px' }
+    );
+    observer.observe(sentinelEl);
+    return () => observer.disconnect();
+  });
+
   onMount(() => {
-    loadCards();
+    loadDecks();
+    loadInitialCards();
   });
 </script>
 
@@ -138,7 +189,7 @@
       <h1 class="view-title">🗂️ Question Explorer</h1>
       <p class="view-subtitle">Search, curate, and review atomic flashcards with factual quote grounding.</p>
     </div>
-    <span class="count-badge">{filteredCards.length} Cards Found</span>
+    <span class="count-badge">{total} Cards Found</span>
   </div>
 
   <!-- Bulk Selection Action Bar -->
@@ -146,8 +197,8 @@
     <div class="bulk-action-bar">
       <div class="bulk-info">
         <span class="selection-pill">✓ {explorerStore.selectedIds.length} Selected</span>
-        <button type="button" class="btn-bulk-toggle" onclick={toggleSelectAllFiltered}>
-          {allFilteredSelected ? 'Deselect Filtered' : `Select All Filtered (${filteredCards.length})`}
+        <button type="button" class="btn-bulk-toggle" onclick={toggleSelectAllLoaded}>
+          {allLoadedSelected ? 'Deselect Loaded' : `Select Loaded (${cards.length})`}
         </button>
         <button type="button" class="btn-bulk-clear" onclick={clearSelection}>Clear</button>
       </div>
@@ -172,10 +223,11 @@
         <input
           type="text"
           placeholder="Search questions, answers, tags, keywords, or source quotes..."
-          bind:value={explorerStore.searchQuery}
+          value={explorerStore.searchQuery}
+          oninput={handleSearchInput}
         />
         {#if explorerStore.searchQuery}
-          <button class="clear-btn" onclick={() => (explorerStore.searchQuery = '')}>✕</button>
+          <button class="clear-btn" onclick={handleClearSearch}>✕</button>
         {/if}
       </div>
 
@@ -200,18 +252,18 @@
           type="button"
           class="chip"
           class:active={explorerStore.selectedDeck === 'all'}
-          onclick={() => (explorerStore.selectedDeck = 'all')}
+          onclick={() => handleFilterChange('deck', 'all')}
         >
-          All Decks ({cards.length})
+          All Decks {explorerStore.selectedDeck === 'all' ? `(${total})` : ''}
         </button>
         {#each availableDecks as deck}
           <button
             type="button"
             class="chip"
             class:active={explorerStore.selectedDeck === deck}
-            onclick={() => (explorerStore.selectedDeck = deck)}
+            onclick={() => handleFilterChange('deck', deck)}
           >
-            {deck} ({cards.filter((c) => (c.targetDeck || 'Default') === deck).length})
+            {deck} {explorerStore.selectedDeck === deck ? `(${total})` : ''}
           </button>
         {/each}
       </div>
@@ -225,7 +277,7 @@
           type="button"
           class="chip"
           class:active={explorerStore.selectedDifficulty === 'all'}
-          onclick={() => (explorerStore.selectedDifficulty = 'all')}
+          onclick={() => handleFilterChange('difficulty', 'all')}
         >
           All
         </button>
@@ -233,7 +285,7 @@
           type="button"
           class="chip beginner"
           class:active={explorerStore.selectedDifficulty === 'beginner'}
-          onclick={() => (explorerStore.selectedDifficulty = 'beginner')}
+          onclick={() => handleFilterChange('difficulty', 'beginner')}
         >
           Beginner
         </button>
@@ -241,7 +293,7 @@
           type="button"
           class="chip intermediate"
           class:active={explorerStore.selectedDifficulty === 'intermediate'}
-          onclick={() => (explorerStore.selectedDifficulty = 'intermediate')}
+          onclick={() => handleFilterChange('difficulty', 'intermediate')}
         >
           Intermediate
         </button>
@@ -249,7 +301,7 @@
           type="button"
           class="chip expert"
           class:active={explorerStore.selectedDifficulty === 'expert'}
-          onclick={() => (explorerStore.selectedDifficulty = 'expert')}
+          onclick={() => handleFilterChange('difficulty', 'expert')}
         >
           Expert
         </button>
@@ -257,7 +309,7 @@
           type="button"
           class="chip mixed"
           class:active={explorerStore.selectedDifficulty === 'mixed'}
-          onclick={() => (explorerStore.selectedDifficulty = 'mixed')}
+          onclick={() => handleFilterChange('difficulty', 'mixed')}
         >
           🌈 Mixed
         </button>
@@ -274,9 +326,9 @@
   {:else if error}
     <div class="error-banner">
       <span>⚠️ {error}</span>
-      <button onclick={loadCards} class="btn btn-sm">Retry</button>
+      <button onclick={() => loadInitialCards()} class="btn btn-sm">Retry</button>
     </div>
-  {:else if filteredCards.length === 0}
+  {:else if cards.length === 0}
     <div class="empty-state">
       <div class="empty-icon">🗂️</div>
       <h3>No Flashcards Found</h3>
@@ -284,7 +336,7 @@
     </div>
   {:else}
     <div class="cards-grid">
-      {#each filteredCards as card}
+      {#each cards as card (card.id)}
         <div class="card-item" class:selected={explorerStore.selectedIds.includes(card.id)}>
           <div class="card-top-bar">
             <label class="card-checkbox-label" title="Select card for bulk actions">
@@ -382,6 +434,22 @@
         </div>
       {/each}
     </div>
+
+    <!-- Infinite Scroll Sentinel & Footer Status -->
+    {#if hasMore}
+      <div bind:this={sentinelEl} class="infinite-scroll-sentinel">
+        {#if loadingMore}
+          <div class="scroll-spinner-row">
+            <span class="spinner-inline"></span>
+            <span>Loading more flashcards...</span>
+          </div>
+        {/if}
+      </div>
+    {:else if cards.length > 0}
+      <div class="end-of-collection-banner">
+        <span>🎉 You've reached the end of the collection ({total} flashcard{total === 1 ? '' : 's'})</span>
+      </div>
+    {/if}
   {/if}
 </div>
 
@@ -1118,5 +1186,42 @@
   .btn-modal-delete:disabled, .btn-modal-cancel:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  /* Infinite Scroll Sentinel & Loading Banner */
+  .infinite-scroll-sentinel {
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px 0;
+  }
+
+  .scroll-spinner-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #94a3b8;
+  }
+
+  .spinner-inline {
+    width: 20px;
+    height: 20px;
+    border: 2px solid #334155;
+    border-top-color: #6366f1;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  .end-of-collection-banner {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 24px 0;
+    color: #64748b;
+    font-size: 13px;
+    font-weight: 500;
   }
 </style>

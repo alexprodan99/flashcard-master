@@ -449,4 +449,49 @@ describe("FlashcardRepository", () => {
     expect(reloaded?.keywords).toEqual(["paxos", "consensus"]);
     expect(reloaded?.sourceLocator).toBe("Chapter 7");
   });
+
+  it("supports limit and offset pagination with count and listPaginated metadata", () => {
+    // Create 15 sample cards
+    for (let i = 1; i <= 15; i++) {
+      cardRepo.create({
+        question: `Question ${i.toString().padStart(2, "0")}`,
+        answer: `Answer ${i}`,
+        sourceQuote: `Quote for question ${i}`,
+        targetDeck: i <= 10 ? "Deck A" : "Deck B",
+        difficulty: i % 2 === 0 ? "intermediate" : "expert",
+        tags: i % 3 === 0 ? ["tag-3"] : ["tag-other"],
+      });
+    }
+
+    // Verify count()
+    expect(cardRepo.count()).toBe(15);
+    expect(cardRepo.count({ targetDeck: "Deck A" })).toBe(10);
+    expect(cardRepo.count({ difficulty: "expert" })).toBe(8);
+    expect(cardRepo.count({ tag: "tag-3" })).toBe(5);
+
+    // Verify list() with limit & offset
+    const page1 = cardRepo.list({ limit: 5, offset: 0 });
+    expect(page1.length).toBe(5);
+
+    const page2 = cardRepo.list({ limit: 5, offset: 5 });
+    expect(page2.length).toBe(5);
+    expect(page2[0].id).not.toBe(page1[0].id);
+
+    const page3 = cardRepo.list({ limit: 10, offset: 10 });
+    expect(page3.length).toBe(5); // Only 5 remain
+
+    // Verify listPaginated() on filtered query
+    const paginatedDeckA = cardRepo.listPaginated({ targetDeck: "Deck A", limit: 4, offset: 0 });
+    expect(paginatedDeckA.total).toBe(10);
+    expect(paginatedDeckA.limit).toBe(4);
+    expect(paginatedDeckA.offset).toBe(0);
+    expect(paginatedDeckA.cards.length).toBe(4);
+    expect(paginatedDeckA.hasMore).toBe(true);
+
+    const paginatedDeckAEnd = cardRepo.listPaginated({ targetDeck: "Deck A", limit: 4, offset: 8 });
+    expect(paginatedDeckAEnd.total).toBe(10);
+    expect(paginatedDeckAEnd.cards.length).toBe(2);
+    expect(paginatedDeckAEnd.hasMore).toBe(false);
+  });
 });
+
