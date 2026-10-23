@@ -20,6 +20,8 @@ Empower users with granular control over their flashcard knowledge base by intro
   - ID: `19-5-asynchronous-subdocument-generation-via-task-center`
 - **Story 19.6:** Monorepo Responsive Layout & Text Overflow Hardening
   - ID: `19-6-monorepo-responsive-layout-and-overflow-hardening`
+- **Story 19.7:** Subdocument Explorer & Reader Redesign
+  - ID: `19-7-subdocument-explorer-and-reader-redesign`
 
 ## Requirements & Design Decisions
 
@@ -51,6 +53,11 @@ Empower users with granular control over their flashcard knowledge base by intro
    - Document Inspector & Preview Modal: Add horizontal scroll containers for wide code blocks and preformatted text.
    - Slide-over Drawers: Ensure resilient responsive max-widths and prevent viewport overflow on smaller screens.
    - Generate Studio: Eliminate horizontal spill on document hierarchy trees.
+
+7. **Subdocument Explorer & Reader Redesign:**
+   - Compact table/row layout: Replace vertically stacked card blocks with scannable rows displaying title, page badge, word count, card count, and inline horizontal actions.
+   - Expandable/fullscreen drawer: Provide a width expander toggle (e.g. standard drawer vs wide or full-screen) so reviewing long chapter catalogs (from EPUBs or sliced PDFs) is spacious and ergonomic.
+   - Effortless scanning: Sticky header controls, responsive action alignment, and clear metadata scanning.
 
 ## Delivery Strategy
 
