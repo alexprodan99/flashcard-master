@@ -551,4 +551,54 @@ export async function testAnkiConnect(options?: {
   }
   return res.json();
 }
+
+export async function cloneDeck(
+  sourceDeck: string,
+  targetDeck: string
+): Promise<{ success: boolean; clonedCount: number; sourceDeck: string; targetDeck: string }> {
+  const res = await fetch('/api/decks/clone', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sourceDeck, targetDeck }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to clone deck');
+  }
+  return res.json();
+}
+
+export async function splitDeck(
+  sourceDeck: string,
+  batchSize: number,
+  customPrefix?: string
+): Promise<{ success: boolean; subDecks: string[]; cardsMoved: number; sourceDeck: string }> {
+  const res = await fetch('/api/decks/split', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sourceDeck, batchSize, customPrefix }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to split deck');
+  }
+  return res.json();
+}
+
+export async function moveCardsToDeck(
+  cardIds: string[],
+  targetDeck: string
+): Promise<{ success: boolean; movedCount: number; targetDeck: string }> {
+  const res = await fetch('/api/decks/move-cards', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cardIds, targetDeck }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to move cards to deck');
+  }
+  return res.json();
+}
+
 

@@ -221,7 +221,31 @@ For a complete registry of configuration keys, see [Centralized Settings & Confi
 
 ---
 
-## 5. Exporter Architecture
+## 7. Deck Operations & Lifecycle Management
+
+To support flexible study workflows and prevent deck sprawl, Flashcard Master provides atomic, transactional deck manipulation utilities implemented in `FlashcardRepository`:
+
+```
+Question Explorer UI  ──▶  REST Endpoints  ──▶  FlashcardRepository (SQLite WAL Transaction)
+```
+
+* **Deck Cloning (`cloneDeck`)**:
+  - `POST /api/decks/clone` (`{ sourceDeck, targetDeck }`)
+  - Duplicates all cards from a source deck into a new target deck with fresh UUIDs.
+  - Preserves verbatim source quotes, difficulty ratings, tags, keywords, and document origin metadata.
+  - Executes inside an atomic SQLite transaction (`this.db.transaction()`), ensuring all-or-nothing execution.
+* **Batch Splitting (`splitDeck`)**:
+  - `POST /api/decks/split` (`{ sourceDeck, batchSize, customPrefix? }`)
+  - Automatically partitions a large deck into numbered bite-sized sub-decks (e.g., `${prefix} - Part 1`, `${prefix} - Part 2`).
+  - Ideal for pacing study sessions across multiple days or modules.
+* **Selective Card Moving (`moveCards`)**:
+  - `POST /api/decks/move-cards` (`{ cardIds, targetDeck }`)
+  - Selectively relocates a chosen subset of flashcards from Question Explorer into an existing or newly created deck.
+  - Updates `target_deck` and refreshes `updated_at` timestamps transactionally.
+
+---
+
+## 8. Exporter Architecture
 
 Flashcard Master uses an open **`ExporterRegistry`**. Exporters implement:
 
@@ -237,3 +261,4 @@ export interface ExporterPort {
 * **Markdown Exporter (`markdown`):** Formats cards into active-recall collapsible `<details><summary>` HTML blocks.
 * **HTML / Printable PDF Exporter (`html` / `pdf`):** Produces a clean 2-column printable study guide with `@media print` CSS layout, folding cut lines, and browser "Save as PDF" optimization.
 * **Delimited Exporters (`csv` / `tsv`):** Exports standard RFC-4180 Anki-compatible delimited text.
+

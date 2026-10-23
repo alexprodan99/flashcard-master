@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { fetchCardsPaginated, fetchDecks, deleteCardsBulk } from '../lib/api';
+  import { fetchCardsPaginated, fetchDecks, deleteCardsBulk, cloneDeck, splitDeck, moveCardsToDeck } from '../lib/api';
   import type { Flashcard, DifficultyLevel } from '../lib/types';
   import CardEditorDrawer from '../components/CardEditorDrawer.svelte';
   import { explorerStore, toastStore } from '../stores/index.js';
@@ -18,9 +18,132 @@
   let sentinelEl: HTMLDivElement | null = $state(null);
   let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // Deck Operations Modals State
+  let showCloneModal = $state(false);
+  let cloneSourceDeck = $state('');
+  let cloneTargetDeck = $state('');
+  let isCloning = $state(false);
+  let cloneError = $state<string | null>(null);
+
+  let showSplitModal = $state(false);
+  let splitSourceDeck = $state('');
+  let splitBatchSize = $state(25);
+  let splitCustomPrefix = $state('');
+  let isSplitting = $state(false);
+  let splitError = $state<string | null>(null);
+
+  let showMoveModal = $state(false);
+  let moveTargetDeckMode = $state<'existing' | 'new'>('existing');
+  let moveSelectedExistingDeck = $state('');
+  let moveCustomNewDeck = $state('');
+  let isMoving = $state(false);
+  let moveError = $state<string | null>(null);
+
   let allLoadedSelected = $derived(
     cards.length > 0 && cards.every((c) => explorerStore.selectedIds.includes(c.id))
   );
+
+  function openCloneModal(deck?: string) {
+    const initialSource = deck || (explorerStore.selectedDeck !== 'all' ? explorerStore.selectedDeck : (availableDecks[0] || 'Default'));
+    cloneSourceDeck = initialSource;
+    cloneTargetDeck = initialSource ? `${initialSource} (Copy)` : '';
+    cloneError = null;
+    showCloneModal = true;
+  }
+
+  async function handleCloneDeck() {
+    if (!cloneSourceDeck.trim()) {
+      cloneError = 'Source deck is required.';
+      return;
+    }
+    if (!cloneTargetDeck.trim()) {
+      cloneError = 'Target deck name is required.';
+      return;
+    }
+    if (cloneSourceDeck.trim().toLowerCase() === cloneTargetDeck.trim().toLowerCase()) {
+      cloneError = 'Target deck name must be different from source deck.';
+      return;
+    }
+    isCloning = true;
+    cloneError = null;
+    try {
+      const res = await cloneDeck(cloneSourceDeck.trim(), cloneTargetDeck.trim());
+      toastStore.success(`Successfully cloned "${res.sourceDeck}" to "${res.targetDeck}" (${res.clonedCount} cards).`);
+      showCloneModal = false;
+      await loadDecks();
+    } catch (err: any) {
+      cloneError = err.message || 'Failed to clone deck.';
+    } finally {
+      isCloning = false;
+    }
+  }
+
+  function openSplitModal(deck?: string) {
+    const initialSource = deck || (explorerStore.selectedDeck !== 'all' ? explorerStore.selectedDeck : (availableDecks[0] || 'Default'));
+    splitSourceDeck = initialSource;
+    splitBatchSize = 25;
+    splitCustomPrefix = '';
+    splitError = null;
+    showSplitModal = true;
+  }
+
+  async function handleSplitDeck() {
+    if (!splitSourceDeck.trim()) {
+      splitError = 'Source deck is required.';
+      return;
+    }
+    if (!splitBatchSize || splitBatchSize < 2) {
+      splitError = 'Batch size must be at least 2.';
+      return;
+    }
+    isSplitting = true;
+    splitError = null;
+    try {
+      const res = await splitDeck(splitSourceDeck.trim(), splitBatchSize, splitCustomPrefix.trim() || undefined);
+      toastStore.success(`Successfully split "${splitSourceDeck}" into ${res.subDecks.length} sub-decks (${res.cardsMoved} cards moved).`);
+      showSplitModal = false;
+      await loadDecks();
+      await loadInitialCards();
+    } catch (err: any) {
+      splitError = err.message || 'Failed to split deck.';
+    } finally {
+      isSplitting = false;
+    }
+  }
+
+  function openMoveModal() {
+    moveTargetDeckMode = 'existing';
+    moveSelectedExistingDeck = availableDecks[0] || 'Default';
+    moveCustomNewDeck = '';
+    moveError = null;
+    showMoveModal = true;
+  }
+
+  async function handleMoveCards() {
+    const target = moveTargetDeckMode === 'existing' ? moveSelectedExistingDeck.trim() : moveCustomNewDeck.trim();
+    if (!target) {
+      moveError = 'Target deck name is required.';
+      return;
+    }
+    if (explorerStore.selectedIds.length === 0) {
+      moveError = 'No cards selected.';
+      return;
+    }
+    isMoving = true;
+    moveError = null;
+    try {
+      const res = await moveCardsToDeck([...explorerStore.selectedIds], target);
+      toastStore.success(`Successfully moved ${res.movedCount} card(s) to "${res.targetDeck}".`);
+      explorerStore.clearSelection();
+      showMoveModal = false;
+      await loadDecks();
+      await loadInitialCards();
+    } catch (err: any) {
+      moveError = err.message || 'Failed to move cards.';
+    } finally {
+      isMoving = false;
+    }
+  }
 
   function toggleSelectCard(id: string) {
     if (explorerStore.isBulkDeleting) return;
@@ -204,6 +327,14 @@
       <div class="bulk-actions">
         <button
           type="button"
+          class="btn-bulk-move"
+          onclick={openMoveModal}
+          disabled={explorerStore.isBulkDeleting}
+        >
+          📦 Move to Deck...
+        </button>
+        <button
+          type="button"
           class="btn-bulk-delete"
           onclick={() => (explorerStore.showBulkDeleteConfirm = true)}
           disabled={explorerStore.isBulkDeleting}
@@ -230,17 +361,35 @@
         {/if}
       </div>
 
-      <button
-        type="button"
-        class="btn-refresh"
-        onclick={handleRefresh}
-        disabled={loading}
-        title="Refresh flashcard catalog"
-        aria-label="Refresh flashcard catalog"
-      >
-        <span class="refresh-icon" class:spinning={loading}>🔄</span>
-        <span>{loading ? 'Refreshing...' : 'Refresh'}</span>
-      </button>
+      <div class="toolbar-actions-group">
+        <button
+          type="button"
+          class="btn-deck-op"
+          onclick={() => openCloneModal()}
+          title="Clone an entire deck under a new name"
+        >
+          <span>📋 Clone Deck</span>
+        </button>
+        <button
+          type="button"
+          class="btn-deck-op"
+          onclick={() => openSplitModal()}
+          title="Split a deck into numbered batch sub-decks"
+        >
+          <span>✂️ Split Deck</span>
+        </button>
+        <button
+          type="button"
+          class="btn-refresh"
+          onclick={handleRefresh}
+          disabled={loading}
+          title="Refresh flashcard catalog"
+          aria-label="Refresh flashcard catalog"
+        >
+          <span class="refresh-icon" class:spinning={loading}>🔄</span>
+          <span>{loading ? 'Refreshing...' : 'Refresh'}</span>
+        </button>
+      </div>
     </div>
 
     <!-- Deck filter chips -->
@@ -503,6 +652,248 @@
   </div>
 {/if}
 
+<!-- Clone Deck Modal -->
+{#if showCloneModal}
+  <div class="modal-backdrop" role="presentation" onclick={() => (showCloneModal = false)}>
+    <div
+      class="modal-card"
+      role="dialog"
+      aria-modal="true"
+      tabindex="-1"
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => { if (e.key === 'Escape') showCloneModal = false; }}
+    >
+      <div class="modal-header">
+        <h2>📋 Clone Deck</h2>
+        <button type="button" class="btn-close" onclick={() => (showCloneModal = false)}>✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-intro">Duplicate all flashcards from an existing deck into a brand new deck with fresh IDs.</p>
+
+        {#if cloneError}
+          <div class="modal-error-box">
+            <span>⚠️ {cloneError}</span>
+          </div>
+        {/if}
+
+        <div class="form-group">
+          <label for="clone-source-deck">Source Deck</label>
+          <select id="clone-source-deck" class="form-select" bind:value={cloneSourceDeck}>
+            {#each availableDecks as deck}
+              <option value={deck}>{deck}</option>
+            {/each}
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="clone-target-deck">New Deck Name</label>
+          <input
+            id="clone-target-deck"
+            type="text"
+            class="form-input"
+            placeholder="e.g. Biology - Copy"
+            bind:value={cloneTargetDeck}
+          />
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button
+          type="button"
+          class="btn-modal-cancel"
+          onclick={() => (showCloneModal = false)}
+          disabled={isCloning}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="btn-modal-primary"
+          onclick={handleCloneDeck}
+          disabled={isCloning || !cloneSourceDeck || !cloneTargetDeck}
+        >
+          {isCloning ? 'Cloning Deck...' : 'Clone Deck'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Split Deck Modal -->
+{#if showSplitModal}
+  <div class="modal-backdrop" role="presentation" onclick={() => (showSplitModal = false)}>
+    <div
+      class="modal-card"
+      role="dialog"
+      aria-modal="true"
+      tabindex="-1"
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => { if (e.key === 'Escape') showSplitModal = false; }}
+    >
+      <div class="modal-header">
+        <h2>✂️ Split Deck into Batches</h2>
+        <button type="button" class="btn-close" onclick={() => (showSplitModal = false)}>✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-intro">Divide cards in a large deck into numbered sub-decks for manageable daily study sessions.</p>
+
+        {#if splitError}
+          <div class="modal-error-box">
+            <span>⚠️ {splitError}</span>
+          </div>
+        {/if}
+
+        <div class="form-group">
+          <label for="split-source-deck">Source Deck</label>
+          <select id="split-source-deck" class="form-select" bind:value={splitSourceDeck}>
+            {#each availableDecks as deck}
+              <option value={deck}>{deck}</option>
+            {/each}
+          </select>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label for="split-batch-size">Cards Per Sub-Deck</label>
+            <input
+              id="split-batch-size"
+              type="number"
+              min="2"
+              class="form-input"
+              bind:value={splitBatchSize}
+            />
+          </div>
+          <div class="form-group flex-2">
+            <label for="split-prefix">Custom Prefix (Optional)</label>
+            <input
+              id="split-prefix"
+              type="text"
+              class="form-input"
+              placeholder={splitSourceDeck || 'Deck Name'}
+              bind:value={splitCustomPrefix}
+            />
+          </div>
+        </div>
+
+        <p class="modal-subtext">
+          Sub-decks will be named like <code>{(splitCustomPrefix || splitSourceDeck || 'Deck')} - Part 1</code>, <code>{(splitCustomPrefix || splitSourceDeck || 'Deck')} - Part 2</code>, etc.
+        </p>
+      </div>
+      <div class="modal-actions">
+        <button
+          type="button"
+          class="btn-modal-cancel"
+          onclick={() => (showSplitModal = false)}
+          disabled={isSplitting}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="btn-modal-primary"
+          onclick={handleSplitDeck}
+          disabled={isSplitting || !splitSourceDeck || splitBatchSize < 2}
+        >
+          {isSplitting ? 'Splitting Deck...' : 'Split Deck'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Move Selected Cards Modal -->
+{#if showMoveModal}
+  <div class="modal-backdrop" role="presentation" onclick={() => (showMoveModal = false)}>
+    <div
+      class="modal-card"
+      role="dialog"
+      aria-modal="true"
+      tabindex="-1"
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => { if (e.key === 'Escape') showMoveModal = false; }}
+    >
+      <div class="modal-header">
+        <h2>📦 Move Selected Cards to Deck</h2>
+        <button type="button" class="btn-close" onclick={() => (showMoveModal = false)}>✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-intro">
+          Move <strong>{explorerStore.selectedIds.length}</strong> selected flashcard{explorerStore.selectedIds.length === 1 ? '' : 's'} to another deck.
+        </p>
+
+        {#if moveError}
+          <div class="modal-error-box">
+            <span>⚠️ {moveError}</span>
+          </div>
+        {/if}
+
+        <div class="deck-mode-toggle">
+          <label class="radio-label">
+            <input
+              type="radio"
+              name="moveDeckMode"
+              value="existing"
+              checked={moveTargetDeckMode === 'existing'}
+              onchange={() => (moveTargetDeckMode = 'existing')}
+            />
+            <span>Existing Deck</span>
+          </label>
+          <label class="radio-label">
+            <input
+              type="radio"
+              name="moveDeckMode"
+              value="new"
+              checked={moveTargetDeckMode === 'new'}
+              onchange={() => (moveTargetDeckMode = 'new')}
+            />
+            <span>Create New Deck</span>
+          </label>
+        </div>
+
+        {#if moveTargetDeckMode === 'existing'}
+          <div class="form-group">
+            <label for="move-existing-deck">Select Target Deck</label>
+            <select id="move-existing-deck" class="form-select" bind:value={moveSelectedExistingDeck}>
+              {#each availableDecks as deck}
+                <option value={deck}>{deck}</option>
+              {/each}
+            </select>
+          </div>
+        {:else}
+          <div class="form-group">
+            <label for="move-new-deck">New Deck Name</label>
+            <input
+              id="move-new-deck"
+              type="text"
+              class="form-input"
+              placeholder="e.g. Neuroscience 101"
+              bind:value={moveCustomNewDeck}
+            />
+          </div>
+        {/if}
+      </div>
+      <div class="modal-actions">
+        <button
+          type="button"
+          class="btn-modal-cancel"
+          onclick={() => (showMoveModal = false)}
+          disabled={isMoving}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="btn-modal-primary"
+          onclick={handleMoveCards}
+          disabled={isMoving || (moveTargetDeckMode === 'new' && !moveCustomNewDeck.trim()) || (moveTargetDeckMode === 'existing' && !moveSelectedExistingDeck)}
+        >
+          {isMoving ? 'Moving Cards...' : `Move ${explorerStore.selectedIds.length} Card${explorerStore.selectedIds.length === 1 ? '' : 's'}`}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+
 <style>
   .view-container {
     padding: 32px;
@@ -565,6 +956,41 @@
     display: flex;
     align-items: center;
     flex: 1;
+  }
+
+  .toolbar-actions-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .btn-deck-op {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 14px;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    color: #cbd5e1;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+    height: 44px;
+    box-sizing: border-box;
+  }
+
+  .btn-deck-op:hover:not(:disabled) {
+    background: #1e293b;
+    border-color: #6366f1;
+    color: #ffffff;
+  }
+
+  .btn-deck-op:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   .btn-refresh {
@@ -1039,6 +1465,33 @@
     color: white;
   }
 
+  .bulk-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .btn-bulk-move {
+    background: #6366f1;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .btn-bulk-move:hover:not(:disabled) {
+    background: #4f46e5;
+  }
+
+  .btn-bulk-move:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
   .btn-bulk-delete {
     background: #ef4444;
     color: white;
@@ -1185,6 +1638,111 @@
   .btn-modal-delete:disabled, .btn-modal-cancel:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  .btn-modal-primary {
+    background: #6366f1;
+    color: white;
+    border: none;
+    padding: 8px 18px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .btn-modal-primary:hover:not(:disabled) {
+    background: #4f46e5;
+  }
+
+  .btn-modal-primary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .modal-intro {
+    font-size: 13px;
+    color: #94a3b8;
+    margin: 0 0 16px 0;
+    line-height: 1.4;
+  }
+
+  .modal-error-box {
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #fca5a5;
+    padding: 10px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    margin-bottom: 16px;
+  }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 16px;
+  }
+
+  .form-group label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #cbd5e1;
+  }
+
+  .form-select, .form-input {
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 10px 12px;
+    color: #f8fafc;
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  .form-select:focus, .form-input:focus {
+    border-color: #6366f1;
+  }
+
+  .form-row {
+    display: flex;
+    gap: 12px;
+  }
+
+  .flex-1 {
+    flex: 1;
+  }
+
+  .flex-2 {
+    flex: 2;
+  }
+
+  .deck-mode-toggle {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 16px;
+    padding: 8px 12px;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 8px;
+  }
+
+  .radio-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #e2e8f0;
+    cursor: pointer;
+  }
+
+  .radio-label input[type="radio"] {
+    accent-color: #6366f1;
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
   }
 
   /* Infinite Scroll Sentinel & Loading Banner */

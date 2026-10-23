@@ -1755,7 +1755,168 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       expect(p1Ids.some((id: string) => p2Ids.includes(id))).toBe(false);
     });
   });
+
+  describe("Deck Operations: Clone, Batch Split & Selective Card Moving", () => {
+    beforeEach(() => {
+      // Seed cards for deck operation tests
+      for (let i = 1; i <= 6; i++) {
+        cardRepo.create({
+          question: `Bio Question ${i}`,
+          answer: `Bio Answer ${i}`,
+          sourceQuote: `Verified bio fact ${i}`,
+          targetDeck: "Biology 101",
+          difficulty: i % 2 === 0 ? "intermediate" : "beginner",
+          tags: ["biology", "science"],
+        });
+      }
+    });
+
+    it("POST /api/decks/clone duplicates all cards to target deck", async () => {
+      const res = await fetch(`${serverUrl}/api/decks/clone`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourceDeck: "Biology 101",
+          targetDeck: "Biology 101 - Review",
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = (await res.json()) as any;
+      expect(data.success).toBe(true);
+      expect(data.clonedCount).toBe(6);
+      expect(data.sourceDeck).toBe("Biology 101");
+      expect(data.targetDeck).toBe("Biology 101 - Review");
+
+      // Verify cards in target deck
+      const targetCards = cardRepo.list({ targetDeck: "Biology 101 - Review" });
+      expect(targetCards.length).toBe(6);
+      expect(targetCards.every((c) => c.targetDeck === "Biology 101 - Review")).toBe(true);
+
+      // Verify original cards still exist
+      const sourceCards = cardRepo.list({ targetDeck: "Biology 101" });
+      expect(sourceCards.length).toBe(6);
+    });
+
+    it("POST /api/decks/clone returns 400 for invalid parameters", async () => {
+      // Missing sourceDeck
+      const res0 = await fetch(`${serverUrl}/api/decks/clone`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetDeck: "Some Target" }),
+      });
+      expect(res0.status).toBe(400);
+
+      // Missing targetDeck
+      const res1 = await fetch(`${serverUrl}/api/decks/clone`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceDeck: "Biology 101" }),
+      });
+      expect(res1.status).toBe(400);
+
+      // Same source and target deck
+      const res2 = await fetch(`${serverUrl}/api/decks/clone`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceDeck: "Biology 101", targetDeck: "biology 101" }),
+      });
+      expect(res2.status).toBe(400);
+
+      // Non-existent source deck returns 200 with clonedCount: 0
+      const res3 = await fetch(`${serverUrl}/api/decks/clone`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceDeck: "Nonexistent", targetDeck: "New Deck" }),
+      });
+      expect(res3.status).toBe(200);
+      const data3 = (await res3.json()) as any;
+      expect(data3.clonedCount).toBe(0);
+    });
+
+    it("POST /api/decks/split divides deck into numbered sub-decks", async () => {
+      const res = await fetch(`${serverUrl}/api/decks/split`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourceDeck: "Biology 101",
+          batchSize: 2,
+          customPrefix: "Bio Module",
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = (await res.json()) as any;
+      expect(data.success).toBe(true);
+      expect(data.subDecks).toEqual([
+        "Bio Module - Part 1",
+        "Bio Module - Part 2",
+        "Bio Module - Part 3",
+      ]);
+      expect(data.cardsMoved).toBe(6);
+
+      // Check sub-deck counts
+      expect(cardRepo.list({ targetDeck: "Bio Module - Part 1" }).length).toBe(2);
+      expect(cardRepo.list({ targetDeck: "Bio Module - Part 2" }).length).toBe(2);
+      expect(cardRepo.list({ targetDeck: "Bio Module - Part 3" }).length).toBe(2);
+      expect(cardRepo.list({ targetDeck: "Biology 101" }).length).toBe(0);
+    });
+
+    it("POST /api/decks/split validates batch size", async () => {
+      const res = await fetch(`${serverUrl}/api/decks/split`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourceDeck: "Biology 101",
+          batchSize: 1, // must be >= 2
+        }),
+      });
+      expect(res.status).toBe(400);
+      const data = (await res.json()) as any;
+      expect(data.error).toContain("Batch size");
+    });
+
+    it("POST /api/decks/move-cards moves selected card IDs to target deck", async () => {
+      const originalCards = cardRepo.list({ targetDeck: "Biology 101" });
+      const idsToMove = [originalCards[0].id, originalCards[1].id];
+
+      const res = await fetch(`${serverUrl}/api/decks/move-cards`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cardIds: idsToMove,
+          targetDeck: "Advanced Biology",
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = (await res.json()) as any;
+      expect(data.success).toBe(true);
+      expect(data.movedCount).toBe(2);
+      expect(data.targetDeck).toBe("Advanced Biology");
+
+      expect(cardRepo.list({ targetDeck: "Advanced Biology" }).length).toBe(2);
+      expect(cardRepo.list({ targetDeck: "Biology 101" }).length).toBe(4);
+    });
+
+    it("POST /api/decks/move-cards rejects empty cardIds or missing target deck", async () => {
+      const res1 = await fetch(`${serverUrl}/api/decks/move-cards`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cardIds: [], targetDeck: "Deck A" }),
+      });
+      expect(res1.status).toBe(400);
+
+      const res2 = await fetch(`${serverUrl}/api/decks/move-cards`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cardIds: ["some-id"], targetDeck: "" }),
+      });
+      expect(res2.status).toBe(400);
+    });
+  });
 });
+
 
 
 

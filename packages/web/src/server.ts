@@ -2966,6 +2966,83 @@ export class WebServer {
             return;
           }
 
+          // 10a. Clone Deck Endpoint: POST /api/decks/clone
+          if (pathname === "/api/decks/clone" && method === "POST") {
+            const body = await this.parseBody(req);
+            const sourceDeck = typeof body?.sourceDeck === "string" ? body.sourceDeck.trim() : "";
+            const targetDeck = typeof body?.targetDeck === "string" ? body.targetDeck.trim() : "";
+
+            if (!sourceDeck) {
+              this.sendJson(res, 400, { error: "Source deck name is required." });
+              return;
+            }
+            if (!targetDeck) {
+              this.sendJson(res, 400, { error: "Target deck name is required." });
+              return;
+            }
+            if (sourceDeck.toLowerCase() === targetDeck.toLowerCase()) {
+              this.sendJson(res, 400, { error: "Target deck name must be different from source deck name." });
+              return;
+            }
+
+            try {
+              const clonedCount = this.options.cardRepo.cloneDeck(sourceDeck, targetDeck);
+              this.sendJson(res, 200, { success: true, clonedCount, sourceDeck, targetDeck });
+            } catch (err: any) {
+              this.sendJson(res, 400, { error: err.message || "Failed to clone deck." });
+            }
+            return;
+          }
+
+          // 10b. Split Deck Endpoint: POST /api/decks/split
+          if (pathname === "/api/decks/split" && method === "POST") {
+            const body = await this.parseBody(req);
+            const sourceDeck = typeof body?.sourceDeck === "string" ? body.sourceDeck.trim() : "";
+            const batchSize = parseInt(body?.batchSize, 10);
+            const customPrefix = typeof body?.customPrefix === "string" ? body.customPrefix.trim() : undefined;
+
+            if (!sourceDeck) {
+              this.sendJson(res, 400, { error: "Source deck name is required." });
+              return;
+            }
+            if (!Number.isInteger(batchSize) || batchSize < 2) {
+              this.sendJson(res, 400, { error: "Batch size must be an integer of 2 or greater." });
+              return;
+            }
+
+            try {
+              const result = this.options.cardRepo.splitDeck(sourceDeck, batchSize, customPrefix);
+              this.sendJson(res, 200, { success: true, ...result, sourceDeck });
+            } catch (err: any) {
+              this.sendJson(res, 400, { error: err.message || "Failed to split deck." });
+            }
+            return;
+          }
+
+          // 10c. Move Cards Endpoint: POST /api/decks/move-cards
+          if (pathname === "/api/decks/move-cards" && method === "POST") {
+            const body = await this.parseBody(req);
+            const targetDeck = typeof body?.targetDeck === "string" ? body.targetDeck.trim() : "";
+            const cardIds = Array.isArray(body?.cardIds) ? body.cardIds : [];
+
+            if (!targetDeck) {
+              this.sendJson(res, 400, { error: "Target deck name is required." });
+              return;
+            }
+            if (cardIds.length === 0) {
+              this.sendJson(res, 400, { error: "At least one card ID is required to move." });
+              return;
+            }
+
+            try {
+              const movedCount = this.options.cardRepo.moveCards(cardIds, targetDeck);
+              this.sendJson(res, 200, { success: true, movedCount, targetDeck });
+            } catch (err: any) {
+              this.sendJson(res, 400, { error: err.message || "Failed to move cards." });
+            }
+            return;
+          }
+
           // 11. Tags Endpoint
           if (pathname === "/api/tags" && method === "GET") {
             const tags = this.options.cardRepo.listTags ? this.options.cardRepo.listTags() : [];
