@@ -19,6 +19,26 @@ export const CreateFlashcardInputSchema = z.object({
 });
 export type CreateFlashcardInput = z.input<typeof CreateFlashcardInputSchema>;
 
+export function encodeCursor(createdAt: string, id: string): string {
+  return Buffer.from(JSON.stringify({ c: createdAt, i: id })).toString("base64url");
+}
+
+export function decodeCursor(cursor: string): { createdAt: string; id: string } | null {
+  try {
+    const raw = Buffer.from(cursor, "base64url").toString("utf-8");
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed.i === "string" && typeof parsed.c === "string") {
+      return { createdAt: parsed.c, id: parsed.i };
+    }
+    if (parsed && typeof parsed.id === "string" && typeof parsed.createdAt === "string") {
+      return { createdAt: parsed.createdAt, id: parsed.id };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export interface CardFilter {
   targetDeck?: string;
   sourceId?: string;
@@ -27,14 +47,16 @@ export interface CardFilter {
   search?: string;
   limit?: number;
   offset?: number;
+  cursor?: string;
 }
 
 export interface PaginatedFlashcardsResult {
   cards: Flashcard[];
   total: number;
   limit: number;
-  offset: number;
+  nextCursor: string | null;
   hasMore: boolean;
+  offset?: number;
 }
 
 export class FlashcardRepository {
@@ -201,6 +223,13 @@ export class FlashcardRepository {
       conditions.push("(json_valid(flashcards.tags) AND EXISTS (SELECT 1 FROM json_each(flashcards.tags) WHERE value = ?))");
       params.push(filter.tag);
     }
+    if (filter.cursor) {
+      const decoded = decodeCursor(filter.cursor);
+      if (decoded) {
+        conditions.push("((created_at < ?) OR (created_at = ? AND id < ?))");
+        params.push(decoded.createdAt, decoded.createdAt, decoded.id);
+      }
+    }
 
     return { conditions, params };
   }
@@ -212,7 +241,7 @@ export class FlashcardRepository {
     if (conditions.length > 0) {
       sql += " WHERE " + conditions.join(" AND ");
     }
-    sql += " ORDER BY created_at DESC";
+    sql += " ORDER BY created_at DESC, id DESC";
 
     if (filter.limit !== undefined) {
       sql += " LIMIT ?";
@@ -345,7 +374,8 @@ export class FlashcardRepository {
   }
 
   count(filter: CardFilter = {}): number {
-    const { conditions, params } = this.buildFilterConditions(filter);
+    const filterForCount: CardFilter = { ...filter, cursor: undefined, limit: undefined, offset: undefined };
+    const { conditions, params } = this.buildFilterConditions(filterForCount);
     let sql = "SELECT COUNT(*) as count FROM flashcards";
     if (conditions.length > 0) {
       sql += " WHERE " + conditions.join(" AND ");
@@ -357,14 +387,53 @@ export class FlashcardRepository {
   listPaginated(filter: CardFilter = {}): PaginatedFlashcardsResult {
     const total = this.count(filter);
     const limit = filter.limit !== undefined ? Math.max(1, filter.limit) : 25;
-    const offset = filter.offset !== undefined ? Math.max(0, filter.offset) : 0;
-    const cards = this.list({ ...filter, limit, offset });
+
+    // 1. Keyset / cursor-based pagination
+    if (filter.cursor) {
+      const fetched = this.list({ ...filter, limit: limit + 1, offset: undefined });
+      const hasMore = fetched.length > limit;
+      const cards = hasMore ? fetched.slice(0, limit) : fetched;
+      const lastCard = cards.length > 0 ? cards[cards.length - 1] : null;
+      const nextCursor = (hasMore && lastCard && lastCard.createdAt) ? encodeCursor(lastCard.createdAt, lastCard.id) : null;
+      return {
+        cards,
+        total,
+        limit,
+        nextCursor,
+        hasMore,
+      };
+    }
+
+    // 2. Backward compatibility: if offset is explicitly passed
+    if (filter.offset !== undefined && filter.offset > 0) {
+      const offset = Math.max(0, filter.offset);
+      const cards = this.list({ ...filter, limit, offset });
+      const lastCard = cards.length > 0 ? cards[cards.length - 1] : null;
+      const hasMore = offset + cards.length < total;
+      const nextCursor = (hasMore && lastCard && lastCard.createdAt) ? encodeCursor(lastCard.createdAt, lastCard.id) : null;
+      return {
+        cards,
+        total,
+        limit,
+        offset,
+        nextCursor,
+        hasMore,
+      };
+    }
+
+    // 3. Initial page (cursor & offset omitted)
+    const fetched = this.list({ ...filter, limit: limit + 1, offset: undefined, cursor: undefined });
+    const hasMore = fetched.length > limit;
+    const cards = hasMore ? fetched.slice(0, limit) : fetched;
+    const lastCard = cards.length > 0 ? cards[cards.length - 1] : null;
+    const nextCursor = (hasMore && lastCard && lastCard.createdAt) ? encodeCursor(lastCard.createdAt, lastCard.id) : null;
     return {
       cards,
       total,
       limit,
-      offset,
-      hasMore: offset + cards.length < total,
+      offset: 0,
+      nextCursor,
+      hasMore,
     };
   }
 }

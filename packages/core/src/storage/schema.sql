@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS app_settings (
 CREATE INDEX IF NOT EXISTS idx_flashcards_source_id ON flashcards(source_id);
 CREATE INDEX IF NOT EXISTS idx_flashcards_target_deck ON flashcards(target_deck);
 CREATE INDEX IF NOT EXISTS idx_flashcards_difficulty ON flashcards(difficulty);
+CREATE INDEX IF NOT EXISTS idx_flashcards_created_at_id ON flashcards(created_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_documents_source_id ON documents(source_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_source_url ON documents(source_id, url) WHERE url IS NOT NULL;
 

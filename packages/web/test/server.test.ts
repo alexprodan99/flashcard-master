@@ -1717,6 +1717,43 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       expect(searchData.cards.length).toBe(1);
       expect(searchData.cards[0].question).toBe("What is 2PC?");
     });
+
+    it("returns PaginatedCardsResponse with nextCursor and traverses pages with GET /api/cards?cursor=...", async () => {
+      // Add 2 more cards for cursor traversal
+      cardRepo.create({
+        question: "What is Paxos?",
+        answer: "A consensus algorithm.",
+        sourceQuote: "Paxos solves consensus.",
+        targetDeck: "Engineering",
+      });
+      cardRepo.create({
+        question: "What is Gossip Protocol?",
+        answer: "Decentralized peer-to-peer communication.",
+        sourceQuote: "Gossip protocols spread metadata epidemically.",
+        targetDeck: "Engineering",
+      });
+
+      // Fetch page 1 with limit 2
+      const resPage1 = await fetch(`${serverUrl}/api/cards?limit=2`);
+      expect(resPage1.status).toBe(200);
+      const page1 = (await resPage1.json()) as any;
+      expect(page1.cards.length).toBe(2);
+      expect(page1.hasMore).toBe(true);
+      expect(page1.nextCursor).toBeDefined();
+      expect(typeof page1.nextCursor).toBe("string");
+
+      // Fetch page 2 with cursor from page 1
+      const resPage2 = await fetch(`${serverUrl}/api/cards?limit=2&cursor=${encodeURIComponent(page1.nextCursor)}`);
+      expect(resPage2.status).toBe(200);
+      const page2 = (await resPage2.json()) as any;
+      expect(page2.cards.length).toBe(2);
+      expect(page2.hasMore).toBe(false);
+
+      // Cards must not overlap
+      const p1Ids = page1.cards.map((c: any) => c.id);
+      const p2Ids = page2.cards.map((c: any) => c.id);
+      expect(p1Ids.some((id: string) => p2Ids.includes(id))).toBe(false);
+    });
   });
 });
 

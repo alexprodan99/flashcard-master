@@ -76,9 +76,8 @@
         difficulty: explorerStore.selectedDifficulty,
         q: explorerStore.searchQuery.trim() || undefined,
         limit: explorerStore.limit,
-        offset: 0,
       });
-      explorerStore.setInitialCards(result.cards, result.total, explorerStore.limit);
+      explorerStore.setInitialCards(result.cards, result.total, result.nextCursor ?? null, result.hasMore, explorerStore.limit);
       if (isUserRefresh) {
         toastStore.info('⚡ Flashcards refreshed.');
         await loadDecks();
@@ -94,7 +93,7 @@
   }
 
   async function loadNextPage() {
-    if (!explorerStore.hasMore || explorerStore.loading || explorerStore.loadingMore) return;
+    if (!explorerStore.hasMore || explorerStore.loading || explorerStore.loadingMore || !explorerStore.nextCursor) return;
     explorerStore.loadingMore = true;
     try {
       const result = await fetchCardsPaginated({
@@ -102,9 +101,9 @@
         difficulty: explorerStore.selectedDifficulty,
         q: explorerStore.searchQuery.trim() || undefined,
         limit: explorerStore.limit,
-        offset: explorerStore.offset,
+        cursor: explorerStore.nextCursor,
       });
-      explorerStore.appendCards(result.cards, result.total);
+      explorerStore.appendCards(result.cards, result.total, result.nextCursor ?? null, result.hasMore);
     } catch (err: any) {
       toastStore.error(`Failed to load more cards: ${err.message}`);
     } finally {

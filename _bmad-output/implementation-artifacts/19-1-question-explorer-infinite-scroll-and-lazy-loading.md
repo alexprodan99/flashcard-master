@@ -15,16 +15,16 @@ context:
 
 **Problem:** The Question Explorer currently fetches and renders the entire flashcard collection into memory at once via `fetchCards()`. As users generate hundreds or thousands of flashcards across multiple data sources, this causes severe UI rendering latency, high memory usage, and laggy DOM performance. Furthermore, filtering was previously performed client-side on the full array rather than utilizing SQLite indexes.
 
-**Approach:** Implement scalable offset/limit backend pagination in `@flashcard-master/core` (`FlashcardRepository`) and `GET /api/cards`, returning paginated card slices along with total matching count and pagination metadata. In `QuestionExplorer.svelte` and `explorerStore`, transition to server-side query/deck/difficulty filtering and infinite scrolling backed by an `IntersectionObserver`, fetching successive batches of 25–50 cards as the user scrolls while maintaining scroll position, filters, and selection states.
+**Approach:** Implement scalable keyset / cursor-based pagination in `@flashcard-master/core` (`FlashcardRepository`) and `GET /api/cards`, returning paginated card slices along with total matching count and next page cursor metadata (`nextCursor`). In `QuestionExplorer.svelte` and `explorerStore`, transition to server-side query/deck/difficulty filtering and infinite scrolling backed by an `IntersectionObserver`, fetching successive batches of 25–50 cards as the user scrolls while maintaining scroll position, filters, and selection states.
 
 ## Boundaries & Constraints
 
 **Always:**
-- Maintain 100% backward compatibility for callers of `cardRepo.list(filter)` and `GET /api/cards` that omit `limit`/`offset` (return flat `Flashcard[]` array).
-- When `limit` or `offset` query parameters are provided to `GET /api/cards`, return `{ cards: Flashcard[], total: number, limit: number, offset: number, hasMore: boolean }`.
+- Maintain 100% backward compatibility for callers of `cardRepo.list(filter)` and `GET /api/cards` that omit pagination parameters (return flat `Flashcard[]` array).
+- When `limit`, `cursor`, or `offset` query parameters are provided to `GET /api/cards`, return `{ cards: Flashcard[], total: number, limit: number, nextCursor: string | null, hasMore: boolean, offset?: number }`.
 - Execute filtering (deck, difficulty, search query) at the SQLite level so that `total` count and paginated slices reflect exact matching records across the entire database.
 - Debounce search input (250–300ms) before issuing paginated fetch requests to prevent query thrashing.
-- Reset pagination (`offset = 0`, clear accumulated card list) immediately when any filter (deck chip, difficulty chip, or search query) changes.
+- Reset pagination (`cursor = null`, clear accumulated card list) immediately when any filter (deck chip, difficulty chip, or search query) changes.
 - Retain card selection IDs across pagination appends, and prune selection IDs when cards are deleted.
 - Load all unique decks via `GET /api/decks` independently so deck filter chips remain complete and accurate regardless of the current paginated card slice.
 
@@ -41,38 +41,40 @@ context:
 
 | Scenario | Input / State | Expected Output / Behavior | Error Handling |
 |---|---|---|---|
-| Initial Page Load | Navigating to Question Explorer with 1,000 cards in DB | Loads first 25 cards (`offset: 0, limit: 25`), displays `total: 1000`, renders swiftly without DOM lag | Renders error banner if initial fetch fails |
-| Scroll to Bottom | User scrolls near bottom of page, sentinel intersects viewport | Automatically fetches next batch (`offset: 25, limit: 25`), appends to existing cards list without scrolling jumps | Silently stops and displays retry button if next batch fails |
-| Filter Change | User clicks "Intermediate" difficulty chip | Resets `offset` to 0, clears existing cards list, fetches first page of intermediate cards with updated `total` | Shows empty state if 0 matches |
-| Search Query | User types "mitochondria" into search box | Debounces 250ms, queries `GET /api/cards?q=mitochondria&limit=25&offset=0`, updates count and cards | Shows "No cards found matching..." if 0 results |
-| End of Dataset | User scrolls through all available pages (`hasMore: false`) | Unobserves sentinel, renders "🎉 You've reached the end of the collection" footer; no further requests sent | N/A |
+| Initial Page Load | Navigating to Question Explorer with 1,000 cards in DB | Loads first 25 cards (`limit: 25`), displays `total: 1000`, generates `nextCursor`, renders swiftly without DOM lag | Renders error banner if initial fetch fails |
+| Scroll to Bottom | User scrolls near bottom of page, sentinel intersects viewport | Automatically fetches next batch (`cursor: nextCursor, limit: 25`), appends to existing cards list without scrolling jumps | Silently stops and displays retry button if next batch fails |
+| Filter Change | User clicks "Intermediate" difficulty chip | Resets `cursor` to null, clears existing cards list, fetches first page of intermediate cards with updated `total` | Shows empty state if 0 matches |
+| Search Query | User types "mitochondria" into search box | Debounces 250ms, queries `GET /api/cards?q=mitochondria&limit=25`, updates count and cards | Shows "No cards found matching..." if 0 results |
+| End of Dataset | User scrolls through all available pages (`hasMore: false, nextCursor: null`) | Unobserves sentinel, renders "🎉 You've reached the end of the collection" footer; no further requests sent | N/A |
 | Bulk Selection Across Pages | User selects 5 cards from page 1, scrolls to load page 2, selects 3 more | Selected count correctly displays "8 Selected", bulk delete acts on all 8 IDs | N/A |
-| Backward Compatibility | Caller requests `GET /api/cards` without limit/offset | Returns raw `Flashcard[]` array without pagination wrapper object | N/A |
+| Backward Compatibility | Caller requests `GET /api/cards` without limit/cursor | Returns raw `Flashcard[]` array without pagination wrapper object | N/A |
 
 </frozen-after-approval>
 
 ## Code Map
 
-- `packages/core/src/storage/card-repository.ts` -- Add `limit` and `offset` to `CardFilter`. Implement `count(filter: CardFilter): number` and `listPaginated(filter: CardFilter): { cards: Flashcard[]; total: number; limit: number; offset: number; hasMore: boolean }`.
-- `packages/web/src/server.ts` -- Update `GET /api/cards` endpoint to inspect `query.limit` and `query.offset`. If present, return JSON `{ cards, total, limit, offset, hasMore }`; otherwise return legacy `Flashcard[]`.
-- `packages/web/client/src/lib/types.ts` -- Add `PaginatedCardsResponse` interface (`{ cards: Flashcard[]; total: number; limit: number; offset: number; hasMore: boolean }`).
-- `packages/web/client/src/lib/api.ts` -- Update `fetchCards` and export `fetchCardsPaginated` accepting `limit`, `offset`, `deck`, `difficulty`, `tag`, and `q`.
-- `packages/web/client/src/stores/explorerStore.svelte.ts` -- Expand store state with `total`, `limit`, `offset`, `hasMore`, `loadingMore`, `resetPagination()`, and `appendCards()`.
-- `packages/web/client/src/views/QuestionExplorer.svelte` -- Implement server-side filtering, separate deck list hydration via `fetchDecks()`, intersection observer sentinel at bottom of grid, and smooth batch loading.
-- `packages/core/test/card-repository.test.ts` -- Add unit tests for `count()`, `listPaginated()`, and `limit`/`offset` support in `list()`.
-- `packages/web/test/server.test.ts` -- Add integration tests for `GET /api/cards` pagination and backward compatibility.
+- `packages/core/src/storage/card-repository.ts` -- Add `cursor` and `offset` to `CardFilter`. Implement `encodeCursor`, `decodeCursor`, `count(filter: CardFilter): number`, and `listPaginated(filter: CardFilter): PaginatedFlashcardsResult`.
+- `packages/core/src/storage/schema.sql` & `packages/core/src/storage/db.ts` -- Add index `idx_flashcards_created_at_id` on `flashcards(created_at DESC, id DESC)`.
+- `packages/web/src/server.ts` -- Update `GET /api/cards` endpoint to inspect `query.limit`, `query.cursor`, and `query.offset`. If present, return JSON `{ cards, total, limit, nextCursor, hasMore, offset }`; otherwise return legacy `Flashcard[]`.
+- `packages/web/client/src/lib/types.ts` -- Add `PaginatedCardsResponse` interface (`{ cards: Flashcard[]; total: number; limit: number; nextCursor?: string | null; hasMore: boolean }`).
+- `packages/web/client/src/lib/api.ts` -- Update `fetchCards` and export `fetchCardsPaginated` accepting `limit`, `cursor`, `deck`, `difficulty`, `tag`, and `q`.
+- `packages/web/client/src/stores/explorerStore.svelte.ts` -- Expand store state with `total`, `limit`, `nextCursor`, `hasMore`, `loadingMore`, `resetPagination()`, and `appendCards()`.
+- `packages/web/client/src/views/QuestionExplorer.svelte` -- Implement server-side filtering, separate deck list hydration via `fetchDecks()`, intersection observer sentinel at bottom of grid, and smooth cursor-based batch loading.
+- `packages/core/test/card-repository.test.ts` -- Add unit tests for `count()`, keyset seek with `cursor`, and `listPaginated()` pagination metadata.
+- `packages/web/test/server.test.ts` -- Add integration tests for `GET /api/cards` cursor pagination and backward compatibility.
 
 ## Tasks & Acceptance
 
 **Execution:**
-- [x] `packages/core/src/storage/card-repository.ts` -- Add pagination options (`limit`, `offset`) to `CardFilter`, implement `count(filter)` and `listPaginated(filter)` with SQL `COUNT(*)`, `LIMIT`, and `OFFSET`.
-- [x] `packages/core/test/card-repository.test.ts` -- Add unit tests verifying `count()`, `list()` with limit/offset, and `listPaginated()` pagination metadata.
-- [x] `packages/web/src/server.ts` -- Update `GET /api/cards` handler to support `limit` and `offset` query parameters, returning `PaginatedCardsResponse` when specified and flat array when omitted.
-- [x] `packages/web/test/server.test.ts` -- Add tests verifying `GET /api/cards` with `limit`/`offset` returns paginated object, and without returns flat array.
-- [x] `packages/web/client/src/lib/types.ts` -- Define `PaginatedCardsResponse` type.
-- [x] `packages/web/client/src/lib/api.ts` -- Add `fetchCardsPaginated()` supporting `limit`, `offset`, `deck`, `difficulty`, `q`.
-- [x] `packages/web/client/src/stores/explorerStore.svelte.ts` -- Add pagination state (`total`, `limit`, `offset`, `hasMore`, `loadingMore`) and mutator actions.
-- [x] `packages/web/client/src/views/QuestionExplorer.svelte` -- Integrate `IntersectionObserver` sentinel for lazy loading, server-side filter debouncing, and deck list loading.
+- [x] `packages/core/src/storage/card-repository.ts` -- Add pagination options (`cursor`, `limit`, `offset`) to `CardFilter`, implement `encodeCursor`, `decodeCursor`, `count(filter)`, and `listPaginated(filter)` with keyset seek `(created_at, id) < (cursor_created_at, cursor_id)`.
+- [x] `packages/core/src/storage/schema.sql` & `packages/core/src/storage/db.ts` -- Add index `idx_flashcards_created_at_id` on `flashcards(created_at DESC, id DESC)`.
+- [x] `packages/core/test/card-repository.test.ts` -- Add unit tests verifying `count()`, keyset cursor pagination with `encodeCursor`/`decodeCursor`, and `listPaginated()` metadata.
+- [x] `packages/web/src/server.ts` -- Update `GET /api/cards` handler to support `cursor`, `limit`, and `offset` query parameters, returning `PaginatedCardsResponse` when specified and flat array when omitted.
+- [x] `packages/web/test/server.test.ts` -- Add tests verifying `GET /api/cards` with `cursor` returns paginated object with `nextCursor`, and without returns flat array.
+- [x] `packages/web/client/src/lib/types.ts` -- Define `PaginatedCardsResponse` type with `nextCursor`.
+- [x] `packages/web/client/src/lib/api.ts` -- Add `fetchCardsPaginated()` supporting `cursor`, `limit`, `deck`, `difficulty`, `q`.
+- [x] `packages/web/client/src/stores/explorerStore.svelte.ts` -- Add pagination state (`total`, `limit`, `nextCursor`, `hasMore`, `loadingMore`) and mutator actions.
+- [x] `packages/web/client/src/views/QuestionExplorer.svelte` -- Integrate `IntersectionObserver` sentinel for lazy loading, server-side filter debouncing, and cursor-driven next page fetching.
 
 **Acceptance Criteria:**
 - Given a database containing 60 flashcards, when `GET /api/cards?limit=25&offset=0` is requested, then the response contains 25 cards, `total: 60`, `limit: 25`, `offset: 0`, and `hasMore: true`.

@@ -162,13 +162,19 @@ CREATE TABLE flashcards (
     source_quote TEXT NOT NULL,
     source_origin_url TEXT,
     document_title TEXT,
-    difficulty TEXT NOT NULL CHECK(difficulty IN ('beginner', 'intermediate', 'expert')),
+    keywords TEXT NOT NULL DEFAULT '[]',
+    source_locator TEXT NOT NULL DEFAULT '',
+    difficulty TEXT NOT NULL CHECK(difficulty IN ('beginner', 'intermediate', 'expert', 'mixed')),
     persona_used TEXT NOT NULL DEFAULT 'socratic-mentor',
     target_deck TEXT NOT NULL DEFAULT 'Default',
     tags TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
+
+CREATE INDEX idx_flashcards_created_at_id ON flashcards(created_at DESC, id DESC);
+CREATE INDEX idx_flashcards_target_deck ON flashcards(target_deck);
+CREATE INDEX idx_flashcards_difficulty ON flashcards(difficulty);
 
 -- 5. System Settings & Credentials Store
 CREATE TABLE app_settings (
@@ -177,6 +183,26 @@ CREATE TABLE app_settings (
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 ```
+
+---
+
+## 5. Keyset / Cursor Pagination & Infinite Scrolling
+
+Flashcard Master implements high-performance **keyset / cursor-based pagination** for browsing large flashcard collections in the Question Explorer:
+
+```
+Client (IntersectionObserver)  ──▶  GET /api/cards?limit=25&cursor=<base64>  ──▶  SQLite Keyset Seek
+```
+
+* **Keyset Query**: Paginated queries seek directly on the composite index `(created_at DESC, id DESC)`:
+  ```sql
+  WHERE ((created_at < :cursorCreatedAt) OR (created_at = :cursorCreatedAt AND id < :cursorId))
+  ORDER BY created_at DESC, id DESC
+  LIMIT :limit + 1;
+  ```
+* **Opaque Cursor**: The cursor is a compact, URL-safe base64 token encoding `{ c: createdAt, i: id }`.
+* **Zero Offset Degradation**: Cursor pagination performs an $O(1)$ index seek regardless of page depth and is completely immune to page drift or duplicate items caused by concurrent card creation or deletion.
+* **Backward Compatibility**: `GET /api/cards` continues to return flat `Flashcard[]` arrays when pagination parameters are omitted, and supports `offset` queries as a legacy fallback.
 
 ---
 

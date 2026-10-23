@@ -5,6 +5,7 @@ export class ExplorerStore {
   total = $state<number>(0);
   limit = $state<number>(25);
   offset = $state<number>(0);
+  nextCursor = $state<string | null>(null);
   hasMore = $state<boolean>(true);
 
   loading = $state<boolean>(false);
@@ -19,22 +20,24 @@ export class ExplorerStore {
   isBulkDeleting = $state<boolean>(false);
   showBulkDeleteConfirm = $state<boolean>(false);
 
-  setInitialCards(cards: Flashcard[], total: number, limit = 25) {
+  setInitialCards(cards: Flashcard[], total: number, nextCursor: string | null = null, hasMore = false, limit = 25) {
     this.cards = cards;
     this.total = total;
     this.limit = limit;
+    this.nextCursor = nextCursor;
+    this.hasMore = hasMore;
     this.offset = cards.length;
-    this.hasMore = cards.length < total;
     this.error = null;
   }
 
-  appendCards(newCards: Flashcard[], total: number) {
+  appendCards(newCards: Flashcard[], total: number, nextCursor: string | null = null, hasMore = false) {
     const existingIds = new Set(this.cards.map((c) => c.id));
     const toAppend = newCards.filter((c) => !existingIds.has(c.id));
     this.cards = [...this.cards, ...toAppend];
     this.total = total;
+    this.nextCursor = nextCursor;
+    this.hasMore = hasMore;
     this.offset = this.cards.length;
-    this.hasMore = this.cards.length < total;
     this.error = null;
   }
 
@@ -42,6 +45,7 @@ export class ExplorerStore {
     this.cards = [];
     this.offset = 0;
     this.total = 0;
+    this.nextCursor = null;
     this.hasMore = true;
   }
 
@@ -49,6 +53,7 @@ export class ExplorerStore {
     this.cards = cards;
     this.total = cards.length;
     this.offset = cards.length;
+    this.nextCursor = null;
     this.hasMore = false;
     this.error = null;
   }

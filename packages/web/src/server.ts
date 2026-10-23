@@ -2945,10 +2945,11 @@ export class WebServer {
               search: (query.search || query.q) as string,
             };
 
-            if (query.limit !== undefined || query.offset !== undefined) {
+            if (query.limit !== undefined || query.offset !== undefined || query.cursor !== undefined) {
               const limit = query.limit !== undefined ? Math.max(1, parseInt(query.limit as string, 10) || 25) : 25;
-              const offset = query.offset !== undefined ? Math.max(0, parseInt(query.offset as string, 10) || 0) : 0;
-              const paginated = this.options.cardRepo.listPaginated({ ...filter, limit, offset });
+              const cursor = query.cursor ? String(query.cursor) : undefined;
+              const offset = query.offset !== undefined ? Math.max(0, parseInt(query.offset as string, 10) || 0) : undefined;
+              const paginated = this.options.cardRepo.listPaginated({ ...filter, limit, cursor, offset });
               this.sendJson(res, 200, paginated);
               return;
             }

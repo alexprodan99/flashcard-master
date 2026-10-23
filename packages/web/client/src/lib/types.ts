@@ -61,8 +61,9 @@ export interface PaginatedCardsResponse {
   cards: Flashcard[];
   total: number;
   limit: number;
-  offset: number;
+  nextCursor?: string | null;
   hasMore: boolean;
+  offset?: number;
 }
 
 export interface DashboardStats {
