@@ -136,7 +136,7 @@ npm run cli -- stats
   - **⚙️ Unified Settings & Integrations Studio (`#/settings`):** Centralized control center managing 3-tier configurations (`SQLite -> .env -> defaults`), masked API credentials with live connectivity testing (OpenAI, Anthropic, Gemini, Ollama, Notion, AnkiConnect), AI generation defaults, and dynamic worker pool concurrency and execution timeout limits (see [Settings Guide](docs/settings-configuration.md)).
   - **⚡ AI Generation Studio:** In-browser flashcard synthesizer with provider switching (Ollama, Gemini, OpenAI, Anthropic), model presets (`phi4-mini`, `gemini-3.6-flash`, `gpt-4o-mini`, `claude-haiku-4-5-20251001`), custom model overrides, persona selectors, single/multi-source scope, live spinning execution feedback, and card previews.
   - **🌐 Data Sources Manager:** Add, configure, and synchronize sources with live spinner feedback.
-  - **🗂️ Question Explorer:** Search bar, interactive filter chips (Decks, Difficulties, Tag clouds), and click-to-reveal flashcards with source grounding callouts.
+  - **🗂️ Question Explorer:** High-performance infinite scrolling with keyset/cursor pagination, debounced search, interactive filter chips (Decks, Difficulties, Tag clouds), and click-to-reveal flashcards with source grounding callouts.
   - **✏️ Slide-Over Card Editor:** Smooth slide-in drawer to edit questions, answers, difficulty, tags, and citations with instant optimistic updates.
   - **🚀 1-Click Export & Anki Center:** Scoped deck/tag filters, direct browser file downloads (.apkg, EPUB, Markdown, PDF, CSV, TSV), and real-time desktop AnkiConnect status badging with 1-click push sync.
 

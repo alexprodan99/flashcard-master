@@ -2938,12 +2938,22 @@ export class WebServer {
           if (pathname === "/api/cards" && method === "GET") {
             const query = parsedUrl.query;
             const filter: CardFilter = {
-              targetDeck: query.deck as string,
+              targetDeck: (query.deck || query.targetDeck) as string,
               tag: query.tag as string,
               difficulty: query.difficulty as any,
               sourceId: query.sourceId as string,
-              search: query.search as string,
+              search: (query.search || query.q) as string,
             };
+
+            if (query.limit !== undefined || query.offset !== undefined || query.cursor !== undefined) {
+              const limit = query.limit !== undefined ? Math.max(1, parseInt(query.limit as string, 10) || 25) : 25;
+              const cursor = query.cursor ? String(query.cursor) : undefined;
+              const offset = query.offset !== undefined ? Math.max(0, parseInt(query.offset as string, 10) || 0) : undefined;
+              const paginated = this.options.cardRepo.listPaginated({ ...filter, limit, cursor, offset });
+              this.sendJson(res, 200, paginated);
+              return;
+            }
+
             const cards = this.options.cardRepo.list(filter);
             this.sendJson(res, 200, cards);
             return;

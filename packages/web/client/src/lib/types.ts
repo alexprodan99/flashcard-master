@@ -57,6 +57,15 @@ export interface Flashcard {
   updatedAt: string;
 }
 
+export interface PaginatedCardsResponse {
+  cards: Flashcard[];
+  total: number;
+  limit: number;
+  nextCursor?: string | null;
+  hasMore: boolean;
+  offset?: number;
+}
+
 export interface DashboardStats {
   totalCards: number;
   totalSources: number;

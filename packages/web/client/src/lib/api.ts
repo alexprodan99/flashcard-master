@@ -14,6 +14,7 @@ import type {
   GeneralSettings,
   GeneralSettingsResponse,
   AnkiTestResult,
+  PaginatedCardsResponse,
 } from './types.js';
 
 export async function fetchStats(): Promise<DashboardStats> {
@@ -136,6 +137,29 @@ export async function fetchCards(params?: { deck?: string; difficulty?: string; 
 
   const res = await fetch(`/api/cards?${query.toString()}`);
   if (!res.ok) throw new Error('Failed to fetch flashcards');
+  return res.json();
+}
+
+export async function fetchCardsPaginated(params?: {
+  deck?: string;
+  difficulty?: string;
+  tag?: string;
+  q?: string;
+  limit?: number;
+  cursor?: string | null;
+  offset?: number;
+}): Promise<PaginatedCardsResponse> {
+  const query = new URLSearchParams();
+  if (params?.deck && params.deck !== 'all') query.set('deck', params.deck);
+  if (params?.difficulty && params.difficulty !== 'all') query.set('difficulty', params.difficulty);
+  if (params?.tag) query.set('tag', params.tag);
+  if (params?.q) query.set('q', params.q);
+  if (params?.limit !== undefined) query.set('limit', String(params.limit));
+  if (params?.cursor) query.set('cursor', params.cursor);
+  if (params?.offset !== undefined && !params?.cursor) query.set('offset', String(params.offset));
+
+  const res = await fetch(`/api/cards?${query.toString()}`);
+  if (!res.ok) throw new Error('Failed to fetch paginated flashcards');
   return res.json();
 }
 

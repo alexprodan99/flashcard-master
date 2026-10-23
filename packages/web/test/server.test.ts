@@ -1667,8 +1667,96 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       expect(buffer.toString("ascii", 0, 2)).toBe("PK");
       expect(buffer.toString("utf-8", 30, 58)).toBe("mimetypeapplication/epub+zip");
     });
+
+    it("returns raw Flashcard[] array for unpaginated GET /api/cards for backward compatibility", async () => {
+      const res = await fetch(`${serverUrl}/api/cards`);
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(Array.isArray(data)).toBe(true);
+      expect(data.length).toBe(2);
+      expect(data[0].question).toBeDefined();
+    });
+
+    it("returns PaginatedCardsResponse with metadata for GET /api/cards?limit=1&offset=0", async () => {
+      // Create a third card to test pagination with 3 total
+      cardRepo.create({
+        question: "What is 2PC?",
+        answer: "Two-Phase Commit distributed protocol.",
+        sourceQuote: "Two-Phase Commit ensures atomic commit.",
+        targetDeck: "Engineering",
+        difficulty: "expert",
+        tags: ["distributed-systems"],
+      });
+
+      // Page 1
+      const resPage1 = await fetch(`${serverUrl}/api/cards?limit=2&offset=0`);
+      expect(resPage1.status).toBe(200);
+      const page1 = (await resPage1.json()) as any;
+      expect(page1.total).toBe(3);
+      expect(page1.limit).toBe(2);
+      expect(page1.offset).toBe(0);
+      expect(page1.hasMore).toBe(true);
+      expect(Array.isArray(page1.cards)).toBe(true);
+      expect(page1.cards.length).toBe(2);
+
+      // Page 2
+      const resPage2 = await fetch(`${serverUrl}/api/cards?limit=2&offset=2`);
+      expect(resPage2.status).toBe(200);
+      const page2 = (await resPage2.json()) as any;
+      expect(page2.total).toBe(3);
+      expect(page2.limit).toBe(2);
+      expect(page2.offset).toBe(2);
+      expect(page2.hasMore).toBe(false);
+      expect(page2.cards.length).toBe(1);
+
+      // Search with pagination
+      const resSearch = await fetch(`${serverUrl}/api/cards?q=Commit&limit=10&offset=0`);
+      expect(resSearch.status).toBe(200);
+      const searchData = (await resSearch.json()) as any;
+      expect(searchData.total).toBe(1);
+      expect(searchData.cards.length).toBe(1);
+      expect(searchData.cards[0].question).toBe("What is 2PC?");
+    });
+
+    it("returns PaginatedCardsResponse with nextCursor and traverses pages with GET /api/cards?cursor=...", async () => {
+      // Add 2 more cards for cursor traversal
+      cardRepo.create({
+        question: "What is Paxos?",
+        answer: "A consensus algorithm.",
+        sourceQuote: "Paxos solves consensus.",
+        targetDeck: "Engineering",
+      });
+      cardRepo.create({
+        question: "What is Gossip Protocol?",
+        answer: "Decentralized peer-to-peer communication.",
+        sourceQuote: "Gossip protocols spread metadata epidemically.",
+        targetDeck: "Engineering",
+      });
+
+      // Fetch page 1 with limit 2
+      const resPage1 = await fetch(`${serverUrl}/api/cards?limit=2`);
+      expect(resPage1.status).toBe(200);
+      const page1 = (await resPage1.json()) as any;
+      expect(page1.cards.length).toBe(2);
+      expect(page1.hasMore).toBe(true);
+      expect(page1.nextCursor).toBeDefined();
+      expect(typeof page1.nextCursor).toBe("string");
+
+      // Fetch page 2 with cursor from page 1
+      const resPage2 = await fetch(`${serverUrl}/api/cards?limit=2&cursor=${encodeURIComponent(page1.nextCursor)}`);
+      expect(resPage2.status).toBe(200);
+      const page2 = (await resPage2.json()) as any;
+      expect(page2.cards.length).toBe(2);
+      expect(page2.hasMore).toBe(false);
+
+      // Cards must not overlap
+      const p1Ids = page1.cards.map((c: any) => c.id);
+      const p2Ids = page2.cards.map((c: any) => c.id);
+      expect(p1Ids.some((id: string) => p2Ids.includes(id))).toBe(false);
+    });
   });
 });
+
 
 
 

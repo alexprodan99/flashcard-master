@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createDatabaseClient, runMigrations } from "../src/storage/db.js";
 import { DataSourceRepository } from "../src/storage/source-repository.js";
-import { FlashcardRepository, CreateFlashcardInputSchema } from "../src/storage/card-repository.js";
+import { FlashcardRepository, CreateFlashcardInputSchema, encodeCursor, decodeCursor } from "../src/storage/card-repository.js";
 import { CardGenerationDraftSchema } from "../src/domain/models.js";
 import Database from "better-sqlite3";
 
@@ -449,4 +449,108 @@ describe("FlashcardRepository", () => {
     expect(reloaded?.keywords).toEqual(["paxos", "consensus"]);
     expect(reloaded?.sourceLocator).toBe("Chapter 7");
   });
+
+  it("supports limit and offset pagination with count and listPaginated metadata", () => {
+    // Create 15 sample cards
+    for (let i = 1; i <= 15; i++) {
+      cardRepo.create({
+        question: `Question ${i.toString().padStart(2, "0")}`,
+        answer: `Answer ${i}`,
+        sourceQuote: `Quote for question ${i}`,
+        targetDeck: i <= 10 ? "Deck A" : "Deck B",
+        difficulty: i % 2 === 0 ? "intermediate" : "expert",
+        tags: i % 3 === 0 ? ["tag-3"] : ["tag-other"],
+      });
+    }
+
+    // Verify count()
+    expect(cardRepo.count()).toBe(15);
+    expect(cardRepo.count({ targetDeck: "Deck A" })).toBe(10);
+    expect(cardRepo.count({ difficulty: "expert" })).toBe(8);
+    expect(cardRepo.count({ tag: "tag-3" })).toBe(5);
+
+    // Verify list() with limit & offset
+    const page1 = cardRepo.list({ limit: 5, offset: 0 });
+    expect(page1.length).toBe(5);
+
+    const page2 = cardRepo.list({ limit: 5, offset: 5 });
+    expect(page2.length).toBe(5);
+    expect(page2[0].id).not.toBe(page1[0].id);
+
+    const page3 = cardRepo.list({ limit: 10, offset: 10 });
+    expect(page3.length).toBe(5); // Only 5 remain
+
+    // Verify listPaginated() on filtered query
+    const paginatedDeckA = cardRepo.listPaginated({ targetDeck: "Deck A", limit: 4, offset: 0 });
+    expect(paginatedDeckA.total).toBe(10);
+    expect(paginatedDeckA.limit).toBe(4);
+    expect(paginatedDeckA.offset).toBe(0);
+    expect(paginatedDeckA.cards.length).toBe(4);
+    expect(paginatedDeckA.hasMore).toBe(true);
+
+    const paginatedDeckAEnd = cardRepo.listPaginated({ targetDeck: "Deck A", limit: 4, offset: 8 });
+    expect(paginatedDeckAEnd.total).toBe(10);
+    expect(paginatedDeckAEnd.cards.length).toBe(2);
+    expect(paginatedDeckAEnd.hasMore).toBe(false);
+  });
+
+  it("supports keyset / cursor pagination with encodeCursor, decodeCursor, and nextCursor traversal", () => {
+    // Create 10 sample cards with distinct questions
+    for (let i = 1; i <= 10; i++) {
+      cardRepo.create({
+        question: `Cursor Q${i.toString().padStart(2, "0")}`,
+        answer: `Cursor A${i}`,
+        sourceQuote: `Quote for cursor test ${i}`,
+        targetDeck: "CursorDeck",
+      });
+    }
+
+    // Page 1: fetch with limit 3, no cursor
+    const page1 = cardRepo.listPaginated({ targetDeck: "CursorDeck", limit: 3 });
+    expect(page1.total).toBe(10);
+    expect(page1.cards.length).toBe(3);
+    expect(page1.hasMore).toBe(true);
+    expect(page1.nextCursor).not.toBeNull();
+
+    // Verify decodeCursor on nextCursor
+    const decodedCursor1 = decodeCursor(page1.nextCursor!);
+    expect(decodedCursor1).not.toBeNull();
+    expect(decodedCursor1?.id).toBe(page1.cards[2].id);
+
+    // Page 2: fetch with cursor from page 1
+    const page2 = cardRepo.listPaginated({
+      targetDeck: "CursorDeck",
+      limit: 3,
+      cursor: page1.nextCursor!,
+    });
+    expect(page2.total).toBe(10);
+    expect(page2.cards.length).toBe(3);
+    expect(page2.hasMore).toBe(true);
+    expect(page2.nextCursor).not.toBeNull();
+
+    // Verify non-overlapping cards
+    const page1Ids = page1.cards.map((c) => c.id);
+    const page2Ids = page2.cards.map((c) => c.id);
+    expect(page1Ids.some((id) => page2Ids.includes(id))).toBe(false);
+
+    // Page 3: fetch with cursor from page 2
+    const page3 = cardRepo.listPaginated({
+      targetDeck: "CursorDeck",
+      limit: 3,
+      cursor: page2.nextCursor!,
+    });
+    expect(page3.cards.length).toBe(3);
+    expect(page3.hasMore).toBe(true);
+
+    // Page 4: final page (10th card)
+    const page4 = cardRepo.listPaginated({
+      targetDeck: "CursorDeck",
+      limit: 3,
+      cursor: page3.nextCursor!,
+    });
+    expect(page4.cards.length).toBe(1);
+    expect(page4.hasMore).toBe(false);
+    expect(page4.nextCursor).toBeNull();
+  });
 });
+

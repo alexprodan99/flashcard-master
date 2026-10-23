@@ -19,12 +19,44 @@ export const CreateFlashcardInputSchema = z.object({
 });
 export type CreateFlashcardInput = z.input<typeof CreateFlashcardInputSchema>;
 
+export function encodeCursor(createdAt: string, id: string): string {
+  return Buffer.from(JSON.stringify({ c: createdAt, i: id })).toString("base64url");
+}
+
+export function decodeCursor(cursor: string): { createdAt: string; id: string } | null {
+  try {
+    const raw = Buffer.from(cursor, "base64url").toString("utf-8");
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed.i === "string" && typeof parsed.c === "string") {
+      return { createdAt: parsed.c, id: parsed.i };
+    }
+    if (parsed && typeof parsed.id === "string" && typeof parsed.createdAt === "string") {
+      return { createdAt: parsed.createdAt, id: parsed.id };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export interface CardFilter {
   targetDeck?: string;
   sourceId?: string;
   difficulty?: DifficultyLevel;
   tag?: string;
   search?: string;
+  limit?: number;
+  offset?: number;
+  cursor?: string;
+}
+
+export interface PaginatedFlashcardsResult {
+  cards: Flashcard[];
+  total: number;
+  limit: number;
+  nextCursor: string | null;
+  hasMore: boolean;
+  offset?: number;
 }
 
 export class FlashcardRepository {
@@ -167,7 +199,7 @@ export class FlashcardRepository {
     return this.mapRowToFlashcard(row);
   }
 
-  list(filter: CardFilter = {}): Flashcard[] {
+  private buildFilterConditions(filter: CardFilter = {}): { conditions: string[]; params: any[] } {
     const conditions: string[] = [];
     const params: any[] = [];
 
@@ -187,21 +219,44 @@ export class FlashcardRepository {
       conditions.push("(question LIKE ? OR answer LIKE ? OR keywords LIKE ? OR source_locator LIKE ?)");
       params.push(`%${filter.search}%`, `%${filter.search}%`, `%${filter.search}%`, `%${filter.search}%`);
     }
+    if (filter.tag) {
+      conditions.push("(json_valid(flashcards.tags) AND EXISTS (SELECT 1 FROM json_each(flashcards.tags) WHERE value = ?))");
+      params.push(filter.tag);
+    }
+    if (filter.cursor) {
+      const decoded = decodeCursor(filter.cursor);
+      if (decoded) {
+        conditions.push("((created_at < ?) OR (created_at = ? AND id < ?))");
+        params.push(decoded.createdAt, decoded.createdAt, decoded.id);
+      }
+    }
+
+    return { conditions, params };
+  }
+
+  list(filter: CardFilter = {}): Flashcard[] {
+    const { conditions, params } = this.buildFilterConditions(filter);
 
     let sql = "SELECT * FROM flashcards";
     if (conditions.length > 0) {
       sql += " WHERE " + conditions.join(" AND ");
     }
-    sql += " ORDER BY created_at DESC";
+    sql += " ORDER BY created_at DESC, id DESC";
 
-    const rows = this.db.prepare(sql).all(...params) as any[];
-    let cards = rows.map((r) => this.mapRowToFlashcard(r));
-
-    if (filter.tag) {
-      cards = cards.filter((c) => c.tags.includes(filter.tag!));
+    if (filter.limit !== undefined) {
+      sql += " LIMIT ?";
+      params.push(Math.max(0, filter.limit));
+      if (filter.offset !== undefined) {
+        sql += " OFFSET ?";
+        params.push(Math.max(0, filter.offset));
+      }
+    } else if (filter.offset !== undefined) {
+      sql += " LIMIT -1 OFFSET ?";
+      params.push(Math.max(0, filter.offset));
     }
 
-    return cards;
+    const rows = this.db.prepare(sql).all(...params) as any[];
+    return rows.map((r) => this.mapRowToFlashcard(r));
   }
 
   update(id: string, updates: Partial<Omit<Flashcard, "id" | "createdAt">>): Flashcard | null {
@@ -319,6 +374,66 @@ export class FlashcardRepository {
   }
 
   count(filter: CardFilter = {}): number {
-    return this.list(filter).length;
+    const filterForCount: CardFilter = { ...filter, cursor: undefined, limit: undefined, offset: undefined };
+    const { conditions, params } = this.buildFilterConditions(filterForCount);
+    let sql = "SELECT COUNT(*) as count FROM flashcards";
+    if (conditions.length > 0) {
+      sql += " WHERE " + conditions.join(" AND ");
+    }
+    const row = this.db.prepare(sql).get(...params) as { count: number };
+    return row ? row.count : 0;
+  }
+
+  listPaginated(filter: CardFilter = {}): PaginatedFlashcardsResult {
+    const total = this.count(filter);
+    const limit = filter.limit !== undefined ? Math.max(1, filter.limit) : 25;
+
+    // 1. Keyset / cursor-based pagination
+    if (filter.cursor) {
+      const fetched = this.list({ ...filter, limit: limit + 1, offset: undefined });
+      const hasMore = fetched.length > limit;
+      const cards = hasMore ? fetched.slice(0, limit) : fetched;
+      const lastCard = cards.length > 0 ? cards[cards.length - 1] : null;
+      const nextCursor = (hasMore && lastCard && lastCard.createdAt) ? encodeCursor(lastCard.createdAt, lastCard.id) : null;
+      return {
+        cards,
+        total,
+        limit,
+        nextCursor,
+        hasMore,
+      };
+    }
+
+    // 2. Backward compatibility: if offset is explicitly passed
+    if (filter.offset !== undefined && filter.offset > 0) {
+      const offset = Math.max(0, filter.offset);
+      const cards = this.list({ ...filter, limit, offset });
+      const lastCard = cards.length > 0 ? cards[cards.length - 1] : null;
+      const hasMore = offset + cards.length < total;
+      const nextCursor = (hasMore && lastCard && lastCard.createdAt) ? encodeCursor(lastCard.createdAt, lastCard.id) : null;
+      return {
+        cards,
+        total,
+        limit,
+        offset,
+        nextCursor,
+        hasMore,
+      };
+    }
+
+    // 3. Initial page (cursor & offset omitted)
+    const fetched = this.list({ ...filter, limit: limit + 1, offset: undefined, cursor: undefined });
+    const hasMore = fetched.length > limit;
+    const cards = hasMore ? fetched.slice(0, limit) : fetched;
+    const lastCard = cards.length > 0 ? cards[cards.length - 1] : null;
+    const nextCursor = (hasMore && lastCard && lastCard.createdAt) ? encodeCursor(lastCard.createdAt, lastCard.id) : null;
+    return {
+      cards,
+      total,
+      limit,
+      offset: 0,
+      nextCursor,
+      hasMore,
+    };
   }
 }

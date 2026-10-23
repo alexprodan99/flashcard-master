@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 08-30-2026 20:47
-last_updated: 10-21-2026 19:49
+last_updated: 10-23-2026 11:42
 project: flashcard-master
 project_key: NOKEY
 tracking_system: file-system
@@ -191,7 +191,7 @@ development_status:
   epic-18-retrospective: done
 
   epic-19: in-progress
-  19-1-question-explorer-infinite-scroll-and-lazy-loading: ready-for-dev
+  19-1-question-explorer-infinite-scroll-and-lazy-loading: done
   19-2-deck-operations-clone-split-and-selective-card-moving: ready-for-dev
   19-3-partial-date-filtered-and-randomized-export-engine: ready-for-dev
   19-4-interactive-tag-selector-for-data-sources: ready-for-dev
