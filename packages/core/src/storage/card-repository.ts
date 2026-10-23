@@ -357,6 +357,111 @@ export class FlashcardRepository {
     return rows.map((r) => r.target_deck);
   }
 
+  cloneDeck(sourceDeck: string, targetDeck: string): number {
+    const src = sourceDeck?.trim();
+    const dst = targetDeck?.trim();
+    if (!src) throw new Error("Source deck cannot be empty.");
+    if (!dst) throw new Error("Target deck cannot be empty.");
+    if (src.toLowerCase() === dst.toLowerCase()) {
+      throw new Error("Target deck name must be different from source deck name.");
+    }
+
+    const rows = this.db
+      .prepare("SELECT * FROM flashcards WHERE target_deck = ? ORDER BY created_at ASC, id ASC")
+      .all(src) as any[];
+    if (rows.length === 0) return 0;
+
+    const stmt = this.db.prepare(`
+      INSERT INTO flashcards (
+        id, source_id, question, answer, source_quote, source_origin_url, document_title,
+        keywords, source_locator, difficulty, persona_used, target_deck, tags
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const cloneAll = this.db.transaction((items: any[]) => {
+      for (const row of items) {
+        const newId = crypto.randomUUID();
+        stmt.run(
+          newId,
+          row.source_id,
+          row.question,
+          row.answer,
+          row.source_quote,
+          row.source_origin_url,
+          row.document_title,
+          row.keywords || "[]",
+          row.source_locator || "",
+          row.difficulty,
+          row.persona_used,
+          dst,
+          row.tags || "[]"
+        );
+      }
+    });
+
+    cloneAll(rows);
+    return rows.length;
+  }
+
+  splitDeck(
+    sourceDeck: string,
+    batchSize: number,
+    customPrefix?: string
+  ): { subDecks: string[]; cardsMoved: number } {
+    const src = sourceDeck?.trim();
+    if (!src) throw new Error("Source deck cannot be empty.");
+    if (!Number.isInteger(batchSize) || batchSize < 2) {
+      throw new Error("Batch size must be an integer of 2 or greater.");
+    }
+
+    const prefix = (customPrefix && customPrefix.trim()) || src;
+    const rows = this.db
+      .prepare("SELECT id FROM flashcards WHERE target_deck = ? ORDER BY created_at ASC, id ASC")
+      .all(src) as Array<{ id: string }>;
+
+    if (rows.length === 0) {
+      return { subDecks: [], cardsMoved: 0 };
+    }
+
+    const subDecks: string[] = [];
+    const updateStmt = this.db.prepare(
+      "UPDATE flashcards SET target_deck = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?"
+    );
+
+    const runSplit = this.db.transaction(() => {
+      let partNumber = 1;
+      for (let i = 0; i < rows.length; i += batchSize) {
+        const subDeckName = `${prefix} - Part ${partNumber}`;
+        subDecks.push(subDeckName);
+        const batch = rows.slice(i, i + batchSize);
+        for (const card of batch) {
+          updateStmt.run(subDeckName, card.id);
+        }
+        partNumber++;
+      }
+    });
+
+    runSplit();
+    return { subDecks, cardsMoved: rows.length };
+  }
+
+  moveCards(cardIds: string[], targetDeck: string): number {
+    const dst = targetDeck?.trim();
+    if (!dst) throw new Error("Target deck cannot be empty.");
+    if (!Array.isArray(cardIds) || cardIds.length === 0) return 0;
+
+    const validIds = cardIds.filter((id) => typeof id === "string" && id.trim().length > 0);
+    if (validIds.length === 0) return 0;
+
+    const placeholders = validIds.map(() => "?").join(", ");
+    const stmt = this.db.prepare(
+      `UPDATE flashcards SET target_deck = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id IN (${placeholders})`
+    );
+
+    const result = stmt.run(dst, ...validIds);
+    return result.changes;
+  }
+
   listTags(): string[] {
     const rows = this.db.prepare("SELECT tags FROM flashcards").all() as any[];
     const tagSet = new Set<string>();

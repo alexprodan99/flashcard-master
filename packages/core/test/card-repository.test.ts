@@ -552,5 +552,132 @@ describe("FlashcardRepository", () => {
     expect(page4.hasMore).toBe(false);
     expect(page4.nextCursor).toBeNull();
   });
+
+  describe("Deck Operations: cloneDeck, splitDeck, and moveCards", () => {
+    it("clones all cards in a deck to a new deck with fresh UUIDs and identical metadata", () => {
+      // Create 3 cards in "OriginalDeck"
+      for (let i = 1; i <= 3; i++) {
+        cardRepo.create({
+          question: `Clone Q${i}`,
+          answer: `Clone A${i}`,
+          sourceQuote: `Clone quote ${i}`,
+          targetDeck: "OriginalDeck",
+          difficulty: "intermediate",
+          tags: ["bio", "cellular"],
+          keywords: ["mitosis", "cell"],
+          sourceLocator: `Page ${i * 10}`,
+        });
+      }
+
+      // Clone deck
+      const clonedCount = cardRepo.cloneDeck("OriginalDeck", "ClonedDeck");
+      expect(clonedCount).toBe(3);
+
+      const originalCards = cardRepo.list({ targetDeck: "OriginalDeck" });
+      const clonedCards = cardRepo.list({ targetDeck: "ClonedDeck" });
+
+      expect(originalCards.length).toBe(3);
+      expect(clonedCards.length).toBe(3);
+
+      // Verify all UUIDs are unique
+      const origIds = originalCards.map((c) => c.id);
+      const clonedIds = clonedCards.map((c) => c.id);
+      for (const id of clonedIds) {
+        expect(origIds.includes(id)).toBe(false);
+      }
+
+      // Verify fields match
+      const origQ1 = originalCards.find((c) => c.question === "Clone Q1")!;
+      const cloneQ1 = clonedCards.find((c) => c.question === "Clone Q1")!;
+      expect(cloneQ1).toBeDefined();
+      expect(cloneQ1.targetDeck).toBe("ClonedDeck");
+      expect(cloneQ1.keywords).toEqual(origQ1.keywords);
+      expect(cloneQ1.tags).toEqual(origQ1.tags);
+      expect(cloneQ1.sourceQuote).toBe(origQ1.sourceQuote);
+
+      // Validation errors
+      expect(() => cardRepo.cloneDeck("", "ClonedDeck")).toThrow("Source deck cannot be empty");
+      expect(() => cardRepo.cloneDeck("OriginalDeck", "  ")).toThrow("Target deck cannot be empty");
+      expect(() => cardRepo.cloneDeck("OriginalDeck", "originaldeck")).toThrow("different");
+
+      // Non-existent source deck returns 0
+      expect(cardRepo.cloneDeck("NonExistent", "NewDeck")).toBe(0);
+    });
+
+    it("splits a deck into numbered sub-decks with configurable batch size", () => {
+      // Create 7 cards in "BigDeck"
+      for (let i = 1; i <= 7; i++) {
+        cardRepo.create({
+          question: `Split Q${i}`,
+          answer: `Split A${i}`,
+          sourceQuote: `Split quote ${i}`,
+          targetDeck: "BigDeck",
+        });
+      }
+
+      // Split with batch size 3
+      const result = cardRepo.splitDeck("BigDeck", 3);
+      expect(result.cardsMoved).toBe(7);
+      expect(result.subDecks).toEqual(["BigDeck - Part 1", "BigDeck - Part 2", "BigDeck - Part 3"]);
+
+      // Verify cards in each sub-deck
+      const part1 = cardRepo.list({ targetDeck: "BigDeck - Part 1" });
+      const part2 = cardRepo.list({ targetDeck: "BigDeck - Part 2" });
+      const part3 = cardRepo.list({ targetDeck: "BigDeck - Part 3" });
+
+      expect(part1.length).toBe(3);
+      expect(part2.length).toBe(3);
+      expect(part3.length).toBe(1);
+
+      // Original deck is now empty
+      expect(cardRepo.list({ targetDeck: "BigDeck" }).length).toBe(0);
+
+      // Validation errors
+      expect(() => cardRepo.splitDeck("", 5)).toThrow("Source deck cannot be empty");
+      expect(() => cardRepo.splitDeck("Deck", 1)).toThrow("integer of 2 or greater");
+      expect(() => cardRepo.splitDeck("Deck", 2.5 as any)).toThrow("integer of 2 or greater");
+
+      // Empty deck
+      expect(cardRepo.splitDeck("EmptyDeck", 5)).toEqual({ subDecks: [], cardsMoved: 0 });
+    });
+
+    it("moves selected cards to an existing or new target deck", () => {
+      const card1 = cardRepo.create({
+        question: "Move Q1",
+        answer: "Move A1",
+        sourceQuote: "Quote 1",
+        targetDeck: "DeckAlpha",
+      });
+      const card2 = cardRepo.create({
+        question: "Move Q2",
+        answer: "Move A2",
+        sourceQuote: "Quote 2",
+        targetDeck: "DeckAlpha",
+      });
+      const card3 = cardRepo.create({
+        question: "Move Q3",
+        answer: "Move A3",
+        sourceQuote: "Quote 3",
+        targetDeck: "DeckAlpha",
+      });
+
+      // Move card1 and card3 to "DeckBeta"
+      const movedCount = cardRepo.moveCards([card1.id, card3.id], "DeckBeta");
+      expect(movedCount).toBe(2);
+
+      const alphaCards = cardRepo.list({ targetDeck: "DeckAlpha" });
+      const betaCards = cardRepo.list({ targetDeck: "DeckBeta" });
+
+      expect(alphaCards.length).toBe(1);
+      expect(alphaCards[0].id).toBe(card2.id);
+
+      expect(betaCards.length).toBe(2);
+      expect(betaCards.map((c) => c.id).sort()).toEqual([card1.id, card3.id].sort());
+
+      // Validation
+      expect(() => cardRepo.moveCards([card1.id], "")).toThrow("Target deck cannot be empty");
+      expect(cardRepo.moveCards([], "DeckBeta")).toBe(0);
+    });
+  });
 });
 
