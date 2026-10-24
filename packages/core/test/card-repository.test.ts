@@ -679,5 +679,87 @@ describe("FlashcardRepository", () => {
       expect(cardRepo.moveCards([], "DeckBeta")).toBe(0);
     });
   });
+
+  describe("Date-Range Filtering and Random Subsampling (Story 19.3)", () => {
+    beforeEach(() => {
+      // Clear cards table
+      db.prepare("DELETE FROM flashcards").run();
+
+      // Insert cards with distinct historical dates
+      const dates = [
+        "2026-08-01T12:00:00Z",
+        "2026-09-15T12:00:00Z",
+        "2026-10-05T12:00:00Z",
+        "2026-10-15T12:00:00Z",
+        "2026-10-24T12:00:00Z",
+      ];
+
+      for (let i = 0; i < dates.length; i++) {
+        const card = cardRepo.create({
+          question: `History Q${i + 1}`,
+          answer: `History A${i + 1}`,
+          sourceQuote: `Verified fact ${i + 1}`,
+          targetDeck: "HistoryDeck",
+        });
+
+        // Set explicit created_at timestamp
+        db.prepare("UPDATE flashcards SET created_at = ? WHERE id = ?").run(dates[i], card.id);
+      }
+    });
+
+    it("filters cards with createdAfter", () => {
+      // createdAfter Oct 1st should return Oct 5, Oct 15, Oct 24 (3 cards)
+      const cards = cardRepo.list({ createdAfter: "2026-10-01" });
+      expect(cards.length).toBe(3);
+      expect(cards.every((c) => c.createdAt! >= "2026-10-01")).toBe(true);
+
+      // count() should match
+      expect(cardRepo.count({ createdAfter: "2026-10-01" })).toBe(3);
+    });
+
+    it("filters cards with createdBefore", () => {
+      // createdBefore Sept 30 should return Aug 1, Sept 15 (2 cards)
+      const cards = cardRepo.list({ createdBefore: "2026-09-30" });
+      expect(cards.length).toBe(2);
+      expect(cards.every((c) => c.createdAt! <= "2026-09-30T23:59:59Z")).toBe(true);
+
+      expect(cardRepo.count({ createdBefore: "2026-09-30" })).toBe(2);
+    });
+
+    it("filters cards within date range (createdAfter and createdBefore)", () => {
+      // Between Oct 1 and Oct 20 should return Oct 5 and Oct 15 (2 cards)
+      const cards = cardRepo.list({
+        createdAfter: "2026-10-01",
+        createdBefore: "2026-10-20",
+      });
+      expect(cards.length).toBe(2);
+      expect(cards.map((c) => c.question).sort()).toEqual(["History Q3", "History Q4"]);
+    });
+
+    it("supports random shuffle subsampling with limit", () => {
+      const sample = cardRepo.list({ shuffle: true, limit: 3 });
+      expect(sample.length).toBe(3);
+
+      // All returned cards are valid cards from the deck
+      const allCards = cardRepo.list();
+      const allIds = allCards.map((c) => c.id);
+      for (const card of sample) {
+        expect(allIds.includes(card.id)).toBe(true);
+      }
+    });
+
+    it("combines deck, date filtering, limit, and random shuffle", () => {
+      const result = cardRepo.list({
+        targetDeck: "HistoryDeck",
+        createdAfter: "2026-10-01",
+        shuffle: true,
+        limit: 2,
+      });
+
+      expect(result.length).toBe(2);
+      expect(result.every((c) => c.targetDeck === "HistoryDeck" && c.createdAt! >= "2026-10-01")).toBe(true);
+    });
+  });
 });
+
 

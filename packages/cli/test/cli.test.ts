@@ -444,6 +444,49 @@ describe("CLI Application", () => {
     );
     expect(logs.some((l) => l.includes("Successfully exported 1 cards to EPUB"))).toBe(true);
   });
+
+  it("supports partial, date-filtered, and randomized export flags", async () => {
+    const exportSpy = vi.spyOn(context.exportService, "export").mockResolvedValueOnce({
+      format: "csv",
+      successCount: 10,
+      outputPath: "./sample.csv",
+      message: "Exported 10 cards to csv.",
+    });
+
+    const cli = createCli(context);
+    cli.exitOverride();
+
+    logs = [];
+    await cli.parseAsync([
+      "node",
+      "flashcard-master",
+      "export",
+      "csv",
+      "-d",
+      "Bio",
+      "--after",
+      "2026-10-01",
+      "--before",
+      "2026-10-20",
+      "--limit",
+      "10",
+      "--shuffle",
+    ]);
+
+    expect(exportSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        format: "csv",
+        filter: expect.objectContaining({
+          targetDeck: "Bio",
+          createdAfter: "2026-10-01",
+          createdBefore: "2026-10-20",
+          limit: 10,
+          shuffle: true,
+        }),
+      })
+    );
+    expect(logs.some((l) => l.includes("Exported 10 cards to csv"))).toBe(true);
+  });
 });
 
 

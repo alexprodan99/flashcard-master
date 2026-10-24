@@ -48,6 +48,9 @@ export interface CardFilter {
   limit?: number;
   offset?: number;
   cursor?: string;
+  createdAfter?: string;
+  createdBefore?: string;
+  shuffle?: boolean;
 }
 
 export interface PaginatedFlashcardsResult {
@@ -230,6 +233,16 @@ export class FlashcardRepository {
         params.push(decoded.createdAt, decoded.createdAt, decoded.id);
       }
     }
+    if (filter.createdAfter) {
+      const after = filter.createdAfter.length === 10 ? `${filter.createdAfter}T00:00:00Z` : filter.createdAfter;
+      conditions.push("created_at >= ?");
+      params.push(after);
+    }
+    if (filter.createdBefore) {
+      const before = filter.createdBefore.length === 10 ? `${filter.createdBefore}T23:59:59Z` : filter.createdBefore;
+      conditions.push("created_at <= ?");
+      params.push(before);
+    }
 
     return { conditions, params };
   }
@@ -241,7 +254,11 @@ export class FlashcardRepository {
     if (conditions.length > 0) {
       sql += " WHERE " + conditions.join(" AND ");
     }
-    sql += " ORDER BY created_at DESC, id DESC";
+    if (filter.shuffle) {
+      sql += " ORDER BY RANDOM()";
+    } else {
+      sql += " ORDER BY created_at DESC, id DESC";
+    }
 
     if (filter.limit !== undefined) {
       sql += " LIMIT ?";

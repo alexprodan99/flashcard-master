@@ -2943,6 +2943,9 @@ export class WebServer {
               difficulty: query.difficulty as any,
               sourceId: query.sourceId as string,
               search: (query.search || query.q) as string,
+              createdAfter: (query.createdAfter || query.after) as string | undefined,
+              createdBefore: (query.createdBefore || query.before) as string | undefined,
+              shuffle: query.shuffle === "true" || query.shuffle === "1",
             };
 
             if (query.limit !== undefined || query.offset !== undefined || query.cursor !== undefined) {
@@ -3063,6 +3066,10 @@ export class WebServer {
             const filter: CardFilter = {
               targetDeck: body.targetDeck || undefined,
               tag: body.tag || undefined,
+              createdAfter: (body.createdAfter || body.after) as string | undefined,
+              createdBefore: (body.createdBefore || body.before) as string | undefined,
+              limit: typeof body.limit === "number" ? body.limit : body.limit ? parseInt(body.limit, 10) : undefined,
+              shuffle: typeof body.shuffle === "boolean" ? body.shuffle : body.shuffle === "true" || body.shuffle === 1,
             };
             const cards = this.options.cardRepo.list(filter);
             const syncRes = await this.ankiConnectAdapter.syncCards(cards, {
@@ -3082,9 +3089,18 @@ export class WebServer {
               tag: query.tag as string,
               difficulty: query.difficulty as any,
               search: query.search as string,
+              createdAfter: (query.createdAfter || query.after) as string | undefined,
+              createdBefore: (query.createdBefore || query.before) as string | undefined,
+              limit: query.limit ? parseInt(query.limit as string, 10) : undefined,
+              shuffle: query.shuffle === "true" || query.shuffle === "1",
             };
 
             const cards = this.options.cardRepo.list(filter);
+
+            if (cards.length === 0 && (filter.createdAfter || filter.createdBefore || filter.targetDeck || filter.tag || filter.search)) {
+              this.sendJson(res, 404, { error: "No cards match the specified filter criteria" });
+              return;
+            }
 
             if (this.options.exportService) {
               const author = this.settingsService?.get("epub_default_author") || undefined;
