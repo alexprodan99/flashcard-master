@@ -153,6 +153,42 @@ describe("Job Queue, Streaming SSE & Logging Endpoints", () => {
     expect(job?.type).toBe("generation");
   });
 
+  it("POST /api/generate enqueues targeted subdocument generation with document metadata", async () => {
+    const sources = sourceRepo.list();
+    const source = sources[0];
+    const doc = docRepo.upsert({
+      sourceId: source.id,
+      title: "Targeted Chapter 1",
+      url: "https://example.com/ch1",
+      textContent: "Important text content about consensus.",
+    });
+
+    const res = await fetch(`${serverUrl}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: "ollama",
+        model: "llama3",
+        documentIds: [doc.id],
+        limit: 2,
+      }),
+    });
+
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as any;
+    expect(body.success).toBe(true);
+    expect(body.jobId).toBeDefined();
+
+    const job = jobRepo.getById(body.jobId);
+    expect(job).toBeDefined();
+    expect(job?.type).toBe("generation");
+    expect(job?.title).toBe('Synthesize flashcards: "Targeted Chapter 1"');
+    expect(job?.metadata?.documentIds).toEqual([doc.id]);
+    expect(job?.metadata?.sourceIds).toEqual([source.id]);
+    expect(job?.metadata?.documentTitle).toBe("Targeted Chapter 1");
+    expect(job?.metadata?.documentCount).toBe(1);
+  });
+
   it("POST /api/sync and POST /api/sync/:id enqueue background jobs in < 50ms", async () => {
     const sources = sourceRepo.list();
     const sourceId = sources[0].id;

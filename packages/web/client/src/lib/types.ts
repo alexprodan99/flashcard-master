@@ -78,10 +78,14 @@ export interface DashboardStats {
 
 export interface GenerationResult {
   success?: boolean;
-  cardsCreated: number;
+  jobId?: string;
+  status?: string;
+  title?: string;
+  cardsCreated?: number;
   totalDraftsGenerated?: number;
-  duplicatesSkipped: number;
-  newCards: Flashcard[];
+  duplicatesSkipped?: number;
+  newCards?: Flashcard[];
+  cards?: Flashcard[];
   errorsCount?: number;
 }
 

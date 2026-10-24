@@ -16,6 +16,24 @@ export class TaskStore {
 
   private eventSource: EventSource | null = null;
   private reconnectTimer: any = null;
+  private completionListeners: ((job: Job) => void)[] = [];
+
+  onJobCompleted(listener: (job: Job) => void): () => void {
+    this.completionListeners.push(listener);
+    return () => {
+      this.completionListeners = this.completionListeners.filter((l) => l !== listener);
+    };
+  }
+
+  private notifyJobCompleted(job: Job) {
+    for (const listener of this.completionListeners) {
+      try {
+        listener(job);
+      } catch (err) {
+        console.error('Error in onJobCompleted listener:', err);
+      }
+    }
+  }
 
   activeJobs = $derived(
     this.jobs.filter((j) => j.status === 'queued' || j.status === 'running')
@@ -146,6 +164,23 @@ export class TaskStore {
             } else {
               toastStore.success(`🎉 Generated ${cardsCreated} cards (${duplicatesSkipped} duplicates skipped)`);
             }
+            this.notifyJobCompleted(completedJob);
+            return;
+          }
+
+          if (completedJob.type === 'generation') {
+            const summary = completedJob.resultSummary || {};
+            const cardsCreated = summary.cardsCreated ?? 0;
+            const duplicatesSkipped = summary.duplicatesSkipped ?? 0;
+            const docTitle = completedJob.metadata?.documentTitle;
+            if (completedJob.status === 'completed_with_warnings') {
+              toastStore.warn(`⚠️ Output token limit reached: ${cardsCreated} cards generated for "${docTitle || title}" (${duplicatesSkipped} duplicates skipped).`);
+            } else if (docTitle) {
+              toastStore.success(`🎉 Generated ${cardsCreated} cards from "${docTitle}" (${duplicatesSkipped} duplicates skipped)`);
+            } else {
+              toastStore.success(`🎉 Generated ${cardsCreated} cards (${duplicatesSkipped} duplicates skipped)`);
+            }
+            this.notifyJobCompleted(completedJob);
             return;
           }
 
@@ -172,6 +207,7 @@ export class TaskStore {
             } else {
               toastStore.success(`🎉 Task "${title}" completed successfully!`);
             }
+            this.notifyJobCompleted(completedJob);
             return;
           }
 
@@ -188,10 +224,12 @@ export class TaskStore {
             } else {
               toastStore.success(`🎉 Task "${title}" completed successfully!`);
             }
+            this.notifyJobCompleted(completedJob);
             return;
           }
 
           toastStore.success(`🎉 Task "${title}" completed successfully!`);
+          this.notifyJobCompleted(completedJob);
         } catch {}
       });
 
@@ -205,6 +243,14 @@ export class TaskStore {
           if (failedJob.id === generateStore.activeJobId) {
             generateStore.finishGenerating(null, errorMsg);
             toastStore.error(`⚠️ Generation failed: ${errorMsg}`);
+            this.notifyJobCompleted(failedJob);
+            return;
+          }
+
+          if (failedJob.type === 'generation') {
+            const docTitle = failedJob.metadata?.documentTitle;
+            toastStore.error(`⚠️ Generation failed for "${docTitle || title}": ${errorMsg}`);
+            this.notifyJobCompleted(failedJob);
             return;
           }
 
@@ -214,16 +260,19 @@ export class TaskStore {
               sourcesStore.setSyncing(sourceId, false);
             }
             toastStore.error(`⚠️ Sync failed for "${failedJob.metadata?.sourceName || 'Source'}": ${errorMsg}`);
+            this.notifyJobCompleted(failedJob);
             return;
           }
 
           if (failedJob.type === 'sync_all') {
             sourcesStore.setSyncingAll(false);
             toastStore.error(`⚠️ Bulk sync failed: ${errorMsg}`);
+            this.notifyJobCompleted(failedJob);
             return;
           }
 
           toastStore.error(`⚠️ Task "${title}" failed: ${errorMsg}`);
+          this.notifyJobCompleted(failedJob);
         } catch {}
       });
 
@@ -236,6 +285,14 @@ export class TaskStore {
           if (cancelledJob.id === generateStore.activeJobId) {
             generateStore.finishGenerating(null, 'Generation task was cancelled');
             toastStore.warn(`⏹️ Generation task was cancelled.`);
+            this.notifyJobCompleted(cancelledJob);
+            return;
+          }
+
+          if (cancelledJob.type === 'generation') {
+            const docTitle = cancelledJob.metadata?.documentTitle;
+            toastStore.warn(`⏹️ Generation for "${docTitle || title}" was cancelled.`);
+            this.notifyJobCompleted(cancelledJob);
             return;
           }
 
@@ -245,16 +302,19 @@ export class TaskStore {
               sourcesStore.setSyncing(sourceId, false);
             }
             toastStore.warn(`⏹️ Sync for "${cancelledJob.metadata?.sourceName || 'Source'}" was cancelled.`);
+            this.notifyJobCompleted(cancelledJob);
             return;
           }
 
           if (cancelledJob.type === 'sync_all') {
             sourcesStore.setSyncingAll(false);
             toastStore.warn(`⏹️ Bulk sync was cancelled.`);
+            this.notifyJobCompleted(cancelledJob);
             return;
           }
 
           toastStore.warn(`⏹️ Task "${title}" was cancelled.`);
+          this.notifyJobCompleted(cancelledJob);
         } catch {}
       });
 

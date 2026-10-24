@@ -195,7 +195,7 @@ development_status:
   19-2-deck-operations-clone-split-and-selective-card-moving: done
   19-3-partial-date-filtered-and-randomized-export-engine: done
   19-4-interactive-tag-selector-for-data-sources: done
-  19-5-asynchronous-subdocument-generation-via-task-center: ready-for-dev
+  19-5-asynchronous-subdocument-generation-via-task-center: done
   19-6-monorepo-responsive-layout-and-overflow-hardening: ready-for-dev
   19-7-subdocument-explorer-and-reader-redesign: ready-for-dev
   epic-19-retrospective: optional

@@ -305,5 +305,27 @@ Client (TagInput.svelte)  ──▶  GET /api/sources/tags  ──▶  DataSourc
     - `Escape`: dismisses the suggestion dropdown.
     - Pill removal button (`✕`): immediately deletes individual tags.
 
+---
+
+## 10. Asynchronous Subdocument Generation via Task Center
+
+Flashcard Master unifies targeted card generation across individual subdocuments, chapters, and sliced sections into the asynchronous background worker queue:
+
+```
+Inspector UI  ──▶  POST /api/generate (async)  ──▶  JobManager (Worker Queue)  ──▶  Task Center (SSE Live Stream)
+```
+
+* **Non-Blocking User Experience:**
+  - Generating cards for an individual document from `SourceDocumentInspector.svelte` immediately enqueues a background task (`HTTP 202 Accepted`).
+  - The in-context configuration modal closes instantly, returning control to the user.
+  - The Task Center drawer opens to the **Active Tasks** tab, expanding the new task so users can observe step progress, token counts, and streamed cards in real time.
+* **Document Metadata & Provenance:**
+  - Single-document generation jobs track `documentIds`, `sourceIds`, and `documentTitle` directly within job metadata.
+  - Job titles dynamically reflect target document names (e.g., `Synthesize flashcards: "Chapter 1: Overview"`).
+* **Reactive Completion & Badge Refresh:**
+  - Client components subscribe to task completion events through `taskStore.onJobCompleted(listener)`.
+  - When a generation task finishes in the background worker pool, `SourceDocumentInspector` detects that documents in the current source were updated and automatically refreshes card counts without requiring a manual browser refresh.
+
+
 
 
