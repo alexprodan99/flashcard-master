@@ -170,6 +170,9 @@
 
   function handleKeyDown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
+      if (typeof document !== 'undefined' && document.querySelector('.preview-backdrop')) {
+        return;
+      }
       onClose();
     }
   }
