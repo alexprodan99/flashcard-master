@@ -254,6 +254,50 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     expect(syncResult.totalCards).toBe(2);
   });
 
+  it("supports scoped export with date filtering, limit budget, and shuffle at GET /api/export", async () => {
+    // 1. Export with limit budget
+    const limitRes = await fetch(`${serverUrl}/api/export/csv?deck=Engineering&limit=1`);
+    expect(limitRes.status).toBe(200);
+    const limitText = await limitRes.text();
+    const rows = limitText.trim().split("\n");
+    // Header + 1 card row = 2 lines
+    expect(rows.length).toBe(2);
+
+    // 2. Export with future date filter yields 404
+    const emptyRes = await fetch(`${serverUrl}/api/export/csv?deck=Engineering&after=2099-01-01`);
+    expect(emptyRes.status).toBe(404);
+    const emptyJson = await emptyRes.json();
+    expect(emptyJson.error).toContain("No cards match");
+
+    // 3. Export with shuffle
+    const shuffleRes = await fetch(`${serverUrl}/api/export/markdown?limit=1&shuffle=true`);
+    expect(shuffleRes.status).toBe(200);
+    const shuffleText = await shuffleRes.text();
+    expect(shuffleText).toContain("<details>");
+  });
+
+  it("supports scoped AnkiConnect sync with limit and date filtering", async () => {
+    // Sync with limit 1
+    const limitSyncRes = await fetch(`${serverUrl}/api/ankiconnect/sync`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ targetDeck: "Engineering", limit: 1 }),
+    });
+    expect(limitSyncRes.status).toBe(200);
+    const limitSync = await limitSyncRes.json();
+    expect(limitSync.totalCards).toBe(1);
+
+    // Sync with future date yields 0 cards cleanly
+    const emptySyncRes = await fetch(`${serverUrl}/api/ankiconnect/sync`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ targetDeck: "Engineering", after: "2099-01-01" }),
+    });
+    expect(emptySyncRes.status).toBe(200);
+    const emptySync = await emptySyncRes.json();
+    expect(emptySync.totalCards).toBe(0);
+  });
+
   it("supports querying cards with filters and substring search at /api/cards", async () => {
     const res = await fetch(`${serverUrl}/api/cards?deck=Engineering&tag=raft`);
     expect(res.status).toBe(200);

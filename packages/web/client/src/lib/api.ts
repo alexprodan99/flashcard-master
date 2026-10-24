@@ -128,12 +128,23 @@ export async function syncAllSources(
   return res.json();
 }
 
-export async function fetchCards(params?: { deck?: string; difficulty?: string; tag?: string; q?: string }): Promise<Flashcard[]> {
+export async function fetchCards(params?: {
+  deck?: string;
+  difficulty?: string;
+  tag?: string;
+  q?: string;
+  createdAfter?: string;
+  createdBefore?: string;
+  shuffle?: boolean;
+}): Promise<Flashcard[]> {
   const query = new URLSearchParams();
   if (params?.deck) query.set('deck', params.deck);
   if (params?.difficulty) query.set('difficulty', params.difficulty);
   if (params?.tag) query.set('tag', params.tag);
   if (params?.q) query.set('q', params.q);
+  if (params?.createdAfter) query.set('after', params.createdAfter);
+  if (params?.createdBefore) query.set('before', params.createdBefore);
+  if (params?.shuffle) query.set('shuffle', 'true');
 
   const res = await fetch(`/api/cards?${query.toString()}`);
   if (!res.ok) throw new Error('Failed to fetch flashcards');
@@ -145,6 +156,9 @@ export async function fetchCardsPaginated(params?: {
   difficulty?: string;
   tag?: string;
   q?: string;
+  createdAfter?: string;
+  createdBefore?: string;
+  shuffle?: boolean;
   limit?: number;
   cursor?: string | null;
   offset?: number;
@@ -154,6 +168,9 @@ export async function fetchCardsPaginated(params?: {
   if (params?.difficulty && params.difficulty !== 'all') query.set('difficulty', params.difficulty);
   if (params?.tag) query.set('tag', params.tag);
   if (params?.q) query.set('q', params.q);
+  if (params?.createdAfter) query.set('after', params.createdAfter);
+  if (params?.createdBefore) query.set('before', params.createdBefore);
+  if (params?.shuffle) query.set('shuffle', 'true');
   if (params?.limit !== undefined) query.set('limit', String(params.limit));
   if (params?.cursor) query.set('cursor', params.cursor);
   if (params?.offset !== undefined && !params?.cursor) query.set('offset', String(params.offset));
@@ -334,11 +351,21 @@ export async function checkAnkiStatus(): Promise<{ connected: boolean; version?:
   }
 }
 
-export async function pushToAnki(targetDeck?: string): Promise<{ success: boolean; cardsPushed: number; message?: string }> {
+export interface PushToAnkiOptions {
+  targetDeck?: string;
+  tag?: string;
+  createdAfter?: string;
+  createdBefore?: string;
+  limit?: number;
+  shuffle?: boolean;
+}
+
+export async function pushToAnki(options?: string | PushToAnkiOptions): Promise<{ success: boolean; cardsPushed: number; message?: string }> {
+  const payload = typeof options === 'string' ? { targetDeck: options } : options || {};
   const res = await fetch('/api/ankiconnect/sync', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ targetDeck }),
+    body: JSON.stringify(payload),
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));

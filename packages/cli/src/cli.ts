@@ -529,6 +529,10 @@ export function createCli(providedContext?: AppContext): Command {
     .option("--difficulty <diff>", "Filter by difficulty (beginner, intermediate, expert, mixed)")
     .option("-o, --out <path>", "Output file destination path")
     .option("--all-decks <dir>", "Export all distinct decks into separate files inside directory")
+    .option("--after <date>", "Filter cards created on or after date (YYYY-MM-DD or ISO string)")
+    .option("--before <date>", "Filter cards created on or before date (YYYY-MM-DD or ISO string)")
+    .option("--limit <number>", "Maximum number of cards to export", parseInt)
+    .option("--shuffle", "Export a randomized/shuffled subset of cards", false)
     .option("--no-toc", "Omit Table of Contents in study guides")
     .option("--no-citations", "Omit source citation quotes and references in study guides")
     .option("--no-fold-guide", "Omit fold guide markers in printable HTML study guide")
@@ -552,12 +556,17 @@ export function createCli(providedContext?: AppContext): Command {
           return;
         }
 
+        const limit = options.limit !== undefined && !isNaN(options.limit) ? options.limit : undefined;
         const result = await context.exportService.export({
           format,
           filter: {
             targetDeck: options.deck,
             tag: options.tag,
             difficulty: options.difficulty as DifficultyLevel,
+            createdAfter: options.after,
+            createdBefore: options.before,
+            limit,
+            shuffle: Boolean(options.shuffle),
           },
           options: {
             outputPath: options.out,
