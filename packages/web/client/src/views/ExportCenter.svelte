@@ -312,7 +312,7 @@
             {/if}
           </div>
           <p class="scope-subtitle">
-            Filter by creation date, cap card batch budget, or randomize study deck selection.
+            Filter cards by date created, set a maximum export count, or mix cards in random order.
           </p>
         </div>
       </div>
@@ -403,25 +403,25 @@
         {/if}
 
         <div class="scope-options-grid">
-          <!-- Limit budget -->
+          <!-- Limit count -->
           <div class="scope-option-block">
             <label for="scope-card-limit" class="scope-field-label">
-              Maximum Card Budget (Limit):
+              Maximum Cards to Export:
             </label>
             <div class="input-with-hint">
               <input
                 id="scope-card-limit"
                 type="number"
                 min="1"
-                placeholder="e.g. 50 (blank for all cards)"
+                placeholder="e.g. 50 (leave blank for all cards)"
                 bind:value={exportLimit}
                 class="scope-input"
               />
               <span class="field-hint">
                 {#if exportLimit && exportLimit > 0}
-                  Will export up to {exportLimit} cards.
+                  Exports up to {exportLimit} cards.
                 {:else}
-                  Exports all matching cards without limit.
+                  Exports all matching cards.
                 {/if}
               </span>
             </div>
@@ -429,7 +429,7 @@
 
           <!-- Shuffle switch -->
           <div class="scope-option-block">
-            <span class="scope-field-label">Randomize / Shuffle:</span>
+            <span class="scope-field-label">Card Order:</span>
             <label class="toggle-container" for="scope-shuffle-toggle">
               <input
                 id="scope-shuffle-toggle"
@@ -439,7 +439,7 @@
               <span class="toggle-switch"></span>
               <span class="toggle-label-text">
                 <strong>Shuffle Cards</strong>
-                <small>Uses SQLite <code>ORDER BY RANDOM()</code> for stochastic sample</small>
+                <small>Export cards in random order for quick practice and quizzes</small>
               </span>
             </label>
           </div>
@@ -454,10 +454,10 @@
               <span>
                 🎯 <strong>Ready to export:</strong> {effectiveExportCount} {effectiveExportCount === 1 ? 'card' : 'cards'}
                 {#if exportLimit && exportLimit > 0 && exportLimit < matchingCardsCount}
-                  <span class="summary-dim">(budget capped from {matchingCardsCount} matches)</span>
+                  <span class="summary-dim">(limited to {exportLimit} of {matchingCardsCount} cards)</span>
                 {/if}
                 {#if exportShuffle}
-                  <span class="summary-badge">🎲 Shuffled Order</span>
+                  <span class="summary-badge">🎲 Shuffled</span>
                 {/if}
                 {#if datePreset !== 'all'}
                   <span class="summary-badge">📅 {datePreset === 'custom' ? `${customAfter || 'start'} to ${customBefore || 'end'}` : datePreset}</span>
