@@ -444,6 +444,26 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     expect(updated.isActive).toBe(false);
   });
 
+  it("returns distinct data source tags via GET /api/sources/tags", async () => {
+    sourceRepo.create({
+      name: "Source Alpha",
+      type: "local",
+      uri: "./alpha.md",
+      tags: ["algorithms", "cs", "LEETCODE"],
+    });
+    sourceRepo.create({
+      name: "Source Beta",
+      type: "web",
+      uri: "https://beta.dev",
+      tags: ["leetcode", "Algorithms", "System-Design"],
+    });
+
+    const res = await fetch(`${serverUrl}/api/sources/tags`);
+    expect(res.status).toBe(200);
+    const tags = await res.json();
+    expect(tags).toEqual(["algorithms", "cs", "leetcode", "system-design"]);
+  });
+
   it("triggers sync for a single source via POST /api/sync/:id", async () => {
     const sources = sourceRepo.list();
     const sourceId = sources[0].id;

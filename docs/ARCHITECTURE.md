@@ -280,4 +280,30 @@ Flashcard Master supports granular scoping and stochastic subsampling across all
 5. **Interactive UI (`ExportCenter.svelte`):**
    - "Time & Scope Filter" accordion card with one-click date range presets (*All Time*, *Last 24 Hours*, *Last 7 Days*, *Last 30 Days*, *Custom Range*), custom date pickers, card limit budget input, uniform shuffle toggle, and reactive matching cards counter.
 
+---
+
+## 9. Data Source Management & Tag Organization
+
+Flashcard Master organizes knowledge sources with an interactive, normalized tag taxonomy across both data source creation and editing workflows:
+
+```
+Client (TagInput.svelte)  ──▶  GET /api/sources/tags  ──▶  DataSourceRepository.listAllTags() (SQLite)
+```
+
+* **Tag Normalization Invariants:**
+  - All tags are trimmed, lowercased, and stripped of leading hash (`#`) symbols upon ingestion and entry.
+  - Tags within a data source are automatically deduplicated into a set.
+  - Stored as a clean JSON string array in `data_sources.tags`.
+* **Distinct Tag Discovery (`listAllTags`):**
+  - `GET /api/sources/tags` returns a sorted array of all unique, lowercased tags currently used across active and inactive sources.
+  - Enables instant auto-suggest dropdowns in the user interface as users type.
+* **Interactive Tag Input (`TagInput.svelte`):**
+  - Reusable pill-based input component supporting full keyboard navigation:
+    - `Enter` or `,` (comma): commits the current text as a new tag pill.
+    - `Backspace` on empty input: removes the preceding tag pill.
+    - `ArrowUp` / `ArrowDown`: highlights auto-suggestions from the filtered list.
+    - `Escape`: dismisses the suggestion dropdown.
+    - Pill removal button (`✕`): immediately deletes individual tags.
+
+
 

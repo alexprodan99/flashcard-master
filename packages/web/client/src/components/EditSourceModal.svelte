@@ -4,6 +4,7 @@
   import { settingsStore } from '../stores/index.js';
   import { buildNotionUri, parseNotionUri, isValidNotionInput } from '../lib/notion-uri.js';
   import UrlListManager from './UrlListManager.svelte';
+  import TagInput from './TagInput.svelte';
 
   interface Props {
     isOpen: boolean;
@@ -19,7 +20,7 @@
   let uri = $state('');
   let webUrls = $state<string[]>([]);
   let notionRecursive = $state(false);
-  let tagsInput = $state('');
+  let tags = $state<string[]>([]);
   let isSubmitting = $state(false);
   let errorMessage = $state<string | null>(null);
   let isUploadingFile = $state(false);
@@ -70,7 +71,7 @@
   $effect(() => {
     if (isOpen && source) {
       name = source.name || '';
-      tagsInput = (source.tags || []).join(', ');
+      tags = [...(source.tags || [])];
       errorMessage = null;
 
       if (source.type === 'web') {
@@ -133,23 +134,22 @@
     errorMessage = null;
 
     try {
-      let tags = Array.from(
+      let cleanTags = Array.from(
         new Set(
-          tagsInput
-            .split(',')
-            .map((t) => t.trim())
+          tags
+            .map((t) => t.trim().toLowerCase())
             .filter((t) => t.length > 0)
         )
       );
 
       if (source.type === 'notion' && !notionRecursive) {
-        tags = tags.filter((t) => t.toLowerCase() !== 'recursive');
+        cleanTags = cleanTags.filter((t) => t.toLowerCase() !== 'recursive');
       }
 
       const updated = await updateSource(source.id, {
         name: name.trim(),
         uri: finalUri,
-        tags,
+        tags: cleanTags,
       });
 
       onSourceUpdated(updated);
@@ -297,13 +297,8 @@
         {/if}
 
         <div class="form-group">
-          <label for="edit-src-tags">Tags (comma-separated)</label>
-          <input
-            id="edit-src-tags"
-            type="text"
-            placeholder="tech, distributed-systems"
-            bind:value={tagsInput}
-          />
+          <label for="edit-src-tags">Tags</label>
+          <TagInput id="edit-src-tags" bind:tags />
         </div>
 
         <div class="modal-footer">

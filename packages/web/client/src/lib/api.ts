@@ -35,6 +35,12 @@ export async function fetchDecks(): Promise<string[]> {
   return res.json();
 }
 
+export async function fetchSourceTags(): Promise<string[]> {
+  const res = await fetch('/api/sources/tags');
+  if (!res.ok) throw new Error('Failed to fetch source tags');
+  return res.json();
+}
+
 export async function createSource(payload: {
   name: string;
   type: string;

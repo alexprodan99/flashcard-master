@@ -4,6 +4,7 @@
   import { settingsStore, toastStore } from '../stores/index.js';
   import { buildNotionUri, isValidNotionInput } from '../lib/notion-uri.js';
   import UrlListManager from './UrlListManager.svelte';
+  import TagInput from './TagInput.svelte';
 
   interface Props {
     isOpen: boolean;
@@ -19,7 +20,7 @@
   let uri = $state('');
   let webUrls = $state<string[]>([]);
   let notionRecursive = $state(false);
-  let tagsInput = $state('');
+  let tags = $state<string[]>([]);
   let isSubmitting = $state(false);
   let errorMessage = $state<string | null>(null);
 
@@ -183,11 +184,10 @@
     errorMessage = null;
 
     try {
-      const tags = Array.from(
+      const cleanTags = Array.from(
         new Set(
-          tagsInput
-            .split(',')
-            .map((t) => t.trim())
+          tags
+            .map((t) => t.trim().toLowerCase())
             .filter((t) => t.length > 0)
         )
       );
@@ -196,7 +196,7 @@
         name: name.trim(),
         type,
         uri: finalUri,
-        tags,
+        tags: cleanTags,
       });
 
       if (syncImmediately) {
@@ -218,7 +218,7 @@
       name = '';
       uri = '';
       webUrls = [];
-      tagsInput = '';
+      tags = [];
       selectedLocalFile = null;
       isUploadingFile = false;
       isDragging = false;
@@ -543,13 +543,8 @@
         {/if}
 
         <div class="form-group">
-          <label for="src-tags">Tags (comma-separated)</label>
-          <input
-            id="src-tags"
-            type="text"
-            placeholder="tech, distributed-systems"
-            bind:value={tagsInput}
-          />
+          <label for="src-tags">Tags</label>
+          <TagInput id="src-tags" bind:tags />
         </div>
 
         <div class="form-group sync-immediately-group">
