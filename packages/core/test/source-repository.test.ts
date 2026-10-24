@@ -102,4 +102,26 @@ describe("DataSourceRepository", () => {
     expect(updated?.name).toBe("Updated Handbook");
     expect((updated as any)?.targetDeck).toBeUndefined();
   });
+
+  it("lists all distinct, normalized tags across data sources using listAllTags", () => {
+    // Empty initially
+    expect(repo.listAllTags()).toEqual([]);
+
+    repo.create({
+      name: "Source 1",
+      type: "local",
+      uri: "./s1.md",
+      tags: ["Distributed-Systems", "raft", "NETWORKING"],
+    });
+
+    repo.create({
+      name: "Source 2",
+      type: "web",
+      uri: "https://example.com",
+      tags: ["networking", "Raft", "Database"],
+    });
+
+    const tags = repo.listAllTags();
+    expect(tags).toEqual(["database", "distributed-systems", "networking", "raft"]);
+  });
 });

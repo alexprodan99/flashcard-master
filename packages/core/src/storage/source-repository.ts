@@ -141,4 +141,24 @@ export class DataSourceRepository {
     }
     return this.update(id, { isActive: !existing.isActive });
   }
+
+  listAllTags(): string[] {
+    const rows = this.db.prepare("SELECT tags FROM data_sources").all() as any[];
+    const tagSet = new Set<string>();
+    for (const r of rows) {
+      try {
+        const tags = typeof r.tags === "string" ? JSON.parse(r.tags) : r.tags || [];
+        if (Array.isArray(tags)) {
+          for (const t of tags) {
+            if (typeof t === "string" && t.trim()) {
+              tagSet.add(t.trim().toLowerCase());
+            }
+          }
+        }
+      } catch {
+        // ignore invalid json
+      }
+    }
+    return Array.from(tagSet).sort();
+  }
 }

@@ -2872,8 +2872,15 @@ export class WebServer {
             }
           }
 
+          // 6c. Sources Tags Endpoint: GET /api/sources/tags
+          if (pathname === "/api/sources/tags" && method === "GET") {
+            const tags = (this.options.sourceRepo as any).listAllTags ? (this.options.sourceRepo as any).listAllTags() : [];
+            this.sendJson(res, 200, tags);
+            return;
+          }
+
           // 7. Single Source Update (PATCH) / Delete (DELETE): /api/sources/:id
-          if (pathname.startsWith("/api/sources/") && pathname !== "/api/sources/upload") {
+          if (pathname.startsWith("/api/sources/") && pathname !== "/api/sources/upload" && pathname !== "/api/sources/tags") {
             let id = pathname.slice("/api/sources/".length);
             try {
               id = decodeURIComponent(id);
