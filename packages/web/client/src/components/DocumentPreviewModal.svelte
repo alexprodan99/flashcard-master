@@ -151,6 +151,8 @@
   let formattedContent = $derived(renderMarkdownToHtml(document?.textContent || ''));
 </script>
 
+<svelte:window onkeydown={(e) => { if (isOpen && e.key === 'Escape') onClose(); }} />
+
 {#if isOpen && document}
   <div class="preview-backdrop" role="presentation" onclick={onClose}>
     <div
@@ -280,7 +282,7 @@
     inset: 0;
     background: rgba(0, 0, 0, 0.85);
     backdrop-filter: blur(4px);
-    z-index: 1200;
+    z-index: 1300;
     display: flex;
     align-items: center;
     justify-content: center;

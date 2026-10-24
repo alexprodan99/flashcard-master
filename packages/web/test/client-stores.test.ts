@@ -1232,6 +1232,198 @@ describe('Svelte 5 Universal Client Stores (Epic 14.4)', () => {
       expect(isShortClamped(longQuote, true)).toBe(false);
     });
   });
+
+  describe('Generate Studio Target Scope & Modal Document Picker (Story 19.7)', () => {
+    const mockSource: DataSource = {
+      id: 'src-epub-1',
+      name: 'Design Patterns in TypeScript',
+      type: 'local',
+      uri: 'file:///books/dp.epub',
+      tags: ['patterns'],
+      isActive: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    const mockDocs: DiscoveredDocument[] = [
+      {
+        id: 'doc-1',
+        sourceId: 'src-epub-1',
+        title: 'Chapter 1: Factory Method Pattern',
+        url: 'file:///books/dp.epub#ch1',
+        wordCount: 1500,
+        cardCount: 4,
+        textContent: 'Factory Method is a creational design pattern that provides an interface for creating objects in a superclass.',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      {
+        id: 'doc-2',
+        sourceId: 'src-epub-1',
+        title: 'Chapter 2: Structural Adapters',
+        url: 'file:///books/dp.epub#ch2',
+        wordCount: 2200,
+        cardCount: 6,
+        textContent: 'Adapter is a structural design pattern that allows objects with incompatible interfaces to collaborate.',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      {
+        id: 'doc-3',
+        sourceId: 'src-epub-1',
+        title: 'Chapter 3: Observer and Reactive Streams',
+        url: 'file:///books/dp.epub#ch3',
+        wordCount: 3100,
+        cardCount: 0,
+        textContent: 'Observer lets you define a subscription mechanism to notify multiple objects about events.',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ];
+
+    it('correctly calculates source full-check, indeterminate, and document metrics', () => {
+      const store = new GenerateStore();
+      store.sourceDocuments['src-epub-1'] = mockDocs;
+
+      // Initially no docs selected
+      const isFullyChecked = (srcId: string) => {
+        const docs = store.sourceDocuments[srcId] || [];
+        return docs.length > 0 && docs.every((d) => store.selectedDocIds[d.id]);
+      };
+      const isIndeterminate = (srcId: string) => {
+        const docs = store.sourceDocuments[srcId] || [];
+        const some = docs.some((d) => store.selectedDocIds[d.id]);
+        const all = docs.every((d) => store.selectedDocIds[d.id]);
+        return some && !all;
+      };
+      const getSelectedWords = (srcId: string) => {
+        const docs = store.sourceDocuments[srcId] || [];
+        return docs.filter((d) => store.selectedDocIds[d.id]).reduce((sum, d) => sum + (d.wordCount || 0), 0);
+      };
+
+      expect(isFullyChecked('src-epub-1')).toBe(false);
+      expect(isIndeterminate('src-epub-1')).toBe(false);
+      expect(getSelectedWords('src-epub-1')).toBe(0);
+
+      // Select 1 doc (partial)
+      store.selectedDocIds['doc-1'] = true;
+      expect(isFullyChecked('src-epub-1')).toBe(false);
+      expect(isIndeterminate('src-epub-1')).toBe(true);
+      expect(getSelectedWords('src-epub-1')).toBe(1500);
+
+      // Select all docs
+      store.selectAllDocsForSource('src-epub-1', mockDocs.map((d) => d.id));
+      expect(isFullyChecked('src-epub-1')).toBe(true);
+      expect(isIndeterminate('src-epub-1')).toBe(false);
+      expect(getSelectedWords('src-epub-1')).toBe(6800);
+      expect(store.selectedSourceIds).toContain('src-epub-1');
+
+      // Deselect all
+      store.deselectAllDocsForSource('src-epub-1', mockDocs.map((d) => d.id));
+      expect(isFullyChecked('src-epub-1')).toBe(false);
+      expect(isIndeterminate('src-epub-1')).toBe(false);
+      expect(getSelectedWords('src-epub-1')).toBe(0);
+      expect(store.selectedSourceIds).not.toContain('src-epub-1');
+    });
+
+    it('filters documents accurately by search query with token and plural tolerance', () => {
+      const normalize = (s: string) => s.toLowerCase().trim();
+      const filterDocs = (docs: DiscoveredDocument[], query: string) => {
+        const q = normalize(query);
+        if (!q) return docs;
+        const tokens = q.split(' ').filter(Boolean);
+        return docs.filter((doc) =>
+          tokens.every((t) => {
+            const title = normalize(doc.title);
+            const text = normalize(doc.textContent || '');
+            if (title.includes(t) || text.includes(t)) return true;
+            if (t.length > 3 && t.endsWith('s')) {
+              const singular = t.slice(0, -1);
+              if (title.includes(singular) || text.includes(singular)) return true;
+            }
+            return false;
+          })
+        );
+      };
+
+      // Exact token match in title
+      expect(filterDocs(mockDocs, 'factory').length).toBe(1);
+      expect(filterDocs(mockDocs, 'factory')[0].id).toBe('doc-1');
+
+      // Plural token matching singular in content or title
+      expect(filterDocs(mockDocs, 'patterns').length).toBe(2); // 'pattern' in doc-1 and doc-2
+
+      // Match in content
+      expect(filterDocs(mockDocs, 'subscription').length).toBe(1);
+      expect(filterDocs(mockDocs, 'subscription')[0].id).toBe('doc-3');
+
+      // Non-matching
+      expect(filterDocs(mockDocs, 'nonexistent').length).toBe(0);
+    });
+
+    it('simulates modal selection apply updating store atomically', () => {
+      const store = new GenerateStore();
+      store.sourceDocuments['src-epub-1'] = mockDocs;
+
+      // Modal applies selection of doc-2 and doc-3
+      const selectedFromModal = ['doc-2', 'doc-3'];
+      const docs = store.sourceDocuments['src-epub-1'];
+      const selectedSet = new Set(selectedFromModal);
+
+      docs.forEach((doc) => {
+        store.selectedDocIds[doc.id] = selectedSet.has(doc.id);
+      });
+      if (selectedFromModal.length > 0) {
+        if (!store.selectedSourceIds.includes('src-epub-1')) {
+          store.selectedSourceIds = [...store.selectedSourceIds, 'src-epub-1'];
+        }
+      }
+
+      expect(store.selectedDocIds['doc-1']).toBe(false);
+      expect(store.selectedDocIds['doc-2']).toBe(true);
+      expect(store.selectedDocIds['doc-3']).toBe(true);
+      expect(store.selectedSourceIds).toContain('src-epub-1');
+
+      // Total words selected
+      const totalWords = docs
+        .filter((d) => store.selectedDocIds[d.id])
+        .reduce((sum, d) => sum + (d.wordCount || 0), 0);
+      expect(totalWords).toBe(5300); // 2200 + 3100
+    });
+
+    it('verifies SourceDocumentPickerModal and GenerateStudio markup & accessibility invariants', () => {
+      const modalPath = path.resolve(__dirname, '../client/src/components/SourceDocumentPickerModal.svelte');
+      const studioPath = path.resolve(__dirname, '../client/src/views/GenerateStudio.svelte');
+
+      const modalContent = fs.readFileSync(modalPath, 'utf-8');
+      const studioContent = fs.readFileSync(studioPath, 'utf-8');
+
+      // SourceDocumentPickerModal invariants
+      expect(modalContent).toContain('role="dialog"');
+      expect(modalContent).toContain('aria-modal="true"');
+      expect(modalContent).toContain('aria-labelledby="picker-modal-title"');
+      expect(modalContent).toContain('.filter-tabs');
+      expect(modalContent).toContain('tab-btn');
+      expect(modalContent).toContain('.search-input');
+      expect(modalContent).toContain('.btn-picker-action');
+      expect(modalContent).toContain('max-width: min(920px, 95vw)');
+      expect(modalContent).toContain('@media (max-width: 640px)');
+
+      // GenerateStudio invariants
+      expect(studioContent).toContain('.source-scope-cards-list');
+      expect(studioContent).toContain('.source-scope-card');
+      expect(studioContent).toContain('.btn-select-docs');
+      expect(studioContent).toContain('SourceDocumentPickerModal');
+      expect(studioContent).toContain('isPickerModalOpen');
+      expect(studioContent).toContain('.card-status-container');
+      expect(studioContent).toContain('.status-pill');
+      // Modal stacking layer invariants: Preview modal (1300) sits in front of Document picker modal (1200)
+      const previewPath = path.resolve(__dirname, '../client/src/components/DocumentPreviewModal.svelte');
+      const previewContent = fs.readFileSync(previewPath, 'utf-8');
+      expect(modalContent).toContain('z-index: 1200');
+      expect(previewContent).toContain('z-index: 1300');
+    });
+  });
 });
 
 

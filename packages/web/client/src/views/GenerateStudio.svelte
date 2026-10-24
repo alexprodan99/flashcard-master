@@ -5,6 +5,7 @@
   import { formatPageBadge } from '../lib/formatters.js';
   import GenerationConfigFields from '../components/GenerationConfigFields.svelte';
   import DocumentPreviewModal from '../components/DocumentPreviewModal.svelte';
+  import SourceDocumentPickerModal from '../components/SourceDocumentPickerModal.svelte';
   import { generateStore, toastStore, taskStore } from '../stores/index.js';
 
   interface Props {
@@ -20,6 +21,11 @@
   let previewDoc = $state<DiscoveredDocument | null>(null);
   let isPreviewOpen = $state(false);
 
+  // Document Picker Modal State (Story 19.7)
+  let pickerSource = $state<DataSource | null>(null);
+  let isPickerModalOpen = $state(false);
+  let pickerInitialSearch = $state('');
+
   // Computed Scope Metrics from universal generateStore
   let selectedDocCount = $derived(
     Object.keys(generateStore.selectedDocIds).filter((id) => generateStore.selectedDocIds[id]).length
@@ -30,6 +36,16 @@
       .flat()
       .filter((doc) => generateStore.selectedDocIds[doc.id])
       .reduce((sum, doc) => sum + (doc.wordCount || 0), 0)
+  );
+
+  let totalDocCount = $derived(
+    Object.values(generateStore.sourceDocuments)
+      .flat()
+      .length
+  );
+
+  let selectedSourceCount = $derived(
+    generateStore.selectedSourceIds.length
   );
 
   // Auto-save configuration changes to localStorage
@@ -99,15 +115,48 @@
       const activeSourceIds = sources.map((s) => s.id);
       generateStore.pruneDeadIds(activeSourceIds);
 
-      // If any sources are currently marked as expanded, ensure their documents are loaded and up to date
+      // Pre-load documents for all active sources so cards display accurate document metrics immediately
       for (const s of sources) {
-        if (generateStore.expandedSources[s.id]) {
-          loadDocumentsForSource(s.id);
-        }
+        loadDocumentsForSource(s.id);
       }
     } catch (err: any) {
       generateStore.errorMessage = 'Failed to load active data sources: ' + err.message;
     }
+  }
+
+  async function openDocumentPicker(source: DataSource, initialQuery = '') {
+    if (!generateStore.sourceDocuments[source.id] || generateStore.sourceDocuments[source.id].length === 0) {
+      await loadDocumentsForSource(source.id);
+    }
+    pickerSource = source;
+    pickerInitialSearch = initialQuery;
+    isPickerModalOpen = true;
+  }
+
+  function handleApplyPickerSelections(sourceId: string, selectedIds: string[]) {
+    const docs = generateStore.sourceDocuments[sourceId] || [];
+    const selectedSet = new Set(selectedIds);
+    docs.forEach((doc) => {
+      generateStore.selectedDocIds[doc.id] = selectedSet.has(doc.id);
+    });
+    if (selectedIds.length > 0) {
+      if (!generateStore.selectedSourceIds.includes(sourceId)) {
+        generateStore.selectedSourceIds = [...generateStore.selectedSourceIds, sourceId];
+      }
+    } else {
+      generateStore.selectedSourceIds = generateStore.selectedSourceIds.filter((id) => id !== sourceId);
+    }
+    generateStore.saveSelections();
+    toastStore.info(`Updated document selection (${selectedIds.length} of ${docs.length} selected).`);
+    isPickerModalOpen = false;
+    pickerSource = null;
+  }
+
+  function getSelectedWordsForSource(sourceId: string): number {
+    const docs = generateStore.sourceDocuments[sourceId] || [];
+    return docs
+      .filter((doc) => generateStore.selectedDocIds[doc.id])
+      .reduce((sum, doc) => sum + (doc.wordCount || 0), 0);
   }
 
   async function loadDocumentsForSource(sourceId: string) {
@@ -611,11 +660,14 @@
           <div class="section-header">
             <span class="section-label">1. Target Scope (Sources & Documents)</span>
             <div class="header-actions">
-              <span class="selection-badge">
+              <span class="selection-badge source-badge">
+                📁 {selectedSourceCount} / {sources.length} sources
+              </span>
+              <span class="selection-badge doc-badge" class:has-selection={selectedDocCount > 0}>
                 {#if selectedDocCount > 0}
-                  🎯 {selectedDocCount} docs selected (~{selectedTotalWords.toLocaleString()} words)
+                  🎯 {selectedDocCount}{totalDocCount > 0 ? ` / ${totalDocCount}` : ''} docs (~{selectedTotalWords.toLocaleString()} words)
                 {:else}
-                  📁 {generateStore.selectedSourceIds.length} / {sources.length} sources
+                  📄 0{totalDocCount > 0 ? ` / ${totalDocCount}` : ''} docs
                 {/if}
               </span>
               <button type="button" class="btn btn-xs btn-secondary" onclick={toggleSelectAllGlobal} disabled={generateStore.isGenerating}>
@@ -672,240 +724,114 @@
               {/if}
             </div>
 
-            <div class="scope-tree-container">
+            <div class="source-scope-cards-list">
               {#each sources as s (s.id)}
-                {@const isSourceMatch = !globalSearchQuery || normalizeSearchText(s.name).includes(normalizeSearchText(globalSearchQuery)) || (generateStore.sourceDocuments[s.id] && generateStore.sourceDocuments[s.id].some((d) => matchesDocQuery(d, globalSearchQuery)))}
-                <div class="source-node" class:expanded={generateStore.expandedSources[s.id]} class:dimmed={!!globalSearchQuery && !isSourceMatch}>
-                  <div class="source-node-header">
-                    <label class="checkbox-container">
-                      <input
-                        type="checkbox"
-                        checked={isSourceFullyChecked(s)}
-                        indeterminate={isSourceIndeterminate(s)}
-                        onchange={() => toggleSourceCheck(s)}
-                        disabled={generateStore.isGenerating}
-                      />
-                    </label>
+                {@const docs = generateStore.sourceDocuments[s.id] || []}
+                {@const selCount = getSelectedCountForSource(s.id)}
+                {@const totalDocs = docs.length}
+                {@const isFullyChecked = isSourceFullyChecked(s)}
+                {@const isIndeterminate = isSourceIndeterminate(s)}
+                {@const hasSelection = selCount > 0}
+                {@const words = getSelectedWordsForSource(s.id)}
+                {@const isSourceMatch = !globalSearchQuery || normalizeSearchText(s.name).includes(normalizeSearchText(globalSearchQuery)) || docs.some((d) => matchesDocQuery(d, globalSearchQuery))}
+                {@const matchCount = globalSearchQuery && docs.length > 0 ? docs.filter((d) => matchesDocQuery(d, globalSearchQuery)).length : 0}
 
-                    <button
-                      type="button"
-                      class="accordion-toggle"
-                      onclick={() => handleToggleExpand(s.id)}
-                    >
-                      <span class="toggle-icon">{generateStore.expandedSources[s.id] ? '▼' : '▶'}</span>
+                <div
+                  class="source-scope-card"
+                  class:card-selected={hasSelection || isFullyChecked}
+                  class:card-dimmed={!!globalSearchQuery && !isSourceMatch}
+                >
+                  <div class="card-main-row">
+                    <div class="card-identity">
+                      <label class="checkbox-container">
+                        <input
+                          type="checkbox"
+                          checked={isFullyChecked}
+                          indeterminate={isIndeterminate}
+                          onchange={() => toggleSourceCheck(s)}
+                          disabled={generateStore.isGenerating}
+                          aria-label={`Select entire source ${s.name}`}
+                        />
+                      </label>
+
                       <span class="type-badge {s.type}">{s.type}</span>
-                      <span class="source-title">{s.name}</span>
-                      {#if globalSearchQuery && generateStore.sourceDocuments[s.id]}
-                        {@const matchCount = generateStore.sourceDocuments[s.id].filter((d) => matchesDocQuery(d, globalSearchQuery)).length}
-                        {#if matchCount > 0}
-                          <span class="match-pill">🎯 {matchCount} match{matchCount === 1 ? '' : 'es'}</span>
+                      <div class="source-title-group">
+                        <span class="source-card-name" title={s.name}>{s.name}</span>
+                        {#if globalSearchQuery && matchCount > 0}
+                          <span class="match-badge">🎯 {matchCount} match{matchCount === 1 ? '' : 'es'}</span>
                         {/if}
-                      {/if}
-                      {#if generateStore.sourceDocuments[s.id]}
-                        {@const selCount = getSelectedCountForSource(s.id)}
-                        {#if selCount > 0}
-                          <span class="selected-pill">✓ {selCount} / {generateStore.sourceDocuments[s.id].length}</span>
-                        {:else}
-                          <span class="doc-count-pill">{generateStore.sourceDocuments[s.id].length} docs</span>
-                        {/if}
-                      {/if}
-                    </button>
-                  </div>
+                      </div>
+                    </div>
 
-                  <!-- Expanded Document List -->
-                  {#if generateStore.expandedSources[s.id]}
-                    <div class="source-documents-tray">
+                    <div class="card-status-container">
                       {#if generateStore.loadingDocs[s.id]}
-                        <div class="tray-loading">
-                          <span class="spinner-inline"></span>
-                          <span>Loading discovered documents...</span>
-                        </div>
-                      {:else if !generateStore.sourceDocuments[s.id] || generateStore.sourceDocuments[s.id].length === 0}
-                        <div class="tray-empty">
-                          <span>No documents discovered yet.</span>
-                          <button
-                            type="button"
-                            class="btn btn-xs btn-primary"
-                            disabled={generateStore.syncingSources[s.id] || generateStore.isGenerating}
-                            onclick={() => handleQuickSyncSource(s.id)}
-                          >
-                            {#if generateStore.syncingSources[s.id]}
-                              <span class="spinner-inline"></span> Syncing...
-                            {:else}
-                              ⚡ Sync Now
-                            {/if}
-                          </button>
-                        </div>
+                        <span class="status-pill loading">
+                          <span class="spinner-inline"></span> Loading documents...
+                        </span>
+                      {:else if totalDocs === 0}
+                        <span class="status-pill empty">
+                          0 documents discovered
+                        </span>
+                      {:else if selCount === totalDocs}
+                        <span class="status-pill all-selected">
+                          ✅ All {totalDocs} docs selected (~{words.toLocaleString()} words)
+                        </span>
+                      {:else if selCount > 0}
+                        <span class="status-pill partial-selected">
+                          🎯 {selCount} of {totalDocs} docs selected (~{words.toLocaleString()} words)
+                        </span>
                       {:else}
-                        {@const filteredDocs = getFilteredDocs(s.id)}
-                        {@const allDocs = generateStore.sourceDocuments[s.id] || []}
-                        {@const selCount = getSelectedCountForSource(s.id)}
-
-                        <div class="tray-toolbar">
-                          <div class="tray-search-box">
-                            <span class="search-icon">🔍</span>
-                            <input
-                              type="text"
-                              placeholder="Filter by title, URL or text..."
-                              value={generateStore.sourceFilterQuery[s.id] || ''}
-                              oninput={(e) => handleTrayFilterInput(s.id, e)}
-                              class="tray-filter-input"
-                              disabled={generateStore.isGenerating}
-                            />
-                            {#if traySearching[s.id]}
-                              <span class="spinner-inline tray-spinner"></span>
-                            {/if}
-                            {#if generateStore.sourceFilterQuery[s.id]}
-                              <button
-                                type="button"
-                                class="tray-filter-clear"
-                                onclick={() => handleClearTrayFilter(s.id)}
-                                title="Clear filter"
-                              >
-                                ✕
-                              </button>
-                            {/if}
-                          </div>
-
-                          <div class="tray-actions-row">
-                            <div class="tray-stat-count">
-                              Showing <strong>{filteredDocs.length}</strong> of <strong>{allDocs.length}</strong> docs
-                              {#if selCount > 0}
-                                <span class="sel-highlight">({selCount} selected)</span>
-                              {/if}
-                            </div>
-                            <div class="tray-bulk-buttons">
-                              <button
-                                type="button"
-                                class="btn-tray-action"
-                                onclick={() => handleRefreshSourceDocuments(s.id)}
-                                disabled={generateStore.loadingDocs[s.id] || generateStore.isGenerating}
-                                title="Reload latest documents from database"
-                              >
-                                {#if generateStore.loadingDocs[s.id]}
-                                  <span class="spinner-inline"></span>
-                                {:else}
-                                  🔄 Refresh
-                                {/if}
-                              </button>
-                              <button
-                                type="button"
-                                class="btn-tray-action"
-                                onclick={() => selectFilteredDocs(s.id)}
-                                disabled={generateStore.isGenerating || filteredDocs.length === 0}
-                                title="Select all filtered documents (Shift+Click rows to multi-select ranges)"
-                              >
-                                Select All
-                              </button>
-                              <button
-                                type="button"
-                                class="btn-tray-action"
-                                onclick={() => deselectFilteredDocs(s.id)}
-                                disabled={generateStore.isGenerating || filteredDocs.length === 0}
-                                title="Clear selection for filtered documents"
-                              >
-                                Clear
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-
-                        {#if filteredDocs.length === 0}
-                          <div class="tray-no-match">
-                            <span>No documents match "<em>{generateStore.sourceFilterQuery[s.id] || globalSearchQuery}</em>"</span>
-                            <div class="no-match-actions">
-                              <button
-                                type="button"
-                                class="btn-clear-filter"
-                                onclick={() => { handleClearTrayFilter(s.id); globalSearchQuery = ''; }}
-                              >
-                                Reset Filter
-                              </button>
-                              <button
-                                type="button"
-                                class="btn-clear-filter"
-                                onclick={() => handleRefreshSourceDocuments(s.id)}
-                              >
-                                🔄 Reload Docs
-                              </button>
-                            </div>
-                          </div>
-                        {:else}
-                          <div class="tray-doc-list">
-                            {#each filteredDocs as doc (doc.id)}
-                              <!-- svelte-ignore a11y_interactive_supports_focus -->
-                              <div
-                                class="tray-doc-row"
-                                class:selected={generateStore.selectedDocIds[doc.id]}
-                                onclick={(e) => handleDocRowClick(doc, s.id, e)}
-                                role="checkbox"
-                                aria-checked={!!generateStore.selectedDocIds[doc.id]}
-                                tabindex="0"
-                                onkeydown={(e) => {
-                                  if (e.key === ' ' || e.key === 'Enter') {
-                                    e.preventDefault();
-                                    handleDocRowClick(doc, s.id, e as any);
-                                  }
-                                }}
-                              >
-                                <div class="tray-doc-left">
-                                  <input
-                                    type="checkbox"
-                                    class="doc-checkbox"
-                                    checked={!!generateStore.selectedDocIds[doc.id]}
-                                    onclick={(e) => e.stopPropagation()}
-                                    onchange={() => toggleDocCheck(doc, s.id)}
-                                    disabled={generateStore.isGenerating}
-                                    tabindex="-1"
-                                    aria-label={`Select ${doc.title}`}
-                                  />
-                                  <div class="tray-doc-info">
-                                    <div class="tray-doc-title" title={doc.title}>
-                                      {doc.title}
-                                    </div>
-                                    <div class="tray-doc-meta-row">
-                                      {#if formatPageBadge(doc)}
-                                        <span class="meta-item page-badge">
-                                          📄 {formatPageBadge(doc)}
-                                        </span>
-                                      {/if}
-                                      <span class="meta-item word-count">
-                                        📝 {(doc.wordCount || 0).toLocaleString()} words
-                                      </span>
-                                      {#if doc.cardCount && doc.cardCount > 0}
-                                        <span class="meta-item card-count">
-                                          🎴 {doc.cardCount} cards
-                                        </span>
-                                      {/if}
-                                      {#if doc.url}
-                                        <span class="meta-item doc-url" title={doc.url}>
-                                          🔗 {doc.url.replace(/^https?:\/\/(www\.)?/, '')}
-                                        </span>
-                                      {/if}
-                                    </div>
-                                  </div>
-                                </div>
-
-                                <div class="tray-doc-right">
-                                  <button
-                                    type="button"
-                                    class="btn-preview-mini"
-                                    onclick={(e) => {
-                                      e.stopPropagation();
-                                      handleOpenPreview(doc);
-                                    }}
-                                    title="Preview Document Content"
-                                  >
-                                    👁️ Preview
-                                  </button>
-                                </div>
-                              </div>
-                            {/each}
-                          </div>
-                        {/if}
+                        <span class="status-pill none-selected">
+                          ⚪ 0 of {totalDocs} docs selected
+                        </span>
                       {/if}
                     </div>
-                  {/if}
+
+                    <div class="card-actions">
+                      <button
+                        type="button"
+                        class="btn-select-docs"
+                        onclick={() => openDocumentPicker(s, globalSearchQuery)}
+                        disabled={generateStore.isGenerating}
+                        title={`Select documents for ${s.name}`}
+                        aria-label={`Select documents for ${s.name}`}
+                      >
+                        📑 Select Documents
+                      </button>
+
+                      <div class="card-bulk-group">
+                        <button
+                          type="button"
+                          class="btn-card-micro"
+                          onclick={async () => {
+                            if (!generateStore.sourceDocuments[s.id]) await loadDocumentsForSource(s.id);
+                            selectAllDocsForSource(s.id);
+                            if (!generateStore.selectedSourceIds.includes(s.id)) {
+                              generateStore.selectedSourceIds = [...generateStore.selectedSourceIds, s.id];
+                            }
+                            generateStore.saveSelections();
+                          }}
+                          disabled={generateStore.isGenerating || totalDocs === 0}
+                          title="Select all documents in this source"
+                        >
+                          Select All
+                        </button>
+                        <button
+                          type="button"
+                          class="btn-card-micro"
+                          onclick={() => {
+                            deselectAllDocsForSource(s.id);
+                            generateStore.selectedSourceIds = generateStore.selectedSourceIds.filter(id => id !== s.id);
+                            generateStore.saveSelections();
+                          }}
+                          disabled={generateStore.isGenerating || totalDocs === 0}
+                          title="Clear document selections for this source"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               {/each}
             </div>
@@ -1020,6 +946,27 @@
   </div>
 </div>
 
+<!-- Dedicated Source Document Picker Modal (Story 19.7) -->
+<SourceDocumentPickerModal
+  isOpen={isPickerModalOpen}
+  source={pickerSource}
+  documents={pickerSource ? (generateStore.sourceDocuments[pickerSource.id] || []) : []}
+  selectedDocIds={generateStore.selectedDocIds}
+  initialSearchQuery={pickerInitialSearch}
+  onApply={(selectedIds) => {
+    if (pickerSource) {
+      handleApplyPickerSelections(pickerSource.id, selectedIds);
+    }
+  }}
+  onClose={() => {
+    isPickerModalOpen = false;
+    pickerSource = null;
+  }}
+  onPreviewDoc={(doc) => {
+    handleOpenPreview(doc);
+  }}
+/>
+
 <!-- Reusable Document Preview Modal in Generate Studio -->
 <DocumentPreviewModal
   isOpen={isPreviewOpen}
@@ -1110,16 +1057,34 @@
     display: flex;
     align-items: center;
     gap: 8px;
+    flex-wrap: wrap;
   }
 
   .selection-badge {
     font-size: 11px;
-    background: rgba(99, 102, 241, 0.15);
-    color: #818cf8;
-    border: 1px solid rgba(99, 102, 241, 0.3);
+    background: rgba(148, 163, 184, 0.12);
+    color: #cbd5e1;
+    border: 1px solid rgba(148, 163, 184, 0.25);
     padding: 2px 8px;
     border-radius: 12px;
     font-weight: 600;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.15s ease;
+  }
+
+  .selection-badge.source-badge {
+    background: rgba(56, 189, 248, 0.1);
+    color: #38bdf8;
+    border-color: rgba(56, 189, 248, 0.25);
+  }
+
+  .selection-badge.doc-badge.has-selection {
+    background: rgba(99, 102, 241, 0.15);
+    color: #818cf8;
+    border-color: rgba(99, 102, 241, 0.35);
   }
 
   /* Global Scope Search */
@@ -1203,89 +1168,179 @@
     opacity: 0.45;
   }
 
-  /* Scope Tree */
-  .scope-tree-container {
+  /* Source Scope Cards (Story 19.7) */
+  .source-scope-cards-list {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    max-height: 560px;
+    gap: 10px;
+    max-height: 540px;
     overflow-y: auto;
     padding-right: 4px;
     scrollbar-width: thin;
     scrollbar-color: #475569 #0f172a;
   }
 
-  .source-node {
+  .source-scope-card {
     background: #1e293b;
     border: 1px solid #334155;
     border-radius: 8px;
-    overflow: hidden;
-    transition: border-color 0.15s;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    transition: all 0.15s ease;
   }
 
-  .source-node:hover {
+  .source-scope-card:hover {
     border-color: #475569;
   }
 
-  .source-node-header {
+  .source-scope-card.card-selected {
+    border-color: rgba(99, 102, 241, 0.45);
+    background: rgba(30, 41, 59, 0.85);
+  }
+
+  .source-scope-card.card-dimmed {
+    opacity: 0.4;
+  }
+
+  .card-main-row {
     display: flex;
     align-items: center;
-    padding: 10px 12px;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .card-identity {
+    display: flex;
+    align-items: center;
     gap: 10px;
-  }
-
-  .checkbox-container {
-    display: flex;
-    align-items: center;
-    cursor: pointer;
-  }
-
-  .accordion-toggle {
+    min-width: 0;
     flex: 1;
+  }
+
+  .source-title-group {
     display: flex;
     align-items: center;
     gap: 8px;
-    background: transparent;
-    border: none;
-    color: #f8fafc;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    text-align: left;
-    padding: 0;
-  }
-
-  .toggle-icon {
-    font-size: 10px;
-    color: #94a3b8;
-    width: 14px;
-  }
-
-  .source-title {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     min-width: 0;
   }
 
-  .doc-count-pill {
-    font-size: 11px;
-    background: rgba(255, 255, 255, 0.06);
-    color: #94a3b8;
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-weight: 500;
+  .source-card-name {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: #f8fafc;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  .selected-pill {
-    font-size: 11px;
-    background: rgba(99, 102, 241, 0.2);
-    color: #a5b4fc;
-    border: 1px solid rgba(99, 102, 241, 0.4);
-    padding: 2px 8px;
+  .match-badge {
+    font-size: 10.5px;
+    background: rgba(16, 185, 129, 0.18);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.35);
+    padding: 1px 7px;
     border-radius: 9999px;
     font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .card-status-container {
+    display: flex;
+    align-items: center;
+  }
+
+  .status-pill {
+    font-size: 11.5px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 9999px;
+    white-space: nowrap;
+    border: 1px solid transparent;
+  }
+
+  .status-pill.all-selected {
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+    border-color: rgba(16, 185, 129, 0.3);
+  }
+
+  .status-pill.partial-selected {
+    background: rgba(99, 102, 241, 0.15);
+    color: #a5b4fc;
+    border-color: rgba(99, 102, 241, 0.35);
+  }
+
+  .status-pill.none-selected {
+    background: rgba(255, 255, 255, 0.05);
+    color: #94a3b8;
+    border-color: #334155;
+  }
+
+  .status-pill.loading,
+  .status-pill.empty {
+    background: rgba(255, 255, 255, 0.05);
+    color: #94a3b8;
+  }
+
+  .card-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .btn-select-docs {
+    background: #0284c7;
+    color: white;
+    border: 1px solid #0369a1;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 5px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+  }
+
+  .btn-select-docs:hover:not(:disabled) {
+    background: #0369a1;
+  }
+
+  .btn-select-docs:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .card-bulk-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .btn-card-micro {
+    background: #334155;
+    border: 1px solid #475569;
+    color: #cbd5e1;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+  }
+
+  .btn-card-micro:hover:not(:disabled) {
+    background: #475569;
+    color: #f8fafc;
+  }
+
+  .btn-card-micro:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 
   /* Tray */
@@ -1912,5 +1967,31 @@
     text-align: center;
     color: #94a3b8;
     font-size: 13px;
+  }
+
+  @media (max-width: 640px) {
+    .card-main-row {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 10px;
+    }
+
+    .card-identity {
+      width: 100%;
+    }
+
+    .card-status-container {
+      width: 100%;
+    }
+
+    .card-actions {
+      width: 100%;
+      justify-content: space-between;
+    }
+
+    .btn-select-docs {
+      flex: 1;
+      text-align: center;
+    }
   }
 </style>
