@@ -34,6 +34,10 @@ export class ToastStore {
     return this.show(message, 'warning', durationMs);
   }
 
+  warning(message: string, durationMs?: number) {
+    return this.warn(message, durationMs);
+  }
+
   info(message: string, durationMs?: number) {
     return this.show(message, 'info', durationMs);
   }

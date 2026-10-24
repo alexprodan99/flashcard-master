@@ -1,9 +1,17 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { checkAnkiStatus, pushToAnki, fetchCards, fetchCardsPaginated, fetchSources, fetchDocuments, exportDocuments } from '../lib/api';
-  import type { DataSource, DiscoveredDocument } from '../lib/types';
-  import DocumentExportModal from '../components/DocumentExportModal.svelte';
-  import { exportStore, toastStore } from '../stores/index.js';
+  import { onMount } from "svelte";
+  import {
+    checkAnkiStatus,
+    pushToAnki,
+    fetchCards,
+    fetchCardsPaginated,
+    fetchSources,
+    fetchDocuments,
+    exportDocuments,
+  } from "../lib/api";
+  import type { DataSource, DiscoveredDocument } from "../lib/types";
+  import DocumentExportModal from "../components/DocumentExportModal.svelte";
+  import { exportStore, toastStore } from "../stores/index.js";
 
   let isAnkiConnected = $state(false);
   let isCheckingAnki = $state(true);
@@ -14,9 +22,9 @@
 
   // Time & Scope Filtering State
   let isScopeFilterExpanded = $state(true);
-  let datePreset = $state<'all' | '24h' | '7d' | '30d' | 'custom'>('all');
-  let customAfter = $state('');
-  let customBefore = $state('');
+  let datePreset = $state<"all" | "24h" | "7d" | "30d" | "custom">("all");
+  let customAfter = $state("");
+  let customBefore = $state("");
   let exportLimit = $state<number | null>(null);
   let exportShuffle = $state(false);
   let matchingCardsCount = $state(0);
@@ -29,7 +37,7 @@
   // Advanced Export Modal state
   let isExportModalOpen = $state(false);
   let modalDocuments = $state<DiscoveredDocument[]>([]);
-  let modalSourceName = $state('Knowledge Base');
+  let modalSourceName = $state("Knowledge Base");
   let modalSourceId = $state<string | undefined>(undefined);
 
   let activeDownloadFormat = $state<string | null>(null);
@@ -41,19 +49,30 @@
   let knowledgeNotice = $derived(exportStore.knowledgeNotice);
 
   let effectiveAfter = $derived.by(() => {
-    if (datePreset === 'all') return undefined;
-    if (datePreset === '24h') return new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    if (datePreset === '7d') return new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    if (datePreset === '30d') return new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-    if (datePreset === 'custom') {
-      return customAfter ? (customAfter.length === 10 ? `${customAfter}T00:00:00Z` : customAfter) : undefined;
+    if (datePreset === "all") return undefined;
+    if (datePreset === "24h")
+      return new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    if (datePreset === "7d")
+      return new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    if (datePreset === "30d")
+      return new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    if (datePreset === "custom") {
+      return customAfter
+        ? customAfter.length === 10
+          ? `${customAfter}T00:00:00Z`
+          : customAfter
+        : undefined;
     }
     return undefined;
   });
 
   let effectiveBefore = $derived.by(() => {
-    if (datePreset === 'custom') {
-      return customBefore ? (customBefore.length === 10 ? `${customBefore}T23:59:59Z` : customBefore) : undefined;
+    if (datePreset === "custom") {
+      return customBefore
+        ? customBefore.length === 10
+          ? `${customBefore}T23:59:59Z`
+          : customBefore
+        : undefined;
     }
     return undefined;
   });
@@ -74,7 +93,7 @@
     isLoadingCount = true;
 
     fetchCardsPaginated({
-      deck: deck !== 'all' ? deck : undefined,
+      deck: deck !== "all" ? deck : undefined,
       createdAfter: after,
       createdBefore: before,
       limit: 1,
@@ -113,55 +132,73 @@
   }
 
   async function handlePush() {
-    if (!isAnkiConnected || isPushing || isKnowledgeExporting || activeDownloadFormat !== null) return;
+    if (
+      !isAnkiConnected ||
+      isPushing ||
+      isKnowledgeExporting ||
+      activeDownloadFormat !== null
+    )
+      return;
     if (matchingCardsCount === 0) {
-      toastStore.warning('No cards match the active filter criteria to push to Anki.');
+      toastStore.warn(
+        "No cards match the active filter criteria to push to Anki.",
+      );
       return;
     }
     exportStore.isPushing = true;
     exportStore.pushMessage = null;
     try {
       const res = await pushToAnki({
-        targetDeck: exportStore.selectedDeck !== 'all' ? exportStore.selectedDeck : undefined,
+        targetDeck:
+          exportStore.selectedDeck !== "all"
+            ? exportStore.selectedDeck
+            : undefined,
         createdAfter: effectiveAfter,
         createdBefore: effectiveBefore,
         limit: exportLimit && exportLimit > 0 ? exportLimit : undefined,
         shuffle: exportShuffle,
       });
-      const msg = res.message || `Successfully pushed ${res.cardsPushed} cards to Anki Desktop!`;
+      const msg =
+        res.message ||
+        `Successfully pushed ${res.cardsPushed} cards to Anki Desktop!`;
       exportStore.pushMessage = `✅ ${msg}`;
       toastStore.success(msg);
     } catch (err: any) {
-      exportStore.pushMessage = '⚠️ Push failed: ' + err.message;
-      toastStore.error('Push failed: ' + err.message);
+      exportStore.pushMessage = "⚠️ Push failed: " + err.message;
+      toastStore.error("Push failed: " + err.message);
     } finally {
       exportStore.isPushing = false;
     }
   }
 
-  function downloadFormat(format: 'apkg' | 'markdown' | 'pdf' | 'csv' | 'tsv' | 'epub') {
-    if (activeDownloadFormat !== null || isPushing || isKnowledgeExporting) return;
+  function downloadFormat(
+    format: "apkg" | "markdown" | "pdf" | "csv" | "tsv" | "epub",
+  ) {
+    if (activeDownloadFormat !== null || isPushing || isKnowledgeExporting)
+      return;
     if (matchingCardsCount === 0) {
-      toastStore.warning('No cards match the active filter criteria to export.');
+      toastStore.warn("No cards match the active filter criteria to export.");
       return;
     }
     activeDownloadFormat = format;
-    toastStore.info(`Preparing ${format.toUpperCase()} export download (${effectiveExportCount} cards)...`);
+    toastStore.info(
+      `Preparing ${format.toUpperCase()} export download (${effectiveExportCount} cards)...`,
+    );
     const query = new URLSearchParams();
-    if (exportStore.selectedDeck !== 'all') {
-      query.set('deck', exportStore.selectedDeck);
+    if (exportStore.selectedDeck !== "all") {
+      query.set("deck", exportStore.selectedDeck);
     }
     if (effectiveAfter) {
-      query.set('after', effectiveAfter);
+      query.set("after", effectiveAfter);
     }
     if (effectiveBefore) {
-      query.set('before', effectiveBefore);
+      query.set("before", effectiveBefore);
     }
     if (exportLimit && exportLimit > 0) {
-      query.set('limit', String(exportLimit));
+      query.set("limit", String(exportLimit));
     }
     if (exportShuffle) {
-      query.set('shuffle', 'true');
+      query.set("shuffle", "true");
     }
     const url = `/api/export/${format}?${query.toString()}`;
     window.location.href = url;
@@ -170,27 +207,42 @@
     }, 2000);
   }
 
-  async function downloadKnowledgeBase(format: 'markdown' | 'html' | 'txt' | 'json', mode: 'merged' | 'split' = 'merged') {
-    if (isKnowledgeExporting || isPushing || activeDownloadFormat !== null) return;
+  async function downloadKnowledgeBase(
+    format: "markdown" | "html" | "txt" | "json",
+    mode: "merged" | "split" = "merged",
+  ) {
+    if (isKnowledgeExporting || isPushing || activeDownloadFormat !== null)
+      return;
     activeKbFormat = `${format}-${mode}`;
     exportStore.isKnowledgeExporting = true;
     exportStore.knowledgeNotice = null;
 
     try {
       // Pre-flight check
-      const docRes = await fetchDocuments(exportStore.selectedSourceId !== 'all' ? exportStore.selectedSourceId : undefined);
+      const docRes = await fetchDocuments(
+        exportStore.selectedSourceId !== "all"
+          ? exportStore.selectedSourceId
+          : undefined,
+      );
       if (!docRes.documents || docRes.documents.length === 0) {
-        const selectedSrc = sources.find((s) => s.id === exportStore.selectedSourceId);
-        const name = selectedSrc ? selectedSrc.name : 'knowledge base';
+        const selectedSrc = sources.find(
+          (s) => s.id === exportStore.selectedSourceId,
+        );
+        const name = selectedSrc ? selectedSrc.name : "knowledge base";
         const notice = `⚠️ No documents found in "${name}". Please sync the data source first before exporting.`;
         exportStore.knowledgeNotice = notice;
-        toastStore.warning(notice);
+        toastStore.warn(notice);
         return;
       }
 
-      toastStore.info(`Synthesizing ${format.toUpperCase()} ${mode} knowledge export...`);
+      toastStore.info(
+        `Synthesizing ${format.toUpperCase()} ${mode} knowledge export...`,
+      );
       const result = await exportDocuments({
-        sourceId: exportStore.selectedSourceId !== 'all' ? exportStore.selectedSourceId : undefined,
+        sourceId:
+          exportStore.selectedSourceId !== "all"
+            ? exportStore.selectedSourceId
+            : undefined,
         format,
         mode,
         includeTableOfContents: true,
@@ -210,23 +262,35 @@
   }
 
   async function openAdvancedExportModal() {
-    if (isKnowledgeExporting || isPushing || activeDownloadFormat !== null) return;
+    if (isKnowledgeExporting || isPushing || activeDownloadFormat !== null)
+      return;
     exportStore.isKnowledgeExporting = true;
     exportStore.knowledgeNotice = null;
     try {
-      const docRes = await fetchDocuments(exportStore.selectedSourceId !== 'all' ? exportStore.selectedSourceId : undefined);
+      const docRes = await fetchDocuments(
+        exportStore.selectedSourceId !== "all"
+          ? exportStore.selectedSourceId
+          : undefined,
+      );
       if (!docRes.documents || docRes.documents.length === 0) {
-        const selectedSrc = sources.find((s) => s.id === exportStore.selectedSourceId);
-        const name = selectedSrc ? selectedSrc.name : 'knowledge base';
+        const selectedSrc = sources.find(
+          (s) => s.id === exportStore.selectedSourceId,
+        );
+        const name = selectedSrc ? selectedSrc.name : "knowledge base";
         const notice = `⚠️ No documents found in "${name}". Please sync the data source first before exporting.`;
         exportStore.knowledgeNotice = notice;
-        toastStore.warning(notice);
+        toastStore.warn(notice);
         return;
       }
 
-      const selectedSrc = sources.find((s) => s.id === exportStore.selectedSourceId);
-      modalSourceName = selectedSrc ? selectedSrc.name : 'All Knowledge Base';
-      modalSourceId = exportStore.selectedSourceId !== 'all' ? exportStore.selectedSourceId : undefined;
+      const selectedSrc = sources.find(
+        (s) => s.id === exportStore.selectedSourceId,
+      );
+      modalSourceName = selectedSrc ? selectedSrc.name : "All Knowledge Base";
+      modalSourceId =
+        exportStore.selectedSourceId !== "all"
+          ? exportStore.selectedSourceId
+          : undefined;
       modalDocuments = docRes.documents;
       isExportModalOpen = true;
     } catch (err: any) {
@@ -246,7 +310,9 @@
       ]);
 
       totalCardsCount = cards.length;
-      availableDecks = Array.from(new Set(cards.map((c) => c.targetDeck || 'Default'))).sort();
+      availableDecks = Array.from(
+        new Set(cards.map((c) => c.targetDeck || "Default")),
+      ).sort();
       sources = srcList;
       totalDocsCount = allDocs.total || allDocs.documents.length;
     } catch {
@@ -264,7 +330,10 @@
   <div class="view-header">
     <div>
       <h1 class="view-title">🚀 Export & Anki Center</h1>
-      <p class="view-subtitle">Export curated flashcards and knowledge base documents to Anki Desktop, printable PDFs, HTML, and Markdown notes.</p>
+      <p class="view-subtitle">
+        Export curated flashcards and knowledge base documents to Anki Desktop,
+        printable PDFs, HTML, and Markdown notes.
+      </p>
     </div>
     <div class="deck-filter-wrapper">
       <label for="export-deck-select">Filter Deck Scope:</label>
@@ -278,7 +347,7 @@
   </div>
 
   {#if pushMessage}
-    <div class="toast-banner" class:error={pushMessage.startsWith('⚠️')}>
+    <div class="toast-banner" class:error={pushMessage.startsWith("⚠️")}>
       {pushMessage}
     </div>
   {/if}
@@ -296,7 +365,10 @@
         <div>
           <div class="scope-title-row">
             <h3 class="scope-title">Time & Scope Filter</h3>
-            <span class="scope-live-badge" class:zero-match={matchingCardsCount === 0}>
+            <span
+              class="scope-live-badge"
+              class:zero-match={matchingCardsCount === 0}
+            >
               {#if isLoadingCount}
                 <span class="spinner-inline"></span> Counting...
               {:else if matchingCardsCount === 0}
@@ -312,20 +384,23 @@
             {/if}
           </div>
           <p class="scope-subtitle">
-            Filter cards by date created, set a maximum export count, or mix cards in random order.
+            Filter cards by date created, set a maximum export count, or mix
+            cards in random order.
           </p>
         </div>
       </div>
       <div class="scope-header-right">
         <span class="scope-preset-indicator">
-          {#if datePreset === 'all'}All Time
-          {:else if datePreset === '24h'}Last 24 Hours
-          {:else if datePreset === '7d'}Last 7 Days
-          {:else if datePreset === '30d'}Last 30 Days
+          {#if datePreset === "all"}All Time
+          {:else if datePreset === "24h"}Last 24 Hours
+          {:else if datePreset === "7d"}Last 7 Days
+          {:else if datePreset === "30d"}Last 30 Days
           {:else}Custom Range
           {/if}
         </span>
-        <span class="scope-chevron" class:expanded={isScopeFilterExpanded}>▼</span>
+        <span class="scope-chevron" class:expanded={isScopeFilterExpanded}
+          >▼</span
+        >
       </div>
     </button>
 
@@ -338,40 +413,40 @@
             <button
               type="button"
               class="preset-pill"
-              class:active={datePreset === 'all'}
-              onclick={() => (datePreset = 'all')}
+              class:active={datePreset === "all"}
+              onclick={() => (datePreset = "all")}
             >
               All Time
             </button>
             <button
               type="button"
               class="preset-pill"
-              class:active={datePreset === '24h'}
-              onclick={() => (datePreset = '24h')}
+              class:active={datePreset === "24h"}
+              onclick={() => (datePreset = "24h")}
             >
               Last 24 Hours
             </button>
             <button
               type="button"
               class="preset-pill"
-              class:active={datePreset === '7d'}
-              onclick={() => (datePreset = '7d')}
+              class:active={datePreset === "7d"}
+              onclick={() => (datePreset = "7d")}
             >
               Last 7 Days
             </button>
             <button
               type="button"
               class="preset-pill"
-              class:active={datePreset === '30d'}
-              onclick={() => (datePreset = '30d')}
+              class:active={datePreset === "30d"}
+              onclick={() => (datePreset = "30d")}
             >
               Last 30 Days
             </button>
             <button
               type="button"
               class="preset-pill"
-              class:active={datePreset === 'custom'}
-              onclick={() => (datePreset = 'custom')}
+              class:active={datePreset === "custom"}
+              onclick={() => (datePreset = "custom")}
             >
               Custom Range
             </button>
@@ -379,7 +454,7 @@
         </div>
 
         <!-- Custom Date Range Inputs (when 'custom' preset selected) -->
-        {#if datePreset === 'custom'}
+        {#if datePreset === "custom"}
           <div class="scope-custom-dates-row">
             <div class="date-input-group">
               <label for="scope-date-after">From (Created After):</label>
@@ -439,40 +514,56 @@
               <span class="toggle-switch"></span>
               <span class="toggle-label-text">
                 <strong>Shuffle Cards</strong>
-                <small>Export cards in random order for quick practice and quizzes</small>
+                <small
+                  >Export cards in random order for quick practice and quizzes</small
+                >
               </span>
             </label>
           </div>
         </div>
 
         <!-- Scope summary strip -->
-        <div class="scope-summary-strip" class:warning={matchingCardsCount === 0}>
+        <div
+          class="scope-summary-strip"
+          class:warning={matchingCardsCount === 0}
+        >
           <div class="scope-summary-text">
             {#if matchingCardsCount === 0}
-              <span>⚠️ <strong>No cards match this scope.</strong> Try expanding your date range or selecting a different deck.</span>
+              <span
+                >⚠️ <strong>No cards match this scope.</strong> Try expanding your
+                date range or selecting a different deck.</span
+              >
             {:else}
               <span>
-                🎯 <strong>Ready to export:</strong> {effectiveExportCount} {effectiveExportCount === 1 ? 'card' : 'cards'}
+                🎯 <strong>Ready to export:</strong>
+                {effectiveExportCount}
+                {effectiveExportCount === 1 ? "card" : "cards"}
                 {#if exportLimit && exportLimit > 0 && exportLimit < matchingCardsCount}
-                  <span class="summary-dim">(limited to {exportLimit} of {matchingCardsCount} cards)</span>
+                  <span class="summary-dim"
+                    >(limited to {exportLimit} of {matchingCardsCount} cards)</span
+                  >
                 {/if}
                 {#if exportShuffle}
                   <span class="summary-badge">🎲 Shuffled</span>
                 {/if}
-                {#if datePreset !== 'all'}
-                  <span class="summary-badge">📅 {datePreset === 'custom' ? `${customAfter || 'start'} to ${customBefore || 'end'}` : datePreset}</span>
+                {#if datePreset !== "all"}
+                  <span class="summary-badge"
+                    >📅 {datePreset === "custom"
+                      ? `${customAfter || "start"} to ${customBefore || "end"}`
+                      : datePreset}</span
+                  >
                 {/if}
               </span>
             {/if}
           </div>
-          {#if (datePreset !== 'all' || customAfter || customBefore || exportLimit || exportShuffle)}
+          {#if datePreset !== "all" || customAfter || customBefore || exportLimit || exportShuffle}
             <button
               type="button"
               class="btn-reset-scope"
               onclick={() => {
-                datePreset = 'all';
-                customAfter = '';
-                customBefore = '';
+                datePreset = "all";
+                customAfter = "";
+                customBefore = "";
                 exportLimit = null;
                 exportShuffle = false;
               }}
@@ -501,7 +592,10 @@
           {/if}
         </span>
       </div>
-      <p>Direct zero-click synchronization to your local running Anki Desktop client.</p>
+      <p>
+        Direct zero-click synchronization to your local running Anki Desktop
+        client.
+      </p>
     </div>
 
     <div class="anki-actions">
@@ -517,7 +611,11 @@
         type="button"
         class="btn btn-primary"
         onclick={handlePush}
-        disabled={!isAnkiConnected || isPushing || isKnowledgeExporting || activeDownloadFormat !== null || matchingCardsCount === 0}
+        disabled={!isAnkiConnected ||
+          isPushing ||
+          isKnowledgeExporting ||
+          activeDownloadFormat !== null ||
+          matchingCardsCount === 0}
       >
         {#if isPushing}
           <span class="spinner-inline"></span> Pushing to Anki...
@@ -539,14 +637,20 @@
           <span class="format-ext">.APKG</span>
         </div>
         <h3>Anki Native Package</h3>
-        <p>Complete deck archive with tags, styling, and metadata ready for direct import into Anki / AnkiMobile.</p>
+        <p>
+          Complete deck archive with tags, styling, and metadata ready for
+          direct import into Anki / AnkiMobile.
+        </p>
         <button
           type="button"
           class="btn btn-primary btn-full"
-          disabled={activeDownloadFormat !== null || isPushing || isKnowledgeExporting || matchingCardsCount === 0}
-          onclick={() => downloadFormat('apkg')}
+          disabled={activeDownloadFormat !== null ||
+            isPushing ||
+            isKnowledgeExporting ||
+            matchingCardsCount === 0}
+          onclick={() => downloadFormat("apkg")}
         >
-          {#if activeDownloadFormat === 'apkg'}
+          {#if activeDownloadFormat === "apkg"}
             <span class="spinner-inline"></span> Exporting...
           {:else}
             ⬇️ Download .apkg
@@ -561,14 +665,20 @@
           <span class="format-ext">.EPUB</span>
         </div>
         <h3>EPUB Study Guide eBook</h3>
-        <p>Interactive EPUB 3.0 eBook with collapsible &lt;details&gt; questions and verified citations for e-readers (Kindle, Kobo, Apple Books).</p>
+        <p>
+          Interactive EPUB 3.0 eBook with collapsible &lt;details&gt; questions
+          and verified citations for e-readers (Kindle, Kobo, Apple Books).
+        </p>
         <button
           type="button"
           class="btn btn-secondary btn-full"
-          disabled={activeDownloadFormat !== null || isPushing || isKnowledgeExporting || matchingCardsCount === 0}
-          onclick={() => downloadFormat('epub')}
+          disabled={activeDownloadFormat !== null ||
+            isPushing ||
+            isKnowledgeExporting ||
+            matchingCardsCount === 0}
+          onclick={() => downloadFormat("epub")}
         >
-          {#if activeDownloadFormat === 'epub'}
+          {#if activeDownloadFormat === "epub"}
             <span class="spinner-inline"></span> Exporting...
           {:else}
             ⬇️ Download EPUB
@@ -583,14 +693,20 @@
           <span class="format-ext">.MD</span>
         </div>
         <h3>Active Recall Markdown</h3>
-        <p>Collapsible HTML &lt;details&gt; questions and answers optimized for Obsidian, Notion, and Logseq.</p>
+        <p>
+          Collapsible HTML &lt;details&gt; questions and answers optimized for
+          Obsidian, Notion, and Logseq.
+        </p>
         <button
           type="button"
           class="btn btn-secondary btn-full"
-          disabled={activeDownloadFormat !== null || isPushing || isKnowledgeExporting || matchingCardsCount === 0}
-          onclick={() => downloadFormat('markdown')}
+          disabled={activeDownloadFormat !== null ||
+            isPushing ||
+            isKnowledgeExporting ||
+            matchingCardsCount === 0}
+          onclick={() => downloadFormat("markdown")}
         >
-          {#if activeDownloadFormat === 'markdown'}
+          {#if activeDownloadFormat === "markdown"}
             <span class="spinner-inline"></span> Exporting...
           {:else}
             ⬇️ Download Markdown
@@ -605,14 +721,20 @@
           <span class="format-ext">.PDF</span>
         </div>
         <h3>Printable PDF Study Guide</h3>
-        <p>Two-column foldable study sheet with folding guide lines and verified source quotes for offline study.</p>
+        <p>
+          Two-column foldable study sheet with folding guide lines and verified
+          source quotes for offline study.
+        </p>
         <button
           type="button"
           class="btn btn-secondary btn-full"
-          disabled={activeDownloadFormat !== null || isPushing || isKnowledgeExporting || matchingCardsCount === 0}
-          onclick={() => downloadFormat('pdf')}
+          disabled={activeDownloadFormat !== null ||
+            isPushing ||
+            isKnowledgeExporting ||
+            matchingCardsCount === 0}
+          onclick={() => downloadFormat("pdf")}
         >
-          {#if activeDownloadFormat === 'pdf'}
+          {#if activeDownloadFormat === "pdf"}
             <span class="spinner-inline"></span> Exporting...
           {:else}
             ⬇️ Download PDF
@@ -627,14 +749,20 @@
           <span class="format-ext">.CSV</span>
         </div>
         <h3>CSV Spreadsheet</h3>
-        <p>Standard comma-separated value spreadsheet format for Excel, Google Sheets, or custom scripts.</p>
+        <p>
+          Standard comma-separated value spreadsheet format for Excel, Google
+          Sheets, or custom scripts.
+        </p>
         <button
           type="button"
           class="btn btn-secondary btn-full"
-          disabled={activeDownloadFormat !== null || isPushing || isKnowledgeExporting || matchingCardsCount === 0}
-          onclick={() => downloadFormat('csv')}
+          disabled={activeDownloadFormat !== null ||
+            isPushing ||
+            isKnowledgeExporting ||
+            matchingCardsCount === 0}
+          onclick={() => downloadFormat("csv")}
         >
-          {#if activeDownloadFormat === 'csv'}
+          {#if activeDownloadFormat === "csv"}
             <span class="spinner-inline"></span> Exporting...
           {:else}
             ⬇️ Download CSV
@@ -649,14 +777,20 @@
           <span class="format-ext">.TSV</span>
         </div>
         <h3>Tab-Separated Values</h3>
-        <p>Tab-delimited text format for manual import into Quizlet, Brainscape, and Anki desktop wizard.</p>
+        <p>
+          Tab-delimited text format for manual import into Quizlet, Brainscape,
+          and Anki desktop wizard.
+        </p>
         <button
           type="button"
           class="btn btn-secondary btn-full"
-          disabled={activeDownloadFormat !== null || isPushing || isKnowledgeExporting || matchingCardsCount === 0}
-          onclick={() => downloadFormat('tsv')}
+          disabled={activeDownloadFormat !== null ||
+            isPushing ||
+            isKnowledgeExporting ||
+            matchingCardsCount === 0}
+          onclick={() => downloadFormat("tsv")}
         >
-          {#if activeDownloadFormat === 'tsv'}
+          {#if activeDownloadFormat === "tsv"}
             <span class="spinner-inline"></span> Exporting...
           {:else}
             ⬇️ Download TSV
@@ -671,21 +805,25 @@
     <div class="section-header-row">
       <div>
         <h2 class="section-title">📚 Source Knowledge Base Exporter</h2>
-        <p class="section-desc">Export ingested articles, documentation, and raw knowledge base documents into consolidated or split files.</p>
+        <p class="section-desc">
+          Export ingested articles, documentation, and raw knowledge base
+          documents into consolidated or split files.
+        </p>
       </div>
       <div class="source-filter-wrapper">
         <label for="kb-source-select">Filter Source Scope:</label>
         <select id="kb-source-select" bind:value={exportStore.selectedSourceId}>
           <option value="all">All Sources ({totalDocsCount} docs)</option>
           {#each sources as src}
-            <option value={src.id}>{src.name} ({src.type.toUpperCase()})</option>
+            <option value={src.id}>{src.name} ({src.type.toUpperCase()})</option
+            >
           {/each}
         </select>
       </div>
     </div>
 
     {#if knowledgeNotice}
-      <div class="toast-banner" class:error={knowledgeNotice.startsWith('⚠️')}>
+      <div class="toast-banner" class:error={knowledgeNotice.startsWith("⚠️")}>
         {knowledgeNotice}
       </div>
     {/if}
@@ -698,14 +836,19 @@
           <span class="format-ext">.MD</span>
         </div>
         <h3>Consolidated Markdown</h3>
-        <p>Merged Markdown document containing all ingested articles, table of contents, and origin citation footnotes.</p>
+        <p>
+          Merged Markdown document containing all ingested articles, table of
+          contents, and origin citation footnotes.
+        </p>
         <button
           type="button"
           class="btn btn-primary btn-full"
-          disabled={isKnowledgeExporting || isPushing || activeDownloadFormat !== null}
-          onclick={() => downloadKnowledgeBase('markdown', 'merged')}
+          disabled={isKnowledgeExporting ||
+            isPushing ||
+            activeDownloadFormat !== null}
+          onclick={() => downloadKnowledgeBase("markdown", "merged")}
         >
-          {#if activeKbFormat === 'markdown-merged'}
+          {#if activeKbFormat === "markdown-merged"}
             <span class="spinner-inline"></span> Exporting...
           {:else}
             ⬇️ Download Merged .md
@@ -720,14 +863,19 @@
           <span class="format-ext">.HTML</span>
         </div>
         <h3>Standalone HTML Guide</h3>
-        <p>Clean, beautifully formatted HTML study document with interactive anchor navigation and dark-mode styling.</p>
+        <p>
+          Clean, beautifully formatted HTML study document with interactive
+          anchor navigation and dark-mode styling.
+        </p>
         <button
           type="button"
           class="btn btn-secondary btn-full"
-          disabled={isKnowledgeExporting || isPushing || activeDownloadFormat !== null}
-          onclick={() => downloadKnowledgeBase('html', 'merged')}
+          disabled={isKnowledgeExporting ||
+            isPushing ||
+            activeDownloadFormat !== null}
+          onclick={() => downloadKnowledgeBase("html", "merged")}
         >
-          {#if activeKbFormat === 'html-merged'}
+          {#if activeKbFormat === "html-merged"}
             <span class="spinner-inline"></span> Exporting...
           {:else}
             ⬇️ Download .html
@@ -742,14 +890,19 @@
           <span class="format-ext">.TXT</span>
         </div>
         <h3>Plain Text Corpus</h3>
-        <p>Clean raw text format stripped of markup for offline local indexing, scripts, or LLM fine-tuning datasets.</p>
+        <p>
+          Clean raw text format stripped of markup for offline local indexing,
+          scripts, or LLM fine-tuning datasets.
+        </p>
         <button
           type="button"
           class="btn btn-secondary btn-full"
-          disabled={isKnowledgeExporting || isPushing || activeDownloadFormat !== null}
-          onclick={() => downloadKnowledgeBase('txt', 'merged')}
+          disabled={isKnowledgeExporting ||
+            isPushing ||
+            activeDownloadFormat !== null}
+          onclick={() => downloadKnowledgeBase("txt", "merged")}
         >
-          {#if activeKbFormat === 'txt-merged'}
+          {#if activeKbFormat === "txt-merged"}
             <span class="spinner-inline"></span> Exporting...
           {:else}
             ⬇️ Download .txt
@@ -764,14 +917,19 @@
           <span class="format-ext">.JSON</span>
         </div>
         <h3>Structured JSON Corpus</h3>
-        <p>Complete JSON document objects with titles, URLs, word counts, content hashes, and extracted text.</p>
+        <p>
+          Complete JSON document objects with titles, URLs, word counts, content
+          hashes, and extracted text.
+        </p>
         <button
           type="button"
           class="btn btn-secondary btn-full"
-          disabled={isKnowledgeExporting || isPushing || activeDownloadFormat !== null}
-          onclick={() => downloadKnowledgeBase('json', 'merged')}
+          disabled={isKnowledgeExporting ||
+            isPushing ||
+            activeDownloadFormat !== null}
+          onclick={() => downloadKnowledgeBase("json", "merged")}
         >
-          {#if activeKbFormat === 'json-merged'}
+          {#if activeKbFormat === "json-merged"}
             <span class="spinner-inline"></span> Exporting...
           {:else}
             ⬇️ Download .json
@@ -786,14 +944,19 @@
           <span class="format-ext">.ZIP</span>
         </div>
         <h3>Split Multi-file ZIP</h3>
-        <p>Archive containing each article or web page as a distinct file, named by title or URL slug.</p>
+        <p>
+          Archive containing each article or web page as a distinct file, named
+          by title or URL slug.
+        </p>
         <button
           type="button"
           class="btn btn-secondary btn-full"
-          disabled={isKnowledgeExporting || isPushing || activeDownloadFormat !== null}
-          onclick={() => downloadKnowledgeBase('markdown', 'split')}
+          disabled={isKnowledgeExporting ||
+            isPushing ||
+            activeDownloadFormat !== null}
+          onclick={() => downloadKnowledgeBase("markdown", "split")}
         >
-          {#if activeKbFormat === 'markdown-split'}
+          {#if activeKbFormat === "markdown-split"}
             <span class="spinner-inline"></span> Exporting...
           {:else}
             ⬇️ Download Split .zip
@@ -808,11 +971,16 @@
           <span class="format-ext">CUSTOM</span>
         </div>
         <h3>Advanced Export Options</h3>
-        <p>Configure fine-grained options: table of contents, citation links, merged vs. split zip archive, and custom formats.</p>
+        <p>
+          Configure fine-grained options: table of contents, citation links,
+          merged vs. split zip archive, and custom formats.
+        </p>
         <button
           type="button"
           class="btn btn-primary btn-full"
-          disabled={isKnowledgeExporting || isPushing || activeDownloadFormat !== null}
+          disabled={isKnowledgeExporting ||
+            isPushing ||
+            activeDownloadFormat !== null}
           onclick={openAdvancedExportModal}
         >
           ⚙️ Open Advanced Exporter
@@ -1008,7 +1176,9 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
-    transition: transform 0.15s, border-color 0.15s;
+    transition:
+      transform 0.15s,
+      border-color 0.15s;
   }
 
   .format-card:hover {
@@ -1114,7 +1284,9 @@
   }
 
   @keyframes spin {
-    to { transform: rotate(360deg); }
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   /* Time & Scope Filter Accordion Styles */
@@ -1123,7 +1295,9 @@
     border: 1px solid #334155;
     border-radius: 14px;
     overflow: hidden;
-    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    transition:
+      border-color 0.2s ease,
+      box-shadow 0.2s ease;
   }
 
   .scope-accordion-card:focus-within {
@@ -1384,7 +1558,7 @@
   }
 
   .toggle-switch::after {
-    content: '';
+    content: "";
     position: absolute;
     width: 16px;
     height: 16px;
