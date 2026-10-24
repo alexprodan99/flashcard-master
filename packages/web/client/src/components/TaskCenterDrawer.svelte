@@ -235,7 +235,8 @@
     background: #0f172a;
     border-left: 1px solid #1e293b;
     width: 100%;
-    max-width: 580px;
+    max-width: min(580px, 100vw);
+    box-sizing: border-box;
     height: 100vh;
     display: flex;
     flex-direction: column;
@@ -518,5 +519,20 @@
     border-radius: 4px;
     font-weight: 600;
     font-size: 10px;
+  }
+
+  @media (max-width: 640px) {
+    .drawer-header {
+      padding: 14px 16px;
+    }
+    .drawer-tabs {
+      padding: 8px 16px;
+    }
+    .drawer-content {
+      padding: 14px 16px;
+    }
+    .drawer-footer {
+      padding: 10px 16px;
+    }
   }
 </style>

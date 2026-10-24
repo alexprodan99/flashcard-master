@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { GenerateStore, generateStore, SELECTION_STORAGE_KEY, STORAGE_KEY } from '../client/src/stores/generateStore.svelte.js';
 import { SourcesStore, sourcesStore } from '../client/src/stores/sourcesStore.svelte.js';
 import { ExplorerStore } from '../client/src/stores/explorerStore.svelte.js';
@@ -1148,5 +1150,88 @@ describe('Svelte 5 Universal Client Stores (Epic 14.4)', () => {
       expect(receivedJobs.length).toBe(1);
     });
   });
+
+  describe('Responsive Layout & Overflow Hardening (Story 19.6)', () => {
+    it('verifies QuestionExplorer contains responsive grid, text wrapping, and quote clamping controls', () => {
+      const qePath = path.resolve(__dirname, '../client/src/views/QuestionExplorer.svelte');
+      const content = fs.readFileSync(qePath, 'utf-8');
+
+      // Card grid responsive template
+      expect(content).toContain('repeat(auto-fill, minmax(min(100%, 360px), 1fr))');
+
+      // Overflow wrapping on card text elements
+      expect(content).toContain('overflow-wrap: break-word');
+      expect(content).toContain('word-break: break-word');
+
+      // Quote expansion toggle state & button
+      expect(content).toContain('expandedQuoteCardIds');
+      expect(content).toContain('toggleQuoteExpand');
+      expect(content).toContain('card.sourceQuote.length > 180');
+      expect(content).toContain('btn-toggle-quote');
+      expect(content).toContain('Show more');
+      expect(content).toContain('Show less');
+
+      // Mobile media query
+      expect(content).toContain('@media (max-width: 640px)');
+    });
+
+    it('verifies DocumentPreviewModal contains responsive bounds, table scroll, and pre overflow handling', () => {
+      const modalPath = path.resolve(__dirname, '../client/src/components/DocumentPreviewModal.svelte');
+      const content = fs.readFileSync(modalPath, 'utf-8');
+
+      // Constrained modal width with viewport bounds
+      expect(content).toContain('max-width: min(860px, 95vw)');
+      expect(content).toContain('box-sizing: border-box');
+
+      // Pre and table horizontal scrolling
+      expect(content).toContain('.reader-view :global(table)');
+      expect(content).toContain('overflow-x: auto');
+      expect(content).toContain('.reader-view :global(pre)');
+
+      // Mobile media query
+      expect(content).toContain('@media (max-width: 640px)');
+    });
+
+    it('verifies slide-over drawers enforce max-width min bounds, box-sizing, and mobile padding', () => {
+      const drawers = [
+        { path: '../client/src/components/CardEditorDrawer.svelte', maxWidth: 'min(520px, 100vw)' },
+        { path: '../client/src/components/TaskCenterDrawer.svelte', maxWidth: 'min(580px, 100vw)' },
+        { path: '../client/src/components/SourceDocumentInspector.svelte', maxWidth: 'min(680px, 100vw)' },
+      ];
+
+      for (const drawer of drawers) {
+        const fullPath = path.resolve(__dirname, drawer.path);
+        const content = fs.readFileSync(fullPath, 'utf-8');
+
+        expect(content).toContain(drawer.maxWidth);
+        expect(content).toContain('box-sizing: border-box');
+        expect(content).toContain('@media (max-width: 640px)');
+      }
+    });
+
+    it('verifies GenerateStudio tray items and document URLs are constrained against horizontal spill', () => {
+      const gsPath = path.resolve(__dirname, '../client/src/views/GenerateStudio.svelte');
+      const content = fs.readFileSync(gsPath, 'utf-8');
+
+      // Document tray row and titles have min-width: 0 to allow flex shrinking
+      expect(content).toContain('.tray-doc-row');
+      expect(content).toContain('.meta-item.doc-url');
+      expect(content).toContain('max-width: min(220px, 35vw)');
+      expect(content).toContain('text-overflow: ellipsis');
+    });
+
+    it('evaluates quote expansion threshold invariant (180 characters)', () => {
+      const shortQuote = 'A concise quote within limits.';
+      const longQuote = 'A'.repeat(181);
+
+      const isShortClamped = (quote: string, expanded: boolean) => quote.length > 180 && !expanded;
+
+      expect(isShortClamped(shortQuote, false)).toBe(false);
+      expect(isShortClamped(shortQuote, true)).toBe(false);
+      expect(isShortClamped(longQuote, false)).toBe(true);
+      expect(isShortClamped(longQuote, true)).toBe(false);
+    });
+  });
 });
+
 

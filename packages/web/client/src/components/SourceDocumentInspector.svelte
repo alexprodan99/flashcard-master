@@ -580,7 +580,8 @@
 
   .drawer-panel {
     width: 680px;
-    max-width: 90vw;
+    max-width: min(680px, 100vw);
+    box-sizing: border-box;
     height: 100vh;
     background: #0f172a;
     border-left: 1px solid #334155;
@@ -619,7 +620,7 @@
     margin: 4px 0 0 0;
     font-size: 12px;
     color: #94a3b8;
-    max-width: 480px;
+    max-width: min(480px, 75vw);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1075,5 +1076,23 @@
     display: flex;
     justify-content: flex-end;
     gap: 10px;
+  }
+
+  @media (max-width: 640px) {
+    .drawer-panel {
+      width: 100%;
+      max-width: 100vw;
+    }
+    .drawer-header {
+      padding: 14px 16px;
+    }
+    .config-modal-backdrop {
+      padding: 8px;
+    }
+    .config-modal {
+      width: 100%;
+      max-width: 100vw;
+      border-radius: 8px;
+    }
   }
 </style>
