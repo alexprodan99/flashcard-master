@@ -270,7 +270,8 @@
     background: #1e293b;
     border-left: 1px solid #334155;
     width: 100%;
-    max-width: 520px;
+    max-width: min(520px, 100vw);
+    box-sizing: border-box;
     height: 100vh;
     padding: 28px;
     box-shadow: -10px 0 25px rgba(0, 0, 0, 0.5);
@@ -424,5 +425,22 @@
     border-radius: 8px;
     font-size: 13px;
     margin-bottom: 12px;
+  }
+
+  @media (max-width: 640px) {
+    .drawer-panel {
+      padding: 16px;
+    }
+    .drawer-footer {
+      flex-direction: column-reverse;
+      gap: 10px;
+    }
+    .right-buttons {
+      width: 100%;
+    }
+    .right-buttons button,
+    .drawer-footer button {
+      flex: 1;
+    }
   }
 </style>

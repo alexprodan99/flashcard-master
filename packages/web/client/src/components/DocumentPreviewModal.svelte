@@ -292,12 +292,14 @@
     border: 1px solid #334155;
     border-radius: 12px;
     width: 860px;
-    max-width: 95vw;
+    max-width: min(860px, 95vw);
     height: 85vh;
     max-height: 85vh;
     display: flex;
     flex-direction: column;
     box-shadow: 0 16px 40px rgba(0, 0, 0, 0.8);
+    box-sizing: border-box;
+    min-width: 0;
     animation: fadeIn 0.15s ease-out;
   }
 
@@ -423,14 +425,19 @@
   .preview-content {
     flex: 1;
     overflow-y: auto;
+    overflow-x: hidden;
     padding: 24px 28px;
     background: #0b0f19;
+    min-width: 0;
   }
 
   .raw-view {
     margin: 0;
     white-space: pre-wrap;
     word-break: break-word;
+    overflow-x: auto;
+    max-width: 100%;
+    box-sizing: border-box;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 13px;
     color: #cbd5e1;
@@ -495,6 +502,8 @@
     border-radius: 8px;
     padding: 14px 16px;
     overflow-x: auto;
+    max-width: 100%;
+    box-sizing: border-box;
     margin: 16px 0;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 12.5px;
@@ -509,6 +518,34 @@
     font-size: 12.5px;
     color: #93c5fd;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    word-break: break-word;
+  }
+
+  .reader-view :global(table) {
+    display: block;
+    overflow-x: auto;
+    max-width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 13.5px;
+    width: 100%;
+  }
+
+  .reader-view :global(th),
+  .reader-view :global(td) {
+    padding: 8px 12px;
+    border: 1px solid #334155;
+    text-align: left;
+  }
+
+  .reader-view :global(th) {
+    background: #1e293b;
+    color: #f1f5f9;
+    font-weight: 600;
+  }
+
+  .reader-view :global(tr:nth-child(even)) {
+    background: rgba(255, 255, 255, 0.02);
   }
 
   .reader-view :global(pre code) {
@@ -640,5 +677,51 @@
     opacity: 0.5 !important;
     cursor: not-allowed !important;
     pointer-events: none !important;
+  }
+
+  @media (max-width: 640px) {
+    .preview-backdrop {
+      padding: 8px;
+    }
+
+    .preview-modal {
+      width: 100%;
+      max-width: 100vw;
+      height: 95vh;
+      max-height: 95vh;
+      border-radius: 8px;
+    }
+
+    .preview-header {
+      padding: 12px 14px;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 10px;
+    }
+
+    .header-actions {
+      justify-content: space-between;
+    }
+
+    .preview-content {
+      padding: 14px 16px;
+    }
+
+    .preview-footer {
+      padding: 10px 14px;
+      flex-direction: column-reverse;
+      gap: 8px;
+    }
+
+    .footer-left,
+    .footer-right {
+      width: 100%;
+      justify-content: stretch;
+    }
+
+    .footer-right button,
+    .footer-left button {
+      flex: 1;
+    }
   }
 </style>

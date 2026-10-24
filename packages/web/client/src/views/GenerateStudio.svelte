@@ -1266,6 +1266,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    min-width: 0;
   }
 
   .doc-count-pill {
@@ -1478,6 +1479,7 @@
     cursor: pointer;
     user-select: none;
     transition: all 0.15s ease;
+    min-width: 0;
   }
 
   .tray-doc-row:hover {
@@ -1573,7 +1575,7 @@
   }
 
   .meta-item.doc-url {
-    max-width: 260px;
+    max-width: min(220px, 35vw);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

@@ -38,6 +38,7 @@
   let moveCustomNewDeck = $state('');
   let isMoving = $state(false);
   let moveError = $state<string | null>(null);
+  let expandedQuoteCardIds = $state<Record<string, boolean>>({});
 
   let allLoadedSelected = $derived(
     cards.length > 0 && cards.every((c) => explorerStore.selectedIds.includes(c.id))
@@ -265,6 +266,10 @@
 
   function toggleReveal(id: string) {
     explorerStore.toggleReveal(id);
+  }
+
+  function toggleQuoteExpand(cardId: string) {
+    expandedQuoteCardIds[cardId] = !expandedQuoteCardIds[cardId];
   }
 
   function openEdit(card: Flashcard) {
@@ -549,7 +554,21 @@
                   </div>
                 {/if}
               </div>
-              <p>"{card.sourceQuote}"</p>
+              <p
+                class="quote-text"
+                class:clamped={card.sourceQuote.length > 180 && !expandedQuoteCardIds[card.id]}
+              >
+                "{card.sourceQuote}"
+              </p>
+              {#if card.sourceQuote.length > 180}
+                <button
+                  type="button"
+                  class="btn-toggle-quote"
+                  onclick={() => toggleQuoteExpand(card.id)}
+                >
+                  {expandedQuoteCardIds[card.id] ? '▲ Show less' : '▼ Show more'}
+                </button>
+              {/if}
             </div>
           {/if}
 
@@ -1118,7 +1137,7 @@
 
   .cards-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr));
     gap: 20px;
   }
 
@@ -1131,6 +1150,9 @@
     flex-direction: column;
     gap: 14px;
     transition: transform 0.15s, border-color 0.15s;
+    min-width: 0;
+    overflow-wrap: break-word;
+    word-break: break-word;
   }
 
   .card-item:hover {
@@ -1175,6 +1197,7 @@
   .card-question {
     display: flex;
     gap: 10px;
+    min-width: 0;
   }
 
   .q-label {
@@ -1185,6 +1208,7 @@
     padding: 2px 6px;
     border-radius: 4px;
     height: fit-content;
+    flex-shrink: 0;
   }
 
   .card-question p {
@@ -1193,6 +1217,9 @@
     font-weight: 600;
     color: #f8fafc;
     line-height: 1.4;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    min-width: 0;
   }
 
   .card-answer-section {
@@ -1200,12 +1227,14 @@
     border: 1px solid #334155;
     border-radius: 8px;
     padding: 12px;
+    min-width: 0;
   }
 
   .answer-revealed {
     display: flex;
     gap: 10px;
     margin-bottom: 10px;
+    min-width: 0;
   }
 
   .a-label {
@@ -1216,6 +1245,7 @@
     padding: 2px 6px;
     border-radius: 4px;
     height: fit-content;
+    flex-shrink: 0;
   }
 
   .answer-revealed p {
@@ -1223,6 +1253,9 @@
     font-size: 13px;
     color: #cbd5e1;
     line-height: 1.4;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    min-width: 0;
   }
 
   .btn-toggle-answer {
@@ -1261,6 +1294,9 @@
     border-left: 2px solid #6366f1;
     padding: 8px 12px;
     border-radius: 0 6px 6px 0;
+    min-width: 0;
+    overflow-wrap: break-word;
+    word-break: break-word;
   }
 
   .quote-header {
@@ -1269,20 +1305,24 @@
     align-items: center;
     gap: 8px;
     margin-bottom: 6px;
+    min-width: 0;
   }
 
   .quote-tag {
     font-size: 11px;
     font-weight: 600;
     color: #818cf8;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .quote-ref {
     font-size: 11px;
-    max-width: 50%;
+    max-width: 60%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    min-width: 0;
   }
 
   .ref-link {
@@ -1300,12 +1340,39 @@
     color: #94a3b8;
   }
 
-  .grounding-quote p {
+  .grounding-quote p.quote-text {
     margin: 0;
     font-size: 12px;
     color: #94a3b8;
     font-style: italic;
-    line-height: 1.3;
+    line-height: 1.4;
+    overflow-wrap: break-word;
+    word-break: break-word;
+  }
+
+  .quote-text.clamped {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .btn-toggle-quote {
+    background: none;
+    border: none;
+    padding: 4px 0 0;
+    color: #818cf8;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-block;
+    text-align: left;
+    transition: color 0.15s;
+  }
+
+  .btn-toggle-quote:hover {
+    color: #a5b4fc;
+    text-decoration: underline;
   }
 
   .card-footer {
@@ -1780,5 +1847,23 @@
     color: #64748b;
     font-size: 13px;
     font-weight: 500;
+  }
+
+  @media (max-width: 640px) {
+    .cards-grid {
+      grid-template-columns: 1fr;
+      gap: 14px;
+    }
+    .card-item {
+      padding: 14px;
+    }
+    .quote-header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 4px;
+    }
+    .quote-ref {
+      max-width: 100%;
+    }
   }
 </style>

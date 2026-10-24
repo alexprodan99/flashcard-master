@@ -326,6 +326,26 @@ Inspector UI  ──▶  POST /api/generate (async)  ──▶  JobManager (Work
   - Client components subscribe to task completion events through `taskStore.onJobCompleted(listener)`.
   - When a generation task finishes in the background worker pool, `SourceDocumentInspector` detects that documents in the current source were updated and automatically refreshes card counts without requiring a manual browser refresh.
 
+---
 
+## 11. Responsive Layout & Text Overflow Hardening Standards
 
+To ensure a seamless user experience across diverse desktop displays, laptops, and mobile screens, Flashcard Master adheres to strict responsive layout and text overflow invariants across all user interfaces:
 
+```
+Fluid Viewports (320px ─▶ 4K)  ──▶  Auto-Clamped Grids & Drawers  ──▶  Independent Scroll Containers
+```
+
+* **Dynamic Grid Columns:**
+  - Card grids (e.g., `QuestionExplorer.svelte`) utilize `repeat(auto-fill, minmax(min(100%, 360px), 1fr))` rather than fixed minimum pixel widths. On screens narrower than 360px, cards scale fluidly down to 100% of the viewport width without causing horizontal spill or clipping.
+* **Unbroken Token & Word-Break Safety:**
+  - Technical strings such as long URLs, composite IDs, and source locators enforce `min-width: 0`, `overflow-wrap: break-word`, and `word-break: break-word`. Flex and grid child items are given explicit `min-width: 0` constraints so the browser allows elements to shrink below their internal content size.
+* **Collapsible Quote Grounding:**
+  - In `QuestionExplorer.svelte`, verbatim source quotes exceeding 180 characters are clamped to 3 lines (`-webkit-line-clamp: 3`) with a dedicated "▼ Show more" / "▲ Show less" button. This keeps card geometry consistent while ensuring complete citations remain fully accessible on demand.
+* **Preformatted Text & Table Containers:**
+  - In markdown reader views and raw content inspectors (e.g., `DocumentPreviewModal.svelte`), all `<pre>`, `<code>`, and `<table>` blocks enforce `max-width: 100%`, `box-sizing: border-box`, and independent horizontal scrollbars (`overflow-x: auto`). Tables and code snippets scroll cleanly within their respective viewports rather than pushing modals beyond screen boundaries.
+* **Viewport-Clamped Modals & Drawers:**
+  - Slide-over drawers (`CardEditorDrawer`, `TaskCenterDrawer`, `SourceDocumentInspector`) enforce fluid width clamps (`max-width: min(520px - 680px, 100vw)`), `box-sizing: border-box`, and responsive mobile padding via `@media (max-width: 640px)`.
+  - Document and modal dialogs constrain outer dimensions to `max-width: min(860px, 95vw)` with responsive margin and padding adjustments on mobile viewports.
+* **Document Trays & Deep Path Resiliency:**
+  - In `GenerateStudio.svelte`, document items in source tree trays use flex-shrink limits, `min-width: 0` on title and info containers, and viewport-aware URL truncations (`max-width: min(220px, 35vw)`) with full URL tooltips on hover.
