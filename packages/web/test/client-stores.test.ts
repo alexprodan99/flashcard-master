@@ -1110,5 +1110,43 @@ describe('Svelte 5 Universal Client Stores (Epic 14.4)', () => {
       }
     });
   });
+
+  describe('TaskStore', () => {
+    it('notifies completion listeners when onJobCompleted is registered and handles unsubscription', () => {
+      const store = new TaskStore();
+      const mockJob: Job = {
+        id: 'job-123',
+        type: 'generation',
+        title: 'Synthesize flashcards: "Chapter 1"',
+        status: 'completed',
+        metadata: {
+          documentIds: ['doc-abc'],
+          sourceIds: ['src-xyz'],
+          documentTitle: 'Chapter 1',
+        },
+        resultSummary: {
+          cardsCreated: 5,
+          duplicatesSkipped: 1,
+        },
+        createdAt: '2026-10-24T12:00:00Z',
+      };
+
+      const receivedJobs: Job[] = [];
+      const unsubscribe = store.onJobCompleted((job) => {
+        receivedJobs.push(job);
+      });
+
+      // Simulate notifying listeners
+      (store as any).notifyJobCompleted(mockJob);
+      expect(receivedJobs.length).toBe(1);
+      expect(receivedJobs[0].id).toBe('job-123');
+      expect(receivedJobs[0].metadata?.documentTitle).toBe('Chapter 1');
+
+      // Unsubscribe and verify no more events received
+      unsubscribe();
+      (store as any).notifyJobCompleted({ ...mockJob, id: 'job-456' });
+      expect(receivedJobs.length).toBe(1);
+    });
+  });
 });
 

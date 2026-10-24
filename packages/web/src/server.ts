@@ -2311,11 +2311,19 @@ export class WebServer {
               }
 
               const docCount = documents.length || 1;
+              const singleDocTitle = documents.length === 1 ? documents[0].title : undefined;
+              const jobTitle = singleDocTitle
+                ? `Synthesize flashcards: "${singleDocTitle}"`
+                : `Synthesize flashcards (${docCount} doc${docCount === 1 ? "" : "s"})`;
+
               const job = await this.jobManager.enqueueJob(
                 "generation",
-                `Synthesize flashcards (${docCount} doc${docCount === 1 ? "" : "s"})`,
+                jobTitle,
                 {
                   documentCount: documents.length,
+                  documentIds: documents.map((d) => d.id),
+                  sourceIds: Array.from(new Set(documents.map((d) => d.sourceId))),
+                  documentTitle: singleDocTitle,
                   provider,
                   model,
                   persona,

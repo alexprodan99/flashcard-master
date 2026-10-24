@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { fetchSourceDocuments, fetchDocumentDetails, generateCards, deleteDocument, deleteDocumentsBulk } from '../lib/api';
-  import { toastStore } from '../stores/index.js';
+  import { toastStore, taskStore, generateStore } from '../stores/index.js';
   import type { DataSource, DiscoveredDocument, PersonaType, DifficultyLevel, CardDepthMode } from '../lib/types';
   import { formatPageBadge } from '../lib/formatters.js';
   import GenerationConfigFields from './GenerationConfigFields.svelte';
@@ -107,6 +107,24 @@
   $effect(() => {
     if (isOpen && source) {
       loadDocuments();
+
+      const unsubscribe = taskStore.onJobCompleted((job) => {
+        if (job.type === 'generation' && source) {
+          const metadata = job.metadata || {};
+          const sourceIds: string[] = metadata.sourceIds || (metadata.sourceId ? [metadata.sourceId] : []);
+          const docIds: string[] = metadata.documentIds || [];
+
+          const affectsThisSource =
+            sourceIds.includes(source.id) ||
+            docIds.some((id: string) => documents.some((d) => d.id === id));
+
+          if (affectsThisSource) {
+            loadDocuments();
+          }
+        }
+      });
+
+      return unsubscribe;
     } else {
       documents = [];
       selectedIds = new Set();
@@ -233,12 +251,13 @@
 
   async function handleSynthesizeSingle() {
     if (!configDoc || !source || isGenerating) return;
+    const targetDoc = configDoc;
     isGenerating = true;
     successNotice = null;
 
     try {
       const result = await generateCards({
-        documentIds: [configDoc.id],
+        documentIds: [targetDoc.id],
         provider,
         model: model.trim() || undefined,
         apiKey: apiKey.trim() || undefined,
@@ -249,15 +268,22 @@
         limit,
         targetDeck: targetDeck.trim() || undefined,
         enforceGrounding,
-        sync: true,
+        sync: false,
       });
 
-      const cardsCreated = result.cardsCreated ?? (result.cards ? result.cards.length : 0);
-      successNotice = `🎉 Generated ${cardsCreated} grounded flashcards from "${configDoc.title}"!`;
-      toastStore.success(successNotice);
       isConfigModalOpen = false;
       configDoc = null;
-      await loadDocuments(); // Refresh card counts
+
+      if (result.jobId) {
+        taskStore.openDrawer('active');
+        taskStore.expandedJobIds[result.jobId] = true;
+        toastStore.info(`Card generation queued for "${targetDoc.title}". Monitoring progress in Task Center.`);
+      } else {
+        const cardsCreated = result.cardsCreated ?? (result.cards ? result.cards.length : 0);
+        successNotice = `🎉 Generated ${cardsCreated} grounded flashcards from "${targetDoc.title}"!`;
+        toastStore.success(successNotice);
+        await loadDocuments();
+      }
     } catch (err: any) {
       toastStore.error('Generation failed: ' + err.message);
     } finally {
