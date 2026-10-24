@@ -349,3 +349,37 @@ Fluid Viewports (320px ─▶ 4K)  ──▶  Auto-Clamped Grids & Drawers  ─�
   - Document and modal dialogs constrain outer dimensions to `max-width: min(860px, 95vw)` with responsive margin and padding adjustments on mobile viewports.
 * **Document Trays & Deep Path Resiliency:**
   - In `GenerateStudio.svelte`, document items in source tree trays use flex-shrink limits, `min-width: 0` on title and info containers, and viewport-aware URL truncations (`max-width: min(220px, 35vw)`) with full URL tooltips on hover.
+
+---
+
+## 12. Generate Studio Target Scope Redesign & Modal Document Picker
+
+Flashcard Master replaces nested accordion dropdowns in Generate Studio (`GenerateStudio.svelte`) with prominent **Source Scope Cards** and a dedicated **Document Picker Modal** (`SourceDocumentPickerModal.svelte`):
+
+```
+Target Scope (Studio)  ──▶  Source Scope Cards  ──▶  [Select Documents...]  ──▶  SourceDocumentPickerModal
+      │                             │                                                 │
+      ▼                             ▼                                                 ▼
+Select All / Clear             Status Pills                                    Search & Filter Mode
+(Global Selection)        (All, Partial, or None)                            (Apply to generateStore)
+```
+
+* **Source Scope Cards (`GenerateStudio.svelte`):**
+  - Replaces nested accordion trees and scroll-trapped lists with clear, scannable cards representing each active data source.
+  - Displays source type badge (`EPUB`, `PDF`, `Web Article`, etc.), source title, and search match badges.
+  - Dynamically computes and displays status pills:
+    - `✅ All N docs selected (~X words)`
+    - `🎯 M of N docs selected (~X words)`
+    - `⚪ 0 of N docs selected`
+  - Inline quick actions: checkbox toggle for whole source, `Select All`, and `Clear`.
+  - Prominent `📑 Select Documents...` button triggers focused modal document curation.
+* **Focused Document Selector Modal (`SourceDocumentPickerModal.svelte`):**
+  - Dedicated full-featured modal dialog allowing users to curate documents from large catalogs (e.g. 50+ EPUB chapters or sliced PDF documents) without cluttering or stretching the generation studio form.
+  - Multi-token search bar with normalization, singular/plural tolerance, and stop-word filtering.
+  - Filter mode tabs: `All`, `Selected`, and `Unselected`.
+  - Bulk helpers: `Select All Visible`, `Clear Visible`, `Select All in Source`, and `Clear All`.
+  - Scannable document rows with checkboxes, page coordinate badges, word count estimates, and card generation history.
+  - Sticky footer with live selection counters and atomic `Apply Selection` button that syncs directly with `generateStore.selectedDocIds` and `generateStore.selectedSourceIds`.
+* **Responsive Fluid Design:**
+  - Adapts to mobile devices (`@media (max-width: 640px)`) with stacked controls, full viewport bounds (`100vw` / `100vh`), and touch-friendly targets.
+
