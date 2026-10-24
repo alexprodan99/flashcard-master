@@ -1237,8 +1237,9 @@ describe('Svelte 5 Universal Client Stores (Epic 14.4)', () => {
     const mockSource: DataSource = {
       id: 'src-epub-1',
       name: 'Design Patterns in TypeScript',
-      type: 'epub',
-      config: {},
+      type: 'local',
+      uri: 'file:///books/dp.epub',
+      tags: ['patterns'],
       isActive: true,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -1250,30 +1251,33 @@ describe('Svelte 5 Universal Client Stores (Epic 14.4)', () => {
         sourceId: 'src-epub-1',
         title: 'Chapter 1: Factory Method Pattern',
         url: 'file:///books/dp.epub#ch1',
-        discoveredAt: new Date().toISOString(),
         wordCount: 1500,
         cardCount: 4,
         textContent: 'Factory Method is a creational design pattern that provides an interface for creating objects in a superclass.',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       },
       {
         id: 'doc-2',
         sourceId: 'src-epub-1',
         title: 'Chapter 2: Structural Adapters',
         url: 'file:///books/dp.epub#ch2',
-        discoveredAt: new Date().toISOString(),
         wordCount: 2200,
         cardCount: 6,
         textContent: 'Adapter is a structural design pattern that allows objects with incompatible interfaces to collaborate.',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       },
       {
         id: 'doc-3',
         sourceId: 'src-epub-1',
         title: 'Chapter 3: Observer and Reactive Streams',
         url: 'file:///books/dp.epub#ch3',
-        discoveredAt: new Date().toISOString(),
         wordCount: 3100,
         cardCount: 0,
         textContent: 'Observer lets you define a subscription mechanism to notify multiple objects about events.',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       },
     ];
 
@@ -1413,6 +1417,11 @@ describe('Svelte 5 Universal Client Stores (Epic 14.4)', () => {
       expect(studioContent).toContain('isPickerModalOpen');
       expect(studioContent).toContain('.card-status-container');
       expect(studioContent).toContain('.status-pill');
+      // Modal stacking layer invariants: Preview modal (1300) sits in front of Document picker modal (1200)
+      const previewPath = path.resolve(__dirname, '../client/src/components/DocumentPreviewModal.svelte');
+      const previewContent = fs.readFileSync(previewPath, 'utf-8');
+      expect(modalContent).toContain('z-index: 1200');
+      expect(previewContent).toContain('z-index: 1300');
     });
   });
 });
