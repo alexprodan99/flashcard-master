@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 08-30-2026 20:47
-last_updated: 10-23-2026 11:42
+last_updated: 10-25-2026 11:15
 project: flashcard-master
 project_key: NOKEY
 tracking_system: file-system
@@ -198,7 +198,7 @@ development_status:
   19-5-asynchronous-subdocument-generation-via-task-center: done
   19-6-monorepo-responsive-layout-and-overflow-hardening: done
   19-7-subdocument-explorer-and-reader-redesign: done
-  epic-19-retrospective: optional
+  epic-19-retrospective: done
 action_items:
   - id: "epic-14-retro-item-1-add-progressive-exponential-backoff-and"
     epic: 14
@@ -265,3 +265,46 @@ action_items:
     owner: "dev"
     status: open
     ref: "_bmad-output/implementation-artifacts/epic-18-retro-2026-10-21.md"
+  - id: "epic-19-retro-item-1-reject-invalid-pagination-cursors"
+    epic: 19
+    action: "Reject malformed or invalid pagination cursors with 400 Bad Request in
+      card-repository and REST endpoint instead of silently defaulting to page 1"
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-19-retro-2026-10-25.md"
+  - id: "epic-19-retro-item-2-chunk-batch-card-moves-and-deletes"
+    epic: 19
+    action: "Chunk card ID arrays in batches of 500 within moveCards and deleteMany
+      in FlashcardRepository to guard against SQLite variable limits"
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-19-retro-2026-10-25.md"
+  - id: "epic-19-retro-item-3-guard-empty-document-ids-in-generate"
+    epic: 19
+    action: "Add explicit validation in POST /api/generate to reject empty documentIds
+      arrays with 400 Bad Request instead of falling back to all active sources"
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-19-retro-2026-10-25.md"
+  - id: "epic-19-retro-item-4-forward-scoping-filters-in-bulk-deck-export"
+    epic: 19
+    action: "Support scoping filters (createdAfter, createdBefore, limit, shuffle)
+      in ExportService.exportAllDecks and warn in CLI if incompatible combinations
+      are passed"
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-19-retro-2026-10-25.md"
+  - id: "epic-19-retro-item-5-extract-deck-modals-from-question-explorer"
+    epic: 19
+    action: "Extract CloneDeckModal, SplitDeckModal, and MoveCardsModal from QuestionExplorer.svelte
+      into standalone components under packages/web/client/src/components/"
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-19-retro-2026-10-25.md"
+  - id: "epic-19-retro-item-6-reconcile-story-19-7-spec-in-epics-md"
+    epic: 19
+    action: "Update epics.md Story 19.7 description to align with the implemented
+      Generate Studio Target Scope redesign and SourceDocumentPickerModal component"
+    owner: "architect"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-19-retro-2026-10-25.md"
