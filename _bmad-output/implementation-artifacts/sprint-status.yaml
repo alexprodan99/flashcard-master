@@ -190,7 +190,7 @@ development_status:
   18-5-monorepo-integration-and-end-to-end-verification: done
   epic-18-retrospective: done
 
-  epic-19: in-progress
+  epic-19: done
   19-1-question-explorer-infinite-scroll-and-lazy-loading: done
   19-2-deck-operations-clone-split-and-selective-card-moving: done
   19-3-partial-date-filtered-and-randomized-export-engine: done
@@ -199,6 +199,16 @@ development_status:
   19-6-monorepo-responsive-layout-and-overflow-hardening: done
   19-7-subdocument-explorer-and-reader-redesign: done
   epic-19-retrospective: done
+
+  epic-20: backlog
+  20-1-model-documentation-audit-and-model-advisor-skill: backlog
+  20-2-agpl-licensing-and-community-sponsorship-integration: backlog
+  20-3-public-documentation-hub-and-github-pages-pipeline: backlog
+  20-4-contextual-setup-ux-and-human-centric-onboarding: backlog
+  20-5-cross-platform-github-automation-engine: backlog
+  20-6-open-source-contribution-standards-and-community-health: backlog
+  20-7-electron-desktop-packaging-and-multi-os-release-pipeline: backlog
+  epic-20-retrospective: optional
 action_items:
   - id: "epic-14-retro-item-1-add-progressive-exponential-backoff-and"
     epic: 14
