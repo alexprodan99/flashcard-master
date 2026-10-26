@@ -383,3 +383,47 @@ Select All / Clear             Status Pills                                    S
 * **Responsive Fluid Design:**
   - Adapts to mobile devices (`@media (max-width: 640px)`) with stacked controls, full viewport bounds (`100vw` / `100vh`), and touch-friendly targets.
 
+---
+
+## 13. Deck Operations, Partial Slicing & Selective Export Engine
+
+Flashcard Master provides advanced deck lifecycle and granular scoping operations:
+
+```
+Question Explorer  ──▶  Clone Deck  ──▶  Atomic Duplicate with (Copy) Suffix
+                   ──▶  Split Deck  ──▶  Even Partitioning across N Target Decks
+                   ──▶  Move Cards  ──▶  Reassign Card Deck IDs with Filter Persistence
+```
+
+* **Deck Lifecycle Management (`QuestionExplorer.svelte`):**
+  - **Clone Deck**: Atomically duplicates deck metadata and cards in SQLite, creating an independent fork with an auto-incremented `(Copy)` suffix.
+  - **Split Deck**: Partitions a large deck (e.g. 100 cards) into $N$ smaller focused sub-decks of approximately equal size, preserving all citation links and difficulty tags.
+  - **Selective Card Moving**: Moves selected card subsets between existing decks or creates a destination deck on the fly.
+* **Scoping Filters in Export Engine (`ExportService.ts`):**
+  - Supports targeted partial exports using creation date windows (`createdAfter`, `createdBefore`), limits (`limit`), and optional randomization (`shuffle`).
+  - Ensures study guides, printable sheets, and Anki packages can be generated for recent study intervals (e.g., "cards generated this week") without exporting entire historical libraries.
+
+---
+
+## 14. Open-Source Foundations, In-Repo Skills & Documentation Hub
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│ Flashcard Master Open-Source System Architecture                       │
+│                                                                        │
+│  [AGPL-3.0 License]  ──▶  100% Free Local Use + SaaS Reciprocity       │
+│  [Model Advisor]     ──▶  Contextual Model Recommendation Decision Tree│
+│  [Docs Hub]          ──▶  VitePress + Automated GitHub Pages CI/CD     │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+* **Legal Invariants & Copyleft Reciprocity (AGPL-3.0):**
+  - The entire monorepo is governed by the GNU Affero General Public License v3.0 (`LICENSE`).
+  - Guarantees 100% free use for local desktop users, researchers, and self-hosters while legally mandating that any network-accessible software modification (Section 13) must make its source code public.
+* **In-Repo Agent Skills (`.agent/skills/`):**
+  - Shipped skills (e.g., `model-advisor`) provide executable decision trees for evaluating token pricing, context lengths, and local offline privacy vs. high-throughput cloud synthesis.
+* **Public Documentation Hub & GitHub Pages CI/CD:**
+  - Authored with VitePress under `docs/`, featuring client-side search, mobile responsiveness, and dark-mode styling aligned with the Web UI.
+  - Automatically compiled and deployed on pushes to `main` via `.github/workflows/deploy-docs.yml`.
+
+

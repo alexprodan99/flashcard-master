@@ -62,6 +62,19 @@
         <span class="task-badge">{taskStore.jobs.length}</span>
       {/if}
     </button>
+
+    <a
+      id="nav-docs"
+      class="nav-btn docs-btn"
+      href="https://alexprodan99.github.io/flashcard-master/"
+      target="_blank"
+      rel="noopener noreferrer"
+      title="Open Public Documentation Hub"
+    >
+      <span class="icon">📖</span>
+      <span class="label">Documentation</span>
+      <span class="ext-icon">↗</span>
+    </a>
   </nav>
 
   <div class="sidebar-footer">
@@ -239,5 +252,20 @@
     font-size: 11px;
     color: #64748b;
     font-family: monospace;
+  }
+
+  .docs-btn {
+    text-decoration: none;
+    color: #94a3b8;
+  }
+
+  .docs-btn:hover {
+    color: #f1f5f9;
+  }
+
+  .ext-icon {
+    margin-left: auto;
+    font-size: 11px;
+    opacity: 0.6;
   }
 </style>
