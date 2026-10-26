@@ -1,10 +1,12 @@
 # 🎴 Flashcard Master
 
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL_3.0-blue.svg)](LICENSE)
+[![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue.svg)](https://alexprodan99.github.io/flashcard-master/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D20.0.0-green.svg)](https://nodejs.org/)
 
-> **Local-First, Grounded AI Flashcard Generation & Study Knowledge Base**
+> **Local-First, Grounded AI Flashcard Generation & Study Knowledge Base**  
+> **[📖 Documentation Hub](https://alexprodan99.github.io/flashcard-master/)** • **[🚀 3-Minute Quickstart](https://alexprodan99.github.io/flashcard-master/user-guide/quickstart)** • **[🏛️ System Architecture](https://alexprodan99.github.io/flashcard-master/ARCHITECTURE)**
 
 Flashcard Master automatically turns your learning materials—RSS/Atom feeds, web articles, EPUB e-books, and local Markdown notes—into high-quality, hallucination-free active-recall flashcards with cognitive personas, multi-tier difficulty scaling, a local Web UI dashboard, and 1-click export to Anki, CSV, Markdown, and printable study sheets.
 
@@ -383,8 +385,10 @@ npm run build
 
 ---
 
-## 📖 Architecture & Contribution
+## 📚 Documentation & Architecture
 
+* 📖 **[Official Documentation Hub](https://alexprodan99.github.io/flashcard-master/)**: Complete interactive online documentation hosted on GitHub Pages.
+* 🚀 **[User Guide & Tutorials](https://alexprodan99.github.io/flashcard-master/user-guide/quickstart)**: Quickstart, Ingestion Playbook (Web, RSS, Notion, EPUB/PDF), Flashcard Synthesis Tuning, and Study & Export Workflows.
 * 🏛️ **[System Architecture & Design Invariants](docs/ARCHITECTURE.md)**: Detailed subsystem lifecycles, data flows, and database schemas.
 * 🤝 **[Contributor Guide & Extension Playbook](CONTRIBUTING.md)**: Setup instructions, coding conventions, and guides for adding custom ingestion strategies, LLMs, and exporters.
 
