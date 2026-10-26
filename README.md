@@ -67,18 +67,18 @@ import {
   createDatabaseClient,
   FlashcardRepository,
   CardGenerationService,
-  PersonaStudioService,
+  PromptBuilder,
   GroundingGuard,
 } from "@flashcard-master/core";
 import { OllamaAdapter } from "@flashcard-master/adapters";
 
 const db = createDatabaseClient({ inMemory: true });
 const cardRepo = new FlashcardRepository(db);
-const llm = new OllamaAdapter({ model: "llama3.2" });
-const personaStudio = new PersonaStudioService();
+const llm = new OllamaAdapter({ model: "phi4-mini" });
+const promptBuilder = new PromptBuilder();
 const groundingGuard = new GroundingGuard();
 
-const cardGen = new CardGenerationService(llm, personaStudio, groundingGuard, cardRepo);
+const cardGen = new CardGenerationService(llm, undefined, promptBuilder, groundingGuard);
 ```
 
 ---
@@ -87,7 +87,7 @@ const cardGen = new CardGenerationService(llm, personaStudio, groundingGuard, ca
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/your-username/flashcard-master.git
+git clone https://github.com/alexprodan99/flashcard-master.git
 cd flashcard-master
 
 # 2. Install dependencies & build all workspace packages

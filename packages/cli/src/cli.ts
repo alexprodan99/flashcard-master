@@ -425,13 +425,14 @@ export function createCli(providedContext?: AppContext): Command {
     .description("Generate grounded flashcards from ingested source documents")
     .option("-p, --provider <provider>", "LLM Provider (openai, gemini, anthropic, ollama)", "ollama")
     .option("-k, --api-key <key>", "Provider API Key")
-    .option("-m, --model <model>", "Model identifier (e.g. gpt-4o-mini, gemini-3.6-flash, claude-3-5-haiku-latest, phi4-mini)")
+    .option("-m, --model <model>", "Model identifier (e.g. gpt-4o-mini, gemini-3.6-flash, claude-haiku-4-5-20251001, phi4-mini)")
     .option("--endpoint <endpoint>", "Custom API endpoint (e.g. for Ollama / LocalAI)")
     .option("--difficulty <level>", "Difficulty level: beginner, intermediate, expert, mixed", "intermediate")
     .option("--persona <persona>", "Prompt persona: socratic-mentor, strict-examiner, executive-synthesizer", "socratic-mentor")
     .option("-D, --depth <depth>", "Question depth & granularity: atomic, deep-dive, scenario", "atomic")
     .option("-M, --chunk-multiplier <multiplier>", "Context chunk size multiplier (1, 2, 3, 5, or 0 for full document)", "1")
     .option("-d, --deck <deck>", "Override destination deck")
+    .option("-l, --limit <number>", "Maximum cards to generate per document", parseInt)
     .option("--enforce-grounding", "Enforce strict verbatim citation checks", true)
     .action(async (sourceId: string | undefined, options: any) => {
       try {
@@ -474,13 +475,15 @@ export function createCli(providedContext?: AppContext): Command {
             const cleanDoc = strategy.extractCleanText(raw);
             console.log(`Processing article "${cleanDoc.title}"...`);
 
-            const drafts = await genService.generateFromDocument(cleanDoc, {
+            const rawDrafts = await genService.generateFromDocument(cleanDoc, {
               difficulty: options.difficulty as DifficultyLevel,
               persona: options.persona as PersonaType,
               depthMode: options.depth as CardDepthMode,
               chunkOptions: { chunkMultiplier: multiplier, fullDocument },
               enforceGrounding: options.enforceGrounding,
             });
+
+            const drafts = options.limit && options.limit > 0 ? rawDrafts.slice(0, options.limit) : rawDrafts;
 
             // Target deck
             const targetDeck = options.deck || "Default";
@@ -522,8 +525,9 @@ export function createCli(providedContext?: AppContext): Command {
   // EXPORT COMMAND
   // ==========================================
   program
-    .command("export <format>")
+    .command("export [format]")
     .description("Export flashcards (apkg, ankiconnect, csv, tsv, markdown, html, pdf, epub)")
+    .option("-f, --format <format>", "Export format (apkg, ankiconnect, csv, tsv, markdown, html, pdf, epub)")
     .option("-d, --deck <deck>", "Filter by target deck name")
     .option("-t, --tag <tag>", "Filter by tag")
     .option("--difficulty <diff>", "Filter by difficulty (beginner, intermediate, expert, mixed)")
@@ -536,8 +540,14 @@ export function createCli(providedContext?: AppContext): Command {
     .option("--no-toc", "Omit Table of Contents in study guides")
     .option("--no-citations", "Omit source citation quotes and references in study guides")
     .option("--no-fold-guide", "Omit fold guide markers in printable HTML study guide")
-    .action(async (format: string, options: any) => {
+    .action(async (formatArg: string | undefined, options: any) => {
       try {
+        const format = formatArg || options.format;
+        if (!format) {
+          console.error("Error: Missing required argument 'format'. Specify format (e.g. 'flashcard-master export apkg' or 'flashcard-master export -f apkg').");
+          process.exitCode = 1;
+          return;
+        }
         if (options.allDecks) {
           console.log(`Exporting all decks to format "${format}" into directory "${options.allDecks}"...`);
           const results = await context.exportService.exportAllDecks({
@@ -629,6 +639,35 @@ export function createCli(providedContext?: AppContext): Command {
         console.log("  • Run 'flashcard-master export apkg' to generate Anki package\n");
       } finally {
         rl.close();
+      }
+    });
+
+  // ==========================================
+  // STATS COMMAND
+  // ==========================================
+  program
+    .command("stats")
+    .description("Display database statistics, total sources, and flashcard counts")
+    .action(() => {
+      try {
+        const sources = context.sourceRepo.list();
+        const cards = context.cardRepo.list();
+        const docCount = context.docRepo.getDocumentCount();
+        const decks = context.cardRepo.listDecks();
+
+        console.log("\n📊 Flashcard Master Knowledge Base Statistics:");
+        console.log("-----------------------------------------------");
+        console.log(`• Total Registered Sources: ${sources.length}`);
+        console.log(`• Total Ingested Documents: ${docCount}`);
+        console.log(`• Total Verified Flashcards: ${cards.length}`);
+        console.log(`• Total Active Study Decks: ${decks.length}`);
+        if (decks.length > 0) {
+          console.log(`• Decks: ${decks.join(", ")}`);
+        }
+        console.log("");
+      } catch (err: any) {
+        console.error(`Error displaying statistics: ${err.message}`);
+        process.exitCode = 1;
       }
     });
 
