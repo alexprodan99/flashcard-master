@@ -2,7 +2,7 @@
   "name": "@flashcard-master/adapters",
   "version": "1.0.0",
   "description": "Multi-source ingestion strategies, LLM vendor adapters, and multi-format exporters for Flashcard Master",
-  "license": "MIT",
+  "license": "AGPL-3.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "type": "module",

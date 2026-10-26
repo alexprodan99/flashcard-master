@@ -1,5 +1,9 @@
 # 🎴 Flashcard Master
 
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL_3.0-blue.svg)](LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](https://www.typescriptlang.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D20.0.0-green.svg)](https://nodejs.org/)
+
 > **Local-First, Grounded AI Flashcard Generation & Study Knowledge Base**
 
 Flashcard Master automatically turns your learning materials—RSS/Atom feeds, web articles, EPUB e-books, and local Markdown notes—into high-quality, hallucination-free active-recall flashcards with cognitive personas, multi-tier difficulty scaling, a local Web UI dashboard, and 1-click export to Anki, CSV, Markdown, and printable study sheets.
@@ -386,6 +390,13 @@ npm run build
 
 ---
 
-## 📄 License
+## 📜 License
 
-MIT © 2026 Flashcard Master Contributors.
+Flashcard Master is open-source software licensed under the **[GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE)**.
+
+### Summary & Principles:
+- **Free for Personal, Academic & Local Use**: You can run, study, modify, and distribute Flashcard Master locally, across your desktop or home server, completely free of charge.
+- **Copyleft Reciprocity (Section 13)**: If you modify Flashcard Master and run it as a network service (e.g., hosting a cloud SaaS version accessible over a computer network), you must provide the complete corresponding source code of your modified version under the AGPL-3.0 license to all users interacting with it remotely.
+- **Community-First Guarantee**: Ensures Flashcard Master remains permanently open-source and prevents commercial platforms from closing source improvements or repackaging the software as a proprietary paid cloud wrapper.
+
+Copyright © 2026 Ionut-Alexandru Prodan ([@alexprodan99](https://github.com/alexprodan99)) and Flashcard Master contributors.

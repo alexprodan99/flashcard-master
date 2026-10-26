@@ -2,7 +2,7 @@
   "name": "@flashcard-master/web",
   "version": "1.0.0",
   "description": "Local Web UI Dashboard and REST API Server for Flashcard Master",
-  "license": "MIT",
+  "license": "AGPL-3.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "type": "module",

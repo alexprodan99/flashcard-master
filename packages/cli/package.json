@@ -2,7 +2,7 @@
   "name": "@flashcard-master/cli",
   "version": "1.0.0",
   "description": "Local-first, grounded AI flashcard generator and study knowledge base CLI and dashboard",
-  "license": "MIT",
+  "license": "AGPL-3.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
