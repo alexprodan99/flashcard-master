@@ -60,7 +60,7 @@
       hasEndpoint: true,
       endpointLabel: 'Base URL (Optional Override)',
       endpointPlaceholder: 'https://api.anthropic.com',
-      description: 'Claude 3.5 Sonnet, Claude 3 Haiku, and Anthropic-compatible proxies.',
+      description: 'Claude Haiku 4.5, Claude Sonnet 5, and Anthropic-compatible proxies.',
     },
     {
       id: 'gemini',
@@ -73,7 +73,7 @@
       hasEndpoint: true,
       endpointLabel: 'Base URL (Optional Override)',
       endpointPlaceholder: 'https://generativelanguage.googleapis.com',
-      description: 'Gemini 1.5 Pro and Flash with x-goog-api-key header security.',
+      description: 'Gemini 3.6 Flash, Gemini 3.6 Pro, and Flash with x-goog-api-key header security.',
     },
     {
       id: 'ollama',
