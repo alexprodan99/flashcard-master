@@ -32,5 +32,8 @@ jobs:
       - name: Build All Packages
         run: npm run build
 
+      - name: Build Documentation Site
+        run: npm run docs:build
+
       - name: Run Test Suite
         run: npm test

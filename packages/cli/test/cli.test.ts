@@ -487,6 +487,46 @@ describe("CLI Application", () => {
     );
     expect(logs.some((l) => l.includes("Exported 10 cards to csv"))).toBe(true);
   });
+
+  it("displays knowledge base statistics with the stats command", async () => {
+    const cli = createCli(context);
+    cli.exitOverride();
+
+    context.sourceRepo.create({
+      name: "Stats Test Source",
+      type: "local",
+      uri: "/path/to/test.md",
+    });
+
+    await cli.parseAsync(["node", "flashcard-master", "stats"]);
+
+    expect(logs.some((l) => l.includes("Flashcard Master Knowledge Base Statistics"))).toBe(true);
+    expect(logs.some((l) => l.includes("Total Registered Sources: 1"))).toBe(true);
+    expect(logs.some((l) => l.includes("Total Verified Flashcards: 0"))).toBe(true);
+  });
+
+  it("supports -f and --format flags in the export command", async () => {
+    const cli = createCli(context);
+    cli.exitOverride();
+
+    const exportSpy = vi.spyOn(context.exportService, "export").mockResolvedValue({
+      format: "apkg",
+      outputPath: "/path/to/cards.apkg",
+      successCount: 5,
+      message: "Exported 5 cards to apkg",
+    });
+
+    await cli.parseAsync(["node", "flashcard-master", "export", "-f", "apkg", "-o", "/path/to/cards.apkg"]);
+
+    expect(exportSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        format: "apkg",
+        options: expect.objectContaining({
+          outputPath: "/path/to/cards.apkg",
+        }),
+      })
+    );
+  });
 });
 
 

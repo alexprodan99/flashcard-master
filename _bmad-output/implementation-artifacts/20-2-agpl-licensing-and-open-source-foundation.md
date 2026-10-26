@@ -2,7 +2,7 @@
 title: 'Story 20.2: AGPL-3.0 Licensing & Open-Source Foundation'
 type: 'feature'
 created: '2026-10-26'
-status: 'review'
+status: 'done'
 baseline_commit: '0f760c6'
 review_loop_iteration: 0
 context:

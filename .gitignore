@@ -7,6 +7,8 @@ node_modules/
 dist/
 build/
 *.tsbuildinfo
+docs/.vitepress/dist/
+docs/.vitepress/cache/
 
 # Test & Coverage
 coverage/
