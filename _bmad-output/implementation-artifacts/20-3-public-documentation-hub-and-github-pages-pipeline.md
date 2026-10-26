@@ -2,7 +2,7 @@
 title: 'Story 20.3: Public Documentation Hub & GitHub Pages CI/CD Pipeline'
 type: 'feature'
 created: '2026-10-26'
-status: 'review'
+status: 'done'
 baseline_commit: 'aaffcad'
 review_loop_iteration: 0
 context:
