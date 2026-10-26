@@ -1436,6 +1436,77 @@ All tests enforce a strict 3-second timeout and return `{ success: boolean, mess
 - Document title, metadata badges (page bounds, word counts, card counts), and action buttons remain fully aligned and readable without truncation or horizontal spill.
 - Multi-selection and bulk actions (export selected, delete selected) function smoothly with the compact row layout.
 
+---
+
+## Epic 20: Open-Source Foundations, Community Documentation & Cross-Platform Desktop Distribution
+
+**Goal:** Solidify Flashcard Master as a production-grade, community-ready, and independently distributed open-source learning application. Establish legal copyleft protection against proprietary SaaS exploitation via AGPL-3.0 with sponsorship channels; provide a published online documentation hub (User Guide, architecture, GitHub Pages); deliver friendly contextual onboarding and non-technical setup UX for AI providers, AnkiConnect, and Notion; implement reusable cross-platform GitHub issue and PR automation in TypeScript with an in-repo workflow skill; institute community contribution standards (CONTRIBUTING.md, templates, Code of Conduct); and package the application into standalone, signed desktop releases for Windows, macOS, and Linux using Electron and automated GitHub Actions.
+
+### Story 20.1: Model Documentation Audit & In-Repo LLM Model Advisor Skill
+**ID:** `20-1-model-documentation-audit-and-model-advisor-skill`
+**Description:** Audit all repository documentation and UI descriptions to ensure they strictly feature modern, cutting-edge default models (Gemini: `gemini-3.6-flash`, Anthropic: `claude-haiku-4-5-20251001`, OpenAI: `gpt-4o-mini`, Ollama: `phi4-mini`) and purge all mentions of legacy models (e.g., `gemini-1.5-pro`). Design and implement a dedicated repository agent skill (`.agent/skills/model-advisor/`) that evaluates user criteria (cost/efficiency budget, offline privacy, deep synthesis) to recommend the optimal provider and model configuration for any flashcard generation scenario.
+**Acceptance Criteria:**
+- `README.md`, `docs/settings-configuration.md`, and UI provider descriptions are audited and updated with zero references to legacy or superseded models.
+- The 4 core supported providers remain strictly Gemini, Anthropic, OpenAI, and Ollama.
+- `.agent/skills/model-advisor/SKILL.md` is implemented with clear decision trees, token pricing formulas, and recommended model presets.
+- Invoking the skill provides grounded recommendations matching user constraints (e.g. 100% offline local vs high-throughput bulk synthesis).
+
+### Story 20.2: AGPL-3.0 Licensing & Open-Source Foundation
+**ID:** `20-2-agpl-licensing-and-open-source-foundation`
+**Description:** Formally license Flashcard Master under the GNU Affero General Public License v3 (AGPL-3.0) to safeguard the project against proprietary closed-source SaaS clones over network services while keeping it 100% free for individual users, researchers, and community collaborators. Add the official root `LICENSE` file, configure `"license": "AGPL-3.0"` in `package.json`, and update `README.md` with the official AGPL-3.0 badge, copyleft terms, and open-source foundation statement (deferring `.github/FUNDING.yml` until active funding accounts are created).
+**Acceptance Criteria:**
+- Root `LICENSE` contains the complete official GNU Affero General Public License v3.0 text.
+- Root `package.json` specifies `"license": "AGPL-3.0"`.
+- `README.md` includes the official license badge, copyleft summary, and open-source contribution foundation.
+- Sponsorship channels (`.github/FUNDING.yml`) deferred until active funding accounts are established.
+
+### Story 20.3: Public Documentation Hub & GitHub Pages CI/CD Pipeline
+**ID:** `20-3-public-documentation-hub-and-github-pages-pipeline`
+**Description:** Build a comprehensive, user-friendly documentation hub published publicly to GitHub Pages. Author a structured User Guide in `docs/user-guide/` covering: (1) 3-minute Quickstart, (2) Ingestion Playbook (Web, RSS, Notion, EPUB/PDF chapter slicing), (3) Flashcard Synthesis & Prompt Tuning (difficulty, depth modes, personas), (4) Study & Export Workflows (AnkiConnect live sync, Kindle/Kobo EPUBs, printable PDF study sheets), and (5) Troubleshooting & FAQ. Distill BMad architectural output into public developer documentation (`docs/ARCHITECTURE.md`). Configure a static documentation generator (VitePress or Starlight) with an automated GitHub Actions CI/CD workflow that deploys to GitHub Pages upon pushes to `main`. Add direct in-app links in the navigation header to the published site.
+**Acceptance Criteria:**
+- Complete User Guide is authored under `docs/user-guide/` with clear, non-technical instructions and diagrams.
+- `docs/ARCHITECTURE.md` is updated to reflect all monorepo capabilities across Epics 1–19.
+- Static documentation site builds cleanly and deploys automatically to GitHub Pages via `.github/workflows/deploy-docs.yml`.
+- Web UI and Desktop navigation headers contain a "📖 Documentation" link opening the hosted docs site.
+
+### Story 20.4: Contextual Setup UX & Human-Centric Onboarding
+**ID:** `20-4-contextual-setup-ux-and-human-centric-onboarding`
+**Description:** De-technicalize the application setup experience across the Web UI and Desktop app. Preserve standard developer labels for LLM providers (`API Key`, `Base URL`) while adding lightweight contextual tooltips and 1-click console links (`Get API Key`). Implement an interactive 3-step Notion permissions walkthrough modal/card highlighting the crucial step of inviting the integration to target pages via the `•••` menu, accompanied by an actionable page access diagnostic. Implement a Desktop Anki setup card with live status badging (`🟢 Anki Ready` / `⚪ Anki Not Running`), 1-click copy for add-on code `2055492159`, and friendly connection error diagnosis. Replace technical slicing terms with human-readable choices (`Split by Chapters & Outline`, `Split by Page Blocks`, `Keep as Single Document`). Add a welcoming first-run onboarding empty state when no sources or keys exist.
+**Acceptance Criteria:**
+- LLM provider cards in `SettingsView.svelte` feature direct links to developer consoles and contextual tooltips explaining key generation and billing.
+- Notion setup displays an illustrated 3-step walkthrough with explicit guidance on sharing pages with the integration, and verifies page permissions on test.
+- AnkiConnect card displays live connection detection with 1-click add-on installation instructions and friendly error messages when desktop Anki is closed.
+- Document slicing controls in ingestion modals use clear, human-readable labels and descriptions.
+- Dashboard renders a welcoming onboarding card on first run guiding users through setup.
+
+### Story 20.5: Cross-Platform GitHub Issue & PR Automation Engine
+**ID:** `20-5-cross-platform-github-automation-engine`
+**Description:** Replace obsolete hardcoded issue scripts with a unified, cross-platform TypeScript/Node.js automation script (`scripts/github-workflow.ts`) invocable via `npm run gh:issues` and `npm run gh:pr`. Support batch creation of GitHub issues for any epic (creating the master Epic issue and individual Story issues with standard labels `epic` and `story`). Support automated PR creation from the active branch, extracting story title, description, and acceptance criteria from story artifacts and automatically appending `Closes #<id>` linking. Implement a dedicated in-repo agent skill (`.agent/skills/github-workflow/`) to drive this workflow autonomously.
+**Acceptance Criteria:**
+- `scripts/github-workflow.ts` executes natively on Windows, macOS, and Linux without shell-specific dependencies.
+- `npm run gh:issues -- --epic <number>` creates master Epic and child Story issues with standard labels via GitHub CLI (`gh`).
+- `npm run gh:pr` parses the current branch, formats a conventional commit PR title, populates the PR body with the story spec, and links the issue.
+- `.agent/skills/github-workflow/SKILL.md` provides complete agent instructions for automated issue tracking and PR generation.
+
+### Story 20.6: Open-Source Contribution Standards & Community Health
+**ID:** `20-6-open-source-contribution-standards-and-community-health`
+**Description:** Establish professional open-source contribution guidelines and community health standards. Revamp `CONTRIBUTING.md` with a clean Hexagonal Architecture primer, step-by-step local setup, git branch naming conventions (`feat/...`, `fix/...`), Conventional Commits requirements, and strict pre-PR verification gates (`npm test`, `npm run lint`, `npm run typecheck`, `npm run build`). Add standard GitHub templates: `.github/ISSUE_TEMPLATE/bug_report.md`, `.github/ISSUE_TEMPLATE/feature_request.md`, and `.github/PULL_REQUEST_TEMPLATE.md`. Implement Contributor Covenant v2.1 in `CODE_OF_CONDUCT.md` and responsible security disclosure guidelines in `SECURITY.md`.
+**Acceptance Criteria:**
+- `CONTRIBUTING.md` provides an exhaustive guide covering monorepo structure, test commands, and pull request checklist.
+- GitHub issue templates for bug reports and feature requests render cleanly in GitHub's New Issue chooser.
+- `PULL_REQUEST_TEMPLATE.md` automatically populates new PRs with verification checklists and issue linkage.
+- `CODE_OF_CONDUCT.md` and `SECURITY.md` are present in the repository root.
+
+### Story 20.7: Electron Desktop Packaging & Multi-OS Release Pipeline
+**ID:** `20-7-electron-desktop-packaging-and-multi-os-release-pipeline`
+**Description:** Package Flashcard Master into a standalone cross-platform desktop application using Electron and `electron-builder`. Wrap `@flashcard-master/web` (in-process Node.js server, Svelte 5 frontend, and native C++ `better-sqlite3` bindings) with zero backend rewrites. Store SQLite data automatically in the OS user data directory (`app.getPath('userData')`). Implement custom dark slate window framing and system tray minimize support. Build an automated GitHub Actions CI/CD release workflow (`.github/workflows/release-desktop.yml`) that triggers on release git tag push to build, package, sign, and publish installers for Windows (`.exe` NSIS installer and portable), macOS (`.dmg` Universal/arm64), and Linux (`.AppImage` and `.deb`) with assets attached to GitHub Releases.
+**Acceptance Criteria:**
+- Electron desktop wrapper initializes local server, connects to native SQLite database in OS user-data directory, and loads the Svelte client seamlessly.
+- Application builds cleanly with `electron-builder` with working native `better-sqlite3` bindings.
+- Native window supports dark theme, responsive resizing, and system tray minimize/restore.
+- GitHub Actions release pipeline builds and attaches Windows, macOS, and Linux binaries to GitHub Releases on tag push.
+
+
 
 
 
