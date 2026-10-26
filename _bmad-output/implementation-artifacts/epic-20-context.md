@@ -10,8 +10,8 @@ Solidify Flashcard Master as a production-grade, community-ready, and independen
 
 - **Story 20.1:** Model Documentation Audit & In-Repo LLM Model Advisor Skill
   - ID: `20-1-model-documentation-audit-and-model-advisor-skill`
-- **Story 20.2:** AGPL-3.0 Licensing & Community Sponsorship Integration
-  - ID: `20-2-agpl-licensing-and-community-sponsorship-integration`
+- **Story 20.2:** AGPL-3.0 Licensing & Open-Source Foundation
+  - ID: `20-2-agpl-licensing-and-open-source-foundation`
 - **Story 20.3:** Public Documentation Hub & GitHub Pages CI/CD Pipeline
   - ID: `20-3-public-documentation-hub-and-github-pages-pipeline`
 - **Story 20.4:** Contextual Setup UX & Human-Centric Onboarding
@@ -31,10 +31,11 @@ Solidify Flashcard Master as a production-grade, community-ready, and independen
    - Audit `README.md`, `docs/settings-configuration.md`, and UI strings to purge all references to older legacy models (e.g. `gemini-1.5-pro`).
    - Implement an in-repo advisor skill (`.agent/skills/model-advisor/`) that evaluates user criteria (cost/efficiency, offline privacy, deep synthesis) to recommend optimal model pairings.
 
-2. **AGPL-3.0 Licensing & Sponsorship Integrations:**
+2. **AGPL-3.0 Licensing & Open-Source Foundation:**
    - Adopt GNU Affero General Public License v3 (AGPL-3.0) to ensure 100% free community use while legally prohibiting proprietary closed-source SaaS clones over network services.
    - Add root `LICENSE` file and set `"license": "AGPL-3.0"` in `package.json`.
-   - Configure `.github/FUNDING.yml` (GitHub Sponsors, Buy Me a Coffee) and add sponsorship links in README and docs.
+   - Update `README.md` with the official AGPL-3.0 license badge and copyleft summary.
+   - Sponsorship channels (`.github/FUNDING.yml`) deferred until active funding accounts (GitHub Sponsors, Buy Me a Coffee) are created.
 
 3. **Public Documentation Hub & GitHub Pages CI/CD:**
    - Author structured User Guide in `docs/user-guide/` covering: Quickstart (3 min), Ingestion Playbook (Web, RSS, Notion, EPUB/PDF slicing), Card Synthesis Tuning, Study & Export Workflows, and Troubleshooting/FAQ.

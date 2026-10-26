@@ -1451,14 +1451,14 @@ All tests enforce a strict 3-second timeout and return `{ success: boolean, mess
 - `.agent/skills/model-advisor/SKILL.md` is implemented with clear decision trees, token pricing formulas, and recommended model presets.
 - Invoking the skill provides grounded recommendations matching user constraints (e.g. 100% offline local vs high-throughput bulk synthesis).
 
-### Story 20.2: AGPL-3.0 Licensing & Community Sponsorship Integration
-**ID:** `20-2-agpl-licensing-and-community-sponsorship-integration`
-**Description:** Formally license Flashcard Master under the GNU Affero General Public License v3 (AGPL-3.0) to safeguard the project against proprietary closed-source SaaS clones over network services while keeping it 100% free for individual users, researchers, and community collaborators. Add the official root `LICENSE` file, configure `"license": "AGPL-3.0"` in `package.json`, and establish community sponsorship channels via `.github/FUNDING.yml` (GitHub Sponsors, Buy Me a Coffee) with links in the README and docs footer.
+### Story 20.2: AGPL-3.0 Licensing & Open-Source Foundation
+**ID:** `20-2-agpl-licensing-and-open-source-foundation`
+**Description:** Formally license Flashcard Master under the GNU Affero General Public License v3 (AGPL-3.0) to safeguard the project against proprietary closed-source SaaS clones over network services while keeping it 100% free for individual users, researchers, and community collaborators. Add the official root `LICENSE` file, configure `"license": "AGPL-3.0"` in `package.json`, and update `README.md` with the official AGPL-3.0 badge, copyleft terms, and open-source foundation statement (deferring `.github/FUNDING.yml` until active funding accounts are created).
 **Acceptance Criteria:**
 - Root `LICENSE` contains the complete official GNU Affero General Public License v3.0 text.
 - Root `package.json` specifies `"license": "AGPL-3.0"`.
-- `.github/FUNDING.yml` is created with GitHub Sponsors and Buy Me a Coffee identifiers.
-- `README.md` includes the official license badge, copyleft summary, and community support/sponsorship section.
+- `README.md` includes the official license badge, copyleft summary, and open-source contribution foundation.
+- Sponsorship channels (`.github/FUNDING.yml`) deferred until active funding accounts are established.
 
 ### Story 20.3: Public Documentation Hub & GitHub Pages CI/CD Pipeline
 **ID:** `20-3-public-documentation-hub-and-github-pages-pipeline`

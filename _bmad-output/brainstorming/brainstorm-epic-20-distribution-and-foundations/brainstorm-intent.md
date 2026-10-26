@@ -28,14 +28,13 @@
 
 ---
 
-## Pillar 2: Open-Source Licensing & Community Sponsorship
+## Pillar 2: Open-Source Licensing & Foundation
 - **License**: **GNU Affero General Public License v3 (AGPL-3.0)**.
   - **Legal Protection**: Section 13 mandates that anyone running Flashcard Master over a computer network (cloud SaaS or hosted web service) must release the complete corresponding modified source code publicly under AGPL-3.0.
   - **User Freedom**: 100% free for all students, researchers, developers, and desktop users for personal and local use.
   - **Deliverable**: Create root `LICENSE` file and update `package.json` `"license": "AGPL-3.0"`.
 - **Sponsorship Integration**:
-  - Add `.github/FUNDING.yml` configured for GitHub Sponsors and Buy Me a Coffee.
-  - Integrate clean, optional sponsorship links in `README.md` and Documentation footer.
+  - Deferred until active accounts (GitHub Sponsors, Buy Me a Coffee) are set up, avoiding broken/placeholder links on GitHub.
 
 ---
 
