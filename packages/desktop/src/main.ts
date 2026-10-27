@@ -1,4 +1,5 @@
 import { app, BrowserWindow, Tray, Menu, nativeImage, dialog } from "electron";
+import { autoUpdater } from "electron-updater";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -119,6 +120,72 @@ export function setupSystemTray(win: BrowserWindow): Tray | null {
   return sysTray;
 }
 
+export function setupAutoUpdater(win?: BrowserWindow | null): void {
+  // Only check for updates when packaged, or if forced via environment
+  if (!app.isPackaged && process.env.ELECTRON_FORCE_UPDATE_CHECK !== "true") {
+    return;
+  }
+
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on("checking-for-update", () => {
+    console.log("[AutoUpdater] Checking for updates...");
+  });
+
+  autoUpdater.on("update-available", (info) => {
+    console.log("[AutoUpdater] Update available:", info.version);
+    if (win && !win.isDestroyed()) {
+      win.webContents.send("app-update-available", {
+        version: info.version,
+        releaseDate: info.releaseDate,
+        releaseNotes: info.releaseNotes,
+      });
+    }
+
+    dialog.showMessageBox(win ?? (null as any), {
+      type: "info",
+      title: "Update Available",
+      message: `A new version of Flashcard Master (v${info.version}) is available.`,
+      detail: "Would you like to download and install it now?",
+      buttons: ["Download & Restart", "Later"],
+      defaultId: 0,
+      cancelId: 1,
+    }).then(({ response }) => {
+      if (response === 0) {
+        autoUpdater.downloadUpdate().catch((err) => {
+          console.error("[AutoUpdater] Download failed:", err);
+        });
+      }
+    });
+  });
+
+  autoUpdater.on("update-downloaded", () => {
+    dialog.showMessageBox(win ?? (null as any), {
+      type: "info",
+      title: "Update Ready",
+      message: "The new version has been downloaded. Restart Flashcard Master now to apply the update.",
+      buttons: ["Restart Now", "Later"],
+      defaultId: 0,
+      cancelId: 1,
+    }).then(({ response }) => {
+      if (response === 0) {
+        autoUpdater.quitAndInstall();
+      }
+    });
+  });
+
+  autoUpdater.on("error", (err) => {
+    console.error("[AutoUpdater] Error in auto-updater:", err);
+  });
+
+  setTimeout(() => {
+    autoUpdater.checkForUpdates().catch((err) => {
+      console.warn("[AutoUpdater] Check for updates failed:", err.message);
+    });
+  }, 3000);
+}
+
 async function startApplication(): Promise<void> {
   try {
     const userDataPath = app.getPath("userData");
@@ -126,6 +193,15 @@ async function startApplication(): Promise<void> {
 
     mainWindow = createDesktopWindow(bootstrapResult.url);
     tray = setupSystemTray(mainWindow);
+    setupAutoUpdater(mainWindow);
+
+    if (process.argv.includes("--smoke-test") || process.env.ELECTRON_SMOKE_TEST === "1") {
+      console.log("[SmokeTest] Desktop app booted successfully. Exiting cleanly.");
+      setTimeout(() => {
+        isQuitting = true;
+        app.quit();
+      }, 1500);
+    }
   } catch (err: any) {
     dialog.showErrorBox("Startup Error", `Failed to initialize Flashcard Master:\n${err.message}`);
     app.quit();

@@ -323,12 +323,12 @@ action_items:
     action: "Integrate electron-updater into @flashcard-master/desktop to check GitHub
       Releases for new published tags and notify users with an in-app update banner"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-20-retro-2026-10-27.md"
   - id: "epic-20-retro-item-2-e2e-smoke-test-for-desktop-binary-in-ci"
     epic: 20
     action: "Add a headless smoke-test step in .github/workflows/release-desktop.yml
       on Linux using xvfb-run to assert that the packaged binary boots and cleanly shuts down"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-20-retro-2026-10-27.md"

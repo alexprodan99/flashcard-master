@@ -30,7 +30,8 @@
     "@flashcard-master/cli": "1.0.0",
     "@flashcard-master/core": "1.0.0",
     "@flashcard-master/web": "1.0.0",
-    "better-sqlite3": "^11.8.1"
+    "better-sqlite3": "^11.8.1",
+    "electron-updater": "^6.8.11"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
