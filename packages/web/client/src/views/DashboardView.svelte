@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { fetchStats } from '../lib/api';
-  import type { DashboardStats } from '../lib/types';
+  import { onMount } from "svelte";
+  import { fetchStats } from "../lib/api";
+  import type { DashboardStats } from "../lib/types";
 
   interface Props {
     onNavigate: (tab: string) => void;
@@ -9,13 +9,17 @@
 
   let { onNavigate }: Props = $props();
 
-  import { loadCachedStats, saveCachedStats } from '../lib/dashboard-cache.js';
+  import { loadCachedStats, saveCachedStats } from "../lib/dashboard-cache.js";
 
   const cached = loadCachedStats();
   let stats = $state<DashboardStats | null>(cached);
   let loading = $state(!cached);
   let isRefreshing = $state(false);
   let error = $state<string | null>(null);
+
+  const isFirstRun = $derived(
+    Boolean(stats && stats.totalSources === 0 && stats.totalCards === 0),
+  );
 
   async function loadData() {
     if (!stats) {
@@ -30,9 +34,9 @@
       saveCachedStats(freshStats);
     } catch (err: any) {
       if (!stats) {
-        error = err.message || 'Failed to load dashboard metrics';
+        error = err.message || "Failed to load dashboard metrics";
       } else {
-        console.warn('Background dashboard refresh failed:', err);
+        console.warn("Background dashboard refresh failed:", err);
       }
     } finally {
       loading = false;
@@ -49,10 +53,16 @@
   <div class="view-header">
     <div>
       <h1 class="view-title">Dashboard Overview</h1>
-      <p class="view-subtitle">Monitor knowledge ingestion, generation metrics, and active decks.</p>
+      <p class="view-subtitle">
+        Monitor knowledge ingestion, generation metrics, and active decks.
+      </p>
     </div>
-    <button class="btn btn-secondary" onclick={loadData} disabled={isRefreshing || loading}>
-      🔄 {isRefreshing ? 'Refreshing...' : 'Refresh'}
+    <button
+      class="btn btn-secondary"
+      onclick={loadData}
+      disabled={isRefreshing || loading}
+    >
+      🔄 {isRefreshing ? "Refreshing..." : "Refresh"}
     </button>
   </div>
 
@@ -67,6 +77,77 @@
       <button onclick={loadData} class="btn btn-sm">Retry</button>
     </div>
   {:else if stats}
+    {#if isFirstRun}
+      <div class="welcome-onboarding-card">
+        <div class="onboarding-hero">
+          <div class="onboarding-badge">🚀 Getting Started</div>
+          <h2 class="onboarding-title">Welcome to Flashcard Master!</h2>
+          <p class="onboarding-desc">
+            Your local-first, privacy-respecting AI knowledge companion. Turn
+            documents, feeds, and articles into factual, quote-grounded
+            flashcards for lifelong mastery.
+          </p>
+        </div>
+
+        <div class="onboarding-steps-grid">
+          <!-- Step 1: Set up AI Provider -->
+          <div class="onboarding-step-card">
+            <div class="step-card-header">
+              <span class="step-badge">Step 1</span>
+              <span class="step-icon">🤖</span>
+            </div>
+            <h3 class="step-title">Configure an AI Model</h3>
+            <p class="step-text">
+              Run 100% offline and free with local <strong>Ollama</strong>
+              (Phi-4, Llama 3), or connect <strong>Google Gemini</strong>,
+              <strong>OpenAI</strong>, or <strong>Anthropic</strong>.
+            </p>
+            <button
+              type="button"
+              class="btn btn-primary step-action-btn"
+              onclick={() => onNavigate("settings")}
+            >
+              <span>⚙️ Configure AI Provider</span>
+              <span class="arrow">&rarr;</span>
+            </button>
+          </div>
+
+          <!-- Step 2: Add First Source -->
+          <div class="onboarding-step-card highlight">
+            <div class="step-card-header">
+              <span class="step-badge highlight">Step 2</span>
+              <span class="step-icon">📚</span>
+            </div>
+            <h3 class="step-title">Add Your First Knowledge Source</h3>
+            <p class="step-text">
+              Ingest a web article, RSS/Atom feed, Notion workspace, or local
+              PDF, EPUB, or Markdown file to start generating questions.
+            </p>
+            <button
+              type="button"
+              class="btn btn-primary step-action-btn"
+              onclick={() => onNavigate("sources")}
+            >
+              <span>🌐 Add Learning Source</span>
+              <span class="arrow">&rarr;</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="onboarding-footer">
+          <span class="footer-icon">📖</span>
+          <span class="footer-text">
+            Need guidance? Check out the <a
+              href="https://alexprodan99.github.io/flashcard-master/user-guide/quickstart.html"
+              target="_blank"
+              rel="noreferrer noopener"
+              class="docs-link">3-Minute Quickstart Guide ↗</a
+            > in our documentation.
+          </span>
+        </div>
+      </div>
+    {/if}
+
     <div class="kpi-grid">
       <div class="kpi-card accent-primary">
         <div class="kpi-icon">🗂️</div>
@@ -79,7 +160,9 @@
       <div class="kpi-card accent-success">
         <div class="kpi-icon">🌐</div>
         <div class="kpi-content">
-          <div class="kpi-value">{stats.activeSources} / {stats.totalSources}</div>
+          <div class="kpi-value">
+            {stats.activeSources} / {stats.totalSources}
+          </div>
           <div class="kpi-label">Active Sources</div>
         </div>
       </div>
@@ -104,38 +187,64 @@
     <div class="quick-actions-section">
       <h2 class="section-title">4-Step Learning Pipeline</h2>
       <div class="action-grid">
-        <button type="button" class="action-card" onclick={() => onNavigate('sources')}>
+        <button
+          type="button"
+          class="action-card"
+          onclick={() => onNavigate("sources")}
+        >
           <div class="action-icon">🌐</div>
           <div class="action-info">
             <h3>1. Ingest Sources</h3>
-            <p>Connect RSS feeds, sitemaps, web articles, and local Markdown repositories.</p>
+            <p>
+              Connect RSS feeds, sitemaps, web articles, and local Markdown
+              repositories.
+            </p>
           </div>
           <span class="action-arrow">→</span>
         </button>
 
-        <button type="button" class="action-card highlight" onclick={() => onNavigate('generate')}>
+        <button
+          type="button"
+          class="action-card highlight"
+          onclick={() => onNavigate("generate")}
+        >
           <div class="action-icon">⚡</div>
           <div class="action-info">
             <h3>2. Generate Studio</h3>
-            <p>Synthesize grounded flashcards with local Ollama or Cloud LLMs.</p>
+            <p>
+              Synthesize grounded flashcards with local Ollama or Cloud LLMs.
+            </p>
           </div>
           <span class="action-arrow">→</span>
         </button>
 
-        <button type="button" class="action-card" onclick={() => onNavigate('cards')}>
+        <button
+          type="button"
+          class="action-card"
+          onclick={() => onNavigate("cards")}
+        >
           <div class="action-icon">🗂️</div>
           <div class="action-info">
             <h3>3. Question Explorer</h3>
-            <p>Search, curate, and review cards with verbatim grounding quotes.</p>
+            <p>
+              Search, curate, and review cards with verbatim grounding quotes.
+            </p>
           </div>
           <span class="action-arrow">→</span>
         </button>
 
-        <button type="button" class="action-card" onclick={() => onNavigate('export')}>
+        <button
+          type="button"
+          class="action-card"
+          onclick={() => onNavigate("export")}
+        >
           <div class="action-icon">🚀</div>
           <div class="action-info">
             <h3>4. Export & Anki</h3>
-            <p>1-click export to native Anki .apkg, live AnkiConnect, and Markdown.</p>
+            <p>
+              1-click export to native Anki .apkg, live AnkiConnect, and
+              Markdown.
+            </p>
           </div>
           <span class="action-arrow">→</span>
         </button>
@@ -154,7 +263,7 @@
               </div>
               <div class="source-meta">
                 <span class="status-pill" class:active={s.isActive}>
-                  {s.isActive ? 'Active' : 'Paused'}
+                  {s.isActive ? "Active" : "Paused"}
                 </span>
               </div>
             </div>
@@ -210,7 +319,9 @@
     display: flex;
     align-items: center;
     gap: 16px;
-    transition: transform 0.15s ease, border-color 0.15s ease;
+    transition:
+      transform 0.15s ease,
+      border-color 0.15s ease;
   }
 
   .kpi-card:hover {
@@ -467,7 +578,9 @@
   }
 
   @keyframes spin {
-    to { transform: rotate(360deg); }
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   .error-banner {
@@ -479,5 +592,165 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+  }
+
+  /* Welcoming Onboarding Card */
+  .welcome-onboarding-card {
+    background: linear-gradient(
+      135deg,
+      rgba(30, 41, 59, 0.95),
+      rgba(15, 23, 42, 0.98)
+    );
+    border: 1px solid #4338ca;
+    border-radius: 16px;
+    padding: 28px 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    box-shadow:
+      0 10px 25px -5px rgba(0, 0, 0, 0.3),
+      0 0 15px rgba(99, 102, 241, 0.15);
+  }
+
+  .onboarding-hero {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .onboarding-badge {
+    background: rgba(99, 102, 241, 0.2);
+    color: #a5b4fc;
+    border: 1px solid rgba(99, 102, 241, 0.35);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 9999px;
+    width: fit-content;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .onboarding-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: #f8fafc;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+
+  .onboarding-desc {
+    font-size: 14px;
+    color: #94a3b8;
+    margin: 0;
+    max-width: 720px;
+    line-height: 1.5;
+  }
+
+  .onboarding-steps-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+  }
+
+  .onboarding-step-card {
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    transition: all 0.15s ease;
+  }
+
+  .onboarding-step-card:hover {
+    border-color: #6366f1;
+    transform: translateY(-2px);
+  }
+
+  .onboarding-step-card.highlight {
+    border-color: rgba(99, 102, 241, 0.4);
+    background: rgba(99, 102, 241, 0.04);
+  }
+
+  .step-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .step-badge {
+    font-size: 11px;
+    font-weight: 700;
+    color: #94a3b8;
+    background: #1e293b;
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+
+  .step-badge.highlight {
+    background: #4338ca;
+    color: #ffffff;
+  }
+
+  .step-icon {
+    font-size: 22px;
+  }
+
+  .step-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #f1f5f9;
+    margin: 0;
+  }
+
+  .step-text {
+    font-size: 13px;
+    color: #94a3b8;
+    margin: 0;
+    line-height: 1.45;
+    flex: 1;
+  }
+
+  .step-text strong {
+    color: #e2e8f0;
+  }
+
+  .btn-primary {
+    background: #4f46e5;
+    color: #ffffff;
+  }
+
+  .btn-primary:hover {
+    background: #4338ca;
+  }
+
+  .step-action-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    margin-top: 4px;
+  }
+
+  .onboarding-footer {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #64748b;
+    border-top: 1px solid rgba(51, 65, 85, 0.6);
+    padding-top: 14px;
+  }
+
+  .docs-link {
+    color: #818cf8;
+    text-decoration: underline;
+    font-weight: 500;
+  }
+
+  .docs-link:hover {
+    color: #a5b4fc;
   }
 </style>

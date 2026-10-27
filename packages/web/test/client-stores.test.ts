@@ -896,6 +896,42 @@ describe('Svelte 5 Universal Client Stores (Epic 14.4)', () => {
       store.clearTestResult('anthropic');
       expect(store.testResults.anthropic).toBeNull();
     });
+
+    it('testAnki updates ankiTestResult with online status and details', async () => {
+      const store = new SettingsStore();
+      const mockAnkiResponse = {
+        online: true,
+        version: 6,
+        latencyMs: 12,
+      };
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => mockAnkiResponse,
+      });
+
+      const res = await store.testAnki({ endpointUrl: 'http://127.0.0.1:8765' });
+
+      expect(res.online).toBe(true);
+      expect(store.ankiTestResult?.online).toBe(true);
+      expect(store.ankiTestResult?.version).toBe(6);
+      expect(store.testingAnki).toBe(false);
+    });
+
+    it('testAnki with silent: true captures offline state without raising errors', async () => {
+      const store = new SettingsStore();
+      global.fetch = vi.fn().mockRejectedValue(new Error('Connection refused'));
+
+      const res = await store.testAnki({
+        endpointUrl: 'http://127.0.0.1:8765',
+        silent: true,
+      });
+
+      expect(res.online).toBe(false);
+      expect(store.ankiTestResult?.online).toBe(false);
+      expect(store.ankiTestResult?.error).toContain('Connection refused');
+      expect(store.testingAnki).toBe(false);
+    });
   });
 
   describe('Dashboard Telemetry SWR Cache (Story 17.1)', () => {

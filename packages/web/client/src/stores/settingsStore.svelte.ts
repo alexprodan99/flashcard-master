@@ -155,16 +155,24 @@ export class SettingsStore {
     }
   }
 
-  async testAnki(options?: { endpointUrl?: string; apiKey?: string; timeoutMs?: number }): Promise<AnkiTestResult> {
+  async testAnki(options?: {
+    endpointUrl?: string;
+    apiKey?: string;
+    timeoutMs?: number;
+    silent?: boolean;
+  }): Promise<AnkiTestResult> {
+    const isSilent = Boolean(options?.silent);
     this.testingAnki = true;
     this.ankiTestResult = null;
     try {
       const res = await testAnkiConnect(options);
       this.ankiTestResult = res;
-      if (res.online) {
-        toastStore.success(`✓ AnkiConnect Online (v${res.version ?? 6})${res.latencyMs !== undefined ? ` • ${res.latencyMs}ms` : ''}`);
-      } else {
-        toastStore.error(`✗ AnkiConnect Offline: ${res.error || 'Connection failed'}`);
+      if (!isSilent) {
+        if (res.online) {
+          toastStore.success(`✓ AnkiConnect Online (v${res.version ?? 6})${res.latencyMs !== undefined ? ` • ${res.latencyMs}ms` : ''}`);
+        } else {
+          toastStore.error(`✗ AnkiConnect Offline: ${res.error || 'Connection failed'}`);
+        }
       }
       return res;
     } catch (err: any) {
@@ -173,7 +181,9 @@ export class SettingsStore {
         error: err.message || 'Connection test failed',
       };
       this.ankiTestResult = failRes;
-      toastStore.error(`✗ AnkiConnect: ${failRes.error}`);
+      if (!isSilent) {
+        toastStore.error(`✗ AnkiConnect: ${failRes.error}`);
+      }
       return failRes;
     } finally {
       this.testingAnki = false;

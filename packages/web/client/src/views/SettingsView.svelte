@@ -21,6 +21,9 @@
     endpointPlaceholder?: string;
     description: string;
     guideUrl?: string;
+    consoleUrl?: string;
+    consoleLabel?: string;
+    tooltip?: string;
   }
 
   const PROVIDER_METAS: ProviderMeta[] = [
@@ -35,6 +38,9 @@
       hasEndpoint: false,
       description: 'Connect your Notion workspace to ingest databases and pages as flashcard sources.',
       guideUrl: 'https://www.notion.so/my-integrations',
+      consoleUrl: 'https://www.notion.so/my-integrations',
+      consoleLabel: 'Notion Integrations ↗',
+      tooltip: 'Create an Internal Integration in your Notion account to allow Flashcard Master to read pages and databases.',
     },
     {
       id: 'openai',
@@ -48,6 +54,9 @@
       endpointLabel: 'Base URL (Optional Override)',
       endpointPlaceholder: 'https://api.openai.com/v1',
       description: 'GPT-4o, GPT-4o-mini, and OpenAI-compatible endpoints (LocalAI, vLLM, etc.).',
+      consoleUrl: 'https://platform.openai.com/api-keys',
+      consoleLabel: 'Get API Key ↗',
+      tooltip: 'Create an API key in the OpenAI developer console. Requires pay-as-you-go billing credits.',
     },
     {
       id: 'anthropic',
@@ -61,6 +70,9 @@
       endpointLabel: 'Base URL (Optional Override)',
       endpointPlaceholder: 'https://api.anthropic.com',
       description: 'Claude Haiku 4.5, Claude Sonnet 5, and Anthropic-compatible proxies.',
+      consoleUrl: 'https://console.anthropic.com/settings/keys',
+      consoleLabel: 'Get API Key ↗',
+      tooltip: 'Generate an API key in the Anthropic Console. Requires active account credit.',
     },
     {
       id: 'gemini',
@@ -74,6 +86,9 @@
       endpointLabel: 'Base URL (Optional Override)',
       endpointPlaceholder: 'https://generativelanguage.googleapis.com',
       description: 'Gemini 3.6 Flash, Gemini 3.6 Pro, and Flash with x-goog-api-key header security.',
+      consoleUrl: 'https://aistudio.google.com/app/apikey',
+      consoleLabel: 'Get API Key ↗',
+      tooltip: 'Get a free API key at Google AI Studio with high rate limits for personal learning.',
     },
     {
       id: 'ollama',
@@ -88,6 +103,9 @@
       endpointPlaceholder: 'http://localhost:11434',
       defaultEndpoint: 'http://localhost:11434',
       description: 'Local and self-hosted open models (e.g. Llama 3, Phi-4, Mistral, Qwen).',
+      consoleUrl: 'https://ollama.com/download',
+      consoleLabel: 'Download Ollama ↗',
+      tooltip: 'Ollama runs open-weights models locally without cloud fees or API keys. Ensure ollama serve is running.',
     },
   ];
 
@@ -128,12 +146,34 @@
   const sourceProviders = $derived(PROVIDER_METAS.filter((p) => p.category === 'source'));
   const llmProviders = $derived(PROVIDER_METAS.filter((p) => p.category === 'llm'));
 
+  let copiedAnkiCode = $state(false);
+
+  async function handleCopyAnkiCode() {
+    try {
+      await navigator.clipboard.writeText('2055492159');
+      copiedAnkiCode = true;
+      setTimeout(() => {
+        copiedAnkiCode = false;
+      }, 2000);
+      toastStore.success('AnkiConnect plugin code (2055492159) copied to clipboard!');
+    } catch {
+      toastStore.info('Plugin code: 2055492159');
+    }
+  }
+
   onMount(async () => {
     // Clear any previous session diagnostic banners to avoid stale outputs
     ALL_SECRET_PROVIDERS.forEach((p) => settingsStore.clearTestResult(p));
     await loadData();
     hasLoaded = true;
     syncEndpointsFromStore();
+    // Silent background check to immediately detect if desktop Anki is active
+    settingsStore.testAnki({
+      endpointUrl: formGeneral.ankiconnectUrl,
+      apiKey: candidateAnkiKey.trim() || undefined,
+      timeoutMs: 1500,
+      silent: true,
+    });
   });
 
   function syncEndpointsFromStore() {
@@ -388,33 +428,66 @@
               <div class="provider-info">
                 <span class="provider-avatar">{meta.icon}</span>
                 <div class="provider-name-wrap">
-                  <h3 class="provider-name">{meta.name}</h3>
+                  <div class="name-tooltip-row">
+                    <h3 class="provider-name">{meta.name}</h3>
+                    {#if meta.tooltip}
+                      <button type="button" class="tooltip-container" aria-label={meta.tooltip}>
+                        <span class="tooltip-icon">ℹ️</span>
+                        <span class="tooltip-bubble" role="tooltip">{meta.tooltip}</span>
+                      </button>
+                    {/if}
+                  </div>
                   <span class="badge {badge.cssClass}">
                     <span class="badge-dot">{badge.icon}</span>
                     {badge.label}
                   </span>
                 </div>
               </div>
-              {#if meta.guideUrl}
-                <a
-                  href={meta.guideUrl}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  class="guide-link"
-                  title="Open integration guide in browser"
-                >
-                  Integration Guide ↗
-                </a>
-              {/if}
+              <div class="header-links">
+                {#if meta.consoleUrl}
+                  <a
+                    href={meta.consoleUrl}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    class="get-key-link"
+                    title="Open Notion integrations console in browser"
+                  >
+                    <span>{meta.consoleLabel || 'Notion Integrations ↗'}</span>
+                  </a>
+                {/if}
+              </div>
             </div>
 
             <p class="provider-desc">{meta.description}</p>
 
-            <!-- Notion Page Sharing Hint -->
-            <div class="notion-hint-box">
-              <span class="hint-icon">💡</span>
-              <div class="hint-text">
-                <strong>Important:</strong> After creating your integration token, open your Notion database or page, click <strong>•••</strong> &rarr; <strong>Connect to</strong> / <strong>Add connections</strong>, and select your integration name.
+            <!-- 3-Step Notion Permissions Walkthrough Guide -->
+            <div class="notion-walkthrough-card">
+              <div class="walkthrough-header">
+                <span class="walkthrough-badge">3-Step Permissions Guide</span>
+                <h4 class="walkthrough-title">How to Authorize Notion Pages & Databases</h4>
+              </div>
+              <div class="walkthrough-steps">
+                <div class="walkthrough-step">
+                  <div class="step-num">1</div>
+                  <div class="step-content">
+                    <strong>Create Integration</strong>
+                    <p>Go to <a href="https://www.notion.so/my-integrations" target="_blank" rel="noreferrer noopener" class="inline-link">notion.so/my-integrations ↗</a> and create a new <em>Internal Integration</em>.</p>
+                  </div>
+                </div>
+                <div class="walkthrough-step">
+                  <div class="step-num">2</div>
+                  <div class="step-content">
+                    <strong>Save Secret Token</strong>
+                    <p>Copy your <code>secret_...</code> token, paste it below, and click <strong>Save Token</strong>.</p>
+                  </div>
+                </div>
+                <div class="walkthrough-step highlight-step">
+                  <div class="step-num highlight-num">3</div>
+                  <div class="step-content">
+                    <strong>Invite via ••• Menu (Crucial!)</strong>
+                    <p>In Notion, open target pages/databases, click <strong>•••</strong> &rarr; <strong>Connect to</strong>, and pick your integration. Notion blocks uninvited access!</p>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -533,6 +606,12 @@
                   </button>
                 </div>
                 <p class="result-message">{testResult.message}</p>
+                {#if !testResult.success}
+                  <div class="notion-troubleshoot-hint">
+                    <span class="hint-icon">💡</span>
+                    <span><strong>Access Diagnostic:</strong> If your integration token is valid but pages cannot be found, confirm you opened each page in Notion, clicked <strong>•••</strong> &rarr; <strong>Connect to</strong>, and selected your integration name.</span>
+                  </div>
+                {/if}
                 {#if testResult.details && Object.keys(testResult.details).length > 0}
                   <div class="result-details">
                     {#if testResult.details.workspaceName}
@@ -580,12 +659,33 @@
               <div class="provider-info">
                 <span class="provider-avatar">{meta.icon}</span>
                 <div class="provider-name-wrap">
-                  <h3 class="provider-name">{meta.name}</h3>
+                  <div class="name-tooltip-row">
+                    <h3 class="provider-name">{meta.name}</h3>
+                    {#if meta.tooltip}
+                      <button type="button" class="tooltip-container" aria-label={meta.tooltip}>
+                        <span class="tooltip-icon">ℹ️</span>
+                        <span class="tooltip-bubble" role="tooltip">{meta.tooltip}</span>
+                      </button>
+                    {/if}
+                  </div>
                   <span class="badge {badge.cssClass}">
                     <span class="badge-dot">{badge.icon}</span>
                     {badge.label}
                   </span>
                 </div>
+              </div>
+              <div class="header-links">
+                {#if meta.consoleUrl}
+                  <a
+                    href={meta.consoleUrl}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    class="get-key-link"
+                    title="Open developer console in browser"
+                  >
+                    <span>{meta.consoleLabel || 'Get API Key ↗'}</span>
+                  </a>
+                {/if}
               </div>
             </div>
 
@@ -765,22 +865,27 @@
         <div class="section-title-wrap">
           <span class="section-icon">🎴</span>
           <h2 class="section-title">Anki Desktop Integration</h2>
-          {#if settingsStore.ankiTestResult}
+          {#if settingsStore.testingAnki}
+            <span class="badge badge-none">
+              <span class="badge-dot">⏳</span>
+              Checking Anki...
+            </span>
+          {:else if settingsStore.ankiTestResult}
             {#if settingsStore.ankiTestResult.online}
               <span class="badge badge-db">
                 <span class="badge-dot">🟢</span>
-                Online (v{settingsStore.ankiTestResult.version ?? 6})
+                Anki Ready (v{settingsStore.ankiTestResult.version ?? 6})
               </span>
             {:else}
               <span class="badge badge-none">
-                <span class="badge-dot">🔴</span>
-                Offline
+                <span class="badge-dot">⚪</span>
+                Anki Not Running
               </span>
             {/if}
           {:else}
-            <span class="badge badge-ready">
-              <span class="badge-dot">🔵</span>
-              AnkiConnect
+            <span class="badge badge-none">
+              <span class="badge-dot">⚪</span>
+              Anki Not Running
             </span>
           {/if}
         </div>
@@ -794,27 +899,58 @@
           <div class="provider-info">
             <span class="provider-avatar">🎴</span>
             <div class="provider-name-wrap">
-              <h3 class="provider-name">AnkiConnect Bridge</h3>
+              <div class="name-tooltip-row">
+                <h3 class="provider-name">AnkiConnect Bridge</h3>
+                <button type="button" class="tooltip-container" aria-label="AnkiConnect enables live flashcard sync directly to desktop Anki without manual file imports.">
+                  <span class="tooltip-icon">ℹ️</span>
+                  <span class="tooltip-bubble" role="tooltip">AnkiConnect enables live flashcard sync directly to desktop Anki without manual file imports.</span>
+                </button>
+              </div>
               <span class="badge {getGeneralSourceBadge('ankiconnectUrl', 'ANKI_CONNECT_URL').cssClass}">
                 <span class="badge-dot">{getGeneralSourceBadge('ankiconnectUrl', 'ANKI_CONNECT_URL').icon}</span>
                 {getGeneralSourceBadge('ankiconnectUrl', 'ANKI_CONNECT_URL').label}
               </span>
             </div>
           </div>
-          <a
-            href="https://ankiweb.net/shared/info/2055492159"
-            target="_blank"
-            rel="noreferrer noopener"
-            class="guide-link"
-          >
-            <span>AnkiConnect Plugin #2055492159</span>
-            <span class="arrow">↗</span>
-          </a>
+          <div class="header-links">
+            <a
+              href="https://ankiweb.net/shared/info/2055492159"
+              target="_blank"
+              rel="noreferrer noopener"
+              class="get-key-link"
+              title="View AnkiConnect add-on on AnkiWeb"
+            >
+              <span>AnkiWeb Plugin #2055492159 ↗</span>
+            </a>
+          </div>
         </div>
 
         <p class="provider-desc">
           Direct synchronization to your local or remote Anki collection via the AnkiConnect add-on HTTP bridge.
         </p>
+
+        <!-- Anki Add-on 1-Click Copy Box -->
+        <div class="anki-addon-card">
+          <div class="addon-card-left">
+            <span class="addon-badge">Anki Desktop Add-on</span>
+            <div class="addon-code-line">
+              <span class="code-title">Add-on Code:</span>
+              <code class="code-val font-mono">2055492159</code>
+              <button
+                type="button"
+                class="btn-code-copy"
+                class:copied={copiedAnkiCode}
+                onclick={handleCopyAnkiCode}
+                title="Copy add-on code to clipboard"
+              >
+                {copiedAnkiCode ? '✓ Copied!' : '📋 Copy Code'}
+              </button>
+            </div>
+          </div>
+          <div class="addon-instructions">
+            In Anki Desktop, go to <strong>Tools &rarr; Add-ons &rarr; Get Add-ons...</strong>, paste code <code>2055492159</code>, install, and restart Anki.
+          </div>
+        </div>
 
         <!-- Active Token Masked Preview -->
         {#if settingsStore.maskedAnkiKey}
@@ -914,14 +1050,27 @@
           >
             <span class="icon">{settingsStore.ankiTestResult.online ? '✓' : '✗'}</span>
             <div class="banner-content">
-              <strong>{settingsStore.ankiTestResult.online ? 'AnkiConnect Reachable' : 'Connection Failed'}:</strong>
+              <strong>{settingsStore.ankiTestResult.online ? 'Anki Ready' : 'Anki Not Running'}:</strong>
               {#if settingsStore.ankiTestResult.online}
-                Detected AnkiConnect version {settingsStore.ankiTestResult.version ?? 6} (Latency: {settingsStore.ankiTestResult.latencyMs ?? 0}ms).
+                Connected to AnkiConnect version {settingsStore.ankiTestResult.version ?? 6} (Latency: {settingsStore.ankiTestResult.latencyMs ?? 0}ms).
               {:else}
-                {settingsStore.ankiTestResult.error || 'Connection refused'}. Ensure Anki is running with AnkiConnect enabled.
+                {settingsStore.ankiTestResult.error || 'Connection refused at ' + formGeneral.ankiconnectUrl}.
               {/if}
             </div>
           </div>
+          {#if !settingsStore.ankiTestResult.online}
+            <div class="anki-troubleshoot-box">
+              <div class="troubleshoot-header">
+                <span class="troubleshoot-icon">💡</span>
+                <strong>How to resolve:</strong>
+              </div>
+              <ul class="troubleshoot-steps">
+                <li><strong>1. Launch Anki:</strong> Ensure Anki Desktop is running on this computer.</li>
+                <li><strong>2. Verify Add-on:</strong> Open <em>Tools &rarr; Add-ons</em> in Anki and confirm AnkiConnect (code <code>2055492159</code>) is installed and enabled.</li>
+                <li><strong>3. Restart Anki:</strong> If you recently installed the add-on, restart Anki to start its HTTP server.</li>
+              </ul>
+            </div>
+          {/if}
         {/if}
 
         <div class="form-actions">
@@ -1249,9 +1398,9 @@
                 class="select-input"
                 bind:value={formGeneral.defaultSlicingMode}
               >
-                <option value="outline">📑 Semantic Outline (Headings & Table of Contents)</option>
-                <option value="budget">📄 Fixed Page Budget (Pages per chunk)</option>
-                <option value="none">📦 Entire Document (Single chunk)</option>
+                <option value="outline">📑 Split by Chapters & Outline (Headings & Sections)</option>
+                <option value="budget">📦 Split by Page Blocks (Fixed page & word limits)</option>
+                <option value="none">📄 Keep as Single Document (No slicing)</option>
               </select>
             </div>
 
@@ -1584,18 +1733,319 @@
     line-height: 1.4;
   }
 
-  /* Notion Hint Callout */
-  .notion-hint-box {
+  /* Tooltip styling */
+  .name-tooltip-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .tooltip-container {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: help;
+  }
+
+  .tooltip-icon {
+    font-size: 13px;
+    opacity: 0.7;
+    transition: opacity 0.15s ease;
+    user-select: none;
+  }
+
+  .tooltip-container:hover .tooltip-icon,
+  .tooltip-container:focus-within .tooltip-icon {
+    opacity: 1;
+  }
+
+  .tooltip-bubble {
+    position: absolute;
+    bottom: 125%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #0f172a;
+    color: #e2e8f0;
+    font-size: 11px;
+    font-weight: 400;
+    line-height: 1.45;
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 1px solid #334155;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -4px rgba(0, 0, 0, 0.4);
+    width: 260px;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.15s ease, visibility 0.15s ease;
+    z-index: 50;
+    white-space: normal;
+  }
+
+  .tooltip-container:hover .tooltip-bubble,
+  .tooltip-container:focus-within .tooltip-bubble {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  /* Header links & 1-click console links */
+  .header-links {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .get-key-link {
+    font-size: 12px;
+    color: #38bdf8;
+    text-decoration: none;
+    font-weight: 500;
+    padding: 4px 10px;
+    background: rgba(56, 189, 248, 0.1);
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    border-radius: 6px;
+    transition: all 0.15s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+  }
+
+  .get-key-link:hover {
+    background: rgba(56, 189, 248, 0.2);
+    color: #7dd3fc;
+    border-color: rgba(56, 189, 248, 0.45);
+  }
+
+  /* 3-Step Notion Permissions Walkthrough */
+  .notion-walkthrough-card {
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .walkthrough-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .walkthrough-badge {
+    background: rgba(99, 102, 241, 0.2);
+    color: #a5b4fc;
+    border: 1px solid rgba(99, 102, 241, 0.35);
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .walkthrough-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #f1f5f9;
+    margin: 0;
+  }
+
+  .walkthrough-steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px;
+  }
+
+  .walkthrough-step {
+    background: #0f172a;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 10px 12px;
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+  }
+
+  .walkthrough-step.highlight-step {
+    border-color: rgba(99, 102, 241, 0.4);
+    background: rgba(99, 102, 241, 0.06);
+  }
+
+  .step-num {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #1e293b;
+    color: #94a3b8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .step-num.highlight-num {
+    background: #6366f1;
+    color: #ffffff;
+  }
+
+  .step-content {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .step-content strong {
+    font-size: 12px;
+    color: #f8fafc;
+  }
+
+  .step-content p {
+    font-size: 11px;
+    color: #94a3b8;
+    margin: 0;
+    line-height: 1.4;
+  }
+
+  .step-content code {
+    background: rgba(255, 255, 255, 0.08);
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 11px;
+  }
+
+  .inline-link {
+    color: #38bdf8;
+    text-decoration: underline;
+  }
+
+  .notion-troubleshoot-hint {
+    margin-top: 8px;
+    padding: 10px 12px;
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    border-radius: 6px;
+    font-size: 12px;
+    color: #fca5a5;
+    line-height: 1.4;
     display: flex;
     align-items: flex-start;
-    gap: 10px;
-    padding: 10px 14px;
+    gap: 8px;
+  }
+
+  /* Anki Desktop Add-on Card & Troubleshooting */
+  .anki-addon-card {
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid #334155;
     border-radius: 8px;
-    background: rgba(99, 102, 241, 0.08);
-    border: 1px solid rgba(99, 102, 241, 0.25);
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .addon-card-left {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .addon-badge {
+    background: rgba(56, 189, 248, 0.15);
+    color: #38bdf8;
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 4px;
+    text-transform: uppercase;
+  }
+
+  .addon-code-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .code-title {
     font-size: 12px;
-    line-height: 1.45;
     color: #cbd5e1;
+    font-weight: 500;
+  }
+
+  .code-val {
+    font-size: 14px;
+    font-weight: 700;
+    color: #38bdf8;
+    background: #0f172a;
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: 1px solid #334155;
+    letter-spacing: 0.05em;
+  }
+
+  .btn-code-copy {
+    background: #334155;
+    color: #f8fafc;
+    border: 1px solid #475569;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .btn-code-copy:hover {
+    background: #475569;
+  }
+
+  .btn-code-copy.copied {
+    background: #10b981;
+    color: #ffffff;
+    border-color: #10b981;
+  }
+
+  .addon-instructions {
+    font-size: 12px;
+    color: #94a3b8;
+    line-height: 1.45;
+  }
+
+  .anki-troubleshoot-box {
+    margin-top: 8px;
+    padding: 12px 14px;
+    background: rgba(15, 23, 42, 0.8);
+    border: 1px solid #334155;
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .troubleshoot-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #e2e8f0;
+  }
+
+  .troubleshoot-steps {
+    margin: 0;
+    padding-left: 18px;
+    font-size: 12px;
+    color: #94a3b8;
+    line-height: 1.5;
   }
 
   .hint-icon {
@@ -1603,10 +2053,6 @@
     line-height: 1;
     flex-shrink: 0;
     margin-top: 1px;
-  }
-
-  .hint-text strong {
-    color: #f8fafc;
   }
 
   .guide-link {

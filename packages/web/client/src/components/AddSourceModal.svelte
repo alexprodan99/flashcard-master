@@ -389,21 +389,21 @@
                 <label class="slicing-mode-option" class:selected={slicingMode === 'outline'}>
                   <input type="radio" name="slicingMode" value="outline" bind:group={slicingMode} />
                   <span class="slicing-mode-label">
-                    <strong>Semantic Outline</strong>
-                    <small>Slices by headings/chapters &amp; sections</small>
+                    <strong>Split by Chapters &amp; Outline</strong>
+                    <small>Slices by headings, chapters, and sections</small>
                   </span>
                 </label>
                 <label class="slicing-mode-option" class:selected={slicingMode === 'budget'}>
                   <input type="radio" name="slicingMode" value="budget" bind:group={slicingMode} />
                   <span class="slicing-mode-label">
-                    <strong>Page Budget</strong>
+                    <strong>Split by Page Blocks</strong>
                     <small>Fixed page &amp; word threshold chunks</small>
                   </span>
                 </label>
                 <label class="slicing-mode-option" class:selected={slicingMode === 'none'}>
                   <input type="radio" name="slicingMode" value="none" bind:group={slicingMode} />
                   <span class="slicing-mode-label">
-                    <strong>None</strong>
+                    <strong>Keep as Single Document</strong>
                     <small>Ingest as a single whole document</small>
                   </span>
                 </label>
