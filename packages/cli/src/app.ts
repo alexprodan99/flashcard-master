@@ -70,6 +70,7 @@ export interface AppContext {
 export interface AppOptions {
   dbPath?: string;
   inMemory?: boolean;
+  mediaDir?: string;
 }
 
 export function getDefaultDbPath(): string {
@@ -89,7 +90,7 @@ export function createAppContext(options: AppOptions = {}): AppContext {
   const settingsRepo = new SqliteSettingsRepository(db);
   const settingsService = new SettingsService(settingsRepo);
   const providerVerifier = new ProviderVerifier();
-  const mediaService = new MediaService();
+  const mediaService = new MediaService({ mediaDir: options.mediaDir });
 
   // Ingestion strategies
   const strategyRegistry = new StrategyRegistry();

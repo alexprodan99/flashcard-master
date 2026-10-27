@@ -30,10 +30,14 @@ flashcard-master/
 │   │   ├── src/app.ts      # Application context & dependency injection container
 │   │   └── src/cli.ts      # Commander.js CLI commands (init, source, sync, generate, export, serve)
 │   │
-│   └── web/            # 🌐 Local Single-Page Application (SPA) & REST backend
-│       ├── src/server.ts   # Node.js HTTP REST API server
-│       └── client/         # Svelte 5 + Vite reactive frontend dashboard
-│           └── src/views/  # Dashboard, Sources, Generate Studio, Question Explorer, Export Center
+│   ├── web/            # 🌐 Local Single-Page Application (SPA) & REST backend
+│   │   ├── src/server.ts   # Node.js HTTP REST API server
+│   │   └── client/         # Svelte 5 + Vite reactive frontend dashboard
+│   │       └── src/views/  # Dashboard, Sources, Generate Studio, Question Explorer, Export Center
+│   │
+│   └── desktop/        # 🖥️ Standalone cross-platform desktop application (Electron)
+│       ├── src/main.ts     # Native window framing, system tray, and lifecycle
+│       └── src/bootstrap.ts# In-process server bootstrap & userData SQLite storage
 │
 ├── scripts/            # 🛠️ Cross-platform TypeScript automation tooling (GitHub issue/PR engine)
 ├── docs/               # 📖 Public documentation hub (VitePress)
@@ -44,8 +48,8 @@ flashcard-master/
 ### Architectural Dependency Invariants:
 1. **`core` has ZERO external dependencies** on UI, CLI, or specific provider libraries. It imports only standard libraries, utilities, and schema validators (Zod).
 2. **`adapters` depends only on `core`** to implement port interfaces. Adapters never import from `cli` or `web`.
-3. **`cli` and `web` are composition roots**. They wire concrete adapters into core service constructors via dependency injection.
-4. **Local-first & Private:** All user credentials and documents reside locally in SQLite (`flashcards.db`). No telemetry or analytics are permitted.
+3. **`cli`, `web`, and `desktop` are composition roots**. They wire concrete adapters into core service constructors via dependency injection.
+4. **Local-first & Private:** All user credentials and documents reside locally in SQLite (`data.sqlite`). No telemetry or analytics are permitted.
 
 ---
 
@@ -77,6 +81,12 @@ npm test
 ```bash
 # Launch local Web UI dashboard server at http://localhost:3000
 npm start
+
+# Launch standalone Electron desktop application locally
+npm run desktop:start
+
+# Package desktop installer for current OS
+npm run desktop:dist
 
 # Run VitePress documentation site locally
 npm run docs:dev

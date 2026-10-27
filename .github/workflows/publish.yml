@@ -60,7 +60,7 @@ jobs:
             node -e '
               const fs = require("fs");
               const targetVer = process.argv[1];
-              const files = ["package.json", "packages/core/package.json", "packages/adapters/package.json", "packages/web/package.json", "packages/cli/package.json"];
+              const files = ["package.json", "packages/core/package.json", "packages/adapters/package.json", "packages/web/package.json", "packages/cli/package.json", "packages/desktop/package.json"];
               files.forEach(f => {
                 const pkg = JSON.parse(fs.readFileSync(f, "utf8"));
                 pkg.version = targetVer;
@@ -89,7 +89,7 @@ jobs:
               node -e '
                 const fs = require("fs");
                 const targetVer = process.argv[1];
-                const files = ["package.json", "packages/core/package.json", "packages/adapters/package.json", "packages/web/package.json", "packages/cli/package.json"];
+                const files = ["package.json", "packages/core/package.json", "packages/adapters/package.json", "packages/web/package.json", "packages/cli/package.json", "packages/desktop/package.json"];
                 files.forEach(f => {
                   const pkg = JSON.parse(fs.readFileSync(f, "utf8"));
                   pkg.version = targetVer;
