@@ -1423,18 +1423,18 @@ All tests enforce a strict 3-second timeout and return `{ success: boolean, mess
 - Slide-over drawers scale smoothly on window resize without causing horizontal viewport scrollbars on the main dashboard.
 - Full monorepo test suite passes (`npm test`, `npm run typecheck`, `npm run build`).
 
-### Story 19.7: Subdocument Explorer & Reader Redesign
+### Story 19.7: Generate Studio Target Scope Redesign & Modal Document Picker
 **ID:** `19-7-subdocument-explorer-and-reader-redesign`
-**Description:** Revamp `SourceDocumentInspector.svelte` to make navigating, reading, and reviewing large catalogs of subdocuments (from EPUB books, PDF slicing, and web crawls) effortless. Replace the tall, vertically stacked document cards and cramped 680px drawer with:
-1. **Compact Data Row / Table View**: Render subdocuments in scannable, compact rows with dedicated columns for selection checkbox, document title, page/chapter badge, word count, flashcard count badge, and a horizontal inline actions bar (`👁️ Preview`, `📤 Export`, `⚡ Generate`, `🗑️ Delete`).
-2. **Expandable / Full-Width Drawer Layout**: Support dynamic width expansion (e.g., standard drawer with a 1-click toggle to expand to wide or full-screen modal mode) so users have generous room to inspect documents on any display size.
-3. **Smooth Scrolling & Scanability**: Improve layout hierarchy, sticky header controls, and responsive row states so reviewing 50+ chapters or sliced articles is fast and seamless.
+**Description:** Redesign the Target Scope experience in `GenerateStudio.svelte` and implement `SourceDocumentPickerModal.svelte` to replace nested accordion trees with prominent Source Scope Cards and a dedicated, keyboard-accessible document curation modal. Features:
+1. **Source Scope Cards**: Replace collapsible accordion dropdowns with prominent cards showing source type, document counts, word counts, and quick actions (`Select All`, `Clear`, `Select Documents...`).
+2. **Modal Document Picker (`SourceDocumentPickerModal.svelte`)**: Provide a spacious modal dialog for fine-grained subdocument curation with title search, selection filter pills (`All`, `Selected`, `Unselected`), quick actions, and clean document rows with page bounds and card counts.
+3. **Synchronized State & Hardened Responsive Layout**: Preserve bidirectional store synchronization in `generateStore`, maintain reactive word count badges, and support mobile viewports cleanly.
 **Acceptance Criteria:**
-- Subdocuments in `SourceDocumentInspector.svelte` are displayed in a clean, compact row/table format instead of tall vertical cards.
-- Document action buttons (`Preview`, `Export`, `Generate`, `Delete`) are arranged horizontally without taking excessive vertical space.
-- The inspector provides an expand/collapse width toggle (e.g., normal drawer vs wide/fullscreen view) allowing users to expand the workspace on demand.
-- Document title, metadata badges (page bounds, word counts, card counts), and action buttons remain fully aligned and readable without truncation or horizontal spill.
-- Multi-selection and bulk actions (export selected, delete selected) function smoothly with the compact row layout.
+- Generate Studio presents data sources as clean, responsive Source Scope Cards instead of nested accordion trees.
+- Clicking "Select Documents..." opens `SourceDocumentPickerModal.svelte` with instant search filtering and selection toggle helpers.
+- Document selection state synchronously updates `generateStore.selectedDocIds` and aggregate word counts.
+- Modal handles Esc key dismissals cleanly without conflicting with parent preview modals.
+- Full test suite and responsive viewports pass without regressions.
 
 ---
 

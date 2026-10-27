@@ -316,7 +316,7 @@ action_items:
     action: "Update epics.md Story 19.7 description to align with the implemented
       Generate Studio Target Scope redesign and SourceDocumentPickerModal component"
     owner: "architect"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-19-retro-2026-10-25.md"
   - id: "epic-20-retro-item-1-desktop-auto-updater"
     epic: 20
