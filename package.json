@@ -11,7 +11,9 @@
     "start": "node packages/cli/dist/bin.js serve",
     "cli": "node packages/cli/dist/bin.js",
     "build": "npm run build -w @flashcard-master/core && npm run build -w @flashcard-master/adapters && npm run build -w @flashcard-master/web && npm run build -w @flashcard-master/cli",
-    "test": "npm run test --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present && vitest run scripts/github-workflow.test.ts",
+    "gh:issues": "tsx scripts/github-workflow.ts issues",
+    "gh:pr": "tsx scripts/github-workflow.ts pr",
     "lint": "eslint packages/*/src/**/*.ts",
     "typecheck": "tsc --noEmit",
     "docs:dev": "vitepress dev docs",
@@ -20,6 +22,7 @@
     "clean": "rimraf packages/*/dist"
   },
   "devDependencies": {
+    "tsx": "^4.23.15",
     "typescript": "^5.7.0",
     "vitepress": "^1.6.4",
     "vitest": "^2.1.8"
