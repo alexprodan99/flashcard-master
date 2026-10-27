@@ -1,16 +1,16 @@
 # 🤝 Contributing to Flashcard Master
 
-Thank you for your interest in contributing to **Flashcard Master**! 
+Thank you for your interest in contributing to **Flashcard Master**!
 
-Flashcard Master is a local-first, modular TypeScript monorepo designed to convert learning materials (RSS/Atom feeds, Web articles, XML Sitemaps, LLMs.txt catalogs, and local Markdown files) into factual, hallucination-free active-recall flashcards with zero telemetry.
+Flashcard Master is an open-source, local-first learning platform built under the **GNU Affero General Public License v3 (AGPL-3.0)**. It transforms diverse knowledge materials (Web articles, RSS/Atom feeds, XML sitemaps, LLMs.txt catalogs, Notion workspaces, EPUBs, and local documents) into hallucination-free, verbatim-grounded active-recall flashcards with zero telemetry.
 
-This guide explains how the system is structured, how to set up your local development environment, and how to extend the codebase.
+We welcome contributions from developers, technical writers, and learners of all backgrounds. This guide will walk you through our architecture, local development workflow, quality gates, and pull request procedures.
 
 ---
 
-## 🏗️ Architecture & Monorepo Structure
+## 🏛️ Monorepo Architecture: Ports & Adapters
 
-Flashcard Master follows **Clean Hexagonal Architecture (Ports & Adapters)**. Domain rules and business logic are strictly isolated from third-party vendor SDKs, databases, and UI frameworks.
+Flashcard Master follows **Clean Hexagonal Architecture (Ports & Adapters)**. Domain rules and business logic are strictly isolated from vendor SDKs, databases, and UI frameworks.
 
 ```
 flashcard-master/
@@ -22,9 +22,9 @@ flashcard-master/
 │   │   └── src/storage/    # SQLite database client, migrations & repositories
 │   │
 │   ├── adapters/       # 🔌 Concrete external technology implementations
-│   │   ├── src/ingestion/  # RSS, Web Reader, Local File, Sitemap, LLMs.txt
-│   │   ├── src/llm/        # Ollama, Gemini, OpenAI, Claude adapters
-│   │   └── src/export/     # Anki (.apkg), AnkiConnect HTTP, CSV, TSV, Markdown, PDF/HTML
+│   │   ├── src/ingestion/  # RSS, Web Reader, Local File, Sitemap, LLMs.txt, Notion, EPUB
+│   │   ├── src/llm/        # Ollama, Gemini, OpenAI, Claude provider adapters
+│   │   └── src/export/     # Anki (.apkg), AnkiConnect HTTP, CSV, TSV, Markdown, PDF, EPUB
 │   │
 │   ├── cli/            # 💻 Terminal interface & interactive wizards
 │   │   ├── src/app.ts      # Application context & dependency injection container
@@ -35,151 +35,175 @@ flashcard-master/
 │       └── client/         # Svelte 5 + Vite reactive frontend dashboard
 │           └── src/views/  # Dashboard, Sources, Generate Studio, Question Explorer, Export Center
 │
-├── _bmad-output/       # 📋 BMad Agile Planning & Implementation Artifacts
-│   ├── planning-artifacts/   # PRD, Epics, Architecture specs
-│   └── implementation-artifacts/ # Sprint status, story specs, retrospectives
-└── docs/               # 📖 Technical documentation & architectural deep-dives
+├── scripts/            # 🛠️ Cross-platform TypeScript automation tooling (GitHub issue/PR engine)
+├── docs/               # 📖 Public documentation hub (VitePress)
+├── .github/            # 🐙 CI/CD workflows, issue templates, and PR template
+└── _bmad-output/       # 📋 BMad agile planning and implementation specifications
 ```
+
+### Architectural Dependency Invariants:
+1. **`core` has ZERO external dependencies** on UI, CLI, or specific provider libraries. It imports only standard libraries, utilities, and schema validators (Zod).
+2. **`adapters` depends only on `core`** to implement port interfaces. Adapters never import from `cli` or `web`.
+3. **`cli` and `web` are composition roots**. They wire concrete adapters into core service constructors via dependency injection.
+4. **Local-first & Private:** All user credentials and documents reside locally in SQLite (`flashcards.db`). No telemetry or analytics are permitted.
 
 ---
 
-## ⚡ Quick Start: Local Development Setup
+## ⚡ Quickstart: Local Setup
 
 ### 1. Prerequisites
-* **Node.js:** `v20.x` or `v22.x` (ESM native modules)
-* **npm:** `v10+` (workspaces enabled)
-* **SQLite:** Handled automatically via native `better-sqlite3` bindings
+* **Node.js:** `v20.x` or `v22.x` (LTS recommended)
+* **npm:** `v10+` (monorepo workspaces enabled)
+* **Git:** Installed and configured
+* **GitHub CLI (`gh`):** Recommended for automated issue tracking and PR generation (`gh auth status`)
 
-### 2. Setup Repository
+### 2. Clone & Install
 ```bash
-# Clone the repository
+# Clone repository
 git clone https://github.com/alexprodan99/flashcard-master.git
 cd flashcard-master
 
-# Install all monorepo workspace dependencies
+# Install all workspace dependencies
 npm install
 
 # Build all TypeScript packages and Svelte client
 npm run build
 
-# Run the complete test suite
+# Run unit tests across all packages
 npm test
 ```
 
-### 3. Launch Development Server
+### 3. Launch Development Environment
 ```bash
-# Starts the local Web UI server on http://localhost:3000
+# Launch local Web UI dashboard server at http://localhost:3000
 npm start
 
-# Or run the CLI directly
+# Run VitePress documentation site locally
+npm run docs:dev
+
+# Run CLI commands directly
 node packages/cli/dist/bin.js --help
 ```
 
 ---
 
-## 🔄 Core Data Flow: How the System Works
+## 🌿 Git Workflow & Branching Conventions
 
-```mermaid
-flowchart TD
-    A[Data Source URI\nRSS, Sitemap, Web, LLMs.txt, Local] -->|IngestionStrategy| B[Raw Documents]
-    B -->|Clean Text Extraction| C[CleanTextDocument]
-    C -->|TextChunker\n1x, 2x, 3x, Full Doc| D[Text Chunks]
-    D -->|PromptBuilder\nPersona + Difficulty + Depth| E[LLM Provider\nOllama, Gemini, OpenAI, Claude]
-    E -->|Draft Q&A Pairs| F[GroundingGuard\nVerbatim Substring Check]
-    F -->|Valid Drafts| G[CardDeduplicationService\nNormalized Text & Hash Filter]
-    G -->|Unique Cards| H[(SQLite Database\nflashcards & documents)]
-    H -->|ExporterRegistry| I[Anki .apkg / AnkiConnect / Markdown / PDF / CSV]
+We use structured feature branch naming and Conventional Commits to keep our release history clean and automated.
+
+### 1. Branch Naming
+Create branches off the latest `main`:
+```bash
+git checkout main
+git pull origin main
+git checkout -b <branch-type>/<description>
+```
+
+| Branch Format | Example | When to Use |
+| :--- | :--- | :--- |
+| `feat/story-<epic>-<story>-<slug>` | `feat/story-20-6-open-source-contribution-standards` | Sprint stories linked to BMad specifications |
+| `feat/<feature-name>` | `feat/quizlet-deck-exporter` | New features outside sprint cycles |
+| `fix/<bug-name>` | `fix/anki-connect-timeout` | Bug fixes and patches |
+| `docs/<topic>` | `docs/notion-setup-guide` | Documentation additions and improvements |
+| `chore/<maintenance>` | `chore/upgrade-vitest-v3` | Dependency upgrades, tooling, or cleanup |
+
+### 2. Conventional Commits
+All commit messages must adhere to the [Conventional Commits specification](https://www.conventionalcommits.org/):
+
+```
+<type>(<scope>): <short description in lowercase or title>
+```
+
+**Common types:**
+- `feat`: A new feature or capability
+- `fix`: A bug fix or patch
+- `docs`: Documentation changes
+- `refactor`: Code change that neither fixes a bug nor adds a feature
+- `test`: Adding or correcting tests
+- `chore`: Tooling, build scripts, or dependency updates
+
+**Examples:**
+- `feat(scripts): Story 20.5 - cross-platform GitHub issue and PR automation engine`
+- `fix(web): resolve silent Anki connection test error toast on mount`
+- `docs(user-guide): add illustrated 3-step Notion permissions guide`
+
+---
+
+## 🚀 GitHub Automation Engine (`npm run gh:*`)
+
+Flashcard Master includes an automated, cross-platform TypeScript automation tool (`scripts/github-workflow.ts`) to manage issues and pull requests:
+
+```bash
+# Batch-create Epic and Story issues from planning artifacts
+npm run gh:issues -- --epic <number>
+# Or preview without making changes:
+npm run gh:issues -- --epic <number> --dry-run
+
+# Automatically generate and open a PR for your active branch
+npm run gh:pr
+# Or preview the PR title, body, and issue linkages:
+npm run gh:pr -- --dry-run
 ```
 
 ---
 
-## 🧩 How to Extend Flashcard Master
+## 🛡️ Pre-PR Quality Verification Gates
 
-### 1. Adding a New Ingestion Strategy
-To ingest learning materials from a new source type (e.g. YouTube transcripts, Notion export, EPUB):
+Before submitting a pull request, ensure all four verification gates pass locally:
 
-1. **Define the Source Type:**
-   Add the type identifier in [`packages/core/src/domain/models.ts`](file:///C:/Users/aprodan/Workspace/Projects/flashcard-master/packages/core/src/domain/models.ts) (`DataSourceTypeSchema`).
-2. **Implement `IngestionStrategyPort`:**
-   Create a class in `packages/adapters/src/ingestion/your-strategy.ts`:
-   ```typescript
-   import type { IngestionStrategyPort, RawDocument, CleanTextDocument, DataSource } from "@flashcard-master/core";
+```bash
+# 1. Typecheck: Verify 0 TypeScript errors across monorepo and scripts
+npm run typecheck
 
-   export class YourIngestionStrategy implements IngestionStrategyPort {
-     readonly type = "your-type";
+# 2. Lint: Check formatting and lint rules
+npm run lint
 
-     async fetch(source: DataSource): Promise<RawDocument[]> {
-       // Fetch raw content
-     }
+# 3. Test: Run all unit and integration test suites
+npm test
 
-     extractCleanText(raw: RawDocument): CleanTextDocument {
-       // Strip boilerplate and return clean markdown/text
-     }
-   }
-   ```
-3. **Register in Container:**
-   Register the strategy in [`packages/cli/src/app.ts`](file:///C:/Users/aprodan/Workspace/Projects/flashcard-master/packages/cli/src/app.ts) inside `createAppContext()`.
+# 4. Build: Verify clean builds across core, adapters, cli, and web
+npm run build
+```
 
----
-
-### 2. Adding a New LLM Provider Adapter
-To add support for a new AI provider (e.g. Mistral, DeepSeek, LocalAI):
-
-1. **Implement `LLMProviderPort`:**
-   Create an adapter in `packages/adapters/src/llm/your-adapter.ts` implementing `generateQAPairs(text, options)`.
-2. **Export and Register:**
-   Add factory branch in [`packages/adapters/src/llm/index.ts`](file:///C:/Users/aprodan/Workspace/Projects/flashcard-master/packages/adapters/src/llm/index.ts).
-
----
-
-### 3. Adding a New Exporter Format
-To export flashcards to a new format (e.g. RemNote, Logseq, Quizlet):
-
-1. **Implement `ExporterPort`:**
-   Create a class in `packages/adapters/src/export/your-exporter.ts` with `readonly format = "your-format"`.
-2. **Register in Container:**
-   Register the instance in `ExporterRegistry` in `packages/cli/src/app.ts`.
+> ⚠️ **Pull requests that fail typecheck, linting, or tests will not be merged.**
 
 ---
 
 ## 🧪 Testing Guidelines
 
-We use **Vitest** for blazing fast, parallel testing across all packages:
+We use **Vitest** for fast, deterministic unit and integration testing.
 
-```bash
-# Run all tests once across the monorepo
-npm test
-
-# Run tests in watch mode
-npm run test:watch
-
-# Run tests for a specific workspace package
-npm test -w @flashcard-master/core
-npm test -w @flashcard-master/adapters
-npm test -w @flashcard-master/web
-```
-
-### Invariants Every Test Must Uphold:
-1. **No External Network Calls in Unit Tests:** Mock HTTP requests and LLM endpoints.
-2. **Deterministic SQLite State:** Use in-memory SQLite instances (`createDatabaseClient({ inMemory: true })`) in `beforeEach` hooks.
-3. **100% Quote Grounding Validation:** Ensure all generated cards include verbatim source quotes.
+### Test Invariants:
+1. **Deterministic SQLite State:** Use in-memory SQLite instances in tests:
+   ```typescript
+   import { createDatabaseClient } from '@flashcard-master/core';
+   const db = createDatabaseClient({ inMemory: true });
+   ```
+2. **Zero External Network Calls in Unit Tests:** Mock all HTTP calls (`fetch`, `http`, LLM API endpoints) using Vitest mocks (`vi.fn()`, `vi.spyOn()`).
+3. **Strict Verbatim Grounding Guard:** Every generated flashcard test must verify that quotes match the source text substring exactly.
+4. **Clean Tear-down:** Close database handles and server instances in `afterEach` or `afterAll` hooks to prevent open handles.
 
 ---
 
-## 📜 Coding Conventions & Best Practices
+## 📋 Pull Request Checklist
 
-* **TypeScript Strict Mode:** All code must compile cleanly with `tsc --noEmit`. No `any` when a domain type exists.
-* **Svelte 5 Runes:** In the Web UI client, use `$state`, `$derived`, and `$props()` (avoid legacy Svelte 3/4 `let` reactivity or `$$props`).
-* **Git Branching:**
-  * Feature branches: `feat/epic<N>-short-description` or `feat/short-description`.
-  * Commit messages: `feat(...)`, `fix(...)`, `test(...)`, `docs(...)`, `refactor(...)`.
+When opening a pull request, verify the following:
+
+- [ ] Branch is rebased onto the latest `main`.
+- [ ] PR title follows Conventional Commits: `feat(scope): ...`, `fix(scope): ...`.
+- [ ] PR description links the tracking issue (e.g., `Closes #123`) and epic (e.g., `Part of Epic #45`).
+- [ ] All four quality gates pass cleanly: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`.
+- [ ] New features or bug fixes include corresponding unit or integration tests.
+- [ ] Documentation and user guide are updated if UI, CLI, or configuration changes were introduced.
 
 ---
 
-## 📋 BMad Methodology
+## 📜 Community Code of Conduct
 
-Flashcard Master uses the **BMad Agile Development Framework**:
-* **Requirements:** Tracked in [`_bmad-output/planning-artifacts/prd/prd.md`](file:///C:/Users/aprodan/Workspace/Projects/flashcard-master/_bmad-output/planning-artifacts/prd/prd.md).
-* **Epics:** Defined in [`_bmad-output/planning-artifacts/epics.md`](file:///C:/Users/aprodan/Workspace/Projects/flashcard-master/_bmad-output/planning-artifacts/epics.md).
-* **Sprint Tracking:** Monitored in [`_bmad-output/implementation-artifacts/sprint-status.yaml`](file:///C:/Users/aprodan/Workspace/Projects/flashcard-master/_bmad-output/implementation-artifacts/sprint-status.yaml).
-* **Retrospectives:** Evidence-based retrospectives generated at the end of each epic.
+All contributors and maintainers are expected to adhere to our [Code of Conduct](CODE_OF_CONDUCT.md) (Contributor Covenant v2.1). Please read it to understand our community standards and reporting procedures.
+
+---
+
+## 🔒 Security Vulnerabilities
+
+Please do not open public GitHub issues for security vulnerabilities. Review our [Security Policy](SECURITY.md) for instructions on confidential disclosure.

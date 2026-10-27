@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 🔒 Security Vulnerability Reporting
+    url: https://github.com/alexprodan99/flashcard-master/security/advisories/new
+    about: Please report security vulnerabilities privately rather than via public issues.
+  - name: 📖 Documentation Hub
+    url: https://alexprodan99.github.io/flashcard-master/
+    about: View official user guides, setup walkthroughs, and architecture docs.

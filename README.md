@@ -385,12 +385,14 @@ npm run build
 
 ---
 
-## 📚 Documentation & Architecture
+## 📚 Documentation & Community
 
 * 📖 **[Official Documentation Hub](https://alexprodan99.github.io/flashcard-master/)**: Complete interactive online documentation hosted on GitHub Pages.
 * 🚀 **[User Guide & Tutorials](https://alexprodan99.github.io/flashcard-master/user-guide/quickstart)**: Quickstart, Ingestion Playbook (Web, RSS, Notion, EPUB/PDF), Flashcard Synthesis Tuning, and Study & Export Workflows.
 * 🏛️ **[System Architecture & Design Invariants](docs/ARCHITECTURE.md)**: Detailed subsystem lifecycles, data flows, and database schemas.
-* 🤝 **[Contributor Guide & Extension Playbook](CONTRIBUTING.md)**: Setup instructions, coding conventions, and guides for adding custom ingestion strategies, LLMs, and exporters.
+* 🤝 **[Contributor Guide & Extension Playbook](CONTRIBUTING.md)**: Setup instructions, coding conventions, quality gates, and guides for adding custom ingestion strategies, LLMs, and exporters.
+* 📜 **[Code of Conduct](CODE_OF_CONDUCT.md)**: Contributor Covenant v2.1 community health and participation standards.
+* 🔒 **[Security Policy](SECURITY.md)**: Responsible vulnerability disclosure and private reporting procedures.
 
 ---
 
