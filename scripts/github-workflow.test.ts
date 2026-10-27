@@ -160,6 +160,15 @@ describe('github-workflow automation engine', () => {
       const resDocs = formatPrTitleAndBody({ branchInfo: docsBranch, spec: null });
       expect(resDocs.title).toContain('feat(docs):');
 
+      const communityBranch: BranchInfo = {
+        branch: 'feat/story-20-6-open-source-contribution-standards',
+        epicNumber: 20,
+        storyNumber: 6,
+        slug: 'open-source-contribution-standards',
+      };
+      const resComm = formatPrTitleAndBody({ branchInfo: communityBranch, spec: null });
+      expect(resComm.title).toContain('feat(community):');
+
       const customRes = formatPrTitleAndBody({
         branchInfo: docsBranch,
         spec: null,

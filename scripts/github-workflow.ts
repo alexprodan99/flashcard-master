@@ -402,6 +402,8 @@ export function formatPrTitleAndBody(params: PrFormatParams): { title: string; b
       scope = 'desktop';
     } else if (slug.includes('core') || slug.includes('engine') || slug.includes('adapter')) {
       scope = 'core';
+    } else if (slug.includes('community') || slug.includes('standards') || slug.includes('contribution')) {
+      scope = 'community';
     } else {
       scope = 'feat';
     }
