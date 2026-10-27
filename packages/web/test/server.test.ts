@@ -1592,6 +1592,31 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       expect(fs.existsSync(data.path)).toBe(true);
     });
 
+    it("decodes Base64 content properly for binary uploads via application/json payload", async () => {
+      const rawBinary = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37]); // %PDF-1.7
+      const base64Content = rawBinary.toString("base64");
+
+      const res = await fetch(`${serverUrl}/api/sources/upload`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          filename: "test-binary.pdf",
+          content: base64Content,
+          encoding: "base64",
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = (await res.json()) as any;
+      expect(data.filename).toBe("test-binary.pdf");
+      expect(fs.existsSync(data.path)).toBe(true);
+
+      const written = fs.readFileSync(data.path);
+      expect(Buffer.compare(written, rawBinary)).toBe(0);
+    });
+
     it("accepts slicing configuration in POST /api/sync/:id and forwards it to sync pipeline", async () => {
       // Create local note
       const notePath = path.join(tempLocalFilesDir, "sliced-note.md");

@@ -298,20 +298,23 @@
     const titleNorm = normalizeSearchText(doc.title);
     const urlNorm = normalizeSearchText(doc.url);
     const textNorm = doc.textContent ? normalizeSearchText(doc.textContent.slice(0, 4000)) : '';
+    const pageNorm = (doc.startPage != null && doc.endPage != null)
+      ? `${doc.startPage} ${doc.endPage} page ${doc.startPage} page ${doc.endPage} p ${doc.startPage} p ${doc.endPage} pp ${doc.startPage}-${doc.endPage} pages ${doc.startPage}-${doc.endPage}`
+      : (doc.startPage != null ? `${doc.startPage} page ${doc.startPage} p ${doc.startPage}` : '');
 
     return tokens.every((token) => {
-      if (titleNorm.includes(token) || urlNorm.includes(token) || textNorm.includes(token)) {
+      if (titleNorm.includes(token) || urlNorm.includes(token) || textNorm.includes(token) || pageNorm.includes(token)) {
         return true;
       }
       // Plural/singular tolerance (e.g. 'slices' vs 'slice', 'articles' vs 'article')
       if (token.length > 3 && token.endsWith('s') && !token.endsWith('ss')) {
         const singular = token.slice(0, -1);
-        if (titleNorm.includes(singular) || urlNorm.includes(singular) || textNorm.includes(singular)) {
+        if (titleNorm.includes(singular) || urlNorm.includes(singular) || textNorm.includes(singular) || pageNorm.includes(singular)) {
           return true;
         }
       } else if (token.length > 3 && !token.endsWith('s')) {
         const plural = token + 's';
-        if (titleNorm.includes(plural) || urlNorm.includes(plural) || textNorm.includes(plural)) {
+        if (titleNorm.includes(plural) || urlNorm.includes(plural) || textNorm.includes(plural) || pageNorm.includes(plural)) {
           return true;
         }
       }

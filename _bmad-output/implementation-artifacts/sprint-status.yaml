@@ -243,21 +243,21 @@ action_items:
     action: "Purge or replace previously generated subdocuments in SQLite documents
       table when a data source is re-synced with altered slicing parameters"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-17-retro-2026-10-07.md"
   - id: "epic-17-retro-item-6-support-base64-content-decoding-for-bina"
     epic: 17
     action: "Support Base64 content decoding for binary files uploaded through JSON
       payload in POST /api/sources/upload"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-17-retro-2026-10-07.md"
   - id: "epic-17-retro-item-7-index-subdocument-page-coordinates-start"
     epic: 17
     action: "Index subdocument page coordinates (startPage, endPage) in Generate Studio
       text search filter"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-17-retro-2026-10-07.md"
   - id: "epic-18-retro-item-1-add-epubcheck-cli-validation"
     epic: 18

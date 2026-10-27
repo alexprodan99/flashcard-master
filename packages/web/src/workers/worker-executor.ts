@@ -272,6 +272,10 @@ export class WorkerExecutor {
               if (Array.isArray(msg.documents) && msg.documents.length > 0) {
                 try {
                   if (this.options.documentRepo) {
+                    if (msg.slicing && msg.slicing.mode !== "none") {
+                      // Purge previously generated subdocuments for this source to prevent orphan/obsolete slices
+                      this.options.documentRepo.deleteBySourceId(msg.sourceId);
+                    }
                     this.options.documentRepo.upsertBatch(msg.documents as any);
                   } else {
                     ctx.log(

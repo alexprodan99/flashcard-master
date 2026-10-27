@@ -2572,7 +2572,25 @@ export class WebServer {
               const json = await this.parseBody(req);
               filename = json.filename;
               if (json.content !== undefined) {
-                fileBuffer = Buffer.from(json.content, "utf-8");
+                if (typeof json.content === "string") {
+                  const contentStr = json.content.trim();
+                  if (contentStr.startsWith("data:") && contentStr.includes(";base64,")) {
+                    const base64Data = contentStr.split(";base64,")[1];
+                    fileBuffer = Buffer.from(base64Data, "base64");
+                  } else if (
+                    json.encoding === "base64" ||
+                    json.isBase64 === true ||
+                    (/\.(pdf|docx|png|jpg|jpeg|gif|webp|zip)$/i.test(filename || "") &&
+                      /^[A-Za-z0-9+/=\r\n\s]+$/.test(contentStr) &&
+                      contentStr.replace(/[\r\n\s]/g, "").length % 4 === 0)
+                  ) {
+                    fileBuffer = Buffer.from(contentStr.replace(/[\r\n\s]/g, ""), "base64");
+                  } else {
+                    fileBuffer = Buffer.from(json.content, "utf-8");
+                  }
+                } else if (Buffer.isBuffer(json.content)) {
+                  fileBuffer = json.content;
+                }
               }
             } else {
               // Direct raw stream/buffer
