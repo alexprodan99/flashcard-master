@@ -1,9 +1,15 @@
 import { app, BrowserWindow, Tray, Menu, nativeImage, dialog } from "electron";
-import { autoUpdater } from "electron-updater";
+import type { AppUpdater } from "electron-updater";
+import electronUpdaterPkg from "electron-updater";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { bootstrapDesktopServer, type DesktopBootstrapResult } from "./bootstrap.js";
+
+const autoUpdater: AppUpdater =
+  (electronUpdaterPkg as any)?.autoUpdater ??
+  (electronUpdaterPkg as any)?.default?.autoUpdater ??
+  electronUpdaterPkg;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -195,12 +201,13 @@ async function startApplication(): Promise<void> {
     tray = setupSystemTray(mainWindow);
     setupAutoUpdater(mainWindow);
 
-    if (process.argv.includes("--smoke-test") || process.env.ELECTRON_SMOKE_TEST === "1") {
+    const isSmokeTest = process.argv.includes("--smoke-test") || process.env.ELECTRON_SMOKE_TEST === "1";
+    if (isSmokeTest) {
       console.log("[SmokeTest] Desktop app booted successfully. Exiting cleanly.");
       setTimeout(() => {
         isQuitting = true;
-        app.quit();
-      }, 1500);
+        app.exit(0);
+      }, 1000);
     }
   } catch (err: any) {
     dialog.showErrorBox("Startup Error", `Failed to initialize Flashcard Master:\n${err.message}`);
@@ -208,8 +215,9 @@ async function startApplication(): Promise<void> {
   }
 }
 
-// Enforce single instance lock
-const hasLock = app.requestSingleInstanceLock();
+// Enforce single instance lock (bypassed in smoke test)
+const isSmokeTest = process.argv.includes("--smoke-test") || process.env.ELECTRON_SMOKE_TEST === "1";
+const hasLock = isSmokeTest || app.requestSingleInstanceLock();
 
 if (!hasLock) {
   app.quit();
