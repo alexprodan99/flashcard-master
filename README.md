@@ -14,9 +14,21 @@ Flashcard Master automatically turns your learning materials—RSS/Atom feeds, w
 
 ## 📦 Installation & Getting Started
 
-### ⚡ Option 1: Instant Zero-Install (Recommended)
+### 🖥️ Option 1: Standalone Desktop App (Recommended for Most Users)
 
-You can run Flashcard Master immediately without installing anything:
+Download the native desktop installer for your operating system from [GitHub Releases](https://github.com/alexprodan99/flashcard-master/releases):
+
+* **Windows:** `Flashcard-Master-Setup-x.x.x.exe` (NSIS Installer) or `Flashcard-Master-x.x.x-portable.exe`
+* **macOS:** `Flashcard-Master-x.x.x.dmg` (Universal binary for Apple Silicon & Intel)
+* **Linux:** `Flashcard-Master-x.x.x.AppImage` or `flashcard-master_x.x.x_amd64.deb`
+
+Features native dark-slate window framing, system tray minimize/restore, and automatic storage isolation in your OS `userData` directory with zero terminal dependencies.
+
+---
+
+### ⚡ Option 2: Instant Zero-Install (Web UI via NPX)
+
+You can run Flashcard Master immediately in your browser without installing anything permanently:
 
 ```bash
 # Launch the interactive setup wizard:
@@ -28,7 +40,7 @@ npx @flashcard-master/cli serve
 
 ---
 
-### 🌐 Option 2: Global CLI Installation
+### 🌐 Option 3: Global CLI Installation
 
 Install Flashcard Master globally to have the `flashcard-master` command available anywhere in your terminal:
 
@@ -54,7 +66,7 @@ flashcard-master --help
 
 ---
 
-### 🧩 Option 3: Use as a Node.js Library in Your Own Projects
+### 🧩 Option 4: Use as a Node.js Library in Your Own Projects
 
 Import the domain logic or adapters directly into your own TypeScript / JavaScript applications:
 

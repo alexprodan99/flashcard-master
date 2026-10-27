@@ -21,11 +21,16 @@ Flashcard Master is built on five non-negotiable core invariants:
 
 ```mermaid
 graph TD
+    DESKTOP["@flashcard-master/desktop<br/>(Electron, System Tray, UserData DB)"]
     CLI["@flashcard-master/cli<br/>(Commander.js, Inquirer.js, App Context)"]
     WEB["@flashcard-master/web<br/>(Node.js REST API Server + Svelte 5 Client)"]
     ADAPTERS["@flashcard-master/adapters<br/>(Ingestion, LLMs, Exporters)"]
     CORE["@flashcard-master/core<br/>(Domain Models, Storage, Services, Ports)"]
 
+    DESKTOP --> CORE
+    DESKTOP --> ADAPTERS
+    DESKTOP --> WEB
+    DESKTOP --> CLI
     CLI --> CORE
     CLI --> ADAPTERS
     CLI --> WEB
@@ -42,6 +47,7 @@ graph TD
 | **`@flashcard-master/adapters`** | External Protocols & Vendor SDKs | `RssIngestionStrategy`, `WebReaderStrategy`, `LocalFileStrategy`, `EpubParser`, `SitemapIngestionStrategy`, `LlmsTxtIngestionStrategy`, `OllamaAdapter`, `OpenAIAdapter`, `GeminiAdapter`, `AnthropicAdapter`, `AnkiPackageExporter`, `AnkiConnectAdapter`, `MarkdownExporter`, `HtmlStudyGuideExporter`, `PdfStudyGuideExporter`, `CsvExporter`, `TsvExporter`. |
 | **`@flashcard-master/cli`** | Headless CLI & Terminal Wizards | `createCli()`, `createAppContext()`, Interactive Setup Wizard, Commands (`init`, `source`, `sync`, `generate`, `export`, `cards`, `serve`). |
 | **`@flashcard-master/web`** | Local SPA & REST Backend | `createWebServer()`, `server.ts` HTTP router, Svelte 5 single-page application (`DashboardView`, `SourcesView`, `GenerateStudio`, `QuestionExplorer`, `ExportCenter`). |
+| **`@flashcard-master/desktop`** | Standalone Cross-Platform Desktop App | `bootstrapDesktopServer()`, Electron main process (`main.ts`), custom dark slate window framing, system tray minimize/restore, OS `userData` SQLite storage isolation, and multi-OS `electron-builder` packaging (`.exe`, `.dmg`, `.AppImage`, `.deb`). |
 
 ---
 
@@ -425,5 +431,36 @@ Question Explorer  ──▶  Clone Deck  ──▶  Atomic Duplicate with (Copy
 * **Public Documentation Hub & GitHub Pages CI/CD:**
   - Authored with VitePress under `docs/`, featuring client-side search, mobile responsiveness, and dark-mode styling aligned with the Web UI.
   - Automatically compiled and deployed on pushes to `main` via `.github/workflows/deploy-docs.yml`.
+
+---
+
+## 15. Standalone Desktop Architecture (Electron & Multi-OS Distribution)
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│ @flashcard-master/desktop Composition Architecture                     │
+│                                                                        │
+│  [Electron Main]  ──▶  app.getPath('userData') Storage Isolation       │
+│                   ──▶  bootstrapDesktopServer() -> In-Process Node API │
+│                   ──▶  Ephemeral Loopback Port (127.0.0.1:0)           │
+│                   ──▶  BrowserWindow (Dark Slate #0f172a)              │
+│                   ──▶  System Tray Minimize/Restore Controls           │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+* **Zero Backend Rewrites:**
+  - Rather than re-architecting the web server into Electron IPC channels, `@flashcard-master/desktop` directly bootstraps `@flashcard-master/web` and `@flashcard-master/cli`'s application context in-process.
+  - All existing REST API endpoints, Server-Sent Events (SSE) streaming task updates, and Svelte 5 UI views operate identically in desktop mode.
+* **Storage Isolation & Dynamic Port Binding:**
+  - SQLite database (`data.sqlite`) and media cache (`media/`) are placed in the OS-native user data path (`app.getPath('userData')`) — e.g., `%APPDATA%\Flashcard Master` on Windows, `~/Library/Application Support/Flashcard Master` on macOS, and `~/.config/Flashcard Master` on Linux.
+  - The server binds dynamically to port `0` (an available ephemeral loopback port) to prevent collisions with any existing CLI servers running on port `3000`.
+* **Security & Native UX:**
+  - Enforces safe Electron defaults: `contextIsolation: true`, `sandbox: true`, and `nodeIntegration: false`.
+  - Implements single-instance application locking (`app.requestSingleInstanceLock()`) to prevent multiple desktop instances from conflicting over WAL database locks.
+  - Provides custom dark slate window background (`#0f172a`), taskbar/dock icon integration, and system tray background minimize/restore.
+* **Multi-OS Release CI/CD Pipeline:**
+  - Configured with `electron-builder` to produce standalone installers across all major operating systems: Windows (`.exe` NSIS installer + portable), macOS (`.dmg` Universal/arm64), and Linux (`.AppImage` + `.deb`).
+  - Automated by `.github/workflows/release-desktop.yml`, which triggers on tag push (`v*`) to build and attach signed release binaries to GitHub Releases.
+
 
 

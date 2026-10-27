@@ -1,0 +1,61 @@
+{
+  "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
+  "appId": "com.flashcardmaster.desktop",
+  "productName": "Flashcard Master",
+  "electronVersion": "35.7.5",
+  "copyright": "Copyright © 2026 Flashcard Master Contributors",
+  "directories": {
+    "output": "../../dist-desktop",
+    "buildResources": "assets"
+  },
+  "files": [
+    "dist/**/*",
+    "assets/**/*",
+    "package.json",
+    "../../packages/core/dist/**/*",
+    "../../packages/core/package.json",
+    "../../packages/adapters/dist/**/*",
+    "../../packages/adapters/package.json",
+    "../../packages/web/dist/**/*",
+    "../../packages/web/package.json",
+    "../../packages/cli/dist/**/*",
+    "../../packages/cli/package.json",
+    "!**/node_modules/*/{CHANGELOG.md,README.md,README,test,tests,example,examples}",
+    "!**/*.tsbuildinfo"
+  ],
+  "win": {
+    "signAndEditExecutable": false,
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      },
+      {
+        "target": "portable",
+        "arch": ["x64"]
+      }
+    ],
+    "icon": "assets/icon.png"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true
+  },
+  "mac": {
+    "target": [
+      {
+        "target": "dmg",
+        "arch": ["universal", "arm64", "x64"]
+      }
+    ],
+    "category": "public.app-category.education",
+    "icon": "assets/icon.png"
+  },
+  "linux": {
+    "target": ["AppImage", "deb"],
+    "category": "Education",
+    "icon": "assets/icon.png"
+  }
+}

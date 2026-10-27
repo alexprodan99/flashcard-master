@@ -35,6 +35,9 @@ features:
   - icon: 🧵
     title: Resilient Multiprocessing Pool
     details: Parallel background worker processes for long-running ingestions, synthesis jobs, and batch exports with real-time SSE progress streaming.
+  - icon: 🖥️
+    title: Standalone Desktop App
+    details: Packaged for Windows (.exe), macOS (.dmg), and Linux (.AppImage/.deb) with system tray controls, dark slate styling, and automatic userData storage.
 ---
 
 ## 📚 Documentation Overview

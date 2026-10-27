@@ -10,8 +10,11 @@
   "scripts": {
     "start": "node packages/cli/dist/bin.js serve",
     "cli": "node packages/cli/dist/bin.js",
-    "build": "npm run build -w @flashcard-master/core && npm run build -w @flashcard-master/adapters && npm run build -w @flashcard-master/web && npm run build -w @flashcard-master/cli",
+    "build": "npm run build -w @flashcard-master/core && npm run build -w @flashcard-master/adapters && npm run build -w @flashcard-master/web && npm run build -w @flashcard-master/cli && npm run build -w @flashcard-master/desktop",
     "test": "npm run test --workspaces --if-present && vitest run scripts/github-workflow.test.ts",
+    "desktop:start": "npm run start -w @flashcard-master/desktop",
+    "desktop:dist": "npm run dist -w @flashcard-master/desktop",
+    "desktop:dir": "npm run dist:dir -w @flashcard-master/desktop",
     "gh:issues": "tsx scripts/github-workflow.ts issues",
     "gh:pr": "tsx scripts/github-workflow.ts pr",
     "lint": "eslint packages/*/src/**/*.ts --quiet",
@@ -23,6 +26,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/plist": "^3.0.5",
     "eslint": "^10.13.0",
     "tsx": "^4.23.15",
     "typescript": "^5.7.0",
