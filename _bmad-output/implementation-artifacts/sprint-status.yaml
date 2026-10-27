@@ -200,15 +200,15 @@ development_status:
   19-7-subdocument-explorer-and-reader-redesign: done
   epic-19-retrospective: done
 
-  epic-20: in-progress
+  epic-20: done
   20-1-model-documentation-audit-and-model-advisor-skill: done
   20-2-agpl-licensing-and-open-source-foundation: done
   20-3-public-documentation-hub-and-github-pages-pipeline: done
   20-4-contextual-setup-ux-and-human-centric-onboarding: done
   20-5-cross-platform-github-automation-engine: done
   20-6-open-source-contribution-standards-and-community-health: done
-  20-7-electron-desktop-packaging-and-multi-os-release-pipeline: review
-  epic-20-retrospective: optional
+  20-7-electron-desktop-packaging-and-multi-os-release-pipeline: done
+  epic-20-retrospective: done
 action_items:
   - id: "epic-14-retro-item-1-add-progressive-exponential-backoff-and"
     epic: 14
@@ -318,3 +318,17 @@ action_items:
     owner: "architect"
     status: open
     ref: "_bmad-output/implementation-artifacts/epic-19-retro-2026-10-25.md"
+  - id: "epic-20-retro-item-1-desktop-auto-updater"
+    epic: 20
+    action: "Integrate electron-updater into @flashcard-master/desktop to check GitHub
+      Releases for new published tags and notify users with an in-app update banner"
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-20-retro-2026-10-27.md"
+  - id: "epic-20-retro-item-2-e2e-smoke-test-for-desktop-binary-in-ci"
+    epic: 20
+    action: "Add a headless smoke-test step in .github/workflows/release-desktop.yml
+      on Linux using xvfb-run to assert that the packaged binary boots and cleanly shuts down"
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-20-retro-2026-10-27.md"
