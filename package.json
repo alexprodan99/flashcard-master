@@ -14,7 +14,7 @@
     "test": "npm run test --workspaces --if-present && vitest run scripts/github-workflow.test.ts",
     "gh:issues": "tsx scripts/github-workflow.ts issues",
     "gh:pr": "tsx scripts/github-workflow.ts pr",
-    "lint": "eslint packages/*/src/**/*.ts",
+    "lint": "eslint packages/*/src/**/*.ts --quiet",
     "typecheck": "tsc --noEmit",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
@@ -22,8 +22,11 @@
     "clean": "rimraf packages/*/dist"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.13.0",
     "tsx": "^4.23.15",
     "typescript": "^5.7.0",
+    "typescript-eslint": "^8.72.1",
     "vitepress": "^1.6.4",
     "vitest": "^2.1.8"
   }
