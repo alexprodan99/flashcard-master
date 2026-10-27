@@ -550,9 +550,21 @@ export function createCli(providedContext?: AppContext): Command {
         }
         if (options.allDecks) {
           console.log(`Exporting all decks to format "${format}" into directory "${options.allDecks}"...`);
+          if (options.deck) {
+            console.warn("⚠️ Warning: --deck flag is ignored when --all-decks is specified.");
+          }
+          const limit = options.limit !== undefined && !isNaN(options.limit) ? options.limit : undefined;
           const results = await context.exportService.exportAllDecks({
             format,
             outputDir: options.allDecks,
+            filter: {
+              tag: options.tag,
+              difficulty: options.difficulty as DifficultyLevel,
+              createdAfter: options.after,
+              createdBefore: options.before,
+              limit,
+              shuffle: Boolean(options.shuffle),
+            },
             options: {
               includeToc: options.toc,
               includeCitations: options.citations,

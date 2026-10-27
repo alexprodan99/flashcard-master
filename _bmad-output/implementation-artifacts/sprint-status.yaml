@@ -294,7 +294,7 @@ action_items:
     action: "Add explicit validation in POST /api/generate to reject empty documentIds
       arrays with 400 Bad Request instead of falling back to all active sources"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-19-retro-2026-10-25.md"
   - id: "epic-19-retro-item-4-forward-scoping-filters-in-bulk-deck-export"
     epic: 19
@@ -302,7 +302,7 @@ action_items:
       in ExportService.exportAllDecks and warn in CLI if incompatible combinations
       are passed"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-19-retro-2026-10-25.md"
   - id: "epic-19-retro-item-5-extract-deck-modals-from-question-explorer"
     epic: 19

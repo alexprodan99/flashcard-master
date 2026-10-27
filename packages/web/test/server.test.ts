@@ -715,6 +715,22 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     expect(data.cardsCreated).toBe(2);
   });
 
+  it("rejects empty documentIds array in POST /api/generate with 400 Bad Request", async () => {
+    const res = await fetch(`${serverUrl}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: "ollama",
+        model: "phi4-mini",
+        documentIds: [],
+      }),
+    });
+
+    expect(res.status).toBe(400);
+    const data = (await res.json()) as any;
+    expect(data.error).toBe("No documents selected for generation.");
+  });
+
   it("creates and updates data source with multi-URL JSON array via PATCH and PUT", async () => {
     // 1. Create source with multi-URL array
     const createRes = await fetch(`${serverUrl}/api/sources`, {

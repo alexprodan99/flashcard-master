@@ -2255,6 +2255,11 @@ export class WebServer {
             const limit = typeof body.limit === "number" ? body.limit : 5;
             const enforceGrounding = body.enforceGrounding !== false;
 
+            if (Array.isArray(body.documentIds) && body.documentIds.length === 0) {
+              this.sendJson(res, 400, { error: "No documents selected for generation." });
+              return;
+            }
+
             if (this.jobManager && parsedUrl.query.sync !== "true") {
               const documents: Array<{
                 id: string;
@@ -2266,19 +2271,25 @@ export class WebServer {
                 endPage?: number | null;
               }> = [];
 
-              if (Array.isArray(body.documentIds) && body.documentIds.length > 0 && this.options.documentRepo) {
-                for (const docId of body.documentIds) {
-                  const doc = this.options.documentRepo.getById(docId);
-                  if (doc) {
-                    documents.push({
-                      id: doc.id,
-                      sourceId: doc.sourceId,
-                      title: doc.title,
-                      textContent: doc.textContent,
-                      originUrl: doc.url || undefined,
-                      startPage: doc.startPage ?? null,
-                      endPage: doc.endPage ?? null,
-                    });
+              if (Array.isArray(body.documentIds)) {
+                if (body.documentIds.length === 0) {
+                  this.sendJson(res, 400, { error: "No documents selected for generation." });
+                  return;
+                }
+                if (this.options.documentRepo) {
+                  for (const docId of body.documentIds) {
+                    const doc = this.options.documentRepo.getById(docId);
+                    if (doc) {
+                      documents.push({
+                        id: doc.id,
+                        sourceId: doc.sourceId,
+                        title: doc.title,
+                        textContent: doc.textContent,
+                        originUrl: doc.url || undefined,
+                        startPage: doc.startPage ?? null,
+                        endPage: doc.endPage ?? null,
+                      });
+                    }
                   }
                 }
               } else {
