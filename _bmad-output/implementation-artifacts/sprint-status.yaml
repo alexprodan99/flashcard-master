@@ -280,14 +280,14 @@ action_items:
     action: "Reject malformed or invalid pagination cursors with 400 Bad Request in
       card-repository and REST endpoint instead of silently defaulting to page 1"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-19-retro-2026-10-25.md"
   - id: "epic-19-retro-item-2-chunk-batch-card-moves-and-deletes"
     epic: 19
     action: "Chunk card ID arrays in batches of 500 within moveCards and deleteMany
       in FlashcardRepository to guard against SQLite variable limits"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-19-retro-2026-10-25.md"
   - id: "epic-19-retro-item-3-guard-empty-document-ids-in-generate"
     epic: 19

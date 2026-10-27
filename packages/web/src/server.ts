@@ -2967,8 +2967,16 @@ export class WebServer {
               const limit = query.limit !== undefined ? Math.max(1, parseInt(query.limit as string, 10) || 25) : 25;
               const cursor = query.cursor ? String(query.cursor) : undefined;
               const offset = query.offset !== undefined ? Math.max(0, parseInt(query.offset as string, 10) || 0) : undefined;
-              const paginated = this.options.cardRepo.listPaginated({ ...filter, limit, cursor, offset });
-              this.sendJson(res, 200, paginated);
+              try {
+                const paginated = this.options.cardRepo.listPaginated({ ...filter, limit, cursor, offset });
+                this.sendJson(res, 200, paginated);
+              } catch (err: any) {
+                if (err.message && err.message.includes("Invalid pagination cursor")) {
+                  this.sendJson(res, 400, { error: err.message });
+                  return;
+                }
+                throw err;
+              }
               return;
             }
 

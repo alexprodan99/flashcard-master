@@ -1818,6 +1818,13 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       const p2Ids = page2.cards.map((c: any) => c.id);
       expect(p1Ids.some((id: string) => p2Ids.includes(id))).toBe(false);
     });
+
+    it("returns 400 Bad Request when an invalid cursor is passed to /api/cards", async () => {
+      const res = await fetch(`${serverUrl}/api/cards?cursor=invalid_base64_or_json`);
+      expect(res.status).toBe(400);
+      const json = (await res.json()) as any;
+      expect(json.error).toContain("Invalid pagination cursor");
+    });
   });
 
   describe("Deck Operations: Clone, Batch Split & Selective Card Moving", () => {

@@ -553,6 +553,11 @@ describe("FlashcardRepository", () => {
     expect(page4.nextCursor).toBeNull();
   });
 
+  it("throws an error when an invalid pagination cursor is provided", () => {
+    expect(() => cardRepo.listPaginated({ cursor: "not_a_valid_base64_cursor" })).toThrow("Invalid pagination cursor.");
+    expect(() => cardRepo.listPaginated({ cursor: Buffer.from("malformed json").toString("base64") })).toThrow("Invalid pagination cursor.");
+  });
+
   describe("Deck Operations: cloneDeck, splitDeck, and moveCards", () => {
     it("clones all cards in a deck to a new deck with fresh UUIDs and identical metadata", () => {
       // Create 3 cards in "OriginalDeck"
@@ -677,6 +682,32 @@ describe("FlashcardRepository", () => {
       // Validation
       expect(() => cardRepo.moveCards([card1.id], "")).toThrow("Target deck cannot be empty");
       expect(cardRepo.moveCards([], "DeckBeta")).toBe(0);
+    });
+
+    it("handles moveCards and deleteMany with over 500 card IDs in batches", () => {
+      const batchCards = [];
+      for (let i = 0; i < 550; i++) {
+        batchCards.push({
+          question: `Bulk Q${i}`,
+          answer: `Bulk A${i}`,
+          sourceQuote: `Bulk Quote ${i}`,
+          targetDeck: "BulkDeckSource",
+        });
+      }
+      const created = cardRepo.createBatch(batchCards);
+      const cardIds = created.map((c) => c.id);
+      expect(cardIds.length).toBe(550);
+
+      // Move 550 cards to BulkDeckTarget
+      const moved = cardRepo.moveCards(cardIds, "BulkDeckTarget");
+      expect(moved).toBe(550);
+      expect(cardRepo.count({ targetDeck: "BulkDeckTarget" })).toBe(550);
+      expect(cardRepo.count({ targetDeck: "BulkDeckSource" })).toBe(0);
+
+      // Delete 550 cards using deleteMany
+      const deleted = cardRepo.deleteMany(cardIds);
+      expect(deleted).toBe(550);
+      expect(cardRepo.count({ targetDeck: "BulkDeckTarget" })).toBe(0);
     });
   });
 
