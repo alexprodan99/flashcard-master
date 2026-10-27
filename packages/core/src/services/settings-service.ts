@@ -1,3 +1,4 @@
+import os from "node:os";
 import type { SettingsRepository } from "../ports/index.js";
 import {
   type ProviderKeyStatus,
@@ -502,13 +503,39 @@ export class SettingsService {
     };
   }
 
-  getWorkerConcurrencyLimits(): {
+  static getRecommendedWorkerConcurrency(): {
+    cpuCores: number;
+    maxGenerationWorkers: number;
+    maxSyncWorkers: number;
+    maxExportWorkers: number;
+  } {
+    const cores = Math.max(1, os.cpus()?.length || 1);
+    return {
+      cpuCores: cores,
+      maxGenerationWorkers: Math.max(1, Math.min(8, Math.floor(cores / 2) || 1)),
+      maxSyncWorkers: Math.max(1, Math.min(8, Math.floor(cores / 2) || 1)),
+      maxExportWorkers: Math.max(1, Math.min(4, Math.floor(cores / 4) || 1)),
+    };
+  }
+
+  getWorkerConcurrencyLimits(options?: { autoDetectCpu?: boolean }): {
     maxGenerationWorkers: number;
     maxSyncWorkers: number;
     maxExportWorkers: number;
     workerTimeoutMinutes: number;
+    cpuCores?: number;
   } {
     const s = this.getGeneralSettings().settings;
+    if (options?.autoDetectCpu) {
+      const rec = SettingsService.getRecommendedWorkerConcurrency();
+      return {
+        maxGenerationWorkers: rec.maxGenerationWorkers,
+        maxSyncWorkers: rec.maxSyncWorkers,
+        maxExportWorkers: rec.maxExportWorkers,
+        workerTimeoutMinutes: s.workerTimeoutMinutes,
+        cpuCores: rec.cpuCores,
+      };
+    }
     return {
       maxGenerationWorkers: s.maxGenerationWorkers,
       maxSyncWorkers: s.maxSyncWorkers,

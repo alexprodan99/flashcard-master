@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import os from "node:os";
 import type {
   Job,
   JobLog,
@@ -14,6 +15,7 @@ export interface ConcurrencyLimits {
   maxSyncWorkers?: number;
   maxExportWorkers?: number;
   workerTimeoutMinutes?: number;
+  autoDetectCpu?: boolean;
 }
 
 export interface JobManagerOptions extends ConcurrencyLimits {
@@ -59,20 +61,37 @@ export class JobManager extends EventEmitter {
   private readonly isVerboseFn: () => boolean;
   private readonly logToConsole: boolean;
 
+  static getRecommendedConcurrency(): {
+    cpuCores: number;
+    maxGenerationWorkers: number;
+    maxSyncWorkers: number;
+    maxExportWorkers: number;
+  } {
+    const cores = Math.max(1, os.cpus()?.length || 1);
+    return {
+      cpuCores: cores,
+      maxGenerationWorkers: Math.max(1, Math.min(8, Math.floor(cores / 2) || 1)),
+      maxSyncWorkers: Math.max(1, Math.min(8, Math.floor(cores / 2) || 1)),
+      maxExportWorkers: Math.max(1, Math.min(4, Math.floor(cores / 4) || 1)),
+    };
+  }
+
   constructor(
     private readonly jobRepo: JobRepository,
     options: JobManagerOptions = {}
   ) {
     super();
+    const recommended = options.autoDetectCpu ? JobManager.getRecommendedConcurrency() : null;
+
     this.maxGenerationWorkers = options.maxGenerationWorkers !== undefined && options.maxGenerationWorkers > 0
       ? options.maxGenerationWorkers
-      : 3;
+      : (recommended ? recommended.maxGenerationWorkers : 3);
     this.maxSyncWorkers = options.maxSyncWorkers !== undefined && options.maxSyncWorkers > 0
       ? options.maxSyncWorkers
-      : 2;
+      : (recommended ? recommended.maxSyncWorkers : 2);
     this.maxExportWorkers = options.maxExportWorkers !== undefined && options.maxExportWorkers > 0
       ? options.maxExportWorkers
-      : 2;
+      : (recommended ? recommended.maxExportWorkers : 2);
     this.workerTimeoutMinutes = options.workerTimeoutMinutes !== undefined && options.workerTimeoutMinutes >= 0
       ? options.workerTimeoutMinutes
       : 15;
@@ -157,6 +176,12 @@ export class JobManager extends EventEmitter {
   }
 
   updateConcurrencyLimits(limits: ConcurrencyLimits): void {
+    if (limits.autoDetectCpu) {
+      const rec = JobManager.getRecommendedConcurrency();
+      this.maxGenerationWorkers = rec.maxGenerationWorkers;
+      this.maxSyncWorkers = rec.maxSyncWorkers;
+      this.maxExportWorkers = rec.maxExportWorkers;
+    }
     if (limits.maxGenerationWorkers !== undefined && limits.maxGenerationWorkers > 0) {
       this.maxGenerationWorkers = Math.max(1, Math.min(16, limits.maxGenerationWorkers));
     }

@@ -16,6 +16,7 @@ export class TaskStore {
 
   private eventSource: EventSource | null = null;
   private reconnectTimer: any = null;
+  private reconnectAttempts = 0;
   private completionListeners: ((job: Job) => void)[] = [];
 
   onJobCompleted(listener: (job: Job) => void): () => void {
@@ -76,10 +77,12 @@ export class TaskStore {
 
       this.eventSource.addEventListener('open', () => {
         this.isConnected = true;
+        this.reconnectAttempts = 0;
       });
 
       this.eventSource.addEventListener('connected', () => {
         this.isConnected = true;
+        this.reconnectAttempts = 0;
       });
 
       this.eventSource.addEventListener('job_created', (e) => {
@@ -324,12 +327,19 @@ export class TaskStore {
           this.eventSource.close();
           this.eventSource = null;
         }
-        // Retry connection after 5 seconds
+        // Progressive exponential backoff with jitter (1s base, 30s cap)
         if (!this.reconnectTimer) {
+          const baseDelay = 1000;
+          const maxDelay = 30000;
+          const exponentialDelay = Math.min(maxDelay, baseDelay * Math.pow(2, this.reconnectAttempts));
+          const jitter = Math.floor(Math.random() * (exponentialDelay * 0.3));
+          const delay = exponentialDelay + jitter;
+          this.reconnectAttempts++;
+
           this.reconnectTimer = setTimeout(() => {
             this.reconnectTimer = null;
             this.connectSse();
-          }, 5000);
+          }, delay);
         }
       });
     } catch {

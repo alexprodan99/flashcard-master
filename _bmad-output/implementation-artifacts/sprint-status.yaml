@@ -215,14 +215,14 @@ action_items:
     action: "Add progressive exponential backoff and jitter to client EventSource
       reconnection handler"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-14-retro-2026-09-09.md"
   - id: "epic-14-retro-item-2-allow-worker-pool-concurrency-limits-to"
     epic: 14
     action: "Allow worker pool concurrency limits to optionally auto-detect host CPU
       core count"
     owner: "architect"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-14-retro-2026-09-09.md"
   - id: "epic-13-retro-item-3-allow-users-to-select-or-upload-a-custom"
     epic: 13
