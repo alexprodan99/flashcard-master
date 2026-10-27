@@ -138,4 +138,26 @@ interface Message {
     const docs = await strategy.fetch(source);
     expect(docs).toEqual([]);
   });
+
+  it("ingests multiple files when source URI contains a JSON array of file paths", async () => {
+    const file1 = path.join(tempDir, "note1.md");
+    const file2 = path.join(tempDir, "note2.md");
+    fs.writeFileSync(file1, "# First Note\nFirst content.", "utf8");
+    fs.writeFileSync(file2, "# Second Note\nSecond content.", "utf8");
+
+    const source: DataSource = {
+      id: "source-multi",
+      name: "Multiple Notes",
+      type: "local",
+      uri: JSON.stringify([file1, file2]),
+      tags: [],
+      isActive: true,
+    };
+
+    const docs = await strategy.fetch(source);
+    expect(docs.length).toBe(2);
+    const titles = docs.map((d) => d.title);
+    expect(titles).toContain("First Note");
+    expect(titles).toContain("Second Note");
+  });
 });

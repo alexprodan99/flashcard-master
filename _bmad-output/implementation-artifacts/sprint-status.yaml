@@ -229,14 +229,14 @@ action_items:
     action: "Allow users to select or upload a custom cover image when exporting documents
       to EPUB format"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-13-retro-2026-09-07.md"
   - id: "epic-13-retro-item-4-extend-local-source-upload-dropzone-to-a"
     epic: 13
     action: "Extend local source upload dropzone to accept multiple document files
       simultaneously"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-13-retro-2026-09-07.md"
   - id: "epic-17-retro-item-5-purge-or-replace-previously-generated-su"
     epic: 17

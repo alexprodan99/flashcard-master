@@ -2765,6 +2765,7 @@ export class WebServer {
             let includeCitations = true;
             let imageQuality: "compact" | "standard" | "high" = "compact";
             let grayscale = false;
+            let coverImage: string | undefined;
 
             if (method === "POST") {
               body = await this.parseBody(req);
@@ -2776,6 +2777,7 @@ export class WebServer {
               if (body?.includeCitations !== undefined) includeCitations = body.includeCitations;
               if (body?.imageQuality) imageQuality = body.imageQuality;
               if (body?.grayscale !== undefined) grayscale = Boolean(body.grayscale);
+              if (body?.coverImage) coverImage = body.coverImage;
             } else {
               const query = parsedUrl.query;
               sourceId = (query.sourceId as string) || (query.source as string) || undefined;
@@ -2788,6 +2790,7 @@ export class WebServer {
               if (query.citations !== undefined) includeCitations = query.citations !== "false" && query.citations !== "0";
               if (query.quality || query.imageQuality) imageQuality = ((query.quality || query.imageQuality) as any);
               if (query.grayscale !== undefined) grayscale = query.grayscale === "true" || query.grayscale === "1";
+              if (query.coverImage) coverImage = query.coverImage as string;
             }
 
             if (format === "epub") {
@@ -2837,6 +2840,7 @@ export class WebServer {
                         mode: mode as any,
                         sourceName,
                         documents: targetDocs,
+                        coverImage,
                       },
                     },
                     ctx
@@ -2862,6 +2866,7 @@ export class WebServer {
               includeCitations: includeCitations !== false,
               imageQuality,
               grayscale,
+              coverImage,
             });
 
             const contentBuffer = Buffer.isBuffer(exportResult.content)

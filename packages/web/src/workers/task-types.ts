@@ -54,6 +54,7 @@ export interface ExportTaskPayload {
   documents?: DiscoveredDocument[];
   cards?: Flashcard[];
   outputPath?: string;
+  coverImage?: string;
 }
 
 export type TaskPayload =

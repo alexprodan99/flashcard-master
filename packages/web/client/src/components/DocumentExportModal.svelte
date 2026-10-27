@@ -32,9 +32,32 @@
   let includeCitations = $state(true);
   let imageQuality = $state<'compact' | 'standard' | 'high'>('compact');
   let grayscale = $state(false);
+  let coverImageBase64 = $state<string | null>(null);
+  let coverImageName = $state<string | null>(null);
   let isExporting = $state(false);
   let errorMessage = $state<string | null>(null);
   let successNotice = $state<string | null>(null);
+
+  function handleCoverImageChange(e: Event) {
+    const target = e.target as HTMLInputElement;
+    if (!target.files || target.files.length === 0) {
+      coverImageBase64 = null;
+      coverImageName = null;
+      return;
+    }
+    const file = target.files[0];
+    coverImageName = file.name;
+    const reader = new FileReader();
+    reader.onload = () => {
+      coverImageBase64 = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function removeCoverImage() {
+    coverImageBase64 = null;
+    coverImageName = null;
+  }
 
   let totalWords = $derived(
     documents.reduce((acc, d) => {
@@ -66,6 +89,7 @@
         includeCitations,
         imageQuality,
         grayscale,
+        coverImage: coverImageBase64 || undefined,
       };
 
       const { filename } = await exportDocuments(params);
@@ -298,6 +322,37 @@
                 />
                 <span><strong>Kindle E-Ink Grayscale</strong> (Convert inlined images to monochrome for black & white e-readers, extra 15% smaller)</span>
               </label>
+            </div>
+          </div>
+        {/if}
+
+        {#if format === 'epub'}
+          <div class="form-group">
+            <span class="form-label">Custom eBook Cover (Optional)</span>
+            <div class="cover-upload-box">
+              {#if coverImageBase64}
+                <div class="cover-preview-wrapper">
+                  <img src={coverImageBase64} alt="Cover Preview" class="cover-preview-thumb" />
+                  <div class="cover-preview-info">
+                    <span class="cover-name">{coverImageName}</span>
+                    <button type="button" class="btn-remove-cover" onclick={removeCoverImage}>Remove Cover</button>
+                  </div>
+                </div>
+              {:else}
+                <label class="cover-dropzone-label">
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    class="cover-file-input"
+                    onchange={handleCoverImageChange}
+                  />
+                  <div class="cover-dropzone-content">
+                    <span class="cover-icon">🖼️</span>
+                    <span>Upload Custom Cover Image (JPG, PNG, WebP)</span>
+                    <span class="cover-hint">Leave blank to use default SVG title cover</span>
+                  </div>
+                </label>
+              {/if}
             </div>
           </div>
         {/if}
@@ -725,6 +780,91 @@
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
     display: inline-block;
+  }
+
+  .cover-upload-box {
+    background: #0f172a;
+    border: 1px dashed #475569;
+    border-radius: 8px;
+    padding: 0.75rem;
+    transition: border-color 0.15s ease;
+  }
+
+  .cover-upload-box:hover {
+    border-color: #38bdf8;
+  }
+
+  .cover-dropzone-label {
+    display: block;
+    cursor: pointer;
+  }
+
+  .cover-file-input {
+    display: none;
+  }
+
+  .cover-dropzone-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.85rem;
+    color: #cbd5e1;
+  }
+
+  .cover-icon {
+    font-size: 1.5rem;
+  }
+
+  .cover-hint {
+    font-size: 0.75rem;
+    color: #64748b;
+  }
+
+  .cover-preview-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .cover-preview-thumb {
+    width: 48px;
+    height: 64px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid #334155;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+  }
+
+  .cover-preview-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    overflow: hidden;
+  }
+
+  .cover-name {
+    font-size: 0.825rem;
+    font-weight: 500;
+    color: #f1f5f9;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .btn-remove-cover {
+    background: #dc2626;
+    color: #fee2e2;
+    border: none;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    align-self: flex-start;
+  }
+
+  .btn-remove-cover:hover {
+    background: #b91c1c;
   }
 
   @keyframes spin {

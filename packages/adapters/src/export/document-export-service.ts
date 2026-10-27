@@ -278,6 +278,7 @@ export class DocumentExportService {
         includeCitations,
         imageQuality: options.imageQuality,
         grayscale: options.grayscale,
+        coverImage: options.coverImage,
       });
     } else if (mode === "split") {
       result = await this.exportSplit(documents, {
@@ -1387,6 +1388,77 @@ nav li {
 `;
   }
 
+  private async resolveCoverImage(
+    coverImage?: Buffer | string | null
+  ): Promise<{ buffer: Buffer; mimeType: string; filename: string } | null> {
+    if (!coverImage) return null;
+
+    if (Buffer.isBuffer(coverImage)) {
+      let mimeType = "image/jpeg";
+      let filename = "cover.jpg";
+      if (
+        coverImage.length > 4 &&
+        coverImage[0] === 0x89 &&
+        coverImage[1] === 0x50 &&
+        coverImage[2] === 0x4e &&
+        coverImage[3] === 0x47
+      ) {
+        mimeType = "image/png";
+        filename = "cover.png";
+      }
+      return { buffer: coverImage, mimeType, filename };
+    }
+
+    if (typeof coverImage === "string") {
+      const trimmed = coverImage.trim();
+      if (trimmed.startsWith("data:") && trimmed.includes(";base64,")) {
+        const [header, base64Data] = trimmed.split(";base64,");
+        const mimeType = header.replace(/^data:/, "") || "image/jpeg";
+        const ext = mimeType.includes("png") ? "png" : "jpg";
+        return {
+          buffer: Buffer.from(base64Data, "base64"),
+          mimeType,
+          filename: `cover.${ext}`,
+        };
+      }
+
+      if (
+        /^[A-Za-z0-9+/=\r\n\s]+$/.test(trimmed) &&
+        trimmed.replace(/[\r\n\s]/g, "").length % 4 === 0 &&
+        trimmed.length > 100
+      ) {
+        const buf = Buffer.from(trimmed.replace(/[\r\n\s]/g, ""), "base64");
+        let mimeType = "image/jpeg";
+        let ext = "jpg";
+        if (
+          buf.length > 4 &&
+          buf[0] === 0x89 &&
+          buf[1] === 0x50 &&
+          buf[2] === 0x4e &&
+          buf[3] === 0x47
+        ) {
+          mimeType = "image/png";
+          ext = "png";
+        }
+        return { buffer: buf, mimeType, filename: `cover.${ext}` };
+      }
+
+      try {
+        const stats = await fs.stat(trimmed);
+        if (stats.isFile()) {
+          const buf = await fs.readFile(trimmed);
+          const ext = path.extname(trimmed).toLowerCase().replace(/^\./, "") || "jpg";
+          const mimeType = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+          return { buffer: buf, mimeType, filename: `cover.${ext}` };
+        }
+      } catch {
+        // Not a readable local file path
+      }
+    }
+
+    return null;
+  }
+
   private async exportEpub(
     docs: DiscoveredDocument[],
     opts: {
@@ -1396,6 +1468,7 @@ nav li {
       includeCitations: boolean;
       imageQuality?: ImageQuality;
       grayscale?: boolean;
+      coverImage?: Buffer | string;
     }
   ): Promise<DocumentExportResult> {
     const zip = new JSZip();
@@ -1413,6 +1486,32 @@ nav li {
   </rootfiles>
 </container>`
     );
+
+    // Optional Custom Cover Image
+    const coverInfo = await this.resolveCoverImage(opts.coverImage);
+    if (coverInfo) {
+      zip.file(`OEBPS/images/${coverInfo.filename}`, coverInfo.buffer);
+      zip.file(
+        "OEBPS/cover.xhtml",
+        `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Cover</title>
+  <style type="text/css">
+    body { margin: 0; padding: 0; text-align: center; background-color: #000; }
+    img { max-width: 100%; height: auto; }
+  </style>
+</head>
+<body>
+  <div id="cover-image">
+    <img src="images/${coverInfo.filename}" alt="Cover Image" />
+  </div>
+</body>
+</html>`
+      );
+    }
 
     // 3. Fallback for empty docs collection
     const effectiveDocs: DiscoveredDocument[] =
@@ -1656,6 +1755,13 @@ nav li {
 ${navItems}
     </ol>
   </nav>
+${coverInfo ? `  <nav epub:type="landmarks" hidden="">
+    <h2>Landmarks</h2>
+    <ol>
+      <li><a epub:type="cover" href="cover.xhtml">Cover</a></li>
+      <li><a epub:type="toc" href="#toc">Table of Contents</a></li>
+    </ol>
+  </nav>` : ""}
 </body>
 </html>`;
 
@@ -1726,15 +1832,15 @@ ${ncxItems}
     <dc:creator>Flashcard Master</dc:creator>
     <dc:date>${dateStr}</dc:date>
     <meta property="dcterms:modified">${modifiedTimestamp}</meta>
-  </metadata>
+${coverInfo ? '    <meta name="cover" content="cover-image" />\n' : ""  }</metadata>
   <manifest>
     <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav" />
     <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml" />
     <item id="css" href="styles.css" media-type="text/css" />
-${chapterManifestItems}
+${coverInfo ? `    <item id="cover-page" href="cover.xhtml" media-type="application/xhtml+xml" />\n    <item id="cover-image" href="images/${coverInfo.filename}" media-type="${coverInfo.mimeType}" properties="cover-image" />\n` : ""}${chapterManifestItems}
 ${imageManifestItems ? imageManifestItems + "\n" : ""}  </manifest>
   <spine toc="ncx">
-${spineItemrefs}
+${coverInfo ? '    <itemref idref="cover-page" />\n' : ""}${spineItemrefs}
   </spine>
 </package>`;
 

@@ -309,6 +309,7 @@ export interface DocumentExportParams {
   includeCitations?: boolean;
   imageQuality?: 'compact' | 'standard' | 'high';
   grayscale?: boolean;
+  coverImage?: string;
 }
 
 export async function exportDocuments(params: DocumentExportParams): Promise<{ filename: string }> {

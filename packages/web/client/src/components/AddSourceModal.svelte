@@ -30,7 +30,7 @@
     }
   });
 
-  let selectedLocalFile = $state<{ name: string; size: number; path: string } | null>(null);
+  let selectedLocalFiles = $state<Array<{ name: string; size: number; path: string }>>([]);
   let isUploadingFile = $state(false);
   let isDragging = $state(false);
   let showAdvancedPath = $state(false);
@@ -71,37 +71,52 @@
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
 
-  async function handleFile(file: File) {
-    const lastDot = file.name.lastIndexOf('.');
-    const ext = lastDot >= 0 ? file.name.slice(lastDot).toLowerCase() : '';
-    if (ext === '.doc') {
-      errorMessage = 'Legacy pre-2007 Word (.doc) files are not supported. Please convert to .docx or .pdf before uploading.';
-      return;
-    }
+  async function handleFiles(files: File[]) {
+    if (!files || files.length === 0) return;
 
     const ALLOWED_EXTS = ['.md', '.markdown', '.txt', '.pdf', '.docx', '.epub'];
-    if (!ALLOWED_EXTS.includes(ext)) {
-      errorMessage = 'Only .md, .markdown, .txt, .pdf, .docx, and .epub files are supported.';
-      return;
+    for (const file of files) {
+      const lastDot = file.name.lastIndexOf('.');
+      const ext = lastDot >= 0 ? file.name.slice(lastDot).toLowerCase() : '';
+      if (ext === '.doc') {
+        errorMessage = 'Legacy pre-2007 Word (.doc) files are not supported. Please convert to .docx or .pdf before uploading.';
+        return;
+      }
+      if (!ALLOWED_EXTS.includes(ext)) {
+        errorMessage = `Only .md, .markdown, .txt, .pdf, .docx, and .epub files are supported ("${file.name}").`;
+        return;
+      }
     }
 
     isUploadingFile = true;
     errorMessage = null;
 
     try {
-      const result = await uploadSourceFile(file);
-      selectedLocalFile = {
-        name: result.filename,
-        size: result.size,
-        path: result.path,
-      };
-      uri = result.path;
+      const uploaded: Array<{ name: string; size: number; path: string }> = [];
+      for (const file of files) {
+        const result = await uploadSourceFile(file);
+        uploaded.push({
+          name: result.filename,
+          size: result.size,
+          path: result.path,
+        });
+      }
 
-      if (!name.trim()) {
-        name = result.filename.replace(/\.(md|markdown|txt|pdf|docx|epub)$/i, '');
+      selectedLocalFiles = [...selectedLocalFiles, ...uploaded];
+
+      if (selectedLocalFiles.length === 1) {
+        uri = selectedLocalFiles[0].path;
+        if (!name.trim()) {
+          name = selectedLocalFiles[0].name.replace(/\.(md|markdown|txt|pdf|docx|epub)$/i, '');
+        }
+      } else if (selectedLocalFiles.length > 1) {
+        uri = JSON.stringify(selectedLocalFiles.map((f) => f.path));
+        if (!name.trim()) {
+          name = `${selectedLocalFiles[0].name.replace(/\.(md|markdown|txt|pdf|docx|epub)$/i, '')} & ${selectedLocalFiles.length - 1} more`;
+        }
       }
     } catch (err: any) {
-      errorMessage = err.message || 'Failed to upload local file';
+      errorMessage = err.message || 'Failed to upload local file(s)';
     } finally {
       isUploadingFile = false;
     }
@@ -109,16 +124,16 @@
 
   function handleFileSelect(e: Event) {
     const input = e.target as HTMLInputElement;
-    if (input.files && input.files[0]) {
-      handleFile(input.files[0]);
+    if (input.files && input.files.length > 0) {
+      handleFiles(Array.from(input.files));
     }
   }
 
   function handleFileDrop(e: DragEvent) {
     e.preventDefault();
     isDragging = false;
-    if (e.dataTransfer?.files && e.dataTransfer.files[0]) {
-      handleFile(e.dataTransfer.files[0]);
+    if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
+      handleFiles(Array.from(e.dataTransfer.files));
     }
   }
 
@@ -132,8 +147,19 @@
     isDragging = false;
   }
 
-  function clearFile() {
-    selectedLocalFile = null;
+  function removeFile(index: number) {
+    selectedLocalFiles = selectedLocalFiles.filter((_, i) => i !== index);
+    if (selectedLocalFiles.length === 0) {
+      clearFiles();
+    } else if (selectedLocalFiles.length === 1) {
+      uri = selectedLocalFiles[0].path;
+    } else {
+      uri = JSON.stringify(selectedLocalFiles.map((f) => f.path));
+    }
+  }
+
+  function clearFiles() {
+    selectedLocalFiles = [];
     if (!showAdvancedPath) {
       uri = '';
     }
@@ -309,21 +335,51 @@
           </div>
         {:else if type === 'local'}
           <div class="form-group">
-            <label for="src-uri">Local Document File</label>
-            {#if selectedLocalFile}
-              <div class="file-chip">
-                <span class="file-icon">📄</span>
-                <div class="file-details">
-                  <span class="file-name">{selectedLocalFile.name}</span>
-                  <span class="file-size">({formatFileSize(selectedLocalFile.size)})</span>
+            <label for="src-uri">Local Document Files</label>
+            {#if selectedLocalFiles.length > 0}
+              <div class="files-container">
+                <div class="files-list">
+                  {#each selectedLocalFiles as file, idx}
+                    <div class="file-chip">
+                      <span class="file-icon">📄</span>
+                      <div class="file-details">
+                        <span class="file-name">{file.name}</span>
+                        <span class="file-size">({formatFileSize(file.size)})</span>
+                      </div>
+                      <button
+                        type="button"
+                        class="btn-remove-file"
+                        onclick={() => removeFile(idx)}
+                        aria-label={`Remove ${file.name}`}
+                        disabled={isSubmitting || isUploadingFile}
+                      >✕</button>
+                    </div>
+                  {/each}
                 </div>
-                <button
-                  type="button"
-                  class="btn-remove-file"
-                  onclick={clearFile}
-                  aria-label="Remove selected file"
-                  disabled={isSubmitting || isUploadingFile}
-                >✕</button>
+                <div class="files-actions-bar">
+                  <span class="files-summary">
+                    {selectedLocalFiles.length} file{selectedLocalFiles.length === 1 ? '' : 's'} selected ({formatFileSize(selectedLocalFiles.reduce((acc, f) => acc + f.size, 0))})
+                  </span>
+                  <div class="files-buttons">
+                    <label class="btn-browse-more">
+                      + Add More
+                      <input
+                        type="file"
+                        multiple
+                        accept=".md,.markdown,.txt,.pdf,.docx,.epub"
+                        onchange={handleFileSelect}
+                        hidden
+                        disabled={isSubmitting || isUploadingFile}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      class="btn-clear-all"
+                      onclick={clearFiles}
+                      disabled={isSubmitting || isUploadingFile}
+                    >Clear All</button>
+                  </div>
+                </div>
               </div>
             {:else}
               <div
@@ -338,15 +394,16 @@
               >
                 {#if isUploadingFile}
                   <span class="drop-icon spinning">⏳</span>
-                  <p class="drop-text">Uploading file...</p>
+                  <p class="drop-text">Uploading file(s)...</p>
                 {:else}
                   <span class="drop-icon">📁</span>
-                  <p class="drop-text">Drag &amp; drop Markdown, Text, PDF, Word (.docx), or EPUB (.epub) file here, or</p>
+                  <p class="drop-text">Drag &amp; drop Markdown, Text, PDF, Word (.docx), or EPUB (.epub) files here, or</p>
                   <label class="btn-browse">
-                    Browse File...
+                    Browse Files...
                     <input
                       bind:this={fileInputRef}
                       type="file"
+                      multiple
                       accept=".md,.markdown,.txt,.pdf,.docx,.epub"
                       onchange={handleFileSelect}
                       hidden
@@ -787,6 +844,68 @@
 
   .btn-browse:hover {
     background: #475569;
+  }
+
+  .files-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .files-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 180px;
+    overflow-y: auto;
+    padding-right: 2px;
+  }
+
+  .files-actions-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 4px;
+    font-size: 11px;
+    color: #94a3b8;
+  }
+
+  .files-buttons {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .btn-browse-more {
+    font-size: 11px;
+    font-weight: 500;
+    color: #818cf8;
+    background: rgba(99, 102, 241, 0.1);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    border-radius: 4px;
+    padding: 3px 8px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .btn-browse-more:hover {
+    background: rgba(99, 102, 241, 0.2);
+    color: #a5b4fc;
+  }
+
+  .btn-clear-all {
+    font-size: 11px;
+    background: transparent;
+    border: none;
+    color: #ef4444;
+    cursor: pointer;
+    padding: 3px 6px;
+    border-radius: 4px;
+    transition: background 0.15s;
+  }
+
+  .btn-clear-all:hover {
+    background: rgba(239, 68, 68, 0.1);
   }
 
   .file-chip {
