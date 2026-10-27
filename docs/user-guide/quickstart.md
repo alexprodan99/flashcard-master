@@ -6,10 +6,25 @@ Get up and running with **Flashcard Master** in three minutes. Turn any web arti
 
 ## ⚡ 1. Launch Flashcard Master
 
-Flashcard Master runs completely locally on your computer with a rich Web UI dashboard and scriptable CLI.
+Flashcard Master runs completely locally on your computer as a standalone desktop app, a local browser-bound Web UI, or a scriptable CLI.
 
-### Option A: Zero-Install (Recommended)
-You can run Flashcard Master immediately using `npx` without installing anything permanently:
+### Option A: Standalone Desktop App (Recommended for Most Users)
+Download the native desktop installer for your operating system from the [Flashcard Master GitHub Releases](https://github.com/alexprodan99/flashcard-master/releases):
+
+| Operating System | Download Formats | Notes |
+| :--- | :--- | :--- |
+| **Windows** | `Flashcard-Master-Setup-x.x.x.exe` (NSIS) or `Flashcard-Master-x.x.x-portable.exe` | 64-bit Windows 10/11 installer or standalone portable binary |
+| **macOS** | `Flashcard-Master-x.x.x.dmg` | Universal binary supporting Apple Silicon (M1/M2/M3/M4) & Intel |
+| **Linux** | `Flashcard-Master-x.x.x.AppImage` or `flashcard-master_x.x.x_amd64.deb` | Self-contained AppImage or Debian/Ubuntu `.deb` package |
+
+**Desktop Benefits:**
+* **Zero Terminal Required:** Double-click and run like any native application.
+* **System Tray Minimization:** Keep Flashcard Master running in your background tray/dock without cluttering your workspace.
+* **Storage Isolation:** Automatically places your SQLite database (`data.sqlite`) and media cache in your OS user data directory (`%APPDATA%`, `~/Library/Application Support`, or `~/.config`).
+* **Ephemeral Port Protection:** Binds an internal loopback port dynamically to prevent conflicts with other services.
+
+### Option B: Zero-Install (Web UI via NPX)
+You can run the web dashboard immediately using `npx` without installing anything permanently:
 
 ```bash
 # Launch the interactive terminal setup wizard:
@@ -21,7 +36,7 @@ npx @flashcard-master/cli serve
 
 The Web UI dashboard will open automatically in your browser at `http://localhost:3000`.
 
-### Option B: Global CLI Installation
+### Option C: Global CLI Installation
 If you prefer having the `flashcard-master` command available anywhere in your terminal:
 
 ```bash
