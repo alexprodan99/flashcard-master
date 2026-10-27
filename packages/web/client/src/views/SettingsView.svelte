@@ -135,6 +135,9 @@
 
   let hasLoaded = $state(false);
 
+  export type SettingsTab = 'all' | 'sources' | 'providers' | 'anki' | 'general' | 'workers' | 'logging';
+  let activeTab = $state<SettingsTab>('all');
+
   let keys = $derived(settingsStore.keys);
   let loading = $derived(settingsStore.loading);
   let error = $derived(settingsStore.error);
@@ -401,17 +404,112 @@
       <p>Loading credentials and integration statuses...</p>
     </div>
   {:else}
+    <!-- Interactive Tab Navigation Bar -->
+    <div class="settings-tabs-nav" role="tablist" aria-label="Settings categories">
+      <button
+        type="button"
+        role="tab"
+        id="tab-all"
+        aria-selected={activeTab === 'all'}
+        class="tab-btn"
+        class:active={activeTab === 'all'}
+        onclick={() => (activeTab = 'all')}
+      >
+        <span class="tab-icon">🌐</span>
+        <span class="tab-label">All Settings</span>
+      </button>
+
+      <button
+        type="button"
+        role="tab"
+        id="tab-sources"
+        aria-selected={activeTab === 'sources'}
+        class="tab-btn"
+        class:active={activeTab === 'sources'}
+        onclick={() => (activeTab = 'sources')}
+      >
+        <span class="tab-icon">📔</span>
+        <span class="tab-label">Data Sources</span>
+      </button>
+
+      <button
+        type="button"
+        role="tab"
+        id="tab-providers"
+        aria-selected={activeTab === 'providers'}
+        class="tab-btn"
+        class:active={activeTab === 'providers'}
+        onclick={() => (activeTab = 'providers')}
+      >
+        <span class="tab-icon">⚡</span>
+        <span class="tab-label">AI Providers</span>
+      </button>
+
+      <button
+        type="button"
+        role="tab"
+        id="tab-anki"
+        aria-selected={activeTab === 'anki'}
+        class="tab-btn"
+        class:active={activeTab === 'anki'}
+        onclick={() => (activeTab = 'anki')}
+      >
+        <span class="tab-icon">🎴</span>
+        <span class="tab-label">Anki Desktop</span>
+      </button>
+
+      <button
+        type="button"
+        role="tab"
+        id="tab-general"
+        aria-selected={activeTab === 'general'}
+        class="tab-btn"
+        class:active={activeTab === 'general'}
+        onclick={() => (activeTab = 'general')}
+      >
+        <span class="tab-icon">⚙️</span>
+        <span class="tab-label">Generation & EPUB</span>
+      </button>
+
+      <button
+        type="button"
+        role="tab"
+        id="tab-workers"
+        aria-selected={activeTab === 'workers'}
+        class="tab-btn"
+        class:active={activeTab === 'workers'}
+        onclick={() => (activeTab = 'workers')}
+      >
+        <span class="tab-icon">⚡</span>
+        <span class="tab-label">Worker Limits</span>
+      </button>
+
+      <button
+        type="button"
+        role="tab"
+        id="tab-logging"
+        aria-selected={activeTab === 'logging'}
+        class="tab-btn"
+        class:active={activeTab === 'logging'}
+        onclick={() => (activeTab = 'logging')}
+      >
+        <span class="tab-icon">📊</span>
+        <span class="tab-label">Logging</span>
+      </button>
+    </div>
+
     <!-- Section 1: Data Source Connections -->
-    <section class="settings-section">
-      <div class="section-header">
-        <div class="section-title-wrap">
-          <span class="section-icon">🌐</span>
-          <h2 class="section-title">Data Source Connections</h2>
+    {#if activeTab === 'all' || activeTab === 'sources'}
+      <section class="settings-section" id="section-sources">
+        <div class="section-header">
+          <div class="section-title-wrap">
+            <span class="section-icon">🌐</span>
+            <h2 class="section-title">Data Source Connections</h2>
+          </div>
+          <p class="section-desc">
+            Integrate external documentation hubs and databases into your study library.
+          </p>
         </div>
-        <p class="section-desc">
-          Integrate external documentation hubs and databases into your study library.
-        </p>
-      </div>
 
       <div class="cards-grid single-column">
         {#each sourceProviders as meta (meta.id)}
@@ -631,18 +729,20 @@
         {/each}
       </div>
     </section>
+    {/if}
 
     <!-- Section 2: AI / LLM Providers -->
-    <section class="settings-section">
-      <div class="section-header">
-        <div class="section-title-wrap">
-          <span class="section-icon">⚡</span>
-          <h2 class="section-title">AI & LLM Providers</h2>
+    {#if activeTab === 'all' || activeTab === 'providers'}
+      <section class="settings-section" id="section-providers">
+        <div class="section-header">
+          <div class="section-title-wrap">
+            <span class="section-icon">⚡</span>
+            <h2 class="section-title">AI & LLM Providers</h2>
+          </div>
+          <p class="section-desc">
+            Configure API credentials and endpoints for card generation models.
+          </p>
         </div>
-        <p class="section-desc">
-          Configure API credentials and endpoints for card generation models.
-        </p>
-      </div>
 
       <div class="cards-grid two-column">
         {#each llmProviders as meta (meta.id)}
@@ -858,10 +958,12 @@
         {/each}
       </div>
     </section>
+    {/if}
 
     <!-- Section 3: Anki Desktop Integration -->
-    <section class="settings-section" id="section-anki">
-      <div class="section-header">
+    {#if activeTab === 'all' || activeTab === 'anki'}
+      <section class="settings-section" id="section-anki">
+        <div class="section-header">
         <div class="section-title-wrap">
           <span class="section-icon">🎴</span>
           <h2 class="section-title">Anki Desktop Integration</h2>
@@ -1095,10 +1197,12 @@
         </div>
       </div>
     </section>
+    {/if}
 
     <!-- Section 4: AI Generation Defaults -->
-    <section class="settings-section" id="section-ai-defaults">
-      <div class="section-header">
+    {#if activeTab === 'all' || activeTab === 'general'}
+      <section class="settings-section" id="section-ai-defaults">
+        <div class="section-header">
         <div class="section-title-wrap">
           <span class="section-icon">⚡</span>
           <h2 class="section-title">AI Generation Studio Defaults</h2>
@@ -1252,10 +1356,12 @@
         </div>
       </div>
     </section>
+    {/if}
 
     <!-- Section 5: Worker Pool & Concurrency Limits -->
-    <section class="settings-section" id="section-worker-pool">
-      <div class="section-header">
+    {#if activeTab === 'all' || activeTab === 'workers'}
+      <section class="settings-section" id="section-worker-pool">
+        <div class="section-header">
         <div class="section-title-wrap">
           <span class="section-icon">⚙️</span>
           <h2 class="section-title">Worker Pool & Concurrency Limits</h2>
@@ -1369,10 +1475,12 @@
         </div>
       </div>
     </section>
+    {/if}
 
     <!-- Section 6: Document Slicing & EPUB Defaults -->
-    <section class="settings-section" id="section-slicing-epub">
-      <div class="section-header">
+    {#if activeTab === 'all' || activeTab === 'general'}
+      <section class="settings-section" id="section-slicing-epub">
+        <div class="section-header">
         <div class="section-title-wrap">
           <span class="section-icon">📄</span>
           <h2 class="section-title">Document Slicing & EPUB Publishing Defaults</h2>
@@ -1473,78 +1581,81 @@
         </div>
       </div>
     </section>
+    {/if}
 
     <!-- Logging & Diagnostics Section -->
-    <section class="settings-section" id="section-logging">
-      <div class="section-header">
-        <div class="section-title-wrap">
-          <h2 class="section-title">Terminal & Task Center Logging</h2>
-          <span class="badge badge-configured">Live Diagnostics</span>
+    {#if activeTab === 'all' || activeTab === 'logging'}
+      <section class="settings-section" id="section-logging">
+        <div class="section-header">
+          <div class="section-title-wrap">
+            <h2 class="section-title">Terminal & Task Center Logging</h2>
+            <span class="badge badge-configured">Live Diagnostics</span>
+          </div>
+          <p class="section-desc">
+            Configure real-time log streaming for background jobs (Notion page crawling, database row inspection, card generation chunking, deduplication).
+          </p>
         </div>
-        <p class="section-desc">
-          Configure real-time log streaming for background jobs (Notion page crawling, database row inspection, card generation chunking, deduplication).
-        </p>
-      </div>
 
-      <div class="card logging-card">
-        <div class="logging-row">
-          <div class="logging-info">
-            <div class="logging-title-wrap">
-              <span class="logging-icon">🐞</span>
-              <strong class="logging-item-title">Verbose Diagnostic Mode</strong>
+        <div class="card logging-card">
+          <div class="logging-row">
+            <div class="logging-info">
+              <div class="logging-title-wrap">
+                <span class="logging-icon">🐞</span>
+                <strong class="logging-item-title">Verbose Diagnostic Mode</strong>
+              </div>
+              <p class="logging-description">
+                Emits low-level execution traces (Notion subpage recursion depth, raw block counts, local image caching, LLM generation chunks) to both the terminal console and the Task Center.
+              </p>
             </div>
-            <p class="logging-description">
-              Emits low-level execution traces (Notion subpage recursion depth, raw block counts, local image caching, LLM generation chunks) to both the terminal console and the Task Center.
-            </p>
-          </div>
-          <div class="logging-control">
-            <button
-              type="button"
-              class="btn-toggle-switch"
-              class:checked={settingsStore.verbose}
-              onclick={handleToggleVerboseLogging}
-              disabled={settingsStore.savingLogging}
-              role="switch"
-              aria-checked={settingsStore.verbose}
-              aria-label="Toggle verbose diagnostic logging"
-            >
-              <span class="switch-handle"></span>
-            </button>
-            <span class="toggle-status-text" class:status-active={settingsStore.verbose}>
-              {settingsStore.verbose ? 'Active' : 'Off'}
-            </span>
-          </div>
-        </div>
-
-        <div class="logging-divider"></div>
-
-        <div class="logging-row">
-          <div class="logging-info">
-            <div class="logging-title-wrap">
-              <span class="logging-icon">📊</span>
-              <strong class="logging-item-title">Server Log Level</strong>
+            <div class="logging-control">
+              <button
+                type="button"
+                class="btn-toggle-switch"
+                class:checked={settingsStore.verbose}
+                onclick={handleToggleVerboseLogging}
+                disabled={settingsStore.savingLogging}
+                role="switch"
+                aria-checked={settingsStore.verbose}
+                aria-label="Toggle verbose diagnostic logging"
+              >
+                <span class="switch-handle"></span>
+              </button>
+              <span class="toggle-status-text" class:status-active={settingsStore.verbose}>
+                {settingsStore.verbose ? 'Active' : 'Off'}
+              </span>
             </div>
-            <p class="logging-description">
-              Sets the minimum severity threshold printed to the server terminal console.
-            </p>
           </div>
-          <div class="logging-control">
-            <select
-              class="log-level-select"
-              value={settingsStore.logLevel}
-              onchange={handleLogLevelChange}
-              disabled={settingsStore.savingLogging}
-              aria-label="Select server log level"
-            >
-              <option value="debug">DEBUG (Everything / Full Traces)</option>
-              <option value="info">INFO (Standard Steps & Progress)</option>
-              <option value="warn">WARN (Warnings & Errors Only)</option>
-              <option value="error">ERROR (Errors Only)</option>
-            </select>
+
+          <div class="logging-divider"></div>
+
+          <div class="logging-row">
+            <div class="logging-info">
+              <div class="logging-title-wrap">
+                <span class="logging-icon">📊</span>
+                <strong class="logging-item-title">Server Log Level</strong>
+              </div>
+              <p class="logging-description">
+                Sets the minimum severity threshold printed to the server terminal console.
+              </p>
+            </div>
+            <div class="logging-control">
+              <select
+                class="log-level-select"
+                value={settingsStore.logLevel}
+                onchange={handleLogLevelChange}
+                disabled={settingsStore.savingLogging}
+                aria-label="Select server log level"
+              >
+                <option value="debug">DEBUG (Everything / Full Traces)</option>
+                <option value="info">INFO (Standard Steps & Progress)</option>
+                <option value="warn">WARN (Warnings & Errors Only)</option>
+                <option value="error">ERROR (Errors Only)</option>
+              </select>
+            </div>
           </div>
         </div>
-      </div>
-    </section>
+      </section>
+    {/if}
   {/if}
 </div>
 
@@ -1579,6 +1690,49 @@
     color: #94a3b8;
     margin: 0;
     line-height: 1.5;
+  }
+
+  /* Interactive Tab Navigation */
+  .settings-tabs-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 6px;
+    background: #0f172a;
+    border: 1px solid #1e293b;
+    border-radius: 12px;
+  }
+
+  .tab-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    color: #94a3b8;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .tab-btn:hover {
+    color: #f1f5f9;
+    background: #1e293b;
+  }
+
+  .tab-btn.active {
+    background: #3b82f6;
+    color: #ffffff;
+    font-weight: 600;
+    border-color: #60a5fa;
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.25);
+  }
+
+  .tab-icon {
+    font-size: 14px;
   }
 
   /* Banners */

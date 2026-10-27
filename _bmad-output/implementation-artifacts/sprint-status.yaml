@@ -265,7 +265,7 @@ action_items:
       in the CI pipeline to continuously assert EPUB 3.0 conformance of exported study
       guides"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-18-retro-2026-10-21.md"
   - id: "epic-18-retro-item-2-add-component-unit-tests-for-settingsview"
     epic: 18
@@ -273,7 +273,7 @@ action_items:
       or Vitest browser mode for SettingsView.svelte to test interactive tab switching,
       form validation, and masked secret visibility toggles"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-18-retro-2026-10-21.md"
   - id: "epic-19-retro-item-1-reject-invalid-pagination-cursors"
     epic: 19
