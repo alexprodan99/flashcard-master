@@ -159,58 +159,63 @@ export function createDesktopWindow(url: string): BrowserWindow {
 }
 
 export function setupSystemTray(win: BrowserWindow): Tray | null {
-  const iconPath = resolveAssetPath("icon.png");
-  if (!fs.existsSync(iconPath)) {
+  try {
+    const iconPath = resolveAssetPath("icon.png");
+    if (!fs.existsSync(iconPath)) {
+      return null;
+    }
+
+    let icon = nativeImage.createFromPath(iconPath);
+    if (process.platform === "darwin") {
+      icon = icon.resize({ width: 16, height: 16 });
+    } else {
+      icon = icon.resize({ width: 24, height: 24 });
+    }
+
+    const sysTray = new Tray(icon);
+    sysTray.setToolTip("Flashcard Master");
+
+    const contextMenu = Menu.buildFromTemplate([
+      {
+        label: "Open Flashcard Master",
+        click: () => {
+          if (win.isMinimized()) win.restore();
+          win.show();
+          win.focus();
+        },
+      },
+      {
+        label: "Minimize to Tray",
+        click: () => {
+          win.hide();
+        },
+      },
+      { type: "separator" },
+      {
+        label: "Quit",
+        click: () => {
+          isQuitting = true;
+          killDevServer();
+          app.quit();
+        },
+      },
+    ]);
+
+    sysTray.setContextMenu(contextMenu);
+
+    sysTray.on("double-click", () => {
+      if (win.isMinimized() || !win.isVisible()) {
+        win.show();
+        win.restore();
+      }
+      win.focus();
+    });
+
+    return sysTray;
+  } catch (err) {
+    console.warn("[SystemTray] System tray initialization skipped or unsupported in environment:", err);
     return null;
   }
-
-  let icon = nativeImage.createFromPath(iconPath);
-  if (process.platform === "darwin") {
-    icon = icon.resize({ width: 16, height: 16 });
-  } else {
-    icon = icon.resize({ width: 24, height: 24 });
-  }
-
-  const sysTray = new Tray(icon);
-  sysTray.setToolTip("Flashcard Master");
-
-  const contextMenu = Menu.buildFromTemplate([
-    {
-      label: "Open Flashcard Master",
-      click: () => {
-        if (win.isMinimized()) win.restore();
-        win.show();
-        win.focus();
-      },
-    },
-    {
-      label: "Minimize to Tray",
-      click: () => {
-        win.hide();
-      },
-    },
-    { type: "separator" },
-    {
-      label: "Quit",
-      click: () => {
-        isQuitting = true;
-        killDevServer();
-        app.quit();
-      },
-    },
-  ]);
-
-  sysTray.setContextMenu(contextMenu);
-
-  sysTray.on("double-click", () => {
-    if (win.isMinimized() || !win.isVisible()) {
-      win.show();
-      win.restore();
-    }
-    win.focus();
-  });
-
-  return sysTray;
 }
 
 export function setupAutoUpdater(win?: BrowserWindow | null): void {
@@ -295,9 +300,14 @@ async function startApplication(): Promise<void> {
         isQuitting = true;
         killDevServer();
         app.exit(0);
-      }, 1000);
+      }, 500);
+      return;
     }
   } catch (err: any) {
+    console.error("[Startup Error]", err);
+    if (process.argv.includes("--smoke-test") || process.env.ELECTRON_SMOKE_TEST === "1") {
+      process.exit(1);
+    }
     dialog.showErrorBox("Startup Error", `Failed to initialize Flashcard Master:\n${err.message}`);
     app.quit();
   }
