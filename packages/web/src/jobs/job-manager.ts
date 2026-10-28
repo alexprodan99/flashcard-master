@@ -204,6 +204,8 @@ export class JobManager extends EventEmitter {
     while (this.activeExportCount < this.maxExportWorkers && this.exportQueue.length > 0) {
       this.dispatchNext("export");
     }
+
+    this.emit("limits_updated", this.getLimits());
   }
 
   getActiveCounts(): { generation: number; sync: number; export: number } {

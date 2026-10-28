@@ -33,9 +33,9 @@ export function createCli(providedContext?: AppContext): Command {
     .description("Launch local Web UI dashboard server")
     .option("-p, --port <port>", "Port to bind local Web UI to", "3000")
     .option("-h, --host <host>", "Host address to bind to", "127.0.0.1")
-    .option("--max-generation-workers <number>", "Max concurrent generation workers", "3")
-    .option("--max-sync-workers <number>", "Max concurrent sync workers", "2")
-    .option("--max-export-workers <number>", "Max concurrent export workers", "2")
+    .option("--max-generation-workers <number>", "Max concurrent generation workers")
+    .option("--max-sync-workers <number>", "Max concurrent sync workers")
+    .option("--max-export-workers <number>", "Max concurrent export workers")
     .option("--task-timeout <minutes>", "Default worker task timeout in minutes (0 to disable)", "60")
     .option("--max-worker-heap <mb>", "Max memory heap per worker thread in MB", "512")
     .action(async (options: {
@@ -49,9 +49,15 @@ export function createCli(providedContext?: AppContext): Command {
     }) => {
       try {
         const port = parseInt(options.port, 10) || 3000;
-        const maxGenerationWorkers = options.maxGenerationWorkers ? Math.max(1, parseInt(options.maxGenerationWorkers, 10) || 1) : 3;
-        const maxSyncWorkers = options.maxSyncWorkers ? Math.max(1, parseInt(options.maxSyncWorkers, 10) || 1) : 2;
-        const maxExportWorkers = options.maxExportWorkers ? Math.max(1, parseInt(options.maxExportWorkers, 10) || 1) : 2;
+        const maxGenerationWorkers = options.maxGenerationWorkers !== undefined
+          ? Math.max(1, parseInt(options.maxGenerationWorkers, 10) || 1)
+          : undefined;
+        const maxSyncWorkers = options.maxSyncWorkers !== undefined
+          ? Math.max(1, parseInt(options.maxSyncWorkers, 10) || 1)
+          : undefined;
+        const maxExportWorkers = options.maxExportWorkers !== undefined
+          ? Math.max(1, parseInt(options.maxExportWorkers, 10) || 1)
+          : undefined;
         const taskTimeoutMinutes = options.taskTimeout !== undefined ? parseInt(options.taskTimeout, 10) : 60;
         const defaultTaskTimeoutMs = !isNaN(taskTimeoutMinutes) && taskTimeoutMinutes >= 0
           ? taskTimeoutMinutes * 60 * 1000
@@ -72,9 +78,9 @@ export function createCli(providedContext?: AppContext): Command {
           settingsService: context.settingsService,
           providerVerifier: context.providerVerifier,
           concurrency: {
-            maxGenerationWorkers,
-            maxSyncWorkers,
-            maxExportWorkers,
+            ...(maxGenerationWorkers !== undefined ? { maxGenerationWorkers } : {}),
+            ...(maxSyncWorkers !== undefined ? { maxSyncWorkers } : {}),
+            ...(maxExportWorkers !== undefined ? { maxExportWorkers } : {}),
           },
           ingestionService: context.ingestionService,
           exportService: context.exportService,
@@ -86,8 +92,13 @@ export function createCli(providedContext?: AppContext): Command {
         });
 
         const { url } = await server.listen(port);
+        const actualLimits = server.jobManager?.getLimits() || {
+          maxGenerationWorkers: maxGenerationWorkers ?? 2,
+          maxSyncWorkers: maxSyncWorkers ?? 2,
+          maxExportWorkers: maxExportWorkers ?? 2,
+        };
         console.log(`\n🎴 Flashcard Master Web UI is running at: ${url}`);
-        console.log(`⚡ Background Task Concurrency: Generation=${maxGenerationWorkers}, Sync=${maxSyncWorkers}, Export=${maxExportWorkers} | Task Timeout=${taskTimeoutMinutes === 0 ? "Disabled" : `${taskTimeoutMinutes}m`}`);
+        console.log(`⚡ Background Task Concurrency: Generation=${actualLimits.maxGenerationWorkers}, Sync=${actualLimits.maxSyncWorkers}, Export=${actualLimits.maxExportWorkers} | Task Timeout=${taskTimeoutMinutes === 0 ? "Disabled" : `${taskTimeoutMinutes}m`}`);
         console.log("Press Ctrl+C to stop.\n");
       } catch (err: any) {
         console.error(`Failed to start Web UI server: ${err.message}`);

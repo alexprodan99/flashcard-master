@@ -14,6 +14,18 @@ export class TaskStore {
   expandedJobIds = $state<Record<string, boolean>>({});
   isVerbose = $state(false);
 
+  concurrencyLimits = $state<{
+    maxGenerationWorkers: number;
+    maxSyncWorkers: number;
+    maxExportWorkers: number;
+    workerTimeoutMinutes: number;
+  }>({
+    maxGenerationWorkers: 2,
+    maxSyncWorkers: 2,
+    maxExportWorkers: 2,
+    workerTimeoutMinutes: 15,
+  });
+
   private eventSource: EventSource | null = null;
   private reconnectTimer: any = null;
   private reconnectAttempts = 0;
@@ -40,11 +52,33 @@ export class TaskStore {
     this.jobs.filter((j) => j.status === 'queued' || j.status === 'running')
   );
 
+  runningJobs = $derived(
+    this.jobs.filter((j) => j.status === 'running')
+  );
+
+  queuedJobs = $derived(
+    this.jobs.filter((j) => j.status === 'queued')
+  );
+
   historyJobs = $derived(
     this.jobs.filter((j) => j.status !== 'queued' && j.status !== 'running')
   );
 
   activeCount = $derived(this.activeJobs.length);
+  runningCount = $derived(this.runningJobs.length);
+  queuedCount = $derived(this.queuedJobs.length);
+
+  fetchLimits() {
+    if (typeof window === 'undefined') return;
+    fetch('/api/jobs/limits')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data && data.limits) {
+          this.concurrencyLimits = data.limits;
+        }
+      })
+      .catch(() => {});
+  }
 
   init() {
     if (typeof window === 'undefined') return;
@@ -63,6 +97,7 @@ export class TaskStore {
       })
       .catch(() => {});
     this.fetchJobs();
+    this.fetchLimits();
     this.connectSse();
   }
 
@@ -96,6 +131,15 @@ export class TaskStore {
         try {
           const updatedJob: Job = JSON.parse(e.data);
           this.upsertJob(updatedJob);
+        } catch {}
+      });
+
+      this.eventSource.addEventListener('limits_updated', (e) => {
+        try {
+          const limits = JSON.parse(e.data);
+          if (limits) {
+            this.concurrencyLimits = { ...this.concurrencyLimits, ...limits };
+          }
         } catch {}
       });
 

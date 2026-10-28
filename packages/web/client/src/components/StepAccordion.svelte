@@ -174,6 +174,11 @@
           <div class="meta-row-top">
             <span class="type-pill {job.type}">{job.type}</span>
             <span class="job-title">{getJobTitle(job)}</span>
+            {#if job.status === 'queued'}
+              <span class="status-pill status-pill-queued">⏳ Queued (waiting for slot)</span>
+            {:else if job.status === 'running'}
+              <span class="status-pill status-pill-running">⚡ Running</span>
+            {/if}
           </div>
 
           <div class="meta-row-sub">
@@ -484,6 +489,27 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .status-pill {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 4px;
+    letter-spacing: 0.02em;
+    flex-shrink: 0;
+  }
+
+  .status-pill-queued {
+    background: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+  }
+
+  .status-pill-running {
+    background: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
+    border: 1px solid rgba(59, 130, 246, 0.3);
   }
 
   .meta-row-sub {

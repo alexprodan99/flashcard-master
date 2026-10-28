@@ -86,7 +86,7 @@ export class WebServer {
   private readonly host: string;
   private readonly mediaService: MediaService;
   private readonly localFilesDir: string;
-  private readonly jobManager: JobManager | null;
+  public readonly jobManager: JobManager | null;
   private readonly workerExecutor: WorkerExecutor;
   private readonly settingsRepo: SettingsRepository | null;
   private readonly settingsService: SettingsService;
@@ -121,15 +121,19 @@ export class WebServer {
     }
 
     const concurrencyLimits = this.settingsService.getWorkerConcurrencyLimits();
+    const effectiveMaxGen = options.concurrency?.maxGenerationWorkers ?? concurrencyLimits.maxGenerationWorkers;
+    const effectiveMaxSync = options.concurrency?.maxSyncWorkers ?? concurrencyLimits.maxSyncWorkers;
+    const effectiveMaxExport = options.concurrency?.maxExportWorkers ?? concurrencyLimits.maxExportWorkers;
+    const effectiveWorkerTimeout = options.concurrency?.workerTimeoutMinutes ?? concurrencyLimits.workerTimeoutMinutes;
+
     if (options.jobManager) {
       this.jobManager = options.jobManager;
     } else if (options.jobRepo) {
       this.jobManager = new JobManager(options.jobRepo, {
-        maxGenerationWorkers: concurrencyLimits.maxGenerationWorkers,
-        maxSyncWorkers: concurrencyLimits.maxSyncWorkers,
-        maxExportWorkers: concurrencyLimits.maxExportWorkers,
-        workerTimeoutMinutes: concurrencyLimits.workerTimeoutMinutes,
-        ...options.concurrency,
+        maxGenerationWorkers: effectiveMaxGen,
+        maxSyncWorkers: effectiveMaxSync,
+        maxExportWorkers: effectiveMaxExport,
+        workerTimeoutMinutes: effectiveWorkerTimeout,
         isVerbose: options.concurrency?.isVerbose ?? (() => this.settingsService.isVerboseLogging()),
         logToConsole: options.concurrency?.logToConsole,
       });
@@ -1910,6 +1914,9 @@ export class WebServer {
             const onCard = (cardData: any) => {
               res.write(`event: card_created\ndata: ${JSON.stringify(cardData)}\n\n`);
             };
+            const onLimitsUpdated = (limits: any) => {
+              res.write(`event: limits_updated\ndata: ${JSON.stringify(limits)}\n\n`);
+            };
 
             this.jobManager.on("job_created", onCreated);
             this.jobManager.on("job_status", onStatus);
@@ -1919,6 +1926,7 @@ export class WebServer {
             this.jobManager.on("job_failed", onFailed);
             this.jobManager.on("job_cancelled", onCancelled);
             this.jobManager.on("card_created", onCard);
+            this.jobManager.on("limits_updated", onLimitsUpdated);
 
             const heartbeat = setInterval(() => {
               res.write(": ping\n\n");
@@ -1935,6 +1943,7 @@ export class WebServer {
                 this.jobManager.off("job_failed", onFailed);
                 this.jobManager.off("job_cancelled", onCancelled);
                 this.jobManager.off("card_created", onCard);
+                this.jobManager.off("limits_updated", onLimitsUpdated);
               }
             });
             return;
@@ -2041,6 +2050,26 @@ export class WebServer {
               deletedCount = this.jobManager.clearHistory();
             }
             this.sendJson(res, 200, { success: true, deletedCount });
+            return;
+          }
+
+          // 2fa. Get Worker Pool Concurrency Limits & Live Status: GET /api/jobs/limits
+          if (pathname === "/api/jobs/limits" && method === "GET") {
+            const limits = this.jobManager
+              ? this.jobManager.getLimits()
+              : this.settingsService.getWorkerConcurrencyLimits();
+            const activeCounts = this.jobManager
+              ? this.jobManager.getActiveCounts()
+              : { generation: 0, sync: 0, export: 0 };
+            const queueLengths = this.jobManager
+              ? this.jobManager.getQueueLengths()
+              : { generation: 0, sync: 0, export: 0 };
+
+            this.sendJson(res, 200, {
+              limits,
+              activeCounts,
+              queueLengths,
+            });
             return;
           }
 

@@ -10,6 +10,8 @@ import {
   FlashcardRepository,
   DocumentRepository,
   JobRepository,
+  SqliteSettingsRepository,
+  SettingsService,
   CardDeduplicationService,
   IngestionService,
   StrategyRegistry,
@@ -395,5 +397,98 @@ describe("Job Queue, Streaming SSE & Logging Endpoints", () => {
     const output = receivedChunks.join("");
     expect(output).toContain("Historical log line");
     expect(output).toContain("Real-time streamed log line");
+  });
+
+  it("GET /api/jobs/limits returns current worker concurrency limits and pool capacity", async () => {
+    const res = await fetch(`${serverUrl}/api/jobs/limits`);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+
+    expect(data.limits).toBeDefined();
+    expect(data.limits.maxGenerationWorkers).toBe(2);
+    expect(data.limits.maxSyncWorkers).toBe(2);
+    expect(data.limits.maxExportWorkers).toBe(2);
+    expect(data.activeCounts).toEqual({ generation: 0, sync: 0, export: 0 });
+    expect(data.queueLengths).toEqual({ generation: 0, sync: 0, export: 0 });
+  });
+
+  it("server initialization respects database settings without CLI default overwrite", async () => {
+    const testDb = createDatabaseClient({ inMemory: true });
+    const sRepo = new SqliteSettingsRepository(testDb);
+    const sService = new SettingsService(sRepo);
+    // Explicitly configure 1 generation worker in SQLite database settings
+    sRepo.set("max_generation_workers", "1");
+    sRepo.set("max_sync_workers", "4");
+
+    const jRepo = new JobRepository(testDb);
+    const cRepo = new FlashcardRepository(testDb);
+    const dRepo = new DataSourceRepository(testDb);
+
+    const testServer = createWebServer({
+      port: 0,
+      jobRepo: jRepo,
+      cardRepo: cRepo,
+      sourceRepo: dRepo,
+      settingsRepo: sRepo,
+      settingsService: sService,
+      // No explicit CLI override passed
+      concurrency: {},
+    });
+
+    const info = await testServer.listen(0);
+    try {
+      const res = await fetch(`${info.url}/api/jobs/limits`);
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.limits.maxGenerationWorkers).toBe(1);
+      expect(data.limits.maxSyncWorkers).toBe(4);
+    } finally {
+      await testServer.close();
+    }
+  });
+
+  it("POST /api/settings/general dynamically updates JobManager limits and emits limits_updated", async () => {
+    const testDb = createDatabaseClient({ inMemory: true });
+    const sRepo = new SqliteSettingsRepository(testDb);
+    const sService = new SettingsService(sRepo);
+    const jRepo = new JobRepository(testDb);
+    const cRepo = new FlashcardRepository(testDb);
+    const dRepo = new DataSourceRepository(testDb);
+
+    const testServer = createWebServer({
+      port: 0,
+      jobRepo: jRepo,
+      cardRepo: cRepo,
+      sourceRepo: dRepo,
+      settingsRepo: sRepo,
+      settingsService: sService,
+    });
+
+    const info = await testServer.listen(0);
+    try {
+      let limitsEmitted: any = null;
+      testServer.jobManager?.on("limits_updated", (l) => {
+        limitsEmitted = l;
+      });
+
+      const updateRes = await fetch(`${info.url}/api/settings/general`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          maxGenerationWorkers: 4,
+          maxSyncWorkers: 3,
+        }),
+      });
+
+      expect(updateRes.status).toBe(200);
+      const limitsRes = await fetch(`${info.url}/api/jobs/limits`);
+      const limitsData = await limitsRes.json();
+      expect(limitsData.limits.maxGenerationWorkers).toBe(4);
+      expect(limitsData.limits.maxSyncWorkers).toBe(3);
+      expect(limitsEmitted).toBeDefined();
+      expect(limitsEmitted.maxGenerationWorkers).toBe(4);
+    } finally {
+      await testServer.close();
+    }
   });
 });

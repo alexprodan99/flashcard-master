@@ -31,13 +31,19 @@
 
   // Active generation tasks tracked by worker pool
   let activeGenerationJobs = $derived(
-    taskStore.activeJobs.filter((j) => j.type === 'generate')
+    taskStore.activeJobs.filter((j) => j.type === 'generation' || (j.type as any) === 'generate')
   );
   let runningGenerationJobs = $derived(
     activeGenerationJobs.filter((j) => j.status === 'running')
   );
   let queuedGenerationJobs = $derived(
     activeGenerationJobs.filter((j) => j.status === 'queued')
+  );
+  let maxGenWorkers = $derived(
+    taskStore.concurrencyLimits?.maxGenerationWorkers ?? settingsStore.general?.maxGenerationWorkers ?? 2
+  );
+  let isPoolAtCapacity = $derived(
+    runningGenerationJobs.length >= maxGenWorkers
   );
 
   // Computed Scope Metrics from universal generateStore
@@ -588,7 +594,11 @@
       const result: any = await generateCards(payload);
       if (result.jobId) {
         generateStore.activeJobId = result.jobId;
-        toastStore.info(`⚡ Task queued (#${result.jobId.slice(0, 8)}). Synthesizing cards in worker thread...`);
+        if (isPoolAtCapacity) {
+          toastStore.info(`⏳ Worker pool busy (${runningGenerationJobs.length}/${maxGenWorkers} active). Task #${result.jobId.slice(0, 8)} queued in backlog.`);
+        } else {
+          toastStore.info(`⚡ Task #${result.jobId.slice(0, 8)} dispatched. Worker slot allocated (${runningGenerationJobs.length + 1}/${maxGenWorkers}).`);
+        }
         trackJobCompletion(result.jobId);
       } else {
         generateStore.finishGenerating(result);
@@ -657,7 +667,7 @@
     await generateStore.loadSystemDefaultsIfEmpty();
     loadSources();
     for (const job of taskStore.activeJobs) {
-      if (job.type === 'generate') {
+      if (job.type === 'generation' || (job.type as any) === 'generate') {
         trackJobCompletion(job.id);
       }
     }
@@ -675,10 +685,15 @@
   {#if activeGenerationJobs.length > 0}
     <div class="active-jobs-banner">
       <div class="banner-status">
-        <span class="pulsing-dot"></span>
+        <span class="pulsing-dot" class:queued-only={runningGenerationJobs.length === 0}></span>
         <span>
-          <strong>{activeGenerationJobs.length} AI Generation Task{activeGenerationJobs.length === 1 ? '' : 's'} Active in Worker Pool</strong>
-          <span class="banner-subtext">({runningGenerationJobs.length} executing, {queuedGenerationJobs.length} queued)</span>
+          <strong>{activeGenerationJobs.length} AI Generation Task{activeGenerationJobs.length === 1 ? '' : 's'} in Pool:</strong>
+          <span class="banner-subtext">
+            ⚡ {runningGenerationJobs.length} of {maxGenWorkers} worker slots active
+            {#if queuedGenerationJobs.length > 0}
+              • ⏳ {queuedGenerationJobs.length} waiting in backlog
+            {/if}
+          </span>
         </span>
       </div>
       <button
@@ -903,9 +918,11 @@
         >
           {#if isSubmitting}
             <span class="spinner-inline"></span>
-            Queuing Generation Task...
-          {:else if activeGenerationJobs.length > 0}
-            ⚡ Queue Another Generation ({activeGenerationJobs.length} active)
+            Submitting Task...
+          {:else if isPoolAtCapacity}
+            ⏳ Queue Generation Task ({runningGenerationJobs.length}/{maxGenWorkers} Slots Busy)
+          {:else if runningGenerationJobs.length > 0}
+            ⚡ Start Generation ({runningGenerationJobs.length}/{maxGenWorkers} Slots Active)
           {:else}
             ⚡ Start AI Generation
           {/if}
@@ -920,8 +937,8 @@
         <div class="active-jobs-container">
           <div class="active-jobs-header">
             <div class="active-jobs-title-group">
-              <span class="pulsing-dot"></span>
-              <h3>Active Generation Tasks ({activeGenerationJobs.length})</h3>
+              <span class="pulsing-dot" class:queued-only={runningGenerationJobs.length === 0}></span>
+              <h3>Active Tasks ({activeGenerationJobs.length}) • {runningGenerationJobs.length}/{maxGenWorkers} slots executing</h3>
             </div>
             <button
               type="button"
@@ -938,7 +955,7 @@
                 <div class="job-card-top">
                   <div class="job-badge-group">
                     <span class="status-badge {job.status}">
-                      {job.status === 'running' ? '⚡ Running' : '⏳ Queued'}
+                      {job.status === 'running' ? '⚡ Running' : '⏳ Queued (waiting for slot)'}
                     </span>
                     <span class="job-id-tag">#{job.id.slice(0, 8)}</span>
                   </div>
