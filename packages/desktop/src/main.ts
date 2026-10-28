@@ -4,7 +4,8 @@ import electronUpdaterPkg from "electron-updater";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import { bootstrapDesktopServer, type DesktopBootstrapResult } from "./bootstrap.js";
+import { spawn, type ChildProcess } from "node:child_process";
+import type { DesktopBootstrapResult } from "./bootstrap.js";
 
 const autoUpdater: AppUpdater =
   (electronUpdaterPkg as any)?.autoUpdater ??
@@ -17,7 +18,92 @@ const __dirname = path.dirname(__filename);
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let bootstrapResult: DesktopBootstrapResult | null = null;
+let devServerProcess: ChildProcess | null = null;
 let isQuitting = false;
+
+export function killDevServer(): void {
+  if (devServerProcess && !devServerProcess.killed) {
+    try {
+      devServerProcess.kill();
+    } catch {
+      // ignore
+    }
+    devServerProcess = null;
+  }
+}
+
+export async function startDevServer(userDataPath: string): Promise<DesktopBootstrapResult> {
+  const runnerPath = path.join(__dirname, "server-runner.js");
+  if (!fs.existsSync(runnerPath)) {
+    throw new Error(`Development server runner not found at ${runnerPath}. Run 'npm run build' first.`);
+  }
+
+  const nodeBinary = process.platform === "win32" ? "node.exe" : "node";
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(nodeBinary, [runnerPath, userDataPath], {
+      env: {
+        ...process.env,
+        FLASHCARD_DESKTOP_USER_DATA: userDataPath,
+      },
+      stdio: ["pipe", "pipe", "pipe"],
+      windowsHide: true,
+    });
+
+    devServerProcess = child;
+    let resolved = false;
+    let stdoutBuffer = "";
+
+    child.stdout?.on("data", (data) => {
+      const text = data.toString();
+      stdoutBuffer += text;
+
+      const match = text.match(/FLASHCARD_MASTER_SERVER_READY:(https?:\/\/[^\s\r\n]+)/);
+      if (match && !resolved) {
+        resolved = true;
+        const url = match[1].trim();
+        resolve({
+          appContext: null as any,
+          server: null as any,
+          port: new URL(url).port ? parseInt(new URL(url).port, 10) : 0,
+          url,
+          dbPath: path.join(userDataPath, "data.sqlite"),
+          mediaDir: path.join(userDataPath, "media"),
+          close: async () => {
+            killDevServer();
+          },
+        });
+      }
+    });
+
+    child.stderr?.on("data", (data) => {
+      console.error(`[DevServer Error] ${data.toString()}`);
+    });
+
+    child.on("error", (err) => {
+      if (!resolved) {
+        resolved = true;
+        reject(new Error(`Failed to spawn development server (node): ${err.message}`));
+      }
+    });
+
+    child.on("exit", (code) => {
+      devServerProcess = null;
+      if (!resolved) {
+        resolved = true;
+        reject(new Error(`Dev server exited prematurely with code ${code}. Output: ${stdoutBuffer}`));
+      }
+    });
+  });
+}
+
+export async function startDesktopServer(userDataPath: string): Promise<DesktopBootstrapResult> {
+  if (!app.isPackaged && process.env.ELECTRON_FORCE_IN_PROCESS !== "1") {
+    return startDevServer(userDataPath);
+  }
+  const { bootstrapDesktopServer } = await import("./bootstrap.js");
+  return bootstrapDesktopServer({ userDataPath });
+}
 
 function resolveAssetPath(filename: string): string {
   const possiblePaths = [
@@ -108,6 +194,7 @@ export function setupSystemTray(win: BrowserWindow): Tray | null {
       label: "Quit",
       click: () => {
         isQuitting = true;
+        killDevServer();
         app.quit();
       },
     },
@@ -195,7 +282,7 @@ export function setupAutoUpdater(win?: BrowserWindow | null): void {
 async function startApplication(): Promise<void> {
   try {
     const userDataPath = app.getPath("userData");
-    bootstrapResult = await bootstrapDesktopServer({ userDataPath });
+    bootstrapResult = await startDesktopServer(userDataPath);
 
     mainWindow = createDesktopWindow(bootstrapResult.url);
     tray = setupSystemTray(mainWindow);
@@ -206,6 +293,7 @@ async function startApplication(): Promise<void> {
       console.log("[SmokeTest] Desktop app booted successfully. Exiting cleanly.");
       setTimeout(() => {
         isQuitting = true;
+        killDevServer();
         app.exit(0);
       }, 1000);
     }
@@ -245,12 +333,14 @@ if (!hasLock) {
 
   app.on("window-all-closed", () => {
     if (process.platform !== "darwin") {
+      killDevServer();
       app.quit();
     }
   });
 
   app.on("before-quit", async () => {
     isQuitting = true;
+    killDevServer();
     if (bootstrapResult) {
       try {
         await bootstrapResult.close();
