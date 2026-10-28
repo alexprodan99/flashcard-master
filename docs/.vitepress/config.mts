@@ -5,13 +5,16 @@ export default defineConfig({
   description: 'Local-First, Grounded AI Flashcard Generation & Study Knowledge Base',
   base: '/flashcard-master/',
   cleanUrls: true,
+  rewrites: {
+    'ARCHITECTURE.md': 'architecture.md',
+  },
   themeConfig: {
     siteTitle: 'Flashcard Master',
     logo: { text: '🎴' },
     nav: [
       { text: 'Home', link: '/' },
       { text: 'User Guide', link: '/user-guide/quickstart' },
-      { text: 'Architecture', link: '/ARCHITECTURE' },
+      { text: 'Architecture', link: '/architecture' },
       { text: 'Settings', link: '/settings-configuration' },
       { text: 'GitHub', link: 'https://github.com/alexprodan99/flashcard-master' },
     ],
@@ -43,7 +46,7 @@ export default defineConfig({
       {
         text: 'Architecture & System Design',
         items: [
-          { text: 'Monorepo Architecture', link: '/ARCHITECTURE' },
+          { text: 'Monorepo Architecture', link: '/architecture' },
         ],
       },
     ],
