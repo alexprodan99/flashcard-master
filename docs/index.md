@@ -14,7 +14,7 @@ hero:
       link: /user-guide/ingestion-playbook
     - theme: alt
       text: 🏛️ System Architecture
-      link: /ARCHITECTURE
+      link: /architecture
 
 features:
   - icon: 🎯
@@ -52,4 +52,4 @@ Welcome to the official documentation for **Flashcard Master**! Whether you are 
 - **[Study & Export Workflows](/user-guide/study-and-export)**: Push cards to Desktop Anki via AnkiConnect, generate offline `.apkg` packages, or create styled e-reader EPUB study books.
 - **[Troubleshooting & FAQ](/user-guide/troubleshooting-faq)**: Solutions for Notion permissions, Anki connection issues, SQLite paths, and worker concurrency limits.
 - **[Centralized Settings & Configuration](/settings-configuration)**: Reference guide for all environment variables, provider credentials, and worker thread limits.
-- **[Monorepo Architecture & Design](/ARCHITECTURE)**: Deep dive into the Hexagonal Ports & Adapters architecture, data schemas, worker pool multiprocessing, and Svelte 5 universal stores.
+- **[Monorepo Architecture & Design](/architecture)**: Deep dive into the Hexagonal Ports & Adapters architecture, data schemas, worker pool multiprocessing, and Svelte 5 universal stores.
