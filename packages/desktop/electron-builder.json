@@ -57,9 +57,11 @@
     "target": ["AppImage", "deb"],
     "category": "Education",
     "icon": "assets/icon.png",
-    "maintainer": "Ionut-Alexandru Prodan <prodanalexandru580@gmail.com>"
+    "maintainer": "Ionut-Alexandru Prodan <prodanalexandru580@gmail.com>",
+    "artifactName": "${productName}-${version}.${ext}"
   },
   "deb": {
+    "packageName": "flashcard-master",
     "maintainer": "Ionut-Alexandru Prodan <prodanalexandru580@gmail.com>"
   },
   "publish": {
