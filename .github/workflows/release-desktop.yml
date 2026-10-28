@@ -65,7 +65,9 @@ jobs:
         run: |
           echo "Running headless desktop binary smoke test with xvfb..."
           npm run --workspace=@flashcard-master/desktop dist:dir
-          xvfb-run --auto-servernum --server-args="-screen 0 1280x800x24" ./dist-desktop/linux-unpacked/flashcard-master --smoke-test --no-sandbox
+          BIN=$(find ./dist-desktop/linux-unpacked -maxdepth 1 -type f -executable | head -n 1)
+          echo "Testing executable: $BIN"
+          xvfb-run --auto-servernum --server-args="-screen 0 1280x800x24" "$BIN" --smoke-test --no-sandbox
           echo "✓ Packaged Linux binary booted and cleanly shut down under xvfb"
 
       - name: Publish Release Assets to GitHub Releases
