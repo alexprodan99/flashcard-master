@@ -423,12 +423,14 @@ describe("Job Queue, Streaming SSE & Logging Endpoints", () => {
     const jRepo = new JobRepository(testDb);
     const cRepo = new FlashcardRepository(testDb);
     const dRepo = new DataSourceRepository(testDb);
+    const sSyncRepo = new SyncStateRepository(testDb);
 
     const testServer = createWebServer({
       port: 0,
       jobRepo: jRepo,
       cardRepo: cRepo,
       sourceRepo: dRepo,
+      syncRepo: sSyncRepo,
       settingsRepo: sRepo,
       settingsService: sService,
       // No explicit CLI override passed
@@ -454,12 +456,14 @@ describe("Job Queue, Streaming SSE & Logging Endpoints", () => {
     const jRepo = new JobRepository(testDb);
     const cRepo = new FlashcardRepository(testDb);
     const dRepo = new DataSourceRepository(testDb);
+    const sSyncRepo = new SyncStateRepository(testDb);
 
     const testServer = createWebServer({
       port: 0,
       jobRepo: jRepo,
       cardRepo: cRepo,
       sourceRepo: dRepo,
+      syncRepo: sSyncRepo,
       settingsRepo: sRepo,
       settingsService: sService,
     });

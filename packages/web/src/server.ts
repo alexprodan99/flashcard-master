@@ -1773,7 +1773,14 @@ export class WebServer {
             const clientDistDir = path.resolve(currentDir, "client");
 
             const requestedFile = pathname === "/" ? "index.html" : pathname.replace(/^\//, "");
-            const filePath = path.join(clientDistDir, requestedFile);
+            const filePath = path.resolve(clientDistDir, requestedFile);
+
+            // Path traversal security check
+            if (!filePath.startsWith(clientDistDir)) {
+              res.writeHead(403, { "Content-Type": "text/plain" });
+              res.end("Forbidden");
+              return;
+            }
 
             if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
               const ext = path.extname(filePath).toLowerCase();

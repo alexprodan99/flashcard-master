@@ -277,9 +277,10 @@ export function createDatabaseClient(options: DatabaseClientOptions = {}): Datab
 
   const db = new Database(dbLocation);
 
-  // Enforce WAL mode (AD-3)
+  // Enforce WAL mode (AD-3) and configure busy timeout for worker concurrency
   if (dbLocation !== ":memory:") {
     db.pragma("journal_mode = WAL");
+    db.pragma("busy_timeout = 5000");
   }
   
   // Disable foreign keys during schema creation and migration

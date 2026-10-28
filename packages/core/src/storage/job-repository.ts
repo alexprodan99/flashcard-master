@@ -319,4 +319,17 @@ export class JobRepository {
     const res = stmt.run(...finishedStatuses);
     return res.changes;
   }
+
+  recoverInterruptedJobs(): number {
+    const now = new Date().toISOString();
+    const stmt = this.db.prepare(`
+      UPDATE jobs
+      SET status = 'failed',
+          error_message = 'Job was interrupted by unexpected server restart or shutdown.',
+          completed_at = ?
+      WHERE status IN ('running', 'queued')
+    `);
+    const res = stmt.run(now);
+    return res.changes;
+  }
 }

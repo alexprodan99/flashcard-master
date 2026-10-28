@@ -101,6 +101,13 @@ export class JobManager extends EventEmitter {
       return v === "true" || v === "1" || d === "true" || d === "1";
     });
     this.logToConsole = options.logToConsole ?? (process.env.NODE_ENV !== "test");
+    
+    // Automatically recover zombie jobs that were interrupted by a previous crash/shutdown
+    try {
+      this.jobRepo.recoverInterruptedJobs();
+    } catch {
+      // Ignore in mock or uninitialized environments
+    }
   }
 
   isVerbose(): boolean {
