@@ -535,5 +535,35 @@ describe("DocumentRepository", () => {
     expect(batchDoc2?.startPage).toBe(11);
     expect(batchDoc2?.endPage).toBe(12);
   });
+
+  it("indexes and matches documents by start_page and end_page coordinates in search", () => {
+    docRepo.upsertBatch([
+      {
+        id: "page-doc-1",
+        sourceId: testSourceId,
+        title: "Calculus Part A",
+        url: "file:///docs/calc.pdf#page=14-20",
+        textContent: "Derivatives of composite functions",
+        startPage: 14,
+        endPage: 20,
+      },
+      {
+        id: "page-doc-2",
+        sourceId: testSourceId,
+        title: "Algebra Basics",
+        url: "file:///docs/algebra.pdf#page=1-5",
+        textContent: "Linear equations and matrices",
+        startPage: 1,
+        endPage: 5,
+      },
+    ]);
+
+    const res14 = docRepo.listAll({ search: "14" });
+    expect(res14.some((d) => d.id === "page-doc-1")).toBe(true);
+    expect(res14.some((d) => d.id === "page-doc-2")).toBe(false);
+
+    const res20 = docRepo.listAll({ search: "20" });
+    expect(res20.some((d) => d.id === "page-doc-1")).toBe(true);
+  });
 });
 

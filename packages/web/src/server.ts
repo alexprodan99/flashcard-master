@@ -86,7 +86,7 @@ export class WebServer {
   private readonly host: string;
   private readonly mediaService: MediaService;
   private readonly localFilesDir: string;
-  private readonly jobManager: JobManager | null;
+  public readonly jobManager: JobManager | null;
   private readonly workerExecutor: WorkerExecutor;
   private readonly settingsRepo: SettingsRepository | null;
   private readonly settingsService: SettingsService;
@@ -121,15 +121,19 @@ export class WebServer {
     }
 
     const concurrencyLimits = this.settingsService.getWorkerConcurrencyLimits();
+    const effectiveMaxGen = options.concurrency?.maxGenerationWorkers ?? concurrencyLimits.maxGenerationWorkers;
+    const effectiveMaxSync = options.concurrency?.maxSyncWorkers ?? concurrencyLimits.maxSyncWorkers;
+    const effectiveMaxExport = options.concurrency?.maxExportWorkers ?? concurrencyLimits.maxExportWorkers;
+    const effectiveWorkerTimeout = options.concurrency?.workerTimeoutMinutes ?? concurrencyLimits.workerTimeoutMinutes;
+
     if (options.jobManager) {
       this.jobManager = options.jobManager;
     } else if (options.jobRepo) {
       this.jobManager = new JobManager(options.jobRepo, {
-        maxGenerationWorkers: concurrencyLimits.maxGenerationWorkers,
-        maxSyncWorkers: concurrencyLimits.maxSyncWorkers,
-        maxExportWorkers: concurrencyLimits.maxExportWorkers,
-        workerTimeoutMinutes: concurrencyLimits.workerTimeoutMinutes,
-        ...options.concurrency,
+        maxGenerationWorkers: effectiveMaxGen,
+        maxSyncWorkers: effectiveMaxSync,
+        maxExportWorkers: effectiveMaxExport,
+        workerTimeoutMinutes: effectiveWorkerTimeout,
         isVerbose: options.concurrency?.isVerbose ?? (() => this.settingsService.isVerboseLogging()),
         logToConsole: options.concurrency?.logToConsole,
       });
@@ -1910,6 +1914,9 @@ export class WebServer {
             const onCard = (cardData: any) => {
               res.write(`event: card_created\ndata: ${JSON.stringify(cardData)}\n\n`);
             };
+            const onLimitsUpdated = (limits: any) => {
+              res.write(`event: limits_updated\ndata: ${JSON.stringify(limits)}\n\n`);
+            };
 
             this.jobManager.on("job_created", onCreated);
             this.jobManager.on("job_status", onStatus);
@@ -1919,6 +1926,7 @@ export class WebServer {
             this.jobManager.on("job_failed", onFailed);
             this.jobManager.on("job_cancelled", onCancelled);
             this.jobManager.on("card_created", onCard);
+            this.jobManager.on("limits_updated", onLimitsUpdated);
 
             const heartbeat = setInterval(() => {
               res.write(": ping\n\n");
@@ -1935,6 +1943,7 @@ export class WebServer {
                 this.jobManager.off("job_failed", onFailed);
                 this.jobManager.off("job_cancelled", onCancelled);
                 this.jobManager.off("card_created", onCard);
+                this.jobManager.off("limits_updated", onLimitsUpdated);
               }
             });
             return;
@@ -2041,6 +2050,26 @@ export class WebServer {
               deletedCount = this.jobManager.clearHistory();
             }
             this.sendJson(res, 200, { success: true, deletedCount });
+            return;
+          }
+
+          // 2fa. Get Worker Pool Concurrency Limits & Live Status: GET /api/jobs/limits
+          if (pathname === "/api/jobs/limits" && method === "GET") {
+            const limits = this.jobManager
+              ? this.jobManager.getLimits()
+              : this.settingsService.getWorkerConcurrencyLimits();
+            const activeCounts = this.jobManager
+              ? this.jobManager.getActiveCounts()
+              : { generation: 0, sync: 0, export: 0 };
+            const queueLengths = this.jobManager
+              ? this.jobManager.getQueueLengths()
+              : { generation: 0, sync: 0, export: 0 };
+
+            this.sendJson(res, 200, {
+              limits,
+              activeCounts,
+              queueLengths,
+            });
             return;
           }
 
@@ -2255,6 +2284,11 @@ export class WebServer {
             const limit = typeof body.limit === "number" ? body.limit : 5;
             const enforceGrounding = body.enforceGrounding !== false;
 
+            if (Array.isArray(body.documentIds) && body.documentIds.length === 0) {
+              this.sendJson(res, 400, { error: "No documents selected for generation." });
+              return;
+            }
+
             if (this.jobManager && parsedUrl.query.sync !== "true") {
               const documents: Array<{
                 id: string;
@@ -2266,19 +2300,25 @@ export class WebServer {
                 endPage?: number | null;
               }> = [];
 
-              if (Array.isArray(body.documentIds) && body.documentIds.length > 0 && this.options.documentRepo) {
-                for (const docId of body.documentIds) {
-                  const doc = this.options.documentRepo.getById(docId);
-                  if (doc) {
-                    documents.push({
-                      id: doc.id,
-                      sourceId: doc.sourceId,
-                      title: doc.title,
-                      textContent: doc.textContent,
-                      originUrl: doc.url || undefined,
-                      startPage: doc.startPage ?? null,
-                      endPage: doc.endPage ?? null,
-                    });
+              if (Array.isArray(body.documentIds)) {
+                if (body.documentIds.length === 0) {
+                  this.sendJson(res, 400, { error: "No documents selected for generation." });
+                  return;
+                }
+                if (this.options.documentRepo) {
+                  for (const docId of body.documentIds) {
+                    const doc = this.options.documentRepo.getById(docId);
+                    if (doc) {
+                      documents.push({
+                        id: doc.id,
+                        sourceId: doc.sourceId,
+                        title: doc.title,
+                        textContent: doc.textContent,
+                        originUrl: doc.url || undefined,
+                        startPage: doc.startPage ?? null,
+                        endPage: doc.endPage ?? null,
+                      });
+                    }
                   }
                 }
               } else {
@@ -2561,7 +2601,25 @@ export class WebServer {
               const json = await this.parseBody(req);
               filename = json.filename;
               if (json.content !== undefined) {
-                fileBuffer = Buffer.from(json.content, "utf-8");
+                if (typeof json.content === "string") {
+                  const contentStr = json.content.trim();
+                  if (contentStr.startsWith("data:") && contentStr.includes(";base64,")) {
+                    const base64Data = contentStr.split(";base64,")[1];
+                    fileBuffer = Buffer.from(base64Data, "base64");
+                  } else if (
+                    json.encoding === "base64" ||
+                    json.isBase64 === true ||
+                    (/\.(pdf|docx|png|jpg|jpeg|gif|webp|zip)$/i.test(filename || "") &&
+                      /^[A-Za-z0-9+/=\r\n\s]+$/.test(contentStr) &&
+                      contentStr.replace(/[\r\n\s]/g, "").length % 4 === 0)
+                  ) {
+                    fileBuffer = Buffer.from(contentStr.replace(/[\r\n\s]/g, ""), "base64");
+                  } else {
+                    fileBuffer = Buffer.from(json.content, "utf-8");
+                  }
+                } else if (Buffer.isBuffer(json.content)) {
+                  fileBuffer = json.content;
+                }
               }
             } else {
               // Direct raw stream/buffer
@@ -2736,6 +2794,7 @@ export class WebServer {
             let includeCitations = true;
             let imageQuality: "compact" | "standard" | "high" = "compact";
             let grayscale = false;
+            let coverImage: string | undefined;
 
             if (method === "POST") {
               body = await this.parseBody(req);
@@ -2747,6 +2806,7 @@ export class WebServer {
               if (body?.includeCitations !== undefined) includeCitations = body.includeCitations;
               if (body?.imageQuality) imageQuality = body.imageQuality;
               if (body?.grayscale !== undefined) grayscale = Boolean(body.grayscale);
+              if (body?.coverImage) coverImage = body.coverImage;
             } else {
               const query = parsedUrl.query;
               sourceId = (query.sourceId as string) || (query.source as string) || undefined;
@@ -2759,6 +2819,7 @@ export class WebServer {
               if (query.citations !== undefined) includeCitations = query.citations !== "false" && query.citations !== "0";
               if (query.quality || query.imageQuality) imageQuality = ((query.quality || query.imageQuality) as any);
               if (query.grayscale !== undefined) grayscale = query.grayscale === "true" || query.grayscale === "1";
+              if (query.coverImage) coverImage = query.coverImage as string;
             }
 
             if (format === "epub") {
@@ -2808,6 +2869,7 @@ export class WebServer {
                         mode: mode as any,
                         sourceName,
                         documents: targetDocs,
+                        coverImage,
                       },
                     },
                     ctx
@@ -2833,6 +2895,7 @@ export class WebServer {
               includeCitations: includeCitations !== false,
               imageQuality,
               grayscale,
+              coverImage,
             });
 
             const contentBuffer = Buffer.isBuffer(exportResult.content)
@@ -2967,8 +3030,16 @@ export class WebServer {
               const limit = query.limit !== undefined ? Math.max(1, parseInt(query.limit as string, 10) || 25) : 25;
               const cursor = query.cursor ? String(query.cursor) : undefined;
               const offset = query.offset !== undefined ? Math.max(0, parseInt(query.offset as string, 10) || 0) : undefined;
-              const paginated = this.options.cardRepo.listPaginated({ ...filter, limit, cursor, offset });
-              this.sendJson(res, 200, paginated);
+              try {
+                const paginated = this.options.cardRepo.listPaginated({ ...filter, limit, cursor, offset });
+                this.sendJson(res, 200, paginated);
+              } catch (err: any) {
+                if (err.message && err.message.includes("Invalid pagination cursor")) {
+                  this.sendJson(res, 400, { error: err.message });
+                  return;
+                }
+                throw err;
+              }
               return;
             }
 

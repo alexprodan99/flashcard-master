@@ -150,6 +150,11 @@ export class IngestionService {
 
       // Persist discovered documents into repository
       if (this.docRepo && rawDocs.length > 0) {
+        if (isSlicingActive) {
+          // Purge previously generated subdocuments for this source to prevent orphan/obsolete slices
+          this.docRepo.deleteBySourceId(source.id);
+        }
+
         const docsToPersist: Array<
           Partial<DiscoveredDocument> & { sourceId: string; title: string; textContent: string }
         > = [];

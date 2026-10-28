@@ -208,4 +208,50 @@ describe("IngestionService", () => {
     expect(savedDocs[0].startPage).toBe(1);
     expect(savedDocs[0].endPage).toBe(8);
   });
+
+  it("purges previously generated subdocuments when source is re-synced with altered slicing parameters", async () => {
+    const source = sourceRepo.create({ name: "Math PDF Source", type: "rss", uri: "file:///books/math" });
+
+    const pageTexts: string[] = [];
+    for (let i = 1; i <= 10; i++) {
+      pageTexts.push(`<!-- page: ${i} -->\n\nPage ${i} content on mathematics.`);
+    }
+
+    mockStrategy.mockItems = [
+      {
+        id: "pdf-doc-1",
+        sourceId: source.id,
+        title: "Calculus.pdf",
+        rawContent: pageTexts.join("\n\n"),
+        guid: "guid-calc-1",
+        originUrl: "file:///books/math/Calculus.pdf",
+      },
+    ];
+
+    // Initial sync with page budget: 5 -> produces 2 slices
+    await service.syncSource(source.id, {
+      slicing: { mode: "budget", pagesPerChunk: 5 },
+    });
+    expect(docRepo.listBySourceId(source.id).length).toBe(2);
+
+    // Re-sync with altered budget: 2 -> produces 5 slices (old 2 slices purged)
+    mockStrategy.mockItems = [
+      {
+        id: "pdf-doc-1",
+        sourceId: source.id,
+        title: "Calculus.pdf",
+        rawContent: pageTexts.join("\n\n"),
+        guid: "guid-calc-2", // New guid so delta check lets it through
+        originUrl: "file:///books/math/Calculus.pdf",
+      },
+    ];
+
+    await service.syncSource(source.id, {
+      slicing: { mode: "budget", pagesPerChunk: 2 },
+    });
+
+    const reslicedDocs = docRepo.listBySourceId(source.id);
+    expect(reslicedDocs.length).toBe(5);
+    expect(reslicedDocs.every((d) => d.title.includes("Pages "))).toBe(true);
+  });
 });

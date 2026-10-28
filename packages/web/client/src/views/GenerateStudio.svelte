@@ -26,6 +26,26 @@
   let isPickerModalOpen = $state(false);
   let pickerInitialSearch = $state('');
 
+  // Local submission state for brief dispatch animation
+  let isSubmitting = $state(false);
+
+  // Active generation tasks tracked by worker pool
+  let activeGenerationJobs = $derived(
+    taskStore.activeJobs.filter((j) => j.type === 'generation' || (j.type as any) === 'generate')
+  );
+  let runningGenerationJobs = $derived(
+    activeGenerationJobs.filter((j) => j.status === 'running')
+  );
+  let queuedGenerationJobs = $derived(
+    activeGenerationJobs.filter((j) => j.status === 'queued')
+  );
+  let maxGenWorkers = $derived(
+    taskStore.concurrencyLimits?.maxGenerationWorkers ?? settingsStore.general?.maxGenerationWorkers ?? 2
+  );
+  let isPoolAtCapacity = $derived(
+    runningGenerationJobs.length >= maxGenWorkers
+  );
+
   // Computed Scope Metrics from universal generateStore
   let selectedDocCount = $derived(
     Object.keys(generateStore.selectedDocIds).filter((id) => generateStore.selectedDocIds[id]).length
@@ -298,20 +318,23 @@
     const titleNorm = normalizeSearchText(doc.title);
     const urlNorm = normalizeSearchText(doc.url);
     const textNorm = doc.textContent ? normalizeSearchText(doc.textContent.slice(0, 4000)) : '';
+    const pageNorm = (doc.startPage != null && doc.endPage != null)
+      ? `${doc.startPage} ${doc.endPage} page ${doc.startPage} page ${doc.endPage} p ${doc.startPage} p ${doc.endPage} pp ${doc.startPage}-${doc.endPage} pages ${doc.startPage}-${doc.endPage}`
+      : (doc.startPage != null ? `${doc.startPage} page ${doc.startPage} p ${doc.startPage}` : '');
 
     return tokens.every((token) => {
-      if (titleNorm.includes(token) || urlNorm.includes(token) || textNorm.includes(token)) {
+      if (titleNorm.includes(token) || urlNorm.includes(token) || textNorm.includes(token) || pageNorm.includes(token)) {
         return true;
       }
       // Plural/singular tolerance (e.g. 'slices' vs 'slice', 'articles' vs 'article')
       if (token.length > 3 && token.endsWith('s') && !token.endsWith('ss')) {
         const singular = token.slice(0, -1);
-        if (titleNorm.includes(singular) || urlNorm.includes(singular) || textNorm.includes(singular)) {
+        if (titleNorm.includes(singular) || urlNorm.includes(singular) || textNorm.includes(singular) || pageNorm.includes(singular)) {
           return true;
         }
       } else if (token.length > 3 && !token.endsWith('s')) {
         const plural = token + 's';
-        if (titleNorm.includes(plural) || urlNorm.includes(plural) || textNorm.includes(plural)) {
+        if (titleNorm.includes(plural) || urlNorm.includes(plural) || textNorm.includes(plural) || pageNorm.includes(plural)) {
           return true;
         }
       }
@@ -466,7 +489,7 @@
   }
 
   function handleDocRowClick(doc: DiscoveredDocument, sourceId: string, e: MouseEvent) {
-    if (generateStore.isGenerating) return;
+    if (isSubmitting) return;
     const filtered = getFilteredDocs(sourceId);
     const targetState = !generateStore.selectedDocIds[doc.id];
 
@@ -537,7 +560,7 @@
 
   async function handleGenerate(e: Event) {
     e.preventDefault();
-    if (generateStore.isGenerating) return;
+    if (isSubmitting) return;
     const targetedDocIds = Object.keys(generateStore.selectedDocIds).filter((id) => generateStore.selectedDocIds[id]);
 
     if (targetedDocIds.length === 0 && generateStore.selectedSourceIds.length === 0) {
@@ -545,7 +568,8 @@
       return;
     }
 
-    generateStore.startGenerating();
+    isSubmitting = true;
+    generateStore.errorMessage = null;
 
     try {
       const payload: any = {
@@ -569,63 +593,66 @@
 
       const result: any = await generateCards(payload);
       if (result.jobId) {
-        generateStore.setActiveJob(result.jobId);
-        toastStore.info(`⚡ Task queued (#${result.jobId.slice(0, 8)}). Synthesizing cards in background...`);
-        pollJobCompletion(result.jobId);
+        generateStore.activeJobId = result.jobId;
+        if (isPoolAtCapacity) {
+          toastStore.info(`⏳ Worker pool busy (${runningGenerationJobs.length}/${maxGenWorkers} active). Task #${result.jobId.slice(0, 8)} queued in backlog.`);
+        } else {
+          toastStore.info(`⚡ Task #${result.jobId.slice(0, 8)} dispatched. Worker slot allocated (${runningGenerationJobs.length + 1}/${maxGenWorkers}).`);
+        }
+        trackJobCompletion(result.jobId);
       } else {
         generateStore.finishGenerating(result);
         toastStore.success(`🎉 Generated ${result.cardsCreated ?? 0} cards (${result.duplicatesSkipped ?? 0} duplicates skipped)`);
       }
     } catch (err: any) {
       const msg = err.message || 'Generation failed';
-      generateStore.finishGenerating(null, msg);
+      generateStore.errorMessage = msg;
       toastStore.error(`⚠️ Generation failed: ${msg}`);
+    } finally {
+      isSubmitting = false;
     }
   }
 
-  async function pollJobCompletion(jobId: string) {
+  const activeJobTrackers = new Set<string>();
+
+  async function trackJobCompletion(jobId: string) {
+    if (activeJobTrackers.has(jobId)) return;
+    activeJobTrackers.add(jobId);
+
     const pollInterval = 1500;
     const maxAttempts = 240;
     let attempts = 0;
 
-    while (generateStore.isGenerating && generateStore.activeJobId === jobId && attempts < maxAttempts) {
+    while (activeJobTrackers.has(jobId) && attempts < maxAttempts) {
       await new Promise((resolve) => setTimeout(resolve, pollInterval));
-      if (!generateStore.isGenerating || generateStore.activeJobId !== jobId) {
-        break;
-      }
       try {
         const { job } = await fetchJobDetails(jobId);
         if (job.status === 'completed' || job.status === 'completed_with_warnings') {
-          if (generateStore.isGenerating && generateStore.activeJobId === jobId) {
-            const summary = job.resultSummary || {};
-            const cardsCreated = summary.cardsCreated ?? 0;
-            const duplicatesSkipped = summary.duplicatesSkipped ?? 0;
-            generateStore.finishGenerating({
-              success: true,
-              cardsCreated,
-              totalDraftsGenerated: summary.totalDraftsGenerated ?? cardsCreated,
-              duplicatesSkipped,
-              newCards: summary.newCards || [],
-            });
-            if (job.status === 'completed_with_warnings') {
-              toastStore.warn(`⚠️ Partial output saved: ${cardsCreated} cards generated (${duplicatesSkipped} duplicates skipped). Token limit was reached.`);
-            } else {
-              toastStore.success(`🎉 Generated ${cardsCreated} cards (${duplicatesSkipped} duplicates skipped)`);
-            }
+          activeJobTrackers.delete(jobId);
+          const summary = job.resultSummary || {};
+          const cardsCreated = summary.cardsCreated ?? 0;
+          const duplicatesSkipped = summary.duplicatesSkipped ?? 0;
+          generateStore.finishGenerating({
+            success: true,
+            cardsCreated,
+            totalDraftsGenerated: summary.totalDraftsGenerated ?? cardsCreated,
+            duplicatesSkipped,
+            newCards: summary.newCards || [],
+          });
+          if (job.status === 'completed_with_warnings') {
+            toastStore.warn(`⚠️ Batch #${jobId.slice(0, 8)} partial output: ${cardsCreated} cards generated (${duplicatesSkipped} duplicates skipped). Token limit reached.`);
+          } else {
+            toastStore.success(`🎉 Batch #${jobId.slice(0, 8)} complete: ${cardsCreated} cards generated (${duplicatesSkipped} duplicates skipped)`);
           }
           break;
         } else if (job.status === 'failed') {
-          if (generateStore.isGenerating && generateStore.activeJobId === jobId) {
-            const msg = job.errorMessage || 'Generation failed';
-            generateStore.finishGenerating(null, msg);
-            toastStore.error(`⚠️ Generation failed: ${msg}`);
-          }
+          activeJobTrackers.delete(jobId);
+          const msg = job.errorMessage || 'Generation failed';
+          toastStore.error(`⚠️ Batch #${jobId.slice(0, 8)} failed: ${msg}`);
           break;
         } else if (job.status === 'cancelled') {
-          if (generateStore.isGenerating && generateStore.activeJobId === jobId) {
-            generateStore.finishGenerating(null, 'Generation task was cancelled');
-            toastStore.warn(`⏹️ Generation task was cancelled.`);
-          }
+          activeJobTrackers.delete(jobId);
+          toastStore.warn(`⏹️ Batch #${jobId.slice(0, 8)} was cancelled.`);
           break;
         }
       } catch {
@@ -633,13 +660,16 @@
       }
       attempts++;
     }
+    activeJobTrackers.delete(jobId);
   }
 
   onMount(async () => {
     await generateStore.loadSystemDefaultsIfEmpty();
     loadSources();
-    if (generateStore.isGenerating && generateStore.activeJobId) {
-      pollJobCompletion(generateStore.activeJobId);
+    for (const job of taskStore.activeJobs) {
+      if (job.type === 'generation' || (job.type as any) === 'generate') {
+        trackJobCompletion(job.id);
+      }
     }
   });
 </script>
@@ -651,6 +681,30 @@
       <p class="view-subtitle">Synthesize atomic, factually grounded Q&A flashcards from ingested sources & documents.</p>
     </div>
   </div>
+
+  {#if activeGenerationJobs.length > 0}
+    <div class="active-jobs-banner">
+      <div class="banner-status">
+        <span class="pulsing-dot" class:queued-only={runningGenerationJobs.length === 0}></span>
+        <span>
+          <strong>{activeGenerationJobs.length} AI Generation Task{activeGenerationJobs.length === 1 ? '' : 's'} in Pool:</strong>
+          <span class="banner-subtext">
+            ⚡ {runningGenerationJobs.length} of {maxGenWorkers} worker slots active
+            {#if queuedGenerationJobs.length > 0}
+              • ⏳ {queuedGenerationJobs.length} waiting in backlog
+            {/if}
+          </span>
+        </span>
+      </div>
+      <button
+        type="button"
+        class="btn btn-xs btn-secondary"
+        onclick={() => taskStore.openDrawer('active')}
+      >
+        📋 View in Task Center
+      </button>
+    </div>
+  {/if}
 
   <div class="studio-layout">
     <div class="card form-panel">
@@ -670,7 +724,7 @@
                   📄 0{totalDocCount > 0 ? ` / ${totalDocCount}` : ''} docs
                 {/if}
               </span>
-              <button type="button" class="btn btn-xs btn-secondary" onclick={toggleSelectAllGlobal} disabled={generateStore.isGenerating}>
+              <button type="button" class="btn btn-xs btn-secondary" onclick={toggleSelectAllGlobal} disabled={isSubmitting}>
                 {generateStore.selectedSourceIds.length === sources.length ? 'Deselect All' : 'Select All'}
               </button>
             </div>
@@ -691,7 +745,7 @@
                   value={globalSearchQuery}
                   oninput={handleGlobalSearchInput}
                   class="scope-global-input"
-                  disabled={generateStore.isGenerating}
+                  disabled={isSubmitting}
                 />
                 {#if isGlobalSearching}
                   <span class="spinner-inline global-spinner"></span>
@@ -749,7 +803,7 @@
                           checked={isFullyChecked}
                           indeterminate={isIndeterminate}
                           onchange={() => toggleSourceCheck(s)}
-                          disabled={generateStore.isGenerating}
+                          disabled={isSubmitting}
                           aria-label={`Select entire source ${s.name}`}
                         />
                       </label>
@@ -792,7 +846,7 @@
                         type="button"
                         class="btn-select-docs"
                         onclick={() => openDocumentPicker(s, globalSearchQuery)}
-                        disabled={generateStore.isGenerating}
+                        disabled={isSubmitting}
                         title={`Select documents for ${s.name}`}
                         aria-label={`Select documents for ${s.name}`}
                       >
@@ -811,7 +865,7 @@
                             }
                             generateStore.saveSelections();
                           }}
-                          disabled={generateStore.isGenerating || totalDocs === 0}
+                          disabled={isSubmitting || totalDocs === 0}
                           title="Select all documents in this source"
                         >
                           Select All
@@ -824,7 +878,7 @@
                             generateStore.selectedSourceIds = generateStore.selectedSourceIds.filter(id => id !== s.id);
                             generateStore.saveSelections();
                           }}
-                          disabled={generateStore.isGenerating || totalDocs === 0}
+                          disabled={isSubmitting || totalDocs === 0}
                           title="Clear document selections for this source"
                         >
                           Clear
@@ -860,11 +914,15 @@
         <button
           type="submit"
           class="btn btn-primary btn-generate"
-          disabled={generateStore.isGenerating || sources.length === 0}
+          disabled={isSubmitting || sources.length === 0}
         >
-          {#if generateStore.isGenerating}
+          {#if isSubmitting}
             <span class="spinner-inline"></span>
-            Synthesizing Grounded Flashcards...
+            Submitting Task...
+          {:else if isPoolAtCapacity}
+            ⏳ Queue Generation Task ({runningGenerationJobs.length}/{maxGenWorkers} Slots Busy)
+          {:else if runningGenerationJobs.length > 0}
+            ⚡ Start Generation ({runningGenerationJobs.length}/{maxGenWorkers} Slots Active)
           {:else}
             ⚡ Start AI Generation
           {/if}
@@ -874,35 +932,69 @@
 
     <!-- Execution Results & Card Previews -->
     <div class="results-panel">
-      {#if generateStore.isGenerating}
-        <div class="generating-state">
-          <div class="pulse-spinner"></div>
-          <h3>AI Engine Ingesting & Generating...</h3>
-          <p>Chunking documents, running LLM inference, and verifying verbatim quote grounding.</p>
-          {#if generateStore.activeJobId}
-            <div class="active-job-actions">
-              <span class="active-job-id">Job #{generateStore.activeJobId.slice(0, 8)}</span>
-              <button
-                type="button"
-                class="btn-cancel-job"
-                onclick={() => taskStore.cancelJob(generateStore.activeJobId!)}
-              >
-                ⏹️ Cancel
-              </button>
-              <button
-                type="button"
-                class="btn-view-tasks"
-                onclick={() => taskStore.openDrawer('active')}
-              >
-                📋 View Task Logs
-              </button>
+      <!-- Active Generation Tasks Queue Monitor -->
+      {#if activeGenerationJobs.length > 0}
+        <div class="active-jobs-container">
+          <div class="active-jobs-header">
+            <div class="active-jobs-title-group">
+              <span class="pulsing-dot" class:queued-only={runningGenerationJobs.length === 0}></span>
+              <h3>Active Tasks ({activeGenerationJobs.length}) • {runningGenerationJobs.length}/{maxGenWorkers} slots executing</h3>
             </div>
-          {/if}
+            <button
+              type="button"
+              class="btn btn-xs btn-secondary"
+              onclick={() => taskStore.openDrawer('active')}
+            >
+              📋 Open Task Center
+            </button>
+          </div>
+
+          <div class="active-jobs-list">
+            {#each activeGenerationJobs as job (job.id)}
+              <div class="active-job-card" class:queued={job.status === 'queued'}>
+                <div class="job-card-top">
+                  <div class="job-badge-group">
+                    <span class="status-badge {job.status}">
+                      {job.status === 'running' ? '⚡ Running' : '⏳ Queued (waiting for slot)'}
+                    </span>
+                    <span class="job-id-tag">#{job.id.slice(0, 8)}</span>
+                  </div>
+                  <button
+                    type="button"
+                    class="btn-cancel-micro"
+                    onclick={() => taskStore.cancelJob(job.id)}
+                    title="Cancel task"
+                  >
+                    ⏹️ Cancel
+                  </button>
+                </div>
+                <div class="job-card-title">{job.title || 'Flashcard Synthesis'}</div>
+                {#if job.status === 'running'}
+                  <div class="job-progress-bar">
+                    <div
+                      class="job-progress-fill"
+                      style="width: {job.totalSteps ? Math.round(((job.currentStep || 0) / job.totalSteps) * 100) : 100}%"
+                    ></div>
+                  </div>
+                  <div class="job-step-info">
+                    <span>{job.stepName || 'Processing in worker thread...'}</span>
+                    {#if taskStore.streamedCards[job.id]?.length}
+                      <span class="streamed-counter">🎴 {taskStore.streamedCards[job.id].length} streamed</span>
+                    {/if}
+                  </div>
+                {:else}
+                  <div class="queued-notice">Waiting for worker slot (concurrency limit)</div>
+                {/if}
+              </div>
+            {/each}
+          </div>
         </div>
-      {:else if generateStore.generationResult}
+      {/if}
+
+      {#if generateStore.generationResult}
         <div class="result-card">
           <div class="result-header">
-            <h3>🎉 Generation Completed</h3>
+            <h3>🎉 Latest Completed Batch</h3>
             <div class="result-metrics">
               <span class="metric-pill success">+{generateStore.generationResult.cardsCreated} Created</span>
               <span class="metric-pill warning">-{generateStore.generationResult.duplicatesSkipped} Duplicates Skipped</span>
@@ -935,7 +1027,7 @@
             </div>
           {/if}
         </div>
-      {:else}
+      {:else if activeGenerationJobs.length === 0}
         <div class="idle-results-placeholder">
           <div class="placeholder-icon">⚡</div>
           <h3>AI Generation Studio Ready</h3>
@@ -1967,6 +2059,198 @@
     text-align: center;
     color: #94a3b8;
     font-size: 13px;
+  }
+
+  .active-jobs-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    background: rgba(99, 102, 241, 0.12);
+    border: 1px solid rgba(99, 102, 241, 0.35);
+    border-radius: 8px;
+    padding: 10px 16px;
+    margin-bottom: 20px;
+  }
+
+  .active-jobs-banner .banner-status {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: #e0e7ff;
+  }
+
+  .banner-subtext {
+    color: #94a3b8;
+    font-size: 12px;
+    margin-left: 6px;
+  }
+
+  .active-jobs-container {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-bottom: 24px;
+  }
+
+  .active-jobs-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .active-jobs-title-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .active-jobs-title-group h3 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: #f1f5f9;
+  }
+
+  .active-jobs-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .active-job-card {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: all 0.2s ease;
+  }
+
+  .active-job-card.queued {
+    border-style: dashed;
+    background: rgba(30, 41, 59, 0.6);
+  }
+
+  .job-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .job-badge-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .status-badge {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 12px;
+  }
+
+  .status-badge.running {
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+  }
+
+  .status-badge.queued {
+    background: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+  }
+
+  .job-id-tag {
+    font-family: monospace;
+    font-size: 11px;
+    color: #818cf8;
+  }
+
+  .job-card-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: #f8fafc;
+  }
+
+  .job-progress-bar {
+    width: 100%;
+    height: 6px;
+    background: #0f172a;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .job-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #6366f1, #38bdf8);
+    transition: width 0.3s ease;
+  }
+
+  .job-step-info {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    color: #94a3b8;
+  }
+
+  .streamed-counter {
+    color: #a7f3d0;
+    font-weight: 500;
+  }
+
+  .queued-notice {
+    font-size: 12px;
+    color: #fbbf24;
+    font-style: italic;
+  }
+
+  .btn-cancel-micro {
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #fca5a5;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.15s ease;
+  }
+
+  .btn-cancel-micro:hover {
+    background: rgba(239, 68, 68, 0.25);
+    border-color: #ef4444;
+  }
+
+  .pulsing-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #34d399;
+    box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.7);
+    animation: pulse-green 1.8s infinite;
+  }
+
+  @keyframes pulse-green {
+    0% {
+      transform: scale(0.95);
+      box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.7);
+    }
+    70% {
+      transform: scale(1);
+      box-shadow: 0 0 0 6px rgba(52, 211, 153, 0);
+    }
+    100% {
+      transform: scale(0.95);
+      box-shadow: 0 0 0 0 rgba(52, 211, 153, 0);
+    }
   }
 
   @media (max-width: 640px) {

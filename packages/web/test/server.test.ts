@@ -715,6 +715,22 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     expect(data.cardsCreated).toBe(2);
   });
 
+  it("rejects empty documentIds array in POST /api/generate with 400 Bad Request", async () => {
+    const res = await fetch(`${serverUrl}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: "ollama",
+        model: "phi4-mini",
+        documentIds: [],
+      }),
+    });
+
+    expect(res.status).toBe(400);
+    const data = (await res.json()) as any;
+    expect(data.error).toBe("No documents selected for generation.");
+  });
+
   it("creates and updates data source with multi-URL JSON array via PATCH and PUT", async () => {
     // 1. Create source with multi-URL array
     const createRes = await fetch(`${serverUrl}/api/sources`, {
@@ -1576,6 +1592,31 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       expect(fs.existsSync(data.path)).toBe(true);
     });
 
+    it("decodes Base64 content properly for binary uploads via application/json payload", async () => {
+      const rawBinary = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37]); // %PDF-1.7
+      const base64Content = rawBinary.toString("base64");
+
+      const res = await fetch(`${serverUrl}/api/sources/upload`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          filename: "test-binary.pdf",
+          content: base64Content,
+          encoding: "base64",
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = (await res.json()) as any;
+      expect(data.filename).toBe("test-binary.pdf");
+      expect(fs.existsSync(data.path)).toBe(true);
+
+      const written = fs.readFileSync(data.path);
+      expect(Buffer.compare(written, rawBinary)).toBe(0);
+    });
+
     it("accepts slicing configuration in POST /api/sync/:id and forwards it to sync pipeline", async () => {
       // Create local note
       const notePath = path.join(tempLocalFilesDir, "sliced-note.md");
@@ -1817,6 +1858,13 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       const p1Ids = page1.cards.map((c: any) => c.id);
       const p2Ids = page2.cards.map((c: any) => c.id);
       expect(p1Ids.some((id: string) => p2Ids.includes(id))).toBe(false);
+    });
+
+    it("returns 400 Bad Request when an invalid cursor is passed to /api/cards", async () => {
+      const res = await fetch(`${serverUrl}/api/cards?cursor=invalid_base64_or_json`);
+      expect(res.status).toBe(400);
+      const json = (await res.json()) as any;
+      expect(json.error).toContain("Invalid pagination cursor");
     });
   });
 

@@ -109,7 +109,9 @@
         >
           <span>Active Tasks</span>
           {#if taskStore.activeCount > 0}
-            <span class="tab-badge active-pulsing">{taskStore.activeCount}</span>
+            <span class="tab-badge active-pulsing">
+              {taskStore.runningCount} running{#if taskStore.queuedCount > 0}, {taskStore.queuedCount} queued{/if}
+            </span>
           {/if}
         </button>
 
@@ -212,7 +214,7 @@
       <!-- Footer Info -->
       <div class="drawer-footer">
         <div class="pool-concurrency-info">
-          <span>Worker Pools: Max 3 Gens • Max 2 Syncs • Max 2 Exports</span>
+          <span>Worker Pools: Max {taskStore.concurrencyLimits.maxGenerationWorkers} Gens • Max {taskStore.concurrencyLimits.maxSyncWorkers} Syncs • Max {taskStore.concurrencyLimits.maxExportWorkers} Exports</span>
           <span class="custodian-badge">🔒 AD-19 SQLite Safe</span>
         </div>
       </div>

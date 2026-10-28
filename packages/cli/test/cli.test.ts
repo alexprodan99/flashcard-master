@@ -488,6 +488,49 @@ describe("CLI Application", () => {
     expect(logs.some((l) => l.includes("Exported 10 cards to csv"))).toBe(true);
   });
 
+  it("supports --all-decks in export command, forwards scoping filters, and warns if --deck is supplied", async () => {
+    const cli = createCli(context);
+    cli.exitOverride();
+
+    const exportAllSpy = vi.spyOn(context.exportService, "exportAllDecks").mockResolvedValue([
+      {
+        format: "csv",
+        outputPath: "/path/to/dir/default.csv",
+        successCount: 5,
+        message: "Saved to /path/to/dir/default.csv",
+      },
+    ]);
+
+    await cli.parseAsync([
+      "node",
+      "flashcard-master",
+      "export",
+      "csv",
+      "--all-decks",
+      "/path/to/dir",
+      "--deck",
+      "ShouldWarn",
+      "--after",
+      "2026-10-01",
+      "--limit",
+      "5",
+      "--shuffle",
+    ]);
+
+    expect(warnings.some((w) => w.includes("--deck flag is ignored when --all-decks is specified"))).toBe(true);
+    expect(exportAllSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        format: "csv",
+        outputDir: "/path/to/dir",
+        filter: expect.objectContaining({
+          createdAfter: "2026-10-01",
+          limit: 5,
+          shuffle: true,
+        }),
+      })
+    );
+  });
+
   it("displays knowledge base statistics with the stats command", async () => {
     const cli = createCli(context);
     cli.exitOverride();

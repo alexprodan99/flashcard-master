@@ -359,4 +359,24 @@ describe("JobManager", () => {
     const completed = await completedPromise;
     expect(completed.status).toBe("completed");
   });
+
+  it("auto-detects host CPU core count to calculate recommended concurrency limits", () => {
+    const recommended = JobManager.getRecommendedConcurrency();
+    expect(recommended.cpuCores).toBeGreaterThanOrEqual(1);
+    expect(recommended.maxGenerationWorkers).toBeGreaterThanOrEqual(1);
+    expect(recommended.maxSyncWorkers).toBeGreaterThanOrEqual(1);
+    expect(recommended.maxExportWorkers).toBeGreaterThanOrEqual(1);
+
+    const autoManager = new JobManager(jobRepo, { autoDetectCpu: true });
+    const limits = autoManager.getLimits();
+    expect(limits.maxGenerationWorkers).toBe(recommended.maxGenerationWorkers);
+    expect(limits.maxSyncWorkers).toBe(recommended.maxSyncWorkers);
+    expect(limits.maxExportWorkers).toBe(recommended.maxExportWorkers);
+
+    jobManager.updateConcurrencyLimits({ autoDetectCpu: true });
+    const updated = jobManager.getLimits();
+    expect(updated.maxGenerationWorkers).toBe(recommended.maxGenerationWorkers);
+    expect(updated.maxSyncWorkers).toBe(recommended.maxSyncWorkers);
+    expect(updated.maxExportWorkers).toBe(recommended.maxExportWorkers);
+  });
 });

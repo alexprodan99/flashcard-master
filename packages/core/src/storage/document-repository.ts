@@ -257,14 +257,14 @@ export class DocumentRepository {
       }
 
       if (altToken) {
-        whereClause += " AND (title LIKE ? OR url LIKE ? OR text_content LIKE ? OR title LIKE ? OR url LIKE ? OR text_content LIKE ?)";
+        whereClause += " AND (title LIKE ? OR url LIKE ? OR text_content LIKE ? OR CAST(start_page AS TEXT) LIKE ? OR CAST(end_page AS TEXT) LIKE ? OR title LIKE ? OR url LIKE ? OR text_content LIKE ?)";
         const p1 = `%${token}%`;
         const p2 = `%${altToken}%`;
-        params.push(p1, p1, p1, p2, p2, p2);
+        params.push(p1, p1, p1, p1, p1, p2, p2, p2);
       } else {
-        whereClause += " AND (title LIKE ? OR url LIKE ? OR text_content LIKE ?)";
+        whereClause += " AND (title LIKE ? OR url LIKE ? OR text_content LIKE ? OR CAST(start_page AS TEXT) LIKE ? OR CAST(end_page AS TEXT) LIKE ?)";
         const p = `%${token}%`;
-        params.push(p, p, p);
+        params.push(p, p, p, p, p);
       }
     }
 

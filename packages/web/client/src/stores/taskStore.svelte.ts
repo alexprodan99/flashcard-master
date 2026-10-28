@@ -14,8 +14,21 @@ export class TaskStore {
   expandedJobIds = $state<Record<string, boolean>>({});
   isVerbose = $state(false);
 
+  concurrencyLimits = $state<{
+    maxGenerationWorkers: number;
+    maxSyncWorkers: number;
+    maxExportWorkers: number;
+    workerTimeoutMinutes: number;
+  }>({
+    maxGenerationWorkers: 2,
+    maxSyncWorkers: 2,
+    maxExportWorkers: 2,
+    workerTimeoutMinutes: 15,
+  });
+
   private eventSource: EventSource | null = null;
   private reconnectTimer: any = null;
+  private reconnectAttempts = 0;
   private completionListeners: ((job: Job) => void)[] = [];
 
   onJobCompleted(listener: (job: Job) => void): () => void {
@@ -39,11 +52,33 @@ export class TaskStore {
     this.jobs.filter((j) => j.status === 'queued' || j.status === 'running')
   );
 
+  runningJobs = $derived(
+    this.jobs.filter((j) => j.status === 'running')
+  );
+
+  queuedJobs = $derived(
+    this.jobs.filter((j) => j.status === 'queued')
+  );
+
   historyJobs = $derived(
     this.jobs.filter((j) => j.status !== 'queued' && j.status !== 'running')
   );
 
   activeCount = $derived(this.activeJobs.length);
+  runningCount = $derived(this.runningJobs.length);
+  queuedCount = $derived(this.queuedJobs.length);
+
+  fetchLimits() {
+    if (typeof window === 'undefined') return;
+    fetch('/api/jobs/limits')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data && data.limits) {
+          this.concurrencyLimits = data.limits;
+        }
+      })
+      .catch(() => {});
+  }
 
   init() {
     if (typeof window === 'undefined') return;
@@ -62,6 +97,7 @@ export class TaskStore {
       })
       .catch(() => {});
     this.fetchJobs();
+    this.fetchLimits();
     this.connectSse();
   }
 
@@ -76,10 +112,12 @@ export class TaskStore {
 
       this.eventSource.addEventListener('open', () => {
         this.isConnected = true;
+        this.reconnectAttempts = 0;
       });
 
       this.eventSource.addEventListener('connected', () => {
         this.isConnected = true;
+        this.reconnectAttempts = 0;
       });
 
       this.eventSource.addEventListener('job_created', (e) => {
@@ -93,6 +131,15 @@ export class TaskStore {
         try {
           const updatedJob: Job = JSON.parse(e.data);
           this.upsertJob(updatedJob);
+        } catch {}
+      });
+
+      this.eventSource.addEventListener('limits_updated', (e) => {
+        try {
+          const limits = JSON.parse(e.data);
+          if (limits) {
+            this.concurrencyLimits = { ...this.concurrencyLimits, ...limits };
+          }
         } catch {}
       });
 
@@ -324,12 +371,19 @@ export class TaskStore {
           this.eventSource.close();
           this.eventSource = null;
         }
-        // Retry connection after 5 seconds
+        // Progressive exponential backoff with jitter (1s base, 30s cap)
         if (!this.reconnectTimer) {
+          const baseDelay = 1000;
+          const maxDelay = 30000;
+          const exponentialDelay = Math.min(maxDelay, baseDelay * Math.pow(2, this.reconnectAttempts));
+          const jitter = Math.floor(Math.random() * (exponentialDelay * 0.3));
+          const delay = exponentialDelay + jitter;
+          this.reconnectAttempts++;
+
           this.reconnectTimer = setTimeout(() => {
             this.reconnectTimer = null;
             this.connectSse();
-          }, 5000);
+          }, delay);
         }
       });
     } catch {

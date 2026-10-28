@@ -364,4 +364,32 @@ describe("EpubFlashcardExporter", () => {
     expect(idMatch1?.[1]).toBeDefined();
     expect(idMatch1?.[1]).toBe(idMatch2?.[1]);
   });
+
+  it("includes custom cover image, cover.xhtml, landmarks, and manifest item when coverImage is provided", async () => {
+    const exporter = new EpubFlashcardExporter();
+    const fakeImage = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
+    const result = await exporter.export(sampleCards, { coverImage: fakeImage });
+    const zip = await JSZip.loadAsync(result.data as Buffer);
+
+    // Verify cover.xhtml exists and references images/cover.png
+    const coverHtml = await zip.file("OEBPS/cover.xhtml")?.async("string");
+    expect(coverHtml).toBeDefined();
+    expect(coverHtml).toContain('<img src="images/cover.png"');
+
+    // Verify cover image is in images/
+    const imageFile = zip.file("OEBPS/images/cover.png");
+    expect(imageFile).toBeDefined();
+
+    // Verify nav.xhtml has landmark
+    const nav = await zip.file("OEBPS/nav.xhtml")?.async("string");
+    expect(nav).toContain('<nav epub:type="landmarks"');
+    expect(nav).toContain('<a epub:type="cover" href="cover.xhtml">Cover</a>');
+
+    // Verify content.opf has cover items and spine entry
+    const opf = await zip.file("OEBPS/content.opf")?.async("string");
+    expect(opf).toContain('properties="cover-image"');
+    expect(opf).toContain('<item id="cover-page" href="cover.xhtml"');
+    expect(opf).toContain('<itemref idref="cover-page"');
+    expect(opf).toContain('<meta name="cover" content="cover-image"');
+  });
 });

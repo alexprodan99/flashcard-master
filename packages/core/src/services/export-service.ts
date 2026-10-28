@@ -21,6 +21,7 @@ export interface ExportRequest {
 export interface BulkDeckExportRequest {
   format: string;
   outputDir: string;
+  filter?: Omit<CardFilter, "targetDeck">;
   options?: Omit<ExportOptions, "outputPath" | "targetDeck"> & Record<string, any>;
 }
 
@@ -89,7 +90,10 @@ export class ExportService {
 
       const res = await this.export({
         format: request.format,
-        filter: { targetDeck: deck },
+        filter: {
+          ...request.filter,
+          targetDeck: deck,
+        },
         options: {
           ...request.options,
           targetDeck: deck,

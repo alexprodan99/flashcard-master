@@ -86,6 +86,7 @@ export interface DocumentExportOptions {
   outputPath?: string;
   imageQuality?: ImageQuality;
   grayscale?: boolean;
+  coverImage?: Buffer | string;
 }
 
 export interface DocumentExportResult {

@@ -57,5 +57,10 @@
     "target": ["AppImage", "deb"],
     "category": "Education",
     "icon": "assets/icon.png"
+  },
+  "publish": {
+    "provider": "github",
+    "owner": "alexprodan99",
+    "repo": "flashcard-master"
   }
 }

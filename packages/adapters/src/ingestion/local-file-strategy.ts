@@ -23,87 +23,102 @@ export class LocalFileStrategy implements IngestionStrategy {
   }
 
   async fetch(source: DataSource, lastSync?: SyncState): Promise<RawDocument[]> {
-    const targetPath = source.uri;
-    const docs: RawDocument[] = [];
-
-    if (!fs.existsSync(targetPath)) {
-      console.warn(`[LocalFileStrategy] Path does not exist: ${targetPath}`);
-      return [];
+    let targetPaths: string[] = [];
+    const trimmedUri = (source.uri || "").trim();
+    if (trimmedUri.startsWith("[") && trimmedUri.endsWith("]")) {
+      try {
+        const parsed = JSON.parse(trimmedUri);
+        if (Array.isArray(parsed)) {
+          targetPaths = parsed.filter((p) => typeof p === "string" && p.trim().length > 0);
+        }
+      } catch {
+        targetPaths = [trimmedUri];
+      }
+    } else {
+      targetPaths = [trimmedUri];
     }
 
-    try {
-      const stats = fs.statSync(targetPath);
+    const docs: RawDocument[] = [];
 
-      if (stats.isFile()) {
-        const ext = path.extname(targetPath).toLowerCase();
-        if (ext === ".doc") {
-          throw new UnsupportedDocumentError(
-            "Legacy binary .doc is not supported. Please convert to .docx or .pdf"
-          );
-        }
+    for (const targetPath of targetPaths) {
+      if (!fs.existsSync(targetPath)) {
+        console.warn(`[LocalFileStrategy] Path does not exist: ${targetPath}`);
+        continue;
+      }
 
-        if (ext === ".epub") {
-          const epubDocs = await this.readEpubAsDocuments(targetPath, source.id, stats);
-          docs.push(...epubDocs);
-        } else if ([".md", ".markdown", ".txt", ".pdf", ".docx"].includes(ext)) {
-          const doc = await this.readFileAsDocument(targetPath, source.id, stats);
-          if (doc) docs.push(doc);
-        }
-      } else if (stats.isDirectory()) {
-        // Find all matching files in directory tree
-        const pattern = "**/*.{md,markdown,txt,pdf,docx,epub}";
-        const normalizedTarget = targetPath.replace(/\\/g, "/");
-        const files = await fg(pattern, {
-          cwd: normalizedTarget,
-          absolute: true,
-          caseSensitiveMatch: false,
-          ignore: ["**/node_modules/**", "**/.git/**", "**/dist/**"],
-          onlyFiles: true,
-        });
+      try {
+        const stats = fs.statSync(targetPath);
 
-        for (const filePath of files) {
-          let fileStat: fs.Stats;
-          try {
-            fileStat = fs.statSync(filePath);
-          } catch (statErr: any) {
-            console.warn(`[LocalFileStrategy] Skipping unreadable file ${filePath}: ${statErr.message}`);
-            continue;
+        if (stats.isFile()) {
+          const ext = path.extname(targetPath).toLowerCase();
+          if (ext === ".doc") {
+            throw new UnsupportedDocumentError(
+              "Legacy binary .doc is not supported. Please convert to .docx or .pdf"
+            );
           }
 
-          try {
-            const ext = path.extname(filePath).toLowerCase();
-            if (ext === ".epub") {
-              const epubDocs = await this.readEpubAsDocuments(filePath, source.id, fileStat);
-              docs.push(...epubDocs);
-            } else {
-              const doc = await this.readFileAsDocument(filePath, source.id, fileStat);
-              if (doc) docs.push(doc);
-            }
-          } catch (docErr: any) {
-            if (
-              docErr instanceof UnsupportedDocumentError ||
-              docErr instanceof ScannedDocumentError ||
-              docErr instanceof DrmProtectedEpubError ||
-              docErr instanceof InvalidEpubError
-            ) {
-              console.warn(`[LocalFileStrategy] Skipping file ${filePath}: ${docErr.message}`);
+          if (ext === ".epub") {
+            const epubDocs = await this.readEpubAsDocuments(targetPath, source.id, stats);
+            docs.push(...epubDocs);
+          } else if ([".md", ".markdown", ".txt", ".pdf", ".docx"].includes(ext)) {
+            const doc = await this.readFileAsDocument(targetPath, source.id, stats);
+            if (doc) docs.push(doc);
+          }
+        } else if (stats.isDirectory()) {
+          // Find all matching files in directory tree
+          const pattern = "**/*.{md,markdown,txt,pdf,docx,epub}";
+          const normalizedTarget = targetPath.replace(/\\/g, "/");
+          const files = await fg(pattern, {
+            cwd: normalizedTarget,
+            absolute: true,
+            caseSensitiveMatch: false,
+            ignore: ["**/node_modules/**", "**/.git/**", "**/dist/**"],
+            onlyFiles: true,
+          });
+
+          for (const filePath of files) {
+            let fileStat: fs.Stats;
+            try {
+              fileStat = fs.statSync(filePath);
+            } catch (statErr: any) {
+              console.warn(`[LocalFileStrategy] Skipping unreadable file ${filePath}: ${statErr.message}`);
               continue;
             }
-            console.warn(`[LocalFileStrategy] Error reading ${filePath}: ${docErr.message}`);
+
+            try {
+              const ext = path.extname(filePath).toLowerCase();
+              if (ext === ".epub") {
+                const epubDocs = await this.readEpubAsDocuments(filePath, source.id, fileStat);
+                docs.push(...epubDocs);
+              } else {
+                const doc = await this.readFileAsDocument(filePath, source.id, fileStat);
+                if (doc) docs.push(doc);
+              }
+            } catch (docErr: any) {
+              if (
+                docErr instanceof UnsupportedDocumentError ||
+                docErr instanceof ScannedDocumentError ||
+                docErr instanceof DrmProtectedEpubError ||
+                docErr instanceof InvalidEpubError
+              ) {
+                console.warn(`[LocalFileStrategy] Skipping file ${filePath}: ${docErr.message}`);
+                continue;
+              }
+              console.warn(`[LocalFileStrategy] Error reading ${filePath}: ${docErr.message}`);
+            }
           }
         }
+      } catch (err: any) {
+        if (
+          err instanceof UnsupportedDocumentError ||
+          err instanceof ScannedDocumentError ||
+          err instanceof DrmProtectedEpubError ||
+          err instanceof InvalidEpubError
+        ) {
+          throw err;
+        }
+        console.warn(`[LocalFileStrategy] Error reading local path ${targetPath}:`, err.message);
       }
-    } catch (err: any) {
-      if (
-        err instanceof UnsupportedDocumentError ||
-        err instanceof ScannedDocumentError ||
-        err instanceof DrmProtectedEpubError ||
-        err instanceof InvalidEpubError
-      ) {
-        throw err;
-      }
-      console.warn(`[LocalFileStrategy] Error reading local path ${targetPath}:`, err.message);
-      return [];
     }
 
     return docs;

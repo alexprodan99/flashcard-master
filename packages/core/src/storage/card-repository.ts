@@ -228,10 +228,11 @@ export class FlashcardRepository {
     }
     if (filter.cursor) {
       const decoded = decodeCursor(filter.cursor);
-      if (decoded) {
-        conditions.push("((created_at < ?) OR (created_at = ? AND id < ?))");
-        params.push(decoded.createdAt, decoded.createdAt, decoded.id);
+      if (!decoded) {
+        throw new Error("Invalid pagination cursor.");
       }
+      conditions.push("((created_at < ?) OR (created_at = ? AND id < ?))");
+      params.push(decoded.createdAt, decoded.createdAt, decoded.id);
     }
     if (filter.createdAfter) {
       const after = filter.createdAfter.length === 10 ? `${filter.createdAfter}T00:00:00Z` : filter.createdAfter;
@@ -358,10 +359,29 @@ export class FlashcardRepository {
     if (!ids || ids.length === 0) {
       return 0;
     }
-    const placeholders = ids.map(() => "?").join(", ");
-    const stmt = this.db.prepare(`DELETE FROM flashcards WHERE id IN (${placeholders})`);
-    const result = stmt.run(...ids);
-    return result.changes;
+    const validIds = ids.filter((id) => typeof id === "string" && id.trim().length > 0);
+    if (validIds.length === 0) return 0;
+
+    const BATCH_SIZE = 500;
+    if (validIds.length <= BATCH_SIZE) {
+      const placeholders = validIds.map(() => "?").join(", ");
+      const stmt = this.db.prepare(`DELETE FROM flashcards WHERE id IN (${placeholders})`);
+      const result = stmt.run(...validIds);
+      return result.changes;
+    }
+
+    let totalDeleted = 0;
+    const runBatch = this.db.transaction(() => {
+      for (let i = 0; i < validIds.length; i += BATCH_SIZE) {
+        const batch = validIds.slice(i, i + BATCH_SIZE);
+        const placeholders = batch.map(() => "?").join(", ");
+        const stmt = this.db.prepare(`DELETE FROM flashcards WHERE id IN (${placeholders})`);
+        const result = stmt.run(...batch);
+        totalDeleted += result.changes;
+      }
+    });
+    runBatch();
+    return totalDeleted;
   }
 
   deleteBySourceId(sourceId: string): number {
@@ -470,13 +490,30 @@ export class FlashcardRepository {
     const validIds = cardIds.filter((id) => typeof id === "string" && id.trim().length > 0);
     if (validIds.length === 0) return 0;
 
-    const placeholders = validIds.map(() => "?").join(", ");
-    const stmt = this.db.prepare(
-      `UPDATE flashcards SET target_deck = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id IN (${placeholders})`
-    );
+    const BATCH_SIZE = 500;
+    if (validIds.length <= BATCH_SIZE) {
+      const placeholders = validIds.map(() => "?").join(", ");
+      const stmt = this.db.prepare(
+        `UPDATE flashcards SET target_deck = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id IN (${placeholders})`
+      );
+      const result = stmt.run(dst, ...validIds);
+      return result.changes;
+    }
 
-    const result = stmt.run(dst, ...validIds);
-    return result.changes;
+    let totalMoved = 0;
+    const runBatch = this.db.transaction(() => {
+      for (let i = 0; i < validIds.length; i += BATCH_SIZE) {
+        const batch = validIds.slice(i, i + BATCH_SIZE);
+        const placeholders = batch.map(() => "?").join(", ");
+        const stmt = this.db.prepare(
+          `UPDATE flashcards SET target_deck = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id IN (${placeholders})`
+        );
+        const result = stmt.run(dst, ...batch);
+        totalMoved += result.changes;
+      }
+    });
+    runBatch();
+    return totalMoved;
   }
 
   listTags(): string[] {

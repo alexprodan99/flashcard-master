@@ -215,49 +215,49 @@ action_items:
     action: "Add progressive exponential backoff and jitter to client EventSource
       reconnection handler"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-14-retro-2026-09-09.md"
   - id: "epic-14-retro-item-2-allow-worker-pool-concurrency-limits-to"
     epic: 14
     action: "Allow worker pool concurrency limits to optionally auto-detect host CPU
       core count"
     owner: "architect"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-14-retro-2026-09-09.md"
   - id: "epic-13-retro-item-3-allow-users-to-select-or-upload-a-custom"
     epic: 13
     action: "Allow users to select or upload a custom cover image when exporting documents
       to EPUB format"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-13-retro-2026-09-07.md"
   - id: "epic-13-retro-item-4-extend-local-source-upload-dropzone-to-a"
     epic: 13
     action: "Extend local source upload dropzone to accept multiple document files
       simultaneously"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-13-retro-2026-09-07.md"
   - id: "epic-17-retro-item-5-purge-or-replace-previously-generated-su"
     epic: 17
     action: "Purge or replace previously generated subdocuments in SQLite documents
       table when a data source is re-synced with altered slicing parameters"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-17-retro-2026-10-07.md"
   - id: "epic-17-retro-item-6-support-base64-content-decoding-for-bina"
     epic: 17
     action: "Support Base64 content decoding for binary files uploaded through JSON
       payload in POST /api/sources/upload"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-17-retro-2026-10-07.md"
   - id: "epic-17-retro-item-7-index-subdocument-page-coordinates-start"
     epic: 17
     action: "Index subdocument page coordinates (startPage, endPage) in Generate Studio
       text search filter"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-17-retro-2026-10-07.md"
   - id: "epic-18-retro-item-1-add-epubcheck-cli-validation"
     epic: 18
@@ -265,7 +265,7 @@ action_items:
       in the CI pipeline to continuously assert EPUB 3.0 conformance of exported study
       guides"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-18-retro-2026-10-21.md"
   - id: "epic-18-retro-item-2-add-component-unit-tests-for-settingsview"
     epic: 18
@@ -273,28 +273,28 @@ action_items:
       or Vitest browser mode for SettingsView.svelte to test interactive tab switching,
       form validation, and masked secret visibility toggles"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-18-retro-2026-10-21.md"
   - id: "epic-19-retro-item-1-reject-invalid-pagination-cursors"
     epic: 19
     action: "Reject malformed or invalid pagination cursors with 400 Bad Request in
       card-repository and REST endpoint instead of silently defaulting to page 1"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-19-retro-2026-10-25.md"
   - id: "epic-19-retro-item-2-chunk-batch-card-moves-and-deletes"
     epic: 19
     action: "Chunk card ID arrays in batches of 500 within moveCards and deleteMany
       in FlashcardRepository to guard against SQLite variable limits"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-19-retro-2026-10-25.md"
   - id: "epic-19-retro-item-3-guard-empty-document-ids-in-generate"
     epic: 19
     action: "Add explicit validation in POST /api/generate to reject empty documentIds
       arrays with 400 Bad Request instead of falling back to all active sources"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-19-retro-2026-10-25.md"
   - id: "epic-19-retro-item-4-forward-scoping-filters-in-bulk-deck-export"
     epic: 19
@@ -302,33 +302,33 @@ action_items:
       in ExportService.exportAllDecks and warn in CLI if incompatible combinations
       are passed"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-19-retro-2026-10-25.md"
   - id: "epic-19-retro-item-5-extract-deck-modals-from-question-explorer"
     epic: 19
     action: "Extract CloneDeckModal, SplitDeckModal, and MoveCardsModal from QuestionExplorer.svelte
       into standalone components under packages/web/client/src/components/"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-19-retro-2026-10-25.md"
   - id: "epic-19-retro-item-6-reconcile-story-19-7-spec-in-epics-md"
     epic: 19
     action: "Update epics.md Story 19.7 description to align with the implemented
       Generate Studio Target Scope redesign and SourceDocumentPickerModal component"
     owner: "architect"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-19-retro-2026-10-25.md"
   - id: "epic-20-retro-item-1-desktop-auto-updater"
     epic: 20
     action: "Integrate electron-updater into @flashcard-master/desktop to check GitHub
       Releases for new published tags and notify users with an in-app update banner"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-20-retro-2026-10-27.md"
   - id: "epic-20-retro-item-2-e2e-smoke-test-for-desktop-binary-in-ci"
     epic: 20
     action: "Add a headless smoke-test step in .github/workflows/release-desktop.yml
       on Linux using xvfb-run to assert that the packaged binary boots and cleanly shuts down"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-20-retro-2026-10-27.md"

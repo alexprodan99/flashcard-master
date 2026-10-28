@@ -116,4 +116,18 @@ describe("ExportService & ExporterRegistry", () => {
     expect(results[1].successCount).toBe(1);
     expect(results[1].outputPath).toContain("deck_b.apkg");
   });
+
+  it("exports all distinct decks in batch with scoping filters", async () => {
+    const results = await exportService.exportAllDecks({
+      format: "apkg",
+      outputDir: "/tmp/exports",
+      filter: {
+        limit: 1,
+      },
+    });
+
+    expect(results.length).toBe(2);
+    expect(results[0].successCount).toBe(1); // Deck A scoped to 1 card
+    expect(results[1].successCount).toBe(1); // Deck B scoped to 1 card
+  });
 });
