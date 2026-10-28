@@ -665,7 +665,8 @@ nav#toc a {
     }
 
     const cardIdSeed = cards.map((c) => c.id).sort().join(":");
-    const bookUuid = crypto.createHash("sha256").update(`${bookTitle}:${cardIdSeed}`).digest("hex").slice(0, 32);
+    const rawHash = crypto.createHash("sha256").update(`${bookTitle}:${cardIdSeed}`).digest("hex");
+    const bookUuid = `${rawHash.slice(0, 8)}-${rawHash.slice(8, 12)}-4${rawHash.slice(13, 16)}-a${rawHash.slice(17, 20)}-${rawHash.slice(20, 32)}`;
     const now = new Date();
     const dateStr = now.toISOString().split("T")[0];
     const modifiedTimestamp = now.toISOString().replace(/\.\d+Z$/, "Z");
@@ -800,7 +801,7 @@ nav#toc a {
               citationHtml = `
             <div class="card-citation">
               <div class="citation-label">Verified Grounding Quote:</div>
-              <blockquote class="citation-quote">&ldquo;${escapedQuote}&rdquo;</blockquote>
+              <blockquote class="citation-quote">&#8220;${escapedQuote}&#8221;</blockquote>
               ${locatorMeta}
               ${docMeta}
               ${urlMeta}
@@ -824,7 +825,7 @@ nav#toc a {
             if (includeBadges) {
               badgesHtml = `
         <div class="card-badges">
-          <span class="badge badge-difficulty badge-${diffClass}">Card #${idx + 1} &bull; ${this.escapeXml(
+          <span class="badge badge-difficulty badge-${diffClass}">Card #${idx + 1} &#8226; ${this.escapeXml(
                 card.difficulty
               )}</span>
           ${personaBadge}
@@ -864,7 +865,7 @@ nav#toc a {
     <header class="deck-header">
       <div class="deck-badge">Flashcard Deck #${chapterIndex}</div>
       <h1 class="deck-title">${this.escapeXml(deckName)}</h1>
-      <div class="deck-meta">${deckCards.length} Flashcard${deckCards.length === 1 ? "" : "s"} &bull; Interactive Study Guide</div>
+      <div class="deck-meta">${deckCards.length} Flashcard${deckCards.length === 1 ? "" : "s"} &#8226; Interactive Study Guide</div>
     </header>
     <div class="deck-cards">
 ${cardsHtml}
@@ -904,7 +905,7 @@ ${coverInfo ? `  <nav epub:type="landmarks" hidden="">
     <h2>Landmarks</h2>
     <ol>
       <li><a epub:type="cover" href="cover.xhtml">Cover</a></li>
-      <li><a epub:type="toc" href="#toc">Table of Contents</a></li>
+      ${chapters.length > 0 ? `<li><a epub:type="bodymatter" href="${chapters[0].filename}">Start of Content</a></li>` : ""}
     </ol>
   </nav>` : ""}
 </body>
