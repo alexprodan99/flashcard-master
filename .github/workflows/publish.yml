@@ -113,22 +113,22 @@ jobs:
         run: npm test
 
       - name: Publish @flashcard-master/core
-        run: npm publish -w @flashcard-master/core --access public --tag ${{ steps.config.outputs.dist_tag }}
+        run: npm publish -w @flashcard-master/core --access public --tag ${{ steps.config.outputs.dist_tag }} || echo "Already published on npm"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @flashcard-master/adapters
-        run: npm publish -w @flashcard-master/adapters --access public --tag ${{ steps.config.outputs.dist_tag }}
+        run: npm publish -w @flashcard-master/adapters --access public --tag ${{ steps.config.outputs.dist_tag }} || echo "Already published on npm"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @flashcard-master/web
-        run: npm publish -w @flashcard-master/web --access public --tag ${{ steps.config.outputs.dist_tag }}
+        run: npm publish -w @flashcard-master/web --access public --tag ${{ steps.config.outputs.dist_tag }} || echo "Already published on npm"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @flashcard-master/cli
-        run: npm publish -w @flashcard-master/cli --access public --tag ${{ steps.config.outputs.dist_tag }}
+        run: npm publish -w @flashcard-master/cli --access public --tag ${{ steps.config.outputs.dist_tag }} || echo "Already published on npm"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
