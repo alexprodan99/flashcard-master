@@ -56,7 +56,11 @@
   "linux": {
     "target": ["AppImage", "deb"],
     "category": "Education",
-    "icon": "assets/icon.png"
+    "icon": "assets/icon.png",
+    "maintainer": "Ionut-Alexandru Prodan <prodanalexandru580@gmail.com>"
+  },
+  "deb": {
+    "maintainer": "Ionut-Alexandru Prodan <prodanalexandru580@gmail.com>"
   },
   "publish": {
     "provider": "github",
