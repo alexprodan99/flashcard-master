@@ -85,6 +85,6 @@ jobs:
           files: ${{ matrix.artifact_pattern }}
           draft: false
           prerelease: false
-          generate_release_notes: true
+          generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
