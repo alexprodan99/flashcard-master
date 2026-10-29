@@ -64,3 +64,30 @@ To back up your entire knowledge base, simply copy the `~/.flashcard-master/` fo
 - By default, up to **2 background generation workers** and **2 sync workers** run in parallel as independent Node.js subprocesses.
 - You can tune concurrency limits (from 1 up to 16 workers) in **⚙️ Settings** ➔ **Worker Pool Concurrency Limits** or via environment variables (`MAX_GENERATION_WORKERS`, `MAX_SYNC_WORKERS`).
 - Monitor active tasks, observe live token throughput, or cancel tasks anytime in the **Task Center** drawer (`t` shortcut).
+
+---
+
+## 🖥️ Desktop Installation & Operating System Warnings
+
+### Q: Why does Windows Defender SmartScreen say "Windows protected your PC / Unrecognized app"?
+**Cause:** Windows Defender SmartScreen flags newly released binaries from the internet that do not yet have an accumulated download history or a commercial EV (Extended Validation) code-signing certificate.
+
+**Solution (Takes 5 seconds):**
+1. **In Edge or Chrome**: If marked as *"uncommonly downloaded"*, click the **`...`** (three dots) next to the download &rarr; click **Keep** &rarr; click **Show more** &rarr; select **Keep anyway** (do *not* click "Report as safe", which opens an unnecessary feedback form).
+2. **When opening the installer**: On the blue *"Windows protected your PC"* dialog, click the underlined link: **More info** &rarr; then click the **Run anyway** button that appears.
+3. *Alternative:* Right-click the `.exe` file &rarr; select **Properties** &rarr; check **Unblock** at the bottom of the *General* tab &rarr; click **Apply** / **OK**.
+
+---
+
+### Q: Why does macOS show "cannot be opened because the developer cannot be verified"?
+**Cause:** Apple Gatekeeper flags applications downloaded outside the Mac App Store that are not notarized with an Apple Developer ID.
+
+**Solution:**
+1. Open **System Settings** &rarr; **Privacy & Security**.
+2. Scroll to the **Security** section and click **Open Anyway** next to Flashcard Master.
+3. Alternatively, in Finder, right-click (or Control-click) `Flashcard Master.app` in `/Applications` and select **Open**, then confirm.
+
+---
+
+### Q: Where can I find all release installers and updates?
+All release assets (including Windows `.exe`, macOS universal / Apple Silicon / Intel `.dmg`, and Linux `.deb` / `.AppImage` packages) are cataloged on the **[Flashcard Master GitHub Releases Page](https://github.com/alexprodan99/flashcard-master/releases)**.

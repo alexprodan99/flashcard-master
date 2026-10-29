@@ -9,13 +9,24 @@ Get up and running with **Flashcard Master** in three minutes. Turn any web arti
 Flashcard Master runs completely locally on your computer as a standalone desktop app, a local browser-bound Web UI, or a scriptable CLI.
 
 ### Option A: Standalone Desktop App (Recommended for Most Users)
-Download the native desktop installer for your operating system from the [Flashcard Master GitHub Releases](https://github.com/alexprodan99/flashcard-master/releases):
+Download the latest native desktop installer from the **[Flashcard Master GitHub Releases Page](https://github.com/alexprodan99/flashcard-master/releases)**:
 
 | Operating System | Download Formats | Notes |
 | :--- | :--- | :--- |
-| **Windows** | `Flashcard-Master-Setup-x.x.x.exe` (NSIS) or `Flashcard-Master-x.x.x-portable.exe` | 64-bit Windows 10/11 installer or standalone portable binary |
-| **macOS** | `Flashcard-Master-x.x.x.dmg` | Universal binary supporting Apple Silicon (M1/M2/M3/M4) & Intel |
-| **Linux** | `Flashcard-Master-x.x.x.AppImage` or `flashcard-master_x.x.x_amd64.deb` | Self-contained AppImage or Debian/Ubuntu `.deb` package |
+| **Windows** | [`Flashcard.Master.Setup.1.0.1.exe`](https://github.com/alexprodan99/flashcard-master/releases) (NSIS) or `Flashcard.Master.1.0.1.exe` (Portable) | 64-bit Windows 10/11 installer or standalone portable binary |
+| **macOS** | [`Flashcard.Master-1.0.1-universal.dmg`](https://github.com/alexprodan99/flashcard-master/releases), [`arm64.dmg`](https://github.com/alexprodan99/flashcard-master/releases), [`x64.dmg`](https://github.com/alexprodan99/flashcard-master/releases) | Universal binary supporting Apple Silicon (M1/M2/M3/M4) & Intel |
+| **Linux** | [`Flashcard.Master-1.0.1.deb`](https://github.com/alexprodan99/flashcard-master/releases) or [`Flashcard.Master-1.0.1.AppImage`](https://github.com/alexprodan99/flashcard-master/releases) | Native Debian/Ubuntu `.deb` package or portable AppImage |
+
+::: tip 💡 Windows Defender SmartScreen Note
+Because Flashcard Master is a community open-source project without a costly commercial EV code-signing certificate, Windows or Edge may show an *"Unrecognized app"* or *"Isn't commonly downloaded"* prompt on new releases:
+1. **In Edge/Chrome**: Click `...` next to the download &rarr; select **Keep** &rarr; click **Show more** &rarr; select **Keep anyway**.
+2. **When opening the installer**: On the blue SmartScreen prompt, click the **More info** link &rarr; then click **Run anyway**.
+:::
+
+::: tip 🍎 macOS Gatekeeper Note
+On first launch on macOS, if prompted with *"unidentified developer"*:
+Open **System Settings** &rarr; **Privacy & Security** &rarr; scroll to Security and click **Open Anyway** (or right-click the app in `/Applications` and select **Open**).
+:::
 
 **Desktop Benefits:**
 * **Zero Terminal Required:** Double-click and run like any native application.

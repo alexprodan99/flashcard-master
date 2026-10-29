@@ -10,6 +10,9 @@ hero:
       text: 🚀 3-Minute Quickstart
       link: /user-guide/quickstart
     - theme: alt
+      text: 📥 Download Desktop App
+      link: https://github.com/alexprodan99/flashcard-master/releases
+    - theme: alt
       text: 📖 Read User Guide
       link: /user-guide/ingestion-playbook
     - theme: alt
@@ -37,7 +40,7 @@ features:
     details: Parallel background worker processes for long-running ingestions, synthesis jobs, and batch exports with real-time SSE progress streaming.
   - icon: 🖥️
     title: Standalone Desktop App
-    details: Packaged for Windows (.exe), macOS (.dmg), and Linux (.AppImage/.deb) with system tray controls, dark slate styling, and automatic userData storage.
+    details: Packaged for Windows (.exe), macOS (.dmg), and Linux (.AppImage/.deb) with system tray controls. [Download latest releases &rarr;](https://github.com/alexprodan99/flashcard-master/releases)
 ---
 
 ## 📚 Documentation Overview
@@ -46,6 +49,7 @@ Welcome to the official documentation for **Flashcard Master**! Whether you are 
 
 ### 🧭 Navigation Guide
 
+- **[📥 Download Desktop App (GitHub Releases)](https://github.com/alexprodan99/flashcard-master/releases)**: Grab standalone native installers for Windows (`.exe`), macOS (`.dmg`), and Linux (`.deb` / `.AppImage`).
 - **[3-Minute Quickstart](/user-guide/quickstart)**: Install, launch the local Web UI dashboard, and synthesize your first flashcard deck in under three minutes.
 - **[Ingestion Playbook](/user-guide/ingestion-playbook)**: Learn how to import web articles, crawl RSS feeds, connect Notion workspaces, and slice large EPUB/PDF books into chapter-level learning modules.
 - **[Synthesis & Prompt Tuning](/user-guide/synthesis-and-prompting)**: Discover how to tailor card density, choose cognitive personas, scale difficulty, and enforce quote grounding.
