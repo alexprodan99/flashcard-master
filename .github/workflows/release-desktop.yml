@@ -25,7 +25,9 @@ jobs:
             artifact_pattern: "dist-desktop/*.dmg"
           - os: ubuntu-latest
             target: "--linux"
-            artifact_pattern: "dist-desktop/*.AppImage dist-desktop/*.deb"
+            artifact_pattern: |
+              dist-desktop/*.AppImage
+              dist-desktop/*.deb
 
     steps:
       - name: Checkout Repository
