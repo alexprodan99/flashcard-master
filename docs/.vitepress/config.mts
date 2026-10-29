@@ -14,6 +14,7 @@ export default defineConfig({
     nav: [
       { text: 'Home', link: '/' },
       { text: 'User Guide', link: '/user-guide/quickstart' },
+      { text: 'Downloads & Releases', link: 'https://github.com/alexprodan99/flashcard-master/releases' },
       { text: 'Architecture', link: '/architecture' },
       { text: 'Settings', link: '/settings-configuration' },
       { text: 'GitHub', link: 'https://github.com/alexprodan99/flashcard-master' },
