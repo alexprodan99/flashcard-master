@@ -1,6 +1,6 @@
 {
   "name": "@flashcard-master/desktop",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Cross-platform Desktop Application for Flashcard Master",
   "author": "Ionut-Alexandru Prodan <prodanalexandru580@gmail.com>",
   "homepage": "https://github.com/alexprodan99/flashcard-master",
@@ -27,10 +27,10 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "@flashcard-master/adapters": "1.0.0",
-    "@flashcard-master/cli": "1.0.0",
-    "@flashcard-master/core": "1.0.0",
-    "@flashcard-master/web": "1.0.0",
+    "@flashcard-master/adapters": "1.0.1",
+    "@flashcard-master/cli": "1.0.1",
+    "@flashcard-master/core": "1.0.1",
+    "@flashcard-master/web": "1.0.1",
     "better-sqlite3": "^11.8.1",
     "electron-updater": "^6.8.11"
   },

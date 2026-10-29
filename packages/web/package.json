@@ -1,13 +1,34 @@
 {
   "name": "@flashcard-master/web",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Local Web UI Dashboard and REST API Server for Flashcard Master",
   "license": "AGPL-3.0",
+  "author": "Ionut-Alexandru Prodan <prodanalexandru580@gmail.com>",
+  "homepage": "https://alexprodan99.github.io/flashcard-master/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alexprodan99/flashcard-master.git",
+    "directory": "packages/web"
+  },
+  "bugs": {
+    "url": "https://github.com/alexprodan99/flashcard-master/issues"
+  },
+  "keywords": [
+    "svelte",
+    "svelte5",
+    "rest-api",
+    "web-ui",
+    "dashboard",
+    "flashcards",
+    "study",
+    "anki"
+  ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "type": "module",
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
   "publishConfig": {
     "access": "public"
@@ -20,8 +41,8 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "@flashcard-master/adapters": "1.0.0",
-    "@flashcard-master/core": "1.0.0"
+    "@flashcard-master/adapters": "1.0.1",
+    "@flashcard-master/core": "1.0.1"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.0",

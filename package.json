@@ -1,9 +1,9 @@
 {
   "name": "flashcard-master",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "license": "AGPL-3.0",
   "author": "Ionut-Alexandru Prodan <prodanalexandru580@gmail.com>",
-  "homepage": "https://github.com/alexprodan99/flashcard-master",
+  "homepage": "https://alexprodan99.github.io/flashcard-master/",
   "private": true,
   "type": "module",
   "workspaces": [
