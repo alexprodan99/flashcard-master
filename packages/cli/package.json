@@ -1,8 +1,30 @@
 {
   "name": "@flashcard-master/cli",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Local-first, grounded AI flashcard generator and study knowledge base CLI and dashboard",
   "license": "AGPL-3.0",
+  "author": "Ionut-Alexandru Prodan <prodanalexandru580@gmail.com>",
+  "homepage": "https://alexprodan99.github.io/flashcard-master/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alexprodan99/flashcard-master.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/alexprodan99/flashcard-master/issues"
+  },
+  "keywords": [
+    "cli",
+    "flashcards",
+    "anki",
+    "local-first",
+    "study",
+    "learning",
+    "spaced-repetition",
+    "ai",
+    "grounding",
+    "notion"
+  ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
@@ -10,7 +32,8 @@
   },
   "type": "module",
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
   "publishConfig": {
     "access": "public"
@@ -21,9 +44,9 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "@flashcard-master/adapters": "1.0.0",
-    "@flashcard-master/core": "1.0.0",
-    "@flashcard-master/web": "1.0.0",
+    "@flashcard-master/adapters": "1.0.1",
+    "@flashcard-master/core": "1.0.1",
+    "@flashcard-master/web": "1.0.1",
     "commander": "^12.1.0"
   },
   "devDependencies": {
