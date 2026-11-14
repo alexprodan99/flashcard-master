@@ -35,10 +35,10 @@ Extend Flashcard Master into multimedia learning by introducing three dedicated 
 
 3. **Speech-to-Text (STT) Port, Pre-STT Trimming & Three STT Adapters:**
    - Define `SpeechToTextPort` in `@flashcard-master/core` returning timestamped transcript segments.
-   - Implement three STT adapters in `@flashcard-master/adapters`:
-     - **OpenAI STT (`openai`)**: Uses existing OpenAI key (`whisper-1` / `gpt-4o-mini-transcribe` with timestamped output).
-     - **Gemini STT (`gemini`)**: Uses existing Gemini key (`gemini-3.6-flash` multimodal audio transcription returning timestamped segments).
-     - **Local Offline Whisper (`whisper-local`)**: Offline privacy-preserving transcription via configurable local Whisper CLI/binary or local Whisper HTTP server with selectable model size (`tiny`, `base`, `small`, `medium`, `large-v3`).
+   - Implement three STT adapters in `@flashcard-master/adapters` (users only select the STT provider—no cloud STT model picker):
+     - **OpenAI STT (`openai`)**: Uses existing OpenAI key and targets `whisper-1` under the hood (`verbose_json` segment timestamps).
+     - **Gemini STT (`gemini`)**: Uses existing Gemini key and targets `gemini-3.6-flash` multimodal audio transcription under the hood returning timestamped segments.
+     - **Local Offline Whisper (`whisper-local`)**: Offline privacy-preserving transcription via configurable local Whisper CLI/binary or local Whisper HTTP server with selectable model size (`tiny`, `base`, `small`, `medium`, `large-v3`) in Settings.
    - Implement **Pre-STT Audio Trimming** (`AudioTrimmer` / `ffmpeg` wrapper) so custom item timestamp ranges (e.g., `10:00 - 20:00`) trim the audio *before* calling STT, offsetting returned timestamps back to the original timeline.
 
 4. **Local `audio` & `video` Data Source Strategies:**

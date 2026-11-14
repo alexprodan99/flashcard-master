@@ -25,9 +25,9 @@ Many audio recordings, local videos, and YouTube talks do not have usable `.srt`
    - Offset timestamps returned by the STT adapter by each trimmed segment's `startSeconds` so all transcribed cues retain exact original media timeline coordinates.
    - Chunk oversized files exceeding provider limits (e.g., OpenAI 25MB limit) safely and shift timestamps across chunks.
 3. **Three Concrete STT Adapters (`packages/adapters/src/stt/`)**:
-   - `OpenAiSttAdapter`: Uses existing OpenAI API key (`whisper-1` or `gpt-4o-mini-transcribe`) with `verbose_json` / segment timestamps.
-   - `GeminiSttAdapter`: Uses existing Gemini API key (`gemini-3.6-flash`) with multimodal audio input / File API requesting structured JSON timestamped transcript segments.
-   - `LocalWhisperSttAdapter`: Runs local offline transcription via configurable `whisper` / `whisper.cpp` CLI binary or local Whisper HTTP endpoint (`baseUrl`, model tier such as `tiny`/`base`/`small`/`medium`/`large-v3`), producing zero cloud telemetry.
+   - `OpenAiSttAdapter`: Uses existing OpenAI API key and hardcodes `whisper-1` (`verbose_json` / `segment` timestamp granularities) under the hood—no cloud STT model selection exposed to users.
+   - `GeminiSttAdapter`: Uses existing Gemini API key and targets `gemini-3.6-flash` under the hood with multimodal audio input / File API requesting structured JSON timestamped transcript segments—no cloud STT model selection exposed to users.
+   - `LocalWhisperSttAdapter`: Runs local offline transcription via configurable `whisper` / `whisper.cpp` CLI binary or local Whisper HTTP endpoint (`baseUrl`, model tier such as `tiny`/`base`/`small`/`medium`/`large-v3` configured in Settings), producing zero cloud telemetry.
 
 ## Boundaries & Constraints
 

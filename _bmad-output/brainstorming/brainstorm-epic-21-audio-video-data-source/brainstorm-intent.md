@@ -45,10 +45,10 @@
 ## Pillar 3: Speech-to-Text (STT) Port, Pre-STT Trimming & Multi-Provider Adapters
 - **`SpeechToTextPort` (`@flashcard-master/core`)**:
   - Hexagonal port decoupling media ingestion from transcription backends, returning structured timestamped segments (`{ startSeconds, endSeconds, text }[]`).
-- **Three STT Backends**:
-  1. **OpenAI Audio (`openai`)**: Reuses existing OpenAI API key (`whisper-1` / `gpt-4o-mini-transcribe`, `verbose_json` / timestamped segments).
-  2. **Google Gemini Multimodal Audio (`gemini`)**: Reuses existing Gemini API key (`gemini-3.6-flash` / File API audio understanding with structured timestamped transcript output).
-  3. **Local Offline Whisper (`whisper-local`)**: Zero-telemetry local transcription via local `whisper` / `whisper.cpp` binary or configurable local Whisper endpoint/model in Settings.
+- **Three STT Backends** *(users pick only the provider—`OpenAI`, `Gemini`, or `Local Whisper`—without choosing cloud STT models)*:
+  1. **OpenAI Audio (`openai`)**: Reuses existing OpenAI API key and targets `whisper-1` (`verbose_json` / segment timestamps) under the hood.
+  2. **Google Gemini Multimodal Audio (`gemini`)**: Reuses existing Gemini API key and targets `gemini-3.6-flash` under the hood (File API / multimodal audio understanding returning structured timestamped transcript output).
+  3. **Local Offline Whisper (`whisper-local`)**: Zero-telemetry local transcription via local `whisper` / `whisper.cpp` binary or configurable local Whisper endpoint, with hardware model tier configured once in Settings.
 - **Pre-STT Audio Trimming (Speed & Cost Saver)**:
   - Whenever an item defines custom timestamp ranges (e.g., `10:00 - 20:00` out of a 2-hour video), trim/extract only those audio ranges (via `ffmpeg` or media utility) *before* sending audio to OpenAI, Gemini, or Local Whisper, offsetting returned segment timestamps back to original media timeline coordinates.
 
