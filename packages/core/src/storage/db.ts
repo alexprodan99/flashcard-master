@@ -7,7 +7,7 @@ export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS data_sources (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    type TEXT NOT NULL CHECK(type IN ('rss', 'web', 'local', 'sitemap', 'llms-txt', 'notion')),
+    type TEXT NOT NULL CHECK(type IN ('rss', 'web', 'local', 'sitemap', 'llms-txt', 'notion', 'audio', 'video', 'youtube')),
     uri TEXT NOT NULL,
     tags TEXT NOT NULL DEFAULT '[]',
     is_active INTEGER NOT NULL DEFAULT 1,
@@ -34,6 +34,8 @@ CREATE TABLE IF NOT EXISTS documents (
     word_count INTEGER DEFAULT 0,
     start_page INTEGER DEFAULT NULL,
     end_page INTEGER DEFAULT NULL,
+    start_seconds INTEGER DEFAULT NULL,
+    end_seconds INTEGER DEFAULT NULL,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
@@ -301,19 +303,27 @@ export function createDatabaseClient(options: DatabaseClientOptions = {}): Datab
 export function runMigrations(db: Database.Database): void {
   db.pragma("foreign_keys = OFF");
 
-  // 1. Check if data_sources table exists and needs check constraint update for 'sitemap', 'llms-txt', or 'notion'
+  // 1. Check if data_sources table exists and needs check constraint update for 'sitemap', 'llms-txt', 'notion', 'audio', 'video', 'youtube'
   const sourceRow = db
     .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='data_sources'")
     .get() as { sql?: string } | undefined;
 
-  if (sourceRow && sourceRow.sql && (!sourceRow.sql.includes("'sitemap'") || !sourceRow.sql.includes("'notion'"))) {
+  if (
+    sourceRow &&
+    sourceRow.sql &&
+    (!sourceRow.sql.includes("'sitemap'") ||
+      !sourceRow.sql.includes("'notion'") ||
+      !sourceRow.sql.includes("'audio'") ||
+      !sourceRow.sql.includes("'video'") ||
+      !sourceRow.sql.includes("'youtube'"))
+  ) {
     db.transaction(() => {
       db.exec("ALTER TABLE data_sources RENAME TO _data_sources_old;");
       db.exec(`
         CREATE TABLE data_sources (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
-            type TEXT NOT NULL CHECK(type IN ('rss', 'web', 'local', 'sitemap', 'llms-txt', 'notion')),
+            type TEXT NOT NULL CHECK(type IN ('rss', 'web', 'local', 'sitemap', 'llms-txt', 'notion', 'audio', 'video', 'youtube')),
             uri TEXT NOT NULL,
             tags TEXT NOT NULL DEFAULT '[]',
             is_active INTEGER NOT NULL DEFAULT 1,
@@ -362,6 +372,13 @@ export function runMigrations(db: Database.Database): void {
   if (cardsRow && cardsRow.sql && cardsRow.sql.includes("_data_sources_old")) {
     db.transaction(() => {
       db.exec("ALTER TABLE flashcards RENAME TO _flashcards_old;");
+      const oldCardCols = (db.prepare("PRAGMA table_info(_flashcards_old)").all() as Array<{ name: string }>).map(
+        (c) => c.name.toLowerCase()
+      );
+      const hasDocTitle = oldCardCols.includes("document_title") ? "document_title" : "NULL AS document_title";
+      const hasKeywords = oldCardCols.includes("keywords") ? "keywords" : "'[]' AS keywords";
+      const hasSourceLocator = oldCardCols.includes("source_locator") ? "source_locator" : "'' AS source_locator";
+
       db.exec(`
         CREATE TABLE flashcards (
             id TEXT PRIMARY KEY,
@@ -370,6 +387,9 @@ export function runMigrations(db: Database.Database): void {
             answer TEXT NOT NULL,
             source_quote TEXT NOT NULL,
             source_origin_url TEXT,
+            document_title TEXT,
+            keywords TEXT NOT NULL DEFAULT '[]',
+            source_locator TEXT NOT NULL DEFAULT '',
             difficulty TEXT NOT NULL CHECK(difficulty IN ('beginner', 'intermediate', 'expert', 'mixed')),
             persona_used TEXT NOT NULL DEFAULT 'socratic-mentor',
             target_deck TEXT NOT NULL DEFAULT 'Default',
@@ -379,13 +399,14 @@ export function runMigrations(db: Database.Database): void {
         );
       `);
       db.exec(`
-        INSERT INTO flashcards (id, source_id, question, answer, source_quote, source_origin_url, difficulty, persona_used, target_deck, tags, created_at, updated_at)
-        SELECT id, source_id, question, answer, source_quote, source_origin_url, difficulty, persona_used, target_deck, tags, created_at, updated_at FROM _flashcards_old;
+        INSERT INTO flashcards (id, source_id, question, answer, source_quote, source_origin_url, document_title, keywords, source_locator, difficulty, persona_used, target_deck, tags, created_at, updated_at)
+        SELECT id, source_id, question, answer, source_quote, source_origin_url, ${hasDocTitle}, ${hasKeywords}, ${hasSourceLocator}, difficulty, persona_used, target_deck, tags, created_at, updated_at FROM _flashcards_old;
       `);
       db.exec("DROP TABLE _flashcards_old;");
       db.exec("CREATE INDEX IF NOT EXISTS idx_flashcards_source_id ON flashcards(source_id);");
       db.exec("CREATE INDEX IF NOT EXISTS idx_flashcards_target_deck ON flashcards(target_deck);");
       db.exec("CREATE INDEX IF NOT EXISTS idx_flashcards_difficulty ON flashcards(difficulty);");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_flashcards_created_at_id ON flashcards(created_at DESC, id DESC);");
     })();
   }
 
@@ -402,6 +423,8 @@ export function runMigrations(db: Database.Database): void {
       const hasRaw = oldCols.includes("raw_content") ? "raw_content" : "NULL AS raw_content";
       const hasStart = oldCols.includes("start_page") ? "start_page" : "NULL AS start_page";
       const hasEnd = oldCols.includes("end_page") ? "end_page" : "NULL AS end_page";
+      const hasStartSec = oldCols.includes("start_seconds") ? "start_seconds" : "NULL AS start_seconds";
+      const hasEndSec = oldCols.includes("end_seconds") ? "end_seconds" : "NULL AS end_seconds";
 
       db.exec("ALTER TABLE documents RENAME TO _documents_old;");
       db.exec(`
@@ -416,13 +439,15 @@ export function runMigrations(db: Database.Database): void {
             word_count INTEGER DEFAULT 0,
             start_page INTEGER DEFAULT NULL,
             end_page INTEGER DEFAULT NULL,
+            start_seconds INTEGER DEFAULT NULL,
+            end_seconds INTEGER DEFAULT NULL,
             created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
             updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
         );
       `);
       db.exec(`
-        INSERT INTO documents (id, source_id, title, url, text_content, raw_content, content_hash, word_count, start_page, end_page, created_at, updated_at)
-        SELECT id, source_id, title, url, text_content, ${hasRaw}, content_hash, word_count, ${hasStart}, ${hasEnd}, created_at, updated_at FROM _documents_old;
+        INSERT INTO documents (id, source_id, title, url, text_content, raw_content, content_hash, word_count, start_page, end_page, start_seconds, end_seconds, created_at, updated_at)
+        SELECT id, source_id, title, url, text_content, ${hasRaw}, content_hash, word_count, ${hasStart}, ${hasEnd}, ${hasStartSec}, ${hasEndSec}, created_at, updated_at FROM _documents_old;
       `);
       db.exec("DROP TABLE _documents_old;");
       db.exec("CREATE INDEX IF NOT EXISTS idx_documents_source_id ON documents(source_id);");
@@ -466,6 +491,8 @@ export function runMigrations(db: Database.Database): void {
         word_count INTEGER DEFAULT 0,
         start_page INTEGER DEFAULT NULL,
         end_page INTEGER DEFAULT NULL,
+        start_seconds INTEGER DEFAULT NULL,
+        end_seconds INTEGER DEFAULT NULL,
         created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
         updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     );
@@ -479,28 +506,23 @@ export function runMigrations(db: Database.Database): void {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_source_url ON documents(source_id, url) WHERE url IS NOT NULL;
   `);
 
-  // 7. Ensure raw_content, start_page, and end_page columns exist in documents table for existing databases
+  // 7. Ensure raw_content, start_page, end_page, start_seconds, and end_seconds columns exist in documents table for existing databases
   const docCols = db.prepare("PRAGMA table_info(documents)").all() as Array<{ name: string }>;
   if (docCols && docCols.length > 0) {
-    if (!docCols.some((c) => c.name === "raw_content")) {
-      try {
-        db.exec("ALTER TABLE documents ADD COLUMN raw_content TEXT;");
-      } catch {
-        // Catch "duplicate column" or other non-fatal migration errors cleanly
-      }
-    }
-    if (!docCols.some((c) => c.name === "start_page")) {
-      try {
-        db.exec("ALTER TABLE documents ADD COLUMN start_page INTEGER DEFAULT NULL;");
-      } catch {
-        // Catch "duplicate column" or other non-fatal migration errors cleanly
-      }
-    }
-    if (!docCols.some((c) => c.name === "end_page")) {
-      try {
-        db.exec("ALTER TABLE documents ADD COLUMN end_page INTEGER DEFAULT NULL;");
-      } catch {
-        // Catch "duplicate column" or other non-fatal migration errors cleanly
+    const missingDocColumns: Array<[string, string]> = [
+      ["raw_content", "TEXT"],
+      ["start_page", "INTEGER DEFAULT NULL"],
+      ["end_page", "INTEGER DEFAULT NULL"],
+      ["start_seconds", "INTEGER DEFAULT NULL"],
+      ["end_seconds", "INTEGER DEFAULT NULL"],
+    ];
+    for (const [colName, colDef] of missingDocColumns) {
+      if (!docCols.some((c) => c.name === colName)) {
+        try {
+          db.exec(`ALTER TABLE documents ADD COLUMN ${colName} ${colDef};`);
+        } catch {
+          // Catch "duplicate column" or other non-fatal migration errors cleanly
+        }
       }
     }
   }
@@ -540,6 +562,7 @@ export function runMigrations(db: Database.Database): void {
       db.exec("CREATE INDEX IF NOT EXISTS idx_flashcards_source_id ON flashcards(source_id);");
       db.exec("CREATE INDEX IF NOT EXISTS idx_flashcards_target_deck ON flashcards(target_deck);");
       db.exec("CREATE INDEX IF NOT EXISTS idx_flashcards_difficulty ON flashcards(difficulty);");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_flashcards_created_at_id ON flashcards(created_at DESC, id DESC);");
     })();
   }
 
@@ -623,7 +646,7 @@ export function runMigrations(db: Database.Database): void {
             CREATE TABLE data_sources (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
-                type TEXT NOT NULL CHECK(type IN ('rss', 'web', 'local', 'sitemap', 'llms-txt', 'notion')),
+                type TEXT NOT NULL CHECK(type IN ('rss', 'web', 'local', 'sitemap', 'llms-txt', 'notion', 'audio', 'video', 'youtube')),
                 uri TEXT NOT NULL,
                 tags TEXT NOT NULL DEFAULT '[]',
                 is_active INTEGER NOT NULL DEFAULT 1,

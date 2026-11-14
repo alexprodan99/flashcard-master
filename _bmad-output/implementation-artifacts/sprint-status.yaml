@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 08-30-2026 20:47
-last_updated: 11-14-2026 09:55
+last_updated: 11-14-2026 13:13
 project: flashcard-master
 project_key: NOKEY
 tracking_system: file-system
@@ -210,8 +210,8 @@ development_status:
   20-7-electron-desktop-packaging-and-multi-os-release-pipeline: done
   epic-20-retrospective: done
 
-  epic-21: backlog
-  21-1-media-domain-schema-and-subtitle-parser: ready-for-dev
+  epic-21: in-progress
+  21-1-media-domain-schema-and-subtitle-parser: done
   21-2-speech-to-text-port-audio-trimming-and-adapters: ready-for-dev
   21-3-local-audio-and-video-ingestion-strategies: ready-for-dev
   21-4-youtube-data-source-ingestion-strategy: ready-for-dev

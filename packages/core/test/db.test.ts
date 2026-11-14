@@ -422,7 +422,89 @@ describe("SQLite Database Client", () => {
     expect(row.text_content).toBe("Legacy text content");
     expect(row.start_page).toBeNull();
     expect(row.end_page).toBeNull();
+    expect(row.start_seconds).toBeNull();
+    expect(row.end_seconds).toBeNull();
 
+    migratedDb.close();
+  });
+
+  it("migrates Epic 20 databases to support audio, video, youtube types and start_seconds/end_seconds without losing flashcard columns", () => {
+    const legacyDb = new (require("better-sqlite3"))(tempDbPath);
+    legacyDb.exec(`
+      CREATE TABLE data_sources (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          type TEXT NOT NULL CHECK(type IN ('rss', 'web', 'local', 'sitemap', 'llms-txt', 'notion')),
+          uri TEXT NOT NULL,
+          tags TEXT NOT NULL DEFAULT '[]',
+          is_active INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+          updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+      );
+      CREATE TABLE documents (
+          id TEXT PRIMARY KEY,
+          source_id TEXT NOT NULL REFERENCES data_sources(id) ON DELETE CASCADE,
+          title TEXT NOT NULL,
+          url TEXT,
+          text_content TEXT NOT NULL,
+          raw_content TEXT,
+          content_hash TEXT,
+          word_count INTEGER DEFAULT 0,
+          start_page INTEGER DEFAULT NULL,
+          end_page INTEGER DEFAULT NULL,
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+          updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+      );
+      CREATE TABLE flashcards (
+          id TEXT PRIMARY KEY,
+          source_id TEXT REFERENCES data_sources(id) ON DELETE SET NULL,
+          question TEXT NOT NULL,
+          answer TEXT NOT NULL,
+          source_quote TEXT NOT NULL,
+          source_origin_url TEXT,
+          document_title TEXT,
+          keywords TEXT NOT NULL DEFAULT '[]',
+          source_locator TEXT NOT NULL DEFAULT '',
+          difficulty TEXT NOT NULL CHECK(difficulty IN ('beginner', 'intermediate', 'expert', 'mixed')),
+          persona_used TEXT NOT NULL DEFAULT 'socratic-mentor',
+          target_deck TEXT NOT NULL DEFAULT 'Default',
+          tags TEXT NOT NULL DEFAULT '[]',
+          created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+          updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+      );
+      INSERT INTO data_sources (id, name, type, uri) VALUES ('src-notion', 'Workspace', 'notion', 'https://notion.so/123');
+      INSERT INTO documents (id, source_id, title, text_content, start_page, end_page) VALUES ('doc-1', 'src-notion', 'Page 1', 'Notes content', 1, 3);
+      INSERT INTO flashcards (id, source_id, question, answer, source_quote, document_title, keywords, source_locator, difficulty)
+      VALUES ('card-1', 'src-notion', 'Q?', 'A.', 'Notes content verbatim quote', 'Page 1', '["notes","kv"]', 'Section 1', 'intermediate');
+    `);
+    legacyDb.close();
+
+    const migratedDb = createDatabaseClient({ dbPath: tempDbPath });
+
+    // Verify new media source types insert without CHECK violation
+    expect(() => {
+      migratedDb.prepare("INSERT INTO data_sources (id, name, type, uri) VALUES ('src-audio', 'Podcasts', 'audio', '[\"/tmp/ep1.mp3\"]')").run();
+      migratedDb.prepare("INSERT INTO data_sources (id, name, type, uri) VALUES ('src-video', 'Lectures', 'video', '[\"/tmp/lec1.mp4\"]')").run();
+      migratedDb.prepare("INSERT INTO data_sources (id, name, type, uri) VALUES ('src-yt', 'Talks', 'youtube', '[\"https://youtu.be/abc\"]')").run();
+    }).not.toThrow();
+
+    // Verify enriched flashcard columns survived table rebuild
+    const card = migratedDb.prepare("SELECT * FROM flashcards WHERE id = 'card-1'").get() as any;
+    expect(card.document_title).toBe("Page 1");
+    expect(card.keywords).toBe('["notes","kv"]');
+    expect(card.source_locator).toBe("Section 1");
+
+    // Verify documents table gained start_seconds & end_seconds while preserving existing rows
+    const docCols = migratedDb.prepare("PRAGMA table_info(documents)").all() as Array<{ name: string }>;
+    expect(docCols.map((c) => c.name)).toContain("start_seconds");
+    expect(docCols.map((c) => c.name)).toContain("end_seconds");
+    const doc = migratedDb.prepare("SELECT * FROM documents WHERE id = 'doc-1'").get() as any;
+    expect(doc.start_page).toBe(1);
+    expect(doc.end_page).toBe(3);
+    expect(doc.start_seconds).toBeNull();
+    expect(doc.end_seconds).toBeNull();
+
+    expect(migratedDb.prepare("PRAGMA foreign_key_check").all()).toHaveLength(0);
     migratedDb.close();
   });
 });

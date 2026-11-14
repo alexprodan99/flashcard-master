@@ -20,5 +20,6 @@ export * from "./services/export-service.js";
 export * from "./services/media-service.js";
 export * from "./services/settings-service.js";
 export * from "./services/document-slicing-engine.js";
+export * from "./services/subtitle-parser.js";
 export * from "./llm/dialect-compiler.js";
 

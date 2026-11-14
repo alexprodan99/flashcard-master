@@ -565,5 +565,48 @@ describe("DocumentRepository", () => {
     const res20 = docRepo.listAll({ search: "20" });
     expect(res20.some((d) => d.id === "page-doc-1")).toBe(true);
   });
+
+  it("persists and hydrates startSeconds and endSeconds in upsert and upsertBatch", () => {
+    const upserted = docRepo.upsert({
+      id: "media-doc-1",
+      sourceId: testSourceId,
+      title: "Podcast Segment 1",
+      url: "https://youtu.be/abc?t=150s",
+      textContent: "[02:30 - 14:00] Distributed consensus discussion.",
+      startSeconds: 150,
+      endSeconds: 840,
+    });
+
+    expect(upserted.startSeconds).toBe(150);
+    expect(upserted.endSeconds).toBe(840);
+    expect(docRepo.getById("media-doc-1")?.startSeconds).toBe(150);
+    expect(docRepo.getById("media-doc-1")?.endSeconds).toBe(840);
+
+    docRepo.upsertBatch([
+      {
+        id: "media-doc-2",
+        sourceId: testSourceId,
+        title: "Lecture Segment 2",
+        url: "file:///media/lecture.mp4#t=840-1500",
+        textContent: "[14:00 - 25:00] Raft leader election.",
+        startSeconds: 840,
+        endSeconds: 1500,
+      },
+      {
+        id: "text-doc-3",
+        sourceId: testSourceId,
+        title: "Plain Text Doc",
+        textContent: "No timestamps on text docs.",
+      },
+    ]);
+
+    const batchMedia = docRepo.getById("media-doc-2");
+    expect(batchMedia?.startSeconds).toBe(840);
+    expect(batchMedia?.endSeconds).toBe(1500);
+
+    const plainDoc = docRepo.getById("text-doc-3");
+    expect(plainDoc?.startSeconds).toBeNull();
+    expect(plainDoc?.endSeconds).toBeNull();
+  });
 });
 

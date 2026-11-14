@@ -2,7 +2,7 @@
 CREATE TABLE IF NOT EXISTS data_sources (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    type TEXT NOT NULL CHECK(type IN ('rss', 'web', 'local', 'sitemap', 'llms-txt')),
+    type TEXT NOT NULL CHECK(type IN ('rss', 'web', 'local', 'sitemap', 'llms-txt', 'notion', 'audio', 'video', 'youtube')),
     uri TEXT NOT NULL,
     tags TEXT NOT NULL DEFAULT '[]',
     is_active INTEGER NOT NULL DEFAULT 1,
@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS documents (
     word_count INTEGER DEFAULT 0,
     start_page INTEGER DEFAULT NULL,
     end_page INTEGER DEFAULT NULL,
+    start_seconds INTEGER DEFAULT NULL,
+    end_seconds INTEGER DEFAULT NULL,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
