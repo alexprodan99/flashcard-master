@@ -2,8 +2,8 @@
 title: 'Story 21.2: Speech-to-Text (STT) Port, Pre-STT Audio Trimming & Multi-Provider Adapters (OpenAI, Gemini, Local Whisper)'
 type: 'feature'
 created: '2026-11-14'
-status: 'ready-for-dev'
-baseline_commit: '3b74d42'
+status: 'done'
+baseline_commit: '9b4eb78'
 review_loop_iteration: 0
 context:
   - '_bmad-output/implementation-artifacts/epic-21-context.md'
@@ -45,13 +45,13 @@ Many audio recordings, local videos, and YouTube talks do not have usable `.srt`
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `packages/core/src/ports/index.ts` -- Define and export `SpeechToTextPort`, `SttTranscriptionInput`, `SttTranscriptionResult`, and `TranscriptCue`.
-- [ ] `packages/adapters/src/media/audio-trimmer.ts` -- Implement `AudioTrimmer` (extract audio, trim to timestamp ranges, chunk oversized audio, offset cue timestamps, clean up temp files, probe `ffmpeg` availability).
-- [ ] `packages/adapters/src/stt/openai-stt-adapter.ts` -- Implement `OpenAiSttAdapter` supporting timestamped segment output and chunk merging.
-- [ ] `packages/adapters/src/stt/gemini-stt-adapter.ts` -- Implement `GeminiSttAdapter` using Gemini multimodal audio + structured JSON segments.
-- [ ] `packages/adapters/src/stt/local-whisper-stt-adapter.ts` -- Implement `LocalWhisperSttAdapter` supporting local Whisper CLI JSON/SRT output or local Whisper server HTTP endpoint.
-- [ ] `packages/adapters/src/stt/stt-factory.ts` -- Factory resolving `openai` | `gemini` | `whisper-local` adapters from settings/credentials.
-- [ ] Unit tests -- Test `AudioTrimmer` range trimming and timestamp offset math, plus mocked unit tests for all three STT adapters and error handling.
+- [x] `packages/core/src/ports/index.ts` -- Define and export `SpeechToTextPort`, `SttTranscriptionInput`, `SttTranscriptionResult`, and `TranscriptCue`.
+- [x] `packages/adapters/src/media/audio-trimmer.ts` -- Implement `AudioTrimmer` (extract audio, trim to timestamp ranges, chunk oversized audio, offset cue timestamps, clean up temp files, probe `ffmpeg` availability).
+- [x] `packages/adapters/src/stt/openai-stt-adapter.ts` -- Implement `OpenAiSttAdapter` supporting timestamped segment output and chunk merging.
+- [x] `packages/adapters/src/stt/gemini-stt-adapter.ts` -- Implement `GeminiSttAdapter` using Gemini multimodal audio + structured JSON segments.
+- [x] `packages/adapters/src/stt/local-whisper-stt-adapter.ts` -- Implement `LocalWhisperSttAdapter` supporting local Whisper CLI JSON/SRT output or local Whisper server HTTP endpoint.
+- [x] `packages/adapters/src/stt/stt-factory.ts` -- Factory resolving `openai` | `gemini` | `whisper-local` adapters from settings/credentials.
+- [x] Unit tests -- Test `AudioTrimmer` range trimming and timestamp offset math, plus mocked unit tests for all three STT adapters and error handling.
 
 **Acceptance Criteria:**
 - `SpeechToTextPort` and `SttProvider` (`openai` | `gemini` | `whisper-local`) contracts are exported from `@flashcard-master/core`.
