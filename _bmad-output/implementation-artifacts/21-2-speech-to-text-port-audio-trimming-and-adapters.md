@@ -65,3 +65,9 @@ Many audio recordings, local videos, and YouTube talks do not have usable `.srt`
 - `npm run typecheck` -- expected: 0 TypeScript errors.
 - `npm test` -- expected: all unit tests for `AudioTrimmer` and STT adapters pass.
 
+## Implementation Notes
+
+- **Bundled `ffmpeg` & `ffprobe` Runtime (`AudioTrimmer`)**: `@flashcard-master/adapters` bundles `ffmpeg-static` and `ffprobe-static` (with `asarUnpack` rules in `packages/desktop/electron-builder.json` and `FFMPEG_PATH` / `FFPROBE_PATH` env overrides), so audio extraction, >24 MB chunking, and timestamp range trimming work out of the box across Windows, macOS, and Linux.
+- **On-Demand Cross-Platform `LocalWhisperSttAdapter`**: Unless a custom HTTP endpoint or explicit binary path is configured, `LocalWhisperSttAdapter` automatically downloads and caches the platform `whisper.cpp` (`whisper-cli`) binary (`win32`, `darwin`, `linux` via `x64`/`arm64`) and GGML model weights (`ggml-<model>.bin` from HuggingFace) into `~/.flashcard-master/whisper/` (`WHISPER_CACHE_DIR`) on first use, converting input media to 16 kHz mono WAV before offline transcription.
+- **Smart Default STT Provider Fallback**: `createSttAdapterFromSettings()` defaults to `"gemini"` automatically when `default_stt_provider` and `openai_api_key` are unset and `gemini_api_key` is configured.
+

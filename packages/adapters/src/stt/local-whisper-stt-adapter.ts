@@ -1,6 +1,11 @@
+import * as fsSync from "node:fs";
 import * as fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import * as zlib from "node:zlib";
+import JSZip from "jszip";
 import {
   type SpeechToTextPort,
   type SttTranscriptionInput,
@@ -29,6 +34,10 @@ export interface LocalWhisperSttConfig {
   binaryPath?: string;
   endpoint?: string;
   model?: LocalWhisperModel | string;
+  cacheDir?: string;
+  autoDownload?: boolean;
+  platform?: NodeJS.Platform;
+  arch?: string;
   timeoutMs?: number;
   tempDir?: string;
   commandRunner?: CommandRunner;
@@ -43,6 +52,250 @@ export interface LocalWhisperAvailability {
 }
 
 const BRACKET_TIMESTAMP_LINE_RE = /^\[([0-9:.,]+)\s*-->\s*([0-9:.,]+)\]\s*(.+)$/;
+
+interface WhisperBinaryAssetSpec {
+  archiveType: "zip" | "tar.gz";
+  url: string;
+  binaryNames: string[];
+}
+
+function resolveWhisperBinaryAsset(
+  platform: NodeJS.Platform,
+  arch: string
+): WhisperBinaryAssetSpec | null {
+  if (platform === "win32") {
+    if (arch === "arm64") {
+      return {
+        archiveType: "zip",
+        url: "https://github.com/ggml-org/whisper.cpp/releases/download/b5454/whisper-bin-win-cpu-arm64.zip",
+        binaryNames: ["whisper-cli.exe", "main.exe"],
+      };
+    }
+    return {
+      archiveType: "zip",
+      url: "https://github.com/ggml-org/whisper.cpp/releases/download/v1.9.2/whisper-bin-x64.zip",
+      binaryNames: ["whisper-cli.exe", "main.exe"],
+    };
+  }
+
+  if (platform === "linux") {
+    if (arch === "arm64") {
+      return {
+        archiveType: "tar.gz",
+        url: "https://github.com/ggml-org/whisper.cpp/releases/download/b5454/whisper-bin-ubuntu-arm64.tar.gz",
+        binaryNames: ["whisper-cli", "main"],
+      };
+    }
+    if (arch === "x64") {
+      return {
+        archiveType: "tar.gz",
+        url: "https://github.com/ggml-org/whisper.cpp/releases/download/b5454/whisper-bin-ubuntu-x64.tar.gz",
+        binaryNames: ["whisper-cli", "main"],
+      };
+    }
+    return null;
+  }
+
+  if (platform === "darwin") {
+    if (arch === "arm64") {
+      return {
+        archiveType: "tar.gz",
+        url: "https://registry.npmjs.org/@promer94/whisper-tauri-aarch64-apple-darwin/-/whisper-tauri-aarch64-apple-darwin-0.0.1.tgz",
+        binaryNames: ["whisper-aarch64-apple-darwin", "whisper-cli", "main"],
+      };
+    }
+    if (arch === "x64") {
+      return {
+        archiveType: "tar.gz",
+        url: "https://registry.npmjs.org/@promer94/whisper-tauri-x86_64-apple-darwin/-/whisper-tauri-x86_64-apple-darwin-0.0.1.tgz",
+        binaryNames: ["whisper-x86_64-apple-darwin", "whisper-cli", "main"],
+      };
+    }
+    return null;
+  }
+
+  return null;
+}
+
+function normalizeGgmlModelName(model: string): string {
+  const cleaned = model
+    .trim()
+    .replace(/^ggml-/i, "")
+    .replace(/\.bin$/i, "")
+    .replace(/[^a-z0-9._-]/gi, "");
+  return cleaned || "base";
+}
+
+function isSharedLibraryOrLicense(baseName: string): boolean {
+  const lower = baseName.toLowerCase();
+  return (
+    lower.endsWith(".dll") ||
+    lower.endsWith(".dylib") ||
+    lower.endsWith(".so") ||
+    /\.so\.[0-9.]+$/.test(lower) ||
+    lower === "license"
+  );
+}
+
+function shouldKeepArchiveEntry(
+  baseName: string,
+  spec: WhisperBinaryAssetSpec
+): { keep: boolean; isTargetBinary: boolean } {
+  const lower = baseName.toLowerCase();
+  const isTargetBinary = spec.binaryNames.some((n) => n.toLowerCase() === lower);
+  if (isTargetBinary) {
+    return { keep: true, isTargetBinary: true };
+  }
+  return { keep: isSharedLibraryOrLicense(baseName), isTargetBinary: false };
+}
+
+function parseTarOctalOrNull(slice: Uint8Array): number {
+  const text = Buffer.from(slice).toString("utf8").replace(/\0.*$/, "").trim();
+  if (!text) return 0;
+  return parseInt(text, 8) || 0;
+}
+
+function readTarString(slice: Uint8Array): string {
+  return Buffer.from(slice).toString("utf8").replace(/\0.*$/, "").trim();
+}
+
+async function extractWhisperArchive(options: {
+  archiveBuffer: Buffer;
+  binDir: string;
+  spec: WhisperBinaryAssetSpec;
+  targetBinaryName: string;
+}): Promise<void> {
+  const { archiveBuffer, binDir, spec, targetBinaryName } = options;
+  await fs.mkdir(binDir, { recursive: true });
+  const primaryLower = spec.binaryNames[0]?.toLowerCase() ?? "";
+  let primaryWritten = false;
+
+  if (spec.archiveType === "zip") {
+    const zip = await JSZip.loadAsync(archiveBuffer);
+    for (const [entryName, entry] of Object.entries(zip.files)) {
+      if (entry.dir) continue;
+      const baseName = path.posix.basename(entryName);
+      if (!baseName) continue;
+      const { keep, isTargetBinary } = shouldKeepArchiveEntry(baseName, spec);
+      if (!keep) continue;
+
+      const isPrimary = isTargetBinary && baseName.toLowerCase() === primaryLower;
+      if (isTargetBinary && !isPrimary && primaryWritten) {
+        continue;
+      }
+
+      const destName = isTargetBinary ? targetBinaryName : baseName;
+      const destPath = path.join(binDir, destName);
+      const data = await entry.async("nodebuffer");
+      await fs.writeFile(destPath, data);
+      if (isTargetBinary && !targetBinaryName.endsWith(".exe")) {
+        await fs.chmod(destPath, 0o755);
+      }
+      if (isPrimary) {
+        primaryWritten = true;
+      }
+    }
+    return;
+  }
+
+  const tarBuffer = zlib.gunzipSync(archiveBuffer);
+  const deferredSymlinks: Array<{ destName: string; targetName: string; isBinary: boolean }> = [];
+  let paxLongPath: string | null = null;
+  let gnuLongName: string | null = null;
+
+  let offset = 0;
+  while (offset + 512 <= tarBuffer.length) {
+    const header = tarBuffer.subarray(offset, offset + 512);
+    if (header.every((b) => b === 0)) {
+      break;
+    }
+
+    const rawName = readTarString(header.subarray(0, 100));
+    const size = parseTarOctalOrNull(header.subarray(124, 136));
+    const typeFlag = String.fromCharCode(header[156] || 48);
+    const linkName = readTarString(header.subarray(157, 257));
+    const prefix = readTarString(header.subarray(345, 500));
+
+    offset += 512;
+    const dataStart = offset;
+    const dataEnd = Math.min(tarBuffer.length, dataStart + size);
+    const payload = tarBuffer.subarray(dataStart, dataEnd);
+    offset += Math.ceil(size / 512) * 512;
+
+    if (typeFlag === "L") {
+      gnuLongName = payload.toString("utf8").replace(/\0.*$/, "").trim();
+      continue;
+    }
+
+    if (typeFlag === "x") {
+      const paxText = payload.toString("utf8");
+      const pathMatch = /(?:^|\n)\d+\s+path=([^\n]+)/.exec(paxText);
+      if (pathMatch) {
+        paxLongPath = pathMatch[1].trim();
+      }
+      continue;
+    }
+
+    const entryPath = paxLongPath ?? gnuLongName ?? (prefix ? `${prefix}/${rawName}` : rawName);
+    paxLongPath = null;
+    gnuLongName = null;
+
+    const baseName = path.posix.basename(entryPath);
+    if (!baseName) continue;
+    const { keep, isTargetBinary } = shouldKeepArchiveEntry(baseName, spec);
+    if (!keep) continue;
+
+    const isPrimary = isTargetBinary && baseName.toLowerCase() === primaryLower;
+    if (isTargetBinary && !isPrimary && primaryWritten) {
+      continue;
+    }
+
+    const destName = isTargetBinary ? targetBinaryName : baseName;
+    if (typeFlag === "2" && linkName) {
+      deferredSymlinks.push({
+        destName,
+        targetName: path.posix.basename(linkName),
+        isBinary: isTargetBinary,
+      });
+      continue;
+    }
+
+    if (typeFlag === "0" || typeFlag === "\0") {
+      const destPath = path.join(binDir, destName);
+      await fs.writeFile(destPath, payload);
+      if ((isTargetBinary || baseName.includes(".so") || baseName.endsWith(".dylib")) && !targetBinaryName.endsWith(".exe")) {
+        await fs.chmod(destPath, 0o755);
+      }
+      if (isPrimary) {
+        primaryWritten = true;
+      }
+    }
+  }
+
+  // Resolve symlinks (with multi-pass copy fallback for chained libs like .so -> .so.0 -> .so.0.26.0)
+  let pendingLinks = deferredSymlinks;
+  for (let pass = 0; pass < 3 && pendingLinks.length > 0; pass += 1) {
+    const nextPending: typeof deferredSymlinks = [];
+    for (const link of pendingLinks) {
+      const destPath = path.join(binDir, link.destName);
+      const resolvedTarget = path.join(binDir, link.targetName);
+      await fs.rm(destPath, { force: true }).catch(() => undefined);
+      try {
+        await fs.symlink(link.targetName, destPath);
+      } catch {
+        if (fsSync.existsSync(resolvedTarget)) {
+          await fs.copyFile(resolvedTarget, destPath);
+          if (link.isBinary && !targetBinaryName.endsWith(".exe")) {
+            await fs.chmod(destPath, 0o755);
+          }
+        } else {
+          nextPending.push(link);
+        }
+      }
+    }
+    pendingLinks = nextPending;
+  }
+}
 
 function parseBracketTimestampStdout(stdout: string, offsetSeconds: number): TranscriptCue[] {
   const cues: TranscriptCue[] = [];
@@ -67,12 +320,19 @@ function parseBracketTimestampStdout(stdout: string, offsetSeconds: number): Tra
 }
 
 export class LocalWhisperSttAdapter implements SpeechToTextPort {
+  private static readonly inFlightDownloads = new Map<string, Promise<string>>();
+
   readonly provider = "whisper-local" as const;
 
   readonly binaryPath: string;
   readonly httpEndpoint?: string;
   readonly model: string;
+  readonly cacheDir: string;
+  readonly autoDownload: boolean;
 
+  private readonly hasExplicitBinary: boolean;
+  private readonly platform: NodeJS.Platform;
+  private readonly arch: string;
   private readonly timeoutMs: number;
   private readonly tempDir: string;
   private readonly commandRunner: CommandRunner;
@@ -84,14 +344,167 @@ export class LocalWhisperSttAdapter implements SpeechToTextPort {
     const isHttp = /^https?:\/\//i.test(cleanEndpoint);
 
     this.httpEndpoint = isHttp ? cleanEndpoint.replace(/\/+$/, "") : undefined;
+    this.hasExplicitBinary = Boolean(config.binaryPath?.trim() || (!isHttp && cleanEndpoint));
     this.binaryPath =
       config.binaryPath?.trim() ||
       (!isHttp && cleanEndpoint ? cleanEndpoint : "whisper");
     this.model = config.model?.trim() || "base";
+    this.platform = config.platform ?? process.platform;
+    this.arch = config.arch ?? process.arch;
+    this.cacheDir =
+      config.cacheDir?.trim() ||
+      process.env.WHISPER_CACHE_DIR?.trim() ||
+      path.join(os.homedir(), ".flashcard-master", "whisper");
+    this.autoDownload = config.autoDownload ?? (!isHttp && !this.hasExplicitBinary && !config.commandRunner);
     this.timeoutMs = config.timeoutMs ?? 600_000;
     this.tempDir = config.tempDir || os.tmpdir();
     this.commandRunner = config.commandRunner ?? defaultCommandRunner;
     this.fetchFn = config.customFetch ?? globalThis.fetch;
+  }
+
+  private getTargetBinaryName(): string {
+    return this.platform === "win32" ? "whisper-cli.exe" : "whisper-cli";
+  }
+
+  private getCachedBinaryPath(): string {
+    return path.join(this.cacheDir, "bin", this.getTargetBinaryName());
+  }
+
+  private getExistingManagedBinaryPath(): string | null {
+    const cached = this.getCachedBinaryPath();
+    if (fsSync.existsSync(cached)) {
+      return cached;
+    }
+    if (this.platform === "darwin") {
+      for (const candidate of ["/opt/homebrew/bin/whisper-cli", "/usr/local/bin/whisper-cli"]) {
+        if (fsSync.existsSync(candidate)) {
+          return candidate;
+        }
+      }
+    }
+    return null;
+  }
+
+  private resolveCachedModelPath(): { modelPath: string; exists: boolean } {
+    if (this.model.toLowerCase().endsWith(".bin") && fsSync.existsSync(this.model)) {
+      return { modelPath: path.resolve(this.model), exists: true };
+    }
+    const normalized = normalizeGgmlModelName(this.model);
+    const modelPath = path.join(this.cacheDir, "models", `ggml-${normalized}.bin`);
+    return { modelPath, exists: fsSync.existsSync(modelPath) };
+  }
+
+  private runDeduplicatedDownload(key: string, fn: () => Promise<string>): Promise<string> {
+    const existing = LocalWhisperSttAdapter.inFlightDownloads.get(key);
+    if (existing) {
+      return existing;
+    }
+    const promise = fn().finally(() => {
+      LocalWhisperSttAdapter.inFlightDownloads.delete(key);
+    });
+    LocalWhisperSttAdapter.inFlightDownloads.set(key, promise);
+    return promise;
+  }
+
+  async ensureWhisperCppBinary(signal?: AbortSignal): Promise<string> {
+    const existing = this.getExistingManagedBinaryPath();
+    if (existing) {
+      return existing;
+    }
+
+    const spec = resolveWhisperBinaryAsset(this.platform, this.arch);
+    if (!spec) {
+      throw new Error(
+        `[whisper-local] Automatic whisper.cpp binary download is not supported for ${this.platform}/${this.arch}. Configure a custom binary path or HTTP endpoint in Settings > Speech-to-Text.`
+      );
+    }
+
+    const binDir = path.join(this.cacheDir, "bin");
+    const targetBinaryName = this.getTargetBinaryName();
+    const targetBinaryPath = path.join(binDir, targetBinaryName);
+
+    return this.runDeduplicatedDownload(`bin:${targetBinaryPath}`, async () => {
+      const doubleCheck = this.getExistingManagedBinaryPath();
+      if (doubleCheck) {
+        return doubleCheck;
+      }
+
+      const timeout = withTimeoutSignal(Math.max(this.timeoutMs, 120_000), signal);
+      try {
+        const response = await this.fetchFn(spec.url, { signal: timeout.signal });
+        if (!response.ok) {
+          throw new Error(
+            `[whisper-local] Failed to download whisper.cpp binary (${response.status} ${response.statusText}) from ${spec.url}.`
+          );
+        }
+
+        const archiveBuffer = Buffer.from(await response.arrayBuffer());
+        await extractWhisperArchive({
+          archiveBuffer,
+          binDir,
+          spec,
+          targetBinaryName,
+        });
+
+        if (!fsSync.existsSync(targetBinaryPath)) {
+          throw new Error(
+            `[whisper-local] Downloaded whisper.cpp archive from ${spec.url} did not contain expected binary "${targetBinaryName}".`
+          );
+        }
+
+        return targetBinaryPath;
+      } finally {
+        timeout.cleanup();
+      }
+    });
+  }
+
+  async ensureWhisperCppModel(signal?: AbortSignal): Promise<string> {
+    const { modelPath, exists } = this.resolveCachedModelPath();
+    if (exists) {
+      return modelPath;
+    }
+
+    const normalized = normalizeGgmlModelName(this.model);
+    const modelUrl = `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-${normalized}.bin`;
+
+    return this.runDeduplicatedDownload(`model:${modelPath}`, async () => {
+      if (fsSync.existsSync(modelPath)) {
+        return modelPath;
+      }
+
+      await fs.mkdir(path.dirname(modelPath), { recursive: true });
+      const partPath = `${modelPath}.part`;
+      const timeout = withTimeoutSignal(Math.max(this.timeoutMs, 600_000), signal);
+
+      try {
+        const response = await this.fetchFn(modelUrl, { signal: timeout.signal });
+        if (!response.ok) {
+          throw new Error(
+            `[whisper-local] Failed to download Whisper model "ggml-${normalized}.bin" (${response.status} ${response.statusText}) from ${modelUrl}.`
+          );
+        }
+
+        if (response.body) {
+          await pipeline(
+            Readable.fromWeb(response.body as any),
+            fsSync.createWriteStream(partPath),
+            { signal: timeout.signal }
+          );
+        } else {
+          const buf = Buffer.from(await response.arrayBuffer());
+          await fs.writeFile(partPath, buf);
+        }
+
+        await fs.rename(partPath, modelPath);
+        return modelPath;
+      } catch (err) {
+        await fs.rm(partPath, { force: true }).catch(() => undefined);
+        throw err;
+      } finally {
+        timeout.cleanup();
+      }
+    });
   }
 
   private buildMissingBinaryError(): Error {
@@ -133,6 +546,31 @@ export class LocalWhisperSttAdapter implements SpeechToTextPort {
       } finally {
         timeout.cleanup();
       }
+    }
+
+    if (this.autoDownload && !this.hasExplicitBinary) {
+      const cachedBinary = this.getExistingManagedBinaryPath();
+      const { exists: modelExists, modelPath } = this.resolveCachedModelPath();
+      const asset = resolveWhisperBinaryAsset(this.platform, this.arch);
+
+      if (!cachedBinary && !asset) {
+        return {
+          available: false,
+          mode: "cli",
+          error: `[whisper-local] Automatic whisper.cpp binary download is not supported for ${this.platform}/${this.arch}.`,
+        };
+      }
+
+      const binStatus = cachedBinary ? `binary cached (${cachedBinary})` : "binary will auto-download on first run";
+      const modelStatus = modelExists
+        ? `model cached (${path.basename(modelPath)})`
+        : `model "${path.basename(modelPath)}" will auto-download on first run`;
+
+      return {
+        available: true,
+        mode: "cli",
+        details: `Managed whisper.cpp ready: ${binStatus}, ${modelStatus}`,
+      };
     }
 
     try {
@@ -340,26 +778,88 @@ export class LocalWhisperSttAdapter implements SpeechToTextPort {
         await fs.writeFile(audioFilePath, input.audioBuffer);
       }
 
-      const args = [
-        audioFilePath!,
-        "--model",
-        this.model,
-        "--output_dir",
-        outDir,
-        "--output_format",
-        "json",
-      ];
+      const resolvedBinary = this.autoDownload
+        ? await this.ensureWhisperCppBinary(input.signal)
+        : this.binaryPath;
+      const binaryBase = path.basename(resolvedBinary).toLowerCase();
+      const isWhisperCpp =
+        this.autoDownload ||
+        binaryBase.startsWith("whisper-cli") ||
+        binaryBase.startsWith("whisper-cpp");
 
-      if (input.language?.trim()) {
-        args.push("--language", input.language.trim());
-      }
-      if (input.prompt?.trim()) {
-        args.push("--initial_prompt", input.prompt.trim());
+      let args: string[];
+      if (isWhisperCpp) {
+        const resolvedModel = this.autoDownload
+          ? await this.ensureWhisperCppModel(input.signal)
+          : this.model;
+
+        let targetAudioPath = audioFilePath!;
+        const wavPath = path.join(workDir, "input-16k.wav");
+        try {
+          const ffRes = await this.commandRunner(
+            "ffmpeg",
+            [
+              "-y",
+              "-i",
+              audioFilePath!,
+              "-vn",
+              "-ac",
+              "1",
+              "-ar",
+              "16000",
+              "-c:a",
+              "pcm_s16le",
+              wavPath,
+            ],
+            {
+              timeoutMs: this.timeoutMs,
+              signal: input.signal,
+            }
+          );
+          if (ffRes.exitCode === 0 && fsSync.existsSync(wavPath)) {
+            targetAudioPath = wavPath;
+          }
+        } catch {
+          // Fall back to original audio file if ffmpeg conversion is unavailable
+        }
+
+        args = [
+          "-m",
+          resolvedModel,
+          "-f",
+          targetAudioPath,
+          "-oj",
+          "-of",
+          path.join(outDir, "transcript"),
+          "-l",
+          input.language?.trim() || "auto",
+        ];
+
+        if (input.prompt?.trim()) {
+          args.push("--prompt", input.prompt.trim());
+        }
+      } else {
+        args = [
+          audioFilePath!,
+          "--model",
+          this.model,
+          "--output_dir",
+          outDir,
+          "--output_format",
+          "json",
+        ];
+
+        if (input.language?.trim()) {
+          args.push("--language", input.language.trim());
+        }
+        if (input.prompt?.trim()) {
+          args.push("--initial_prompt", input.prompt.trim());
+        }
       }
 
       let cmdResult;
       try {
-        cmdResult = await this.commandRunner(this.binaryPath, args, {
+        cmdResult = await this.commandRunner(resolvedBinary, args, {
           timeoutMs: this.timeoutMs,
           signal: input.signal,
         });
