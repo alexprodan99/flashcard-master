@@ -1,4 +1,4 @@
-import type { DataSource, RawDocument, CleanTextDocument, SyncState, Flashcard, DifficultyLevel, ImageQuality, Setting, ProviderVerificationResult, SecretProvider, JobLogLevel } from "../domain/models.js";
+import type { DataSource, RawDocument, CleanTextDocument, SyncState, Flashcard, DifficultyLevel, ImageQuality, Setting, ProviderVerificationResult, SecretProvider, JobLogLevel, SttProvider } from "../domain/models.js";
 import type { DocumentSlicingOptions } from "../services/document-slicing-engine.js";
 
 export interface IngestionOptions {
@@ -113,5 +113,44 @@ export interface ProviderVerifierPort {
     timeoutMs?: number;
   }): Promise<ProviderVerificationResult>;
 }
+
+export interface TranscriptCue {
+  startSeconds: number;
+  endSeconds: number;
+  text: string;
+}
+
+export interface SttTranscriptionInput {
+  /** Path to a local audio or video file on disk. */
+  audioPath?: string;
+  /** Raw in-memory audio buffer (used when audioPath is not provided or already loaded). */
+  audioBuffer?: Buffer;
+  /** MIME type hint (e.g., "audio/mpeg", "audio/wav", "audio/mp4"). */
+  mimeType?: string;
+  /** Optional filename hint when sending an in-memory buffer. */
+  filename?: string;
+  /** Optional ISO-639-1 language code hint (e.g., "en", "ro"). */
+  language?: string;
+  /** Optional vocabulary or context prompt hint for the speech recognizer. */
+  prompt?: string;
+  /** Optional baseline timestamp offset (in seconds) added to every returned cue. */
+  timestampOffsetSeconds?: number;
+  /** Optional AbortSignal for task cancellation. */
+  signal?: AbortSignal;
+}
+
+export interface SttTranscriptionResult {
+  provider: SttProvider;
+  cues: TranscriptCue[];
+  text: string;
+  language?: string;
+  durationSeconds?: number;
+}
+
+export interface SpeechToTextPort {
+  readonly provider: SttProvider;
+  transcribe(input: SttTranscriptionInput): Promise<SttTranscriptionResult>;
+}
+
 
 
