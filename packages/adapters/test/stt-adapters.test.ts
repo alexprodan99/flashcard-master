@@ -566,5 +566,16 @@ describe("STT Adapters", () => {
       const explicit = createSttAdapter({ provider: "whisper-local", localWhisperModel: "large-v3" });
       expect((explicit as LocalWhisperSttAdapter).model).toBe("large-v3");
     });
+
+    it("falls back to gemini when default_stt_provider and openai_api_key are unset but gemini_api_key is configured", () => {
+      const repo = createMemorySettingsRepo({
+        gemini_api_key: "gem-only-key",
+      });
+      const settingsService = new SettingsService(repo, {});
+
+      const adapter = createSttAdapterFromSettings(undefined, settingsService, {}, {});
+      expect(adapter).toBeInstanceOf(GeminiSttAdapter);
+      expect(adapter.provider).toBe("gemini");
+    });
   });
 });

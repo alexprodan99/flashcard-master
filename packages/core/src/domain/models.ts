@@ -196,6 +196,8 @@ export interface RawDocument {
   originUrl?: string;
   publishedAt?: string;
   guid?: string;
+  startSeconds?: number | null;
+  endSeconds?: number | null;
 }
 
 export interface CleanTextDocument {

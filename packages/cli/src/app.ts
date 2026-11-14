@@ -31,6 +31,8 @@ import {
   SitemapIngestionStrategy,
   LlmsTxtIngestionStrategy,
   NotionStrategy,
+  AudioIngestionStrategy,
+  VideoIngestionStrategy,
   createLLMAdapter,
   AnkiPackageExporter,
   AnkiConnectAdapter,
@@ -100,6 +102,8 @@ export function createAppContext(options: AppOptions = {}): AppContext {
   strategyRegistry.register(new SitemapIngestionStrategy());
   strategyRegistry.register(new LlmsTxtIngestionStrategy({ mediaService }));
   strategyRegistry.register(new NotionStrategy({ settingsService, mediaService }));
+  strategyRegistry.register(new AudioIngestionStrategy({ settingsService }));
+  strategyRegistry.register(new VideoIngestionStrategy({ settingsService }));
 
   const ingestionService = new IngestionService(sourceRepo, syncRepo, strategyRegistry, docRepo);
 

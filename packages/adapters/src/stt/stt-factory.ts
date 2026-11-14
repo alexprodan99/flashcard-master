@@ -68,16 +68,24 @@ export function createSttAdapterFromSettings(
   overrides: Partial<SttAdapterConfig> = {},
   env: NodeJS.ProcessEnv = process.env
 ): SpeechToTextPort {
-  const rawDefaultProvider =
+  const configuredDefault =
     provider ??
     overrides.provider ??
     settingsService?.get("default_stt_provider") ??
-    env.DEFAULT_STT_PROVIDER ??
-    "openai";
+    env.DEFAULT_STT_PROVIDER;
 
-  const resolvedProvider = SttProviderSchema.safeParse(rawDefaultProvider).success
-    ? (rawDefaultProvider as SttProvider)
-    : "openai";
+  const hasOpenAiKey = Boolean(
+    overrides.apiKey || settingsService?.getSecret("openai") || env.OPENAI_API_KEY?.trim()
+  );
+  const hasGeminiKey = Boolean(
+    settingsService?.getSecret("gemini") || env.GEMINI_API_KEY?.trim()
+  );
+  const inferredDefault: SttProvider = !hasOpenAiKey && hasGeminiKey ? "gemini" : "openai";
+  const normalizedConfigured = typeof configuredDefault === "string" ? configuredDefault.trim() : "";
+
+  const resolvedProvider = SttProviderSchema.safeParse(normalizedConfigured).success
+    ? (normalizedConfigured as SttProvider)
+    : inferredDefault;
 
   if (resolvedProvider === "openai") {
     return createSttAdapter({

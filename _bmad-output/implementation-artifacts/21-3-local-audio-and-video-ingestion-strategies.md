@@ -2,8 +2,8 @@
 title: 'Story 21.3: Local Audio & Video Ingestion Strategies (`audio` & `video` Data Sources)'
 type: 'feature'
 created: '2026-11-14'
-status: 'ready-for-dev'
-baseline_commit: '3b74d42'
+status: 'done'
+baseline_commit: '83faefd'
 review_loop_iteration: 0
 context:
   - '_bmad-output/implementation-artifacts/epic-21-context.md'
@@ -46,11 +46,11 @@ Users need separate, first-class `audio` and `video` data sources that accept mu
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `packages/adapters/src/ingestion/media-transcript-resolver.ts` -- Implement 3-tier waterfall (explicit/sidecar `.srt`/`.vtt` -> embedded container subtitles -> pre-trimmed STT), cue coalescing, and progress reporting hooks.
-- [ ] `packages/adapters/src/ingestion/audio-strategy.ts` -- Implement `AudioIngestionStrategy` (`type = "audio"`).
-- [ ] `packages/adapters/src/ingestion/video-strategy.ts` -- Implement `VideoIngestionStrategy` (`type = "video"`) with embedded subtitle extraction support.
-- [ ] `packages/adapters/src/index.ts` & runtime wiring (`packages/web`, `packages/cli`) -- Export strategies and register both in `StrategyRegistry` with configured `SttFactory` / `SettingsService`.
-- [ ] Unit tests -- Test multi-item `audio` and `video` sources across all 3 waterfall tiers (`subtitles`, `auto` with embedded track, `stt` with custom timestamp ranges, and missing-subtitle error path).
+- [x] `packages/adapters/src/ingestion/media-transcript-resolver.ts` -- Implement 3-tier waterfall (explicit/sidecar `.srt`/`.vtt` -> embedded container subtitles -> pre-trimmed STT), cue coalescing, and progress reporting hooks.
+- [x] `packages/adapters/src/ingestion/audio-strategy.ts` -- Implement `AudioIngestionStrategy` (`type = "audio"`).
+- [x] `packages/adapters/src/ingestion/video-strategy.ts` -- Implement `VideoIngestionStrategy` (`type = "video"`) with embedded subtitle extraction support.
+- [x] `packages/adapters/src/index.ts` & runtime wiring (`packages/web`, `packages/cli`) -- Export strategies and register both in `StrategyRegistry` with configured `SttFactory` / `SettingsService`.
+- [x] Unit tests -- Test multi-item `audio` and `video` sources across all 3 waterfall tiers (`subtitles`, `auto` with embedded track, `stt` with custom timestamp ranges, and missing-subtitle error path).
 
 **Acceptance Criteria:**
 - `AudioIngestionStrategy` and `VideoIngestionStrategy` are registered in `StrategyRegistry` and handle single or multi-item sources.
