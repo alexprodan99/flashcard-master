@@ -1,7 +1,104 @@
 import { z } from "zod";
 
-export const DataSourceTypeSchema = z.enum(["rss", "web", "local", "sitemap", "llms-txt", "notion"]);
+export const DataSourceTypeSchema = z.enum([
+  "rss",
+  "web",
+  "local",
+  "sitemap",
+  "llms-txt",
+  "notion",
+  "audio",
+  "video",
+  "youtube",
+]);
 export type DataSourceType = z.infer<typeof DataSourceTypeSchema>;
+
+export const SttProviderSchema = z.enum(["openai", "gemini", "whisper-local"]);
+export type SttProvider = z.infer<typeof SttProviderSchema>;
+
+export const MediaExtractionModeSchema = z.enum(["subtitles", "stt", "auto"]);
+export type MediaExtractionMode = z.infer<typeof MediaExtractionModeSchema>;
+
+export const TimestampRangeSchema = z.object({
+  start: z.string().trim().min(1),
+  end: z.string().trim().min(1),
+  label: z.string().trim().optional(),
+});
+export type TimestampRange = z.infer<typeof TimestampRangeSchema>;
+
+export const MediaSourceItemSchema = z.object({
+  uri: z.string().trim().min(1),
+  title: z.string().trim().optional(),
+  extractionMode: MediaExtractionModeSchema.default("auto"),
+  subtitlePath: z.string().trim().optional(),
+  sttProvider: SttProviderSchema.optional(),
+  timestampRanges: z.array(TimestampRangeSchema).optional(),
+});
+export type MediaSourceItem = z.output<typeof MediaSourceItemSchema>;
+export type MediaSourceItemInput = z.input<typeof MediaSourceItemSchema>;
+
+/**
+ * Parses a DataSource.uri payload into normalized MediaSourceItem entries.
+ * Supports structured JSON item arrays/objects, legacy JSON string arrays,
+ * newline-delimited lists, and comma/space-delimited HTTP(S) URLs.
+ */
+export function parseMediaSourceItems(rawUri: string): MediaSourceItem[] {
+  if (!rawUri || typeof rawUri !== "string") {
+    return [];
+  }
+
+  const trimmed = rawUri.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        const items: MediaSourceItem[] = [];
+        for (const entry of parsed) {
+          if (typeof entry === "string") {
+            const clean = entry.trim();
+            if (clean) {
+              items.push(MediaSourceItemSchema.parse({ uri: clean }));
+            }
+          } else if (entry && typeof entry === "object") {
+            items.push(MediaSourceItemSchema.parse(entry));
+          }
+        }
+        return items;
+      }
+      if (parsed && typeof parsed === "object") {
+        return [MediaSourceItemSchema.parse(parsed)];
+      }
+    } catch {
+      // Fall through to plain-string / multi-line parsing (e.g., filenames starting with '[')
+    }
+  }
+
+  const items: MediaSourceItem[] = [];
+  const lines = trimmed.split(/[\r\n]+/);
+  for (const line of lines) {
+    const cleanLine = line.trim();
+    if (!cleanLine) continue;
+
+    // Split multiple HTTP(S) URLs on a single line while preserving commas/spaces inside local file paths
+    if (/https?:\/\//i.test(cleanLine)) {
+      const pieces = cleanLine.split(/[\s,]+(?=https?:\/\/)/i);
+      for (const piece of pieces) {
+        const cleanPiece = piece.trim().replace(/^[<"']|[>"']$/g, "");
+        if (cleanPiece) {
+          items.push(MediaSourceItemSchema.parse({ uri: cleanPiece }));
+        }
+      }
+    } else {
+      items.push(MediaSourceItemSchema.parse({ uri: cleanLine }));
+    }
+  }
+
+  return items;
+}
 
 export const DataSourceSchema = z.object({
   id: z.string().uuid(),
@@ -111,6 +208,8 @@ export interface CleanTextDocument {
   contentHash: string;
   startPage?: number | null;
   endPage?: number | null;
+  startSeconds?: number | null;
+  endSeconds?: number | null;
 }
 
 export const DiscoveredDocumentSchema = z.object({
@@ -124,6 +223,8 @@ export const DiscoveredDocumentSchema = z.object({
   wordCount: z.number().int().nonnegative().default(0),
   startPage: z.number().int().nullable().optional(),
   endPage: z.number().int().nullable().optional(),
+  startSeconds: z.number().int().nonnegative().nullable().optional(),
+  endSeconds: z.number().int().nonnegative().nullable().optional(),
   createdAt: z.string().datetime().optional(),
   updatedAt: z.string().datetime().optional(),
 });

@@ -2,8 +2,8 @@
 title: 'Story 21.1: Media Domain Schema, Per-Item URI Descriptors & SRT/VTT Subtitle Parser'
 type: 'feature'
 created: '2026-11-14'
-status: 'ready-for-dev'
-baseline_commit: '3b74d42'
+status: 'done'
+baseline_commit: '67517c6'
 review_loop_iteration: 0
 context:
   - '_bmad-output/implementation-artifacts/epic-21-context.md'
@@ -46,11 +46,11 @@ Flashcard Master currently models only text/document data sources (`rss`, `web`,
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `packages/core/src/domain/models.ts` -- Add `audio`, `video`, `youtube` to `DataSourceTypeSchema`; add `SttProviderSchema`, `MediaExtractionModeSchema`, `TimestampRangeSchema`, `MediaSourceItemSchema`, `parseMediaSourceItems()`, and `startSeconds`/`endSeconds` on document interfaces/schemas.
-- [ ] `packages/core/src/storage/schema.sql` & `db.ts` -- Update `data_sources` type constraint, add `start_seconds`/`end_seconds` to `documents`, and write idempotent migration logic for existing SQLite databases.
-- [ ] `packages/core/src/storage/document-repository.ts` -- Persist and hydrate `startSeconds` and `endSeconds` in document CRUD/query methods.
-- [ ] `packages/core/src/services/subtitle-parser.ts` -- Implement `.srt` and `.vtt` parser, timestamp parser/formatter (`parseTimestampToSeconds`, `formatTimestamp`), and smart cue coalescing into `[MM:SS - MM:SS]` text blocks.
-- [ ] Unit tests -- Verify SQLite migration on an existing database, `MediaSourceItemSchema` parsing, `.srt`/`.vtt` parsing edge cases, rolling duplicate deduplication, and cue coalescing.
+- [x] `packages/core/src/domain/models.ts` -- Add `audio`, `video`, `youtube` to `DataSourceTypeSchema`; add `SttProviderSchema`, `MediaExtractionModeSchema`, `TimestampRangeSchema`, `MediaSourceItemSchema`, `parseMediaSourceItems()`, and `startSeconds`/`endSeconds` on document interfaces/schemas.
+- [x] `packages/core/src/storage/schema.sql` & `db.ts` -- Update `data_sources` type constraint, add `start_seconds`/`end_seconds` to `documents`, and write idempotent migration logic for existing SQLite databases.
+- [x] `packages/core/src/storage/document-repository.ts` -- Persist and hydrate `startSeconds` and `endSeconds` in document CRUD/query methods.
+- [x] `packages/core/src/services/subtitle-parser.ts` -- Implement `.srt` and `.vtt` parser, timestamp parser/formatter (`parseTimestampToSeconds`, `formatTimestamp`), and smart cue coalescing into `[MM:SS - MM:SS]` text blocks.
+- [x] Unit tests -- Verify SQLite migration on an existing database, `MediaSourceItemSchema` parsing, `.srt`/`.vtt` parsing edge cases, rolling duplicate deduplication, and cue coalescing.
 
 **Acceptance Criteria:**
 - `DataSourceTypeSchema` and SQLite `data_sources` `CHECK` constraint accept `audio`, `video`, and `youtube` cleanly, with non-destructive migration for existing databases.
