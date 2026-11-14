@@ -1506,6 +1506,76 @@ All tests enforce a strict 3-second timeout and return `{ success: boolean, mess
 - Native window supports dark theme, responsive resizing, and system tray minimize/restore.
 - GitHub Actions release pipeline builds and attaches Windows, macOS, and Linux binaries to GitHub Releases on tag push.
 
+---
+
+## Epic 21: Audio, Video & YouTube Data Sources, Subtitle Parsing, Speech-to-Text & Timestamp Slicing
+
+**Goal:** Extend Flashcard Master into multimedia learning by introducing three dedicated data source types (`audio`, `video`, and `youtube`) supporting multiple files or video links per source. Enable users to specify per-item extraction mode (attach/extract `.srt` or `.vtt` subtitles vs. Speech-to-Text using OpenAI, Gemini, or Local Offline Whisper), slice recordings by custom timestamp ranges or automatic time intervals/chapters (trimming audio *before* STT to reduce latency and cost), emit timestamped transcripts compatible with verbatim `GroundingGuard` verification, deep-link YouTube flashcard citations directly to exact timestamps (`?t=<seconds>s`), and monitor long-running media transcription jobs live in the Task Center, Web UI, Settings, and CLI.
+
+### Story 21.1: Media Domain Schema, Per-Item URI Descriptors & SRT/VTT Subtitle Parser
+**ID:** `21-1-media-domain-schema-and-subtitle-parser`
+**Description:** Extend `@flashcard-master/core` domain schemas and SQLite persistence to support `audio`, `video`, and `youtube` data source types alongside structured per-item URI descriptors (`MediaSourceItemSchema` capturing `uri`, `title`, `extractionMode: 'subtitles' | 'stt' | 'auto'`, optional `subtitlePath`, `sttProvider`, and custom `timestampRanges`). Add idempotent SQLite migrations updating the `data_sources` `CHECK` constraint and adding `start_seconds` / `end_seconds` columns to `documents`. Implement a cross-format subtitle parser (`SubtitleParser`) supporting `.srt` and `.vtt` files with smart cue coalescing into natural sentence/time-window blocks prefixed by `[MM:SS - MM:SS]` timestamp markers.
+**Acceptance Criteria:**
+- `DataSourceTypeSchema` and SQLite `data_sources` `CHECK` constraint accept `audio`, `video`, and `youtube` cleanly, with non-destructive migration for existing databases.
+- `MediaSourceItemSchema` parses both structured per-item JSON arrays and backward-compatible bare path/URL arrays.
+- `documents` table and `DiscoveredDocumentSchema` persist optional `startSeconds` and `endSeconds` coordinates.
+- `SubtitleParser` accurately parses `.srt` and `.vtt` files (stripping tags, `NOTE`/`STYLE` headers, and overlapping rolling lines) and coalesces fragmented cues into coherent timestamped blocks.
+
+### Story 21.2: Speech-to-Text (STT) Port, Pre-STT Audio Trimming & Multi-Provider Adapters (OpenAI, Gemini, Local Whisper)
+**ID:** `21-2-speech-to-text-port-audio-trimming-and-adapters`
+**Description:** Define a clean `SpeechToTextPort` in `@flashcard-master/core` returning structured timestamped transcript segments (`{ startSeconds, endSeconds, text }[]`). Implement an `AudioTrimmer` utility (wrapping `ffmpeg`) that extracts and trims audio strictly to user-defined custom timestamp ranges *before* transcription and offsets resulting timestamps back to the original media timeline. Implement three concrete STT adapters in `@flashcard-master/adapters`: `OpenAiSttAdapter` (reusing the configured OpenAI key), `GeminiSttAdapter` (reusing the configured Gemini key for multimodal audio transcription), and `LocalWhisperSttAdapter` (zero-telemetry offline transcription via local Whisper CLI/endpoint).
+**Acceptance Criteria:**
+- `SpeechToTextPort` and `SttProvider` (`openai` | `gemini` | `whisper-local`) contracts are exported from `@flashcard-master/core`.
+- `AudioTrimmer` extracts audio from media files and trims strictly to configured timestamp windows prior to STT, accurately shifting segment timestamps back to source time coordinates.
+- `OpenAiSttAdapter`, `GeminiSttAdapter`, and `LocalWhisperSttAdapter` transcribe audio buffers/files into timestamped segments with graceful error messages when API keys or local Whisper binaries are missing.
+- Comprehensive unit tests verify trimming calculations, timestamp offsetting, and all three STT adapters with mocked network/subprocess runners.
+
+### Story 21.3: Local Audio & Video Ingestion Strategies (`audio` & `video` Data Sources)
+**ID:** `21-3-local-audio-and-video-ingestion-strategies`
+**Description:** Implement `AudioIngestionStrategy` (`type = "audio"`, supporting `.mp3`, `.wav`, `.m4a`, `.ogg`, `.flac`, and `.srt`/`.vtt`) and `VideoIngestionStrategy` (`type = "video"`, supporting `.mp4`, `.mkv`, `.webm`, `.mov`, and `.srt`/`.vtt`) in `@flashcard-master/adapters` and register both in `StrategyRegistry`. Support multi-file ingestion per source using a 3-tier transcript resolution waterfall: (1) explicit `subtitlePath` or matching sidecar `.srt`/`.vtt` file → (2) embedded container subtitle tracks (for `video`) → (3) trimmed audio transcription via the item's chosen STT adapter (`openai`, `gemini`, or `whisper-local`). Emit incremental sync hashes and task progress hooks.
+**Acceptance Criteria:**
+- `AudioIngestionStrategy` and `VideoIngestionStrategy` are registered in `StrategyRegistry` and handle single or multi-item sources.
+- When `extractionMode` is `subtitles` or `auto` and a matching/attached `.srt` or `.vtt` file exists, transcripts are extracted without invoking STT.
+- When `video` files contain embedded text subtitle streams and no external `.srt`/`.vtt` is attached, embedded tracks are extracted before falling back to STT.
+- When `extractionMode` is `stt` or subtitles are absent, audio is trimmed to custom timestamp ranges (if specified) and transcribed via the item's selected STT adapter.
+
+### Story 21.4: YouTube Data Source Ingestion Strategy (`youtube` Data Source)
+**ID:** `21-4-youtube-data-source-ingestion-strategy`
+**Description:** Implement `YouTubeIngestionStrategy` (`type = "youtube"`) in `@flashcard-master/adapters` and register it in `StrategyRegistry`. Support multiple YouTube video URLs per data source (`youtube.com/watch?v=...`, `youtu.be/...`, `youtube.com/shorts/...`). Fetch video metadata, chapter markers (when present), and manual or auto-generated captions in the preferred caption language. When captions are unavailable or the user explicitly sets `extractionMode: 'stt'`, download/extract the audio stream, apply pre-STT timestamp range trimming if configured, and run the item's chosen STT provider (`openai`, `gemini`, or `whisper-local`).
+**Acceptance Criteria:**
+- `YouTubeIngestionStrategy` parses and normalizes multiple YouTube URL formats within a single data source.
+- Manual creator captions (and auto-captions in `'auto'` mode) are fetched and normalized into coalesced `[MM:SS - MM:SS]` transcripts with video title and chapter metadata preserved.
+- Missing captions or explicit `'stt'` mode trigger audio extraction, pre-STT range trimming (when custom timestamp ranges exist), and transcription via the item's selected STT adapter.
+- Private, unavailable, or captionless videos without configured STT return clear, actionable diagnostic errors.
+
+### Story 21.5: Timestamp Slicing Engine, Citation Deep-Linking & Timestamp-Aware `GroundingGuard`
+**ID:** `21-5-timestamp-slicing-citations-and-grounding-guard`
+**Description:** Extend `DocumentSlicingEngine` in `@flashcard-master/core` with timestamp-based slicing supporting both per-item **Custom Timestamp Ranges** (`start - end`) and source-level **Fixed `N`-Minute Interval / YouTube Chapter Slicing** without breaking mid-sentence, populating `startSeconds` and `endSeconds` on resulting subdocuments. Update `PromptBuilder` to guide LLMs to record exact `[MM:SS - MM:SS]` coordinates in `Flashcard.sourceLocator`. For YouTube flashcards, deep-link `sourceOriginUrl` with `?t=<seconds>s` (or `&t=<seconds>s`) matching `sourceLocator`. Update `GroundingGuard.normalizeText()` to ignore inline `[MM:SS]` / `[HH:MM:SS]` / `[MM:SS - MM:SS]` timestamp markers so verbatim spoken quotes spanning cue boundaries pass verification.
+**Acceptance Criteria:**
+- `DocumentSlicingEngine` slices timestamped transcripts by custom timestamp ranges, fixed `N`-minute intervals, or chapter markers, setting `startSeconds` and `endSeconds` on subdocuments.
+- Generated flashcards from media subdocuments capture timestamp ranges in `sourceLocator`, and YouTube flashcards include `?t=<seconds>s` / `&t=<seconds>s` deep-link parameters on `sourceOriginUrl`.
+- `GroundingGuard.normalizeText()` strips inline timestamp markers so verbatim spoken excerpts spanning multiple subtitle cues verify accurately.
+- Unit tests cover timestamp slicing boundaries, YouTube deep-link formatting, and `GroundingGuard` cross-cue quote matching.
+
+### Story 21.6: Web UI Media Source Modals, Per-Item STT/Subtitle & Timestamp Controls, Task Center & Inspector Badges
+**ID:** `21-6-web-ui-media-sources-timestamp-controls-and-inspector`
+**Description:** Update the Svelte 5 Web UI and backend upload/source endpoints in `@flashcard-master/web` to support `audio`, `video`, and `youtube` data sources. In `AddSourceModal.svelte` and `EditSourceModal.svelte`, add dedicated **Audio**, **Video**, and **YouTube** source types with multi-file/multi-URL item lists where each item lets users pick **Subtitles** (attach `.srt`/`.vtt` or use YouTube captions) vs. **Speech-to-Text** (`OpenAI`, `Gemini`, `Local Whisper`) and configure optional custom timestamp ranges (`Start - End`), alongside source-level timestamp slicing controls (Custom Ranges / Every `N` Minutes / Chapters / Full Transcript). Stream granular media sync steps into `TaskCenterDrawer.svelte`, display `⏱️ MM:SS – MM:SS` badges in `SourceDocumentInspector.svelte` and `DocumentPreviewModal.svelte`, and render clickable timestamp links in `QuestionExplorer.svelte`.
+**Acceptance Criteria:**
+- Backend `/api/sources` and `/api/sources/upload` accept `audio`, `video`, and `youtube` source types plus media and `.srt`/`.vtt` subtitle uploads.
+- `AddSourceModal.svelte` and `EditSourceModal.svelte` let users add multiple media files or YouTube links and configure extraction mode (`Subtitles` vs. `OpenAI` / `Gemini` / `Local Whisper`), optional `.srt`/`.vtt` attachment, and custom timestamp ranges per item.
+- `TaskCenterDrawer.svelte` streams step-by-step media ingestion progress (subtitle check, audio trim, STT transcription, timestamp slicing).
+- `SourceDocumentInspector.svelte` and `DocumentPreviewModal.svelte` render `⏱️ MM:SS – MM:SS` badges on sliced media subdocuments, and `QuestionExplorer.svelte` displays clickable timestamp citations.
+
+### Story 21.7: Settings Default STT Configuration, CLI Media Flags & End-to-End Verification Suite
+**ID:** `21-7-settings-stt-defaults-cli-media-flags-and-verification`
+**Description:** Complete settings, CLI, documentation, and monorepo verification for Epic 21. Extend `GeneralSettingsSchema` and `SettingsView.svelte` with **Speech-to-Text Defaults** (default STT provider `openai` | `gemini` | `whisper-local`, local Whisper binary/endpoint & model tier, and preferred YouTube caption language) and surface STT diagnostics. Extend `@flashcard-master/cli` commands with `--type audio|video|youtube`, `--stt-provider`, `--subtitles`, `--timestamps`, and `--interval-minutes` flags. Update the User Guide (`docs/user-guide/ingestion-playbook.md`) and run full monorepo verification (`npm test`, `npm run typecheck`, `npm run lint`, `npm run build`).
+**Acceptance Criteria:**
+- `SettingsView.svelte` and `SettingsService` persist and expose default STT provider, local Whisper configuration, and preferred caption language, pre-filling defaults in `AddSourceModal.svelte`.
+- `@flashcard-master/cli` creates, syncs, and inspects `audio`, `video`, and `youtube` sources with subtitle, STT provider, and timestamp slicing flags.
+- User Guide documentation covers Audio, Video, and YouTube ingestion workflows, subtitle pairing, and local/cloud STT configuration.
+- Full monorepo test suite, TypeScript typecheck, lint, and production build pass with zero regressions.
+
+
 
 
 
