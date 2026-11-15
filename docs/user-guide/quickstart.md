@@ -89,6 +89,7 @@ Flashcard Master supports 4 cutting-edge AI providers:
    - **RSS Feed**: Enter an Atom/RSS feed URL to periodically auto-sync articles.
    - **Local File / Book**: Upload a `.md`, `.epub`, or `.pdf` document.
    - **Notion Workspace**: Connect your Notion page or database.
+   - **Audio / Video / YouTube**: Import local `.mp3`/`.mp4` recordings (with optional `.srt`/`.vtt` subtitles and timestamp ranges) or YouTube URLs with subtitle-first extraction, Speech-to-Text fallback, and chapter/timestamp slicing.
 4. Click **Save & Ingest**. Flashcard Master extracts clean text and breaks it into semantic chapters or chunks automatically.
 
 ---

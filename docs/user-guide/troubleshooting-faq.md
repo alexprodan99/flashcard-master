@@ -91,3 +91,22 @@ To back up your entire knowledge base, simply copy the `~/.flashcard-master/` fo
 
 ### Q: Where can I find all release installers and updates?
 All release assets (including Windows `.exe`, macOS universal / Apple Silicon / Intel `.dmg`, and Linux `.deb` / `.AppImage` packages) are cataloged on the **[Flashcard Master GitHub Releases Page](https://github.com/alexprodan99/flashcard-master/releases)**.
+
+---
+
+## 🎙️ Audio, Video & YouTube Ingestion
+
+### Q: How do I check if `ffmpeg`, `yt-dlp`, and `whisper-local` are ready?
+Open **⚙️ Settings ➔ General ➔ Speech-to-Text & Media Defaults** and click **🔍 Check Readiness** (or call `GET /api/settings/media/diagnostics`).
+- **`ffmpeg`**: Required for local video audio extraction, embedded subtitle probing, and pre-STT timestamp range trimming.
+- **`yt-dlp`**: Used for YouTube subtitle/audio fallback when direct caption fetches are blocked or empty. If `yt-dlp` is not installed on your `PATH`, Flashcard Master can automatically download and cache a standalone binary on demand.
+- **`whisper-local`**: Requires either a running `whisper.cpp` HTTP server (configured via **Local Whisper Endpoint**) or a `whisper-cli` / `main` binary on `PATH` / `WHISPER_BINARY_PATH`.
+
+### Q: Why did YouTube sync fall back to Speech-to-Text even though the video has captions?
+Some YouTube caption tracks return empty cues on direct timedtext requests or are auto-generated only. In `auto` extraction mode, Flashcard Master tries:
+1. Creator captions (`en` / configured `defaultSubtitleLanguage`),
+2. `yt-dlp` subtitle download (`--write-subs --write-auto-subs`), and
+3. Audio download via `yt-dlp` followed by your configured Speech-to-Text provider (`openai`, `gemini`, or `whisper-local`).
+
+### Q: Why did YouTube `chapters` slicing produce fixed N-minute slices?
+Flashcard Master extracts chapters from both YouTube video descriptions and `ytInitialData` player markers (`AUTO_CHAPTERS` and `MACRO_MARKERS_LIST_RENDERER`). If a video has neither creator-defined description timestamps nor YouTube chapter markers, the slicing engine gracefully falls back to fixed **Time Windows** (`intervalMinutes`, default `10` minutes) so long transcripts are still cleanly segmented.

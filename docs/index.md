@@ -4,7 +4,7 @@ layout: home
 hero:
   name: "Flashcard Master"
   text: "Local-First Grounded AI Flashcard Studio"
-  tagline: "Turn books, web articles, RSS feeds, and Notion pages into hallucination-free active recall flashcards with verified verbatim citations."
+  tagline: "Turn books, web articles, RSS feeds, Notion pages, audio, video, and YouTube lectures into hallucination-free active recall flashcards with verified verbatim citations."
   actions:
     - theme: brand
       text: 🚀 3-Minute Quickstart
@@ -25,7 +25,7 @@ features:
     details: Zero hallucinations. Every generated card is cryptographically verified against exact verbatim source substrings before persisting.
   - icon: 🌐
     title: Multi-Source Ingestion
-    details: Seamlessly extract knowledge from Web URLs, RSS/Atom feeds, Notion workspaces, EPUB e-books, and local Markdown/PDF files.
+    details: Seamlessly extract knowledge from Web URLs, RSS/Atom feeds, Notion workspaces, EPUB/PDF/Markdown files, local Audio/Video, and YouTube lectures.
   - icon: ⚡
     title: Adaptive Synthesis & Personas
     details: Calibrate generation across 3 difficulty tiers (Beginner, Intermediate, Advanced) and cognitive personas (Socratic, Drill Sergeant, Analogy Weaver).
@@ -51,7 +51,7 @@ Welcome to the official documentation for **Flashcard Master**! Whether you are 
 
 - **[📥 Download Desktop App (GitHub Releases)](https://github.com/alexprodan99/flashcard-master/releases)**: Grab standalone native installers for Windows (`.exe`), macOS (`.dmg`), and Linux (`.deb` / `.AppImage`).
 - **[3-Minute Quickstart](/user-guide/quickstart)**: Install, launch the local Web UI dashboard, and synthesize your first flashcard deck in under three minutes.
-- **[Ingestion Playbook](/user-guide/ingestion-playbook)**: Learn how to import web articles, crawl RSS feeds, connect Notion workspaces, and slice large EPUB/PDF books into chapter-level learning modules.
+- **[Ingestion Playbook](/user-guide/ingestion-playbook)**: Learn how to import web articles, crawl RSS feeds, connect Notion workspaces, slice EPUB/PDF books, and transcribe audio, video, and YouTube lectures with timestamp citations.
 - **[Synthesis & Prompt Tuning](/user-guide/synthesis-and-prompting)**: Discover how to tailor card density, choose cognitive personas, scale difficulty, and enforce quote grounding.
 - **[Study & Export Workflows](/user-guide/study-and-export)**: Push cards to Desktop Anki via AnkiConnect, generate offline `.apkg` packages, or create styled e-reader EPUB study books.
 - **[Troubleshooting & FAQ](/user-guide/troubleshooting-faq)**: Solutions for Notion permissions, Anki connection issues, SQLite paths, and worker concurrency limits.

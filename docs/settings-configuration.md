@@ -62,6 +62,10 @@ The following table lists all settings managed by the Centralized Settings Servi
 | **`default_page_budget`** | `DEFAULT_PAGE_BUDGET` | `10` | Integer $\ge 1$ | Default page or section budget size when budget slicing is active. |
 | **`epub_default_author`** | `EPUB_DEFAULT_AUTHOR` | `Flashcard Master` | Non-empty string | Default author metadata written to generated EPUB eBook study guides. |
 | **`epub_default_publisher`** | `EPUB_DEFAULT_PUBLISHER` | `Flashcard Master` | Non-empty string | Default publisher metadata written to generated EPUB eBook study guides. |
+| **`default_stt_provider`** | `DEFAULT_STT_PROVIDER` | `openai` | `openai`, `gemini`, `whisper-local` | Default Speech-to-Text provider pre-selected for new Audio, Video, and YouTube media items. |
+| **`local_whisper_model`** | `LOCAL_WHISPER_MODEL` | `base` | `tiny`, `base`, `small`, `medium`, `large-v3` | Model preset used when transcribing with Local Whisper (`whisper-local`). |
+| **`local_whisper_endpoint`** | `LOCAL_WHISPER_ENDPOINT`, `WHISPER_BINARY_PATH`, `WHISPER_CPP_PATH` | `""` | HTTP URL or binary path | Optional `whisper.cpp` HTTP server URL (e.g. `http://localhost:8080`) or local CLI binary path. |
+| **`default_subtitle_language`** | `DEFAULT_SUBTITLE_LANGUAGE` | `en` | ISO 639-1 code | Preferred subtitle/caption language code (e.g. `en`, `ro`, `es`) when fetching YouTube tracks. |
 
 ---
 
@@ -97,6 +101,11 @@ Adjust your preferred default Provider, Model name, Persona, Difficulty, and Bat
 ### 4. Worker Pool & Concurrency
 Tune worker thread concurrency limits (1 to 16) and execution timeouts (0 to 120 minutes, where `0` disables timeout for long-running batches) based on your hardware capabilities and CPU core count. When set to `0`, worker tasks run indefinitely until finished or manually cancelled via the Task Center.
 
+### 5. Speech-to-Text & Media Defaults + Dependency Readiness
+Configure your default Speech-to-Text provider (`openai`, `gemini`, or `whisper-local`), Local Whisper model (`tiny`–`large-v3`) and endpoint/binary path, and preferred subtitle language (`en`, `ro`, `es`, etc.). These defaults automatically pre-fill new media items in the **Add Data Source** modal.
+
+Use the **🔍 Media & STT Dependency Readiness** panel in **Settings ➔ General ➔ Speech-to-Text & Media Defaults** to verify at a glance whether `ffmpeg`, `yt-dlp`, `whisper-local`, OpenAI STT, and Gemini STT are ready on your machine.
+
 ---
 
 ## 🌐 REST API Endpoints
@@ -124,7 +133,11 @@ Returns all general settings along with their effective values and source metada
     "defaultSlicingMode": "outline",
     "defaultPageBudget": 10,
     "epubDefaultAuthor": "Flashcard Master",
-    "epubDefaultPublisher": "Flashcard Master"
+    "epubDefaultPublisher": "Flashcard Master",
+    "defaultSttProvider": "openai",
+    "localWhisperModel": "base",
+    "localWhisperEndpoint": "",
+    "defaultSubtitleLanguage": "en"
   },
   "sources": {
     "ankiconnectUrl": { "type": "default" },
@@ -155,5 +168,17 @@ Performs an active health check ping against AnkiConnect:
   "connected": true,
   "version": 6,
   "latencyMs": 14
+}
+```
+
+### `GET /api/settings/media/diagnostics`
+Probes local media dependencies (`ffmpeg`, `yt-dlp`, `whisper-local`) and cloud STT API key configuration:
+```json
+{
+  "ffmpeg": { "available": true, "version": "7.1" },
+  "ytDlp": { "available": true, "mode": "system" },
+  "whisperLocal": { "available": false, "mode": "unconfigured" },
+  "openaiStt": { "configured": true },
+  "geminiStt": { "configured": false }
 }
 ```
