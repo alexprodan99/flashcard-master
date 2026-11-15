@@ -217,7 +217,7 @@ development_status:
   21-4-youtube-data-source-ingestion-strategy: done
   21-5-timestamp-slicing-citations-and-grounding-guard: done
   21-6-web-ui-media-sources-timestamp-controls-and-inspector: done
-  21-7-settings-stt-defaults-cli-media-flags-and-verification: ready-for-dev
+  21-7-settings-stt-defaults-cli-media-flags-and-verification: done
   epic-21-retrospective: optional
 action_items:
   - id: "epic-14-retro-item-1-add-progressive-exponential-backoff-and"

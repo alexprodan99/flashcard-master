@@ -379,6 +379,53 @@ describe('Story 21.6: Web UI Media Source Helpers, API & Worker Progress', () =>
         { current: 4, total: 4, step: 'Slicing transcript...' },
       ]);
     });
+
+    it('persists STT defaults via PUT /api/settings/general and exposes readiness via GET /api/settings/media/diagnostics', async () => {
+      const db = createDatabaseClient({ inMemory: true });
+      const sourceRepo = new DataSourceRepository(db);
+      const syncRepo = new SyncStateRepository(db);
+      const cardRepo = new FlashcardRepository(db);
+      const settingsRepo = new SqliteSettingsRepository(db);
+      const server = createWebServer({
+        port: 0,
+        sourceRepo,
+        syncRepo,
+        cardRepo,
+        settingsRepo,
+      });
+
+      const { url } = await server.listen(0);
+      try {
+        const putRes = await fetch(`${url}/api/settings/general`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            defaultSttProvider: 'whisper-local',
+            localWhisperModel: 'small',
+            localWhisperEndpoint: 'http://localhost:8080',
+            defaultSubtitleLanguage: 'ro',
+          }),
+        });
+        expect(putRes.status).toBe(200);
+        const putBody = (await putRes.json()) as any;
+        expect(putBody.settings.defaultSttProvider).toBe('whisper-local');
+        expect(putBody.settings.localWhisperModel).toBe('small');
+        expect(putBody.settings.localWhisperEndpoint).toBe('http://localhost:8080');
+        expect(putBody.settings.defaultSubtitleLanguage).toBe('ro');
+
+        const diagRes = await fetch(`${url}/api/settings/media/diagnostics`);
+        expect(diagRes.status).toBe(200);
+        const diagBody = (await diagRes.json()) as any;
+        expect(typeof diagBody.ffmpeg?.available).toBe('boolean');
+        expect(['system', 'cached', 'auto-download']).toContain(diagBody.ytDlp?.mode);
+        expect(diagBody.whisperLocal?.mode).toBe('http');
+        expect(typeof diagBody.openaiStt?.configured).toBe('boolean');
+        expect(typeof diagBody.geminiStt?.configured).toBe('boolean');
+      } finally {
+        await server.close();
+        db.close();
+      }
+    });
   });
 });
 

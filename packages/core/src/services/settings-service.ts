@@ -174,6 +174,37 @@ export const GENERAL_SETTINGS_REGISTRY: GeneralSettingMeta<any>[] = [
       return Number.isNaN(n) ? 10 : Math.max(1, Math.min(100, n));
     },
   },
+  // Speech-to-Text & Media Defaults
+  {
+    key: "defaultSttProvider",
+    dbKey: "default_stt_provider",
+    envKeys: ["DEFAULT_STT_PROVIDER"],
+    defaultValue: "openai",
+    parse: (v: string) =>
+      ["openai", "gemini", "whisper-local"].includes(v.trim()) ? v.trim() : "openai",
+  },
+  {
+    key: "localWhisperModel",
+    dbKey: "local_whisper_model",
+    envKeys: ["LOCAL_WHISPER_MODEL"],
+    defaultValue: "base",
+    parse: (v: string) =>
+      ["tiny", "base", "small", "medium", "large-v3"].includes(v.trim()) ? v.trim() : "base",
+  },
+  {
+    key: "localWhisperEndpoint",
+    dbKey: "local_whisper_endpoint",
+    envKeys: ["LOCAL_WHISPER_ENDPOINT", "WHISPER_BINARY_PATH", "WHISPER_CPP_PATH"],
+    defaultValue: "",
+    parse: (v: string) => v.trim(),
+  },
+  {
+    key: "defaultSubtitleLanguage",
+    dbKey: "default_subtitle_language",
+    envKeys: ["DEFAULT_SUBTITLE_LANGUAGE"],
+    defaultValue: "en",
+    parse: (v: string) => v.trim() || "en",
+  },
   // EPUB Publishing Metadata
   {
     key: "epubDefaultAuthor",

@@ -180,6 +180,8 @@ export interface LoggingSettings {
 
 export type SettingSource = 'database' | 'environment' | 'default';
 
+export type LocalWhisperModel = 'tiny' | 'base' | 'small' | 'medium' | 'large-v3';
+
 export interface GeneralSettings {
   ankiconnectUrl: string;
   ankiconnectApiKey: string;
@@ -196,8 +198,34 @@ export interface GeneralSettings {
   workerTimeoutMinutes: number;
   defaultSlicingMode: 'outline' | 'budget' | 'none';
   defaultPageBudget: number;
+  defaultSttProvider: SttProvider;
+  localWhisperModel: LocalWhisperModel;
+  localWhisperEndpoint: string;
+  defaultSubtitleLanguage: string;
   epubDefaultAuthor: string;
   epubDefaultPublisher: string;
+}
+
+export interface MediaDiagnosticsResult {
+  ffmpeg: {
+    available: boolean;
+    details?: string;
+    error?: string;
+  };
+  ytDlp: {
+    available: boolean;
+    mode: 'system' | 'cached' | 'auto-download';
+    details?: string;
+    error?: string;
+  };
+  whisperLocal: {
+    available: boolean;
+    mode: 'http' | 'cli';
+    details?: string;
+    error?: string;
+  };
+  openaiStt: { configured: boolean };
+  geminiStt: { configured: boolean };
 }
 
 export interface GeneralSettingsResponse {

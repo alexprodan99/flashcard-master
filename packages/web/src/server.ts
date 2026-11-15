@@ -38,8 +38,11 @@ import {
   ProviderVerifier,
   AnkiConnectAdapter,
   AudioIngestionStrategy,
+  AudioTrimmer,
+  LocalWhisperSttAdapter,
   VideoIngestionStrategy,
   YouTubeIngestionStrategy,
+  defaultCommandRunner,
 } from "@flashcard-master/adapters";
 import { JobManager, type ConcurrencyLimits, type JobManagerOptions } from "./jobs/index.js";
 import { WorkerExecutor } from "./workers/index.js";
@@ -104,7 +107,7 @@ export class WebServer {
     this.host = options.host || "127.0.0.1";
     this.mediaService = options.mediaService || new MediaService();
     this.localFilesDir = options.localFilesDir || path.join(os.homedir(), ".flashcard-master", "local-files");
-    
+
     if (options.settingsService) {
       this.settingsService = options.settingsService;
       this.settingsRepo = options.settingsRepo || null;
@@ -2250,9 +2253,9 @@ export class WebServer {
                   const syncTimeoutMs = explicitTimeout !== undefined
                     ? explicitTimeout
                     : Math.max(
-                        this.options.defaultTaskTimeoutMs ?? 1_800_000,
-                        (activeSources.length || 1) * 10 * 60 * 1000
-                      );
+                      this.options.defaultTaskTimeoutMs ?? 1_800_000,
+                      (activeSources.length || 1) * 10 * 60 * 1000
+                    );
                   return await this.workerExecutor.executeTask(
                     {
                       type: "sync_all",
@@ -2409,9 +2412,9 @@ export class WebServer {
                   const dynamicTimeoutMs = explicitTimeout !== undefined
                     ? explicitTimeout
                     : Math.max(
-                        this.options.defaultTaskTimeoutMs ?? 3_600_000,
-                        docCount * 3 * 60 * 1000 // 3 minutes per document
-                      );
+                      this.options.defaultTaskTimeoutMs ?? 3_600_000,
+                      docCount * 3 * 60 * 1000 // 3 minutes per document
+                    );
                   return await this.workerExecutor.executeTask(
                     {
                       type: "generation",
@@ -2974,7 +2977,7 @@ export class WebServer {
             let docId = pathname.slice("/api/documents/".length);
             try {
               docId = decodeURIComponent(docId);
-            } catch {}
+            } catch { }
             if (!this.options.documentRepo) {
               this.sendJson(res, 404, { error: "Document not found" });
               return;
@@ -3009,7 +3012,7 @@ export class WebServer {
             let id = pathname.slice("/api/sources/".length);
             try {
               id = decodeURIComponent(id);
-            } catch {}
+            } catch { }
 
             if (method === "DELETE") {
               try {
@@ -3344,7 +3347,7 @@ export class WebServer {
             }
 
             if (("key" in body && typeof body.key !== "string" && body.key !== null) ||
-                ("endpoint" in body && typeof body.endpoint !== "string" && body.endpoint !== null)) {
+              ("endpoint" in body && typeof body.endpoint !== "string" && body.endpoint !== null)) {
               this.sendJson(res, 400, { error: "'key' and 'endpoint' must be strings or null." });
               return;
             }
@@ -3403,7 +3406,7 @@ export class WebServer {
             }
 
             if (("key" in body && typeof body.key !== "string" && body.key !== null) ||
-                ("endpoint" in body && typeof body.endpoint !== "string" && body.endpoint !== null)) {
+              ("endpoint" in body && typeof body.endpoint !== "string" && body.endpoint !== null)) {
               this.sendJson(res, 400, { error: "'key' and 'endpoint' must be strings or null." });
               return;
             }
@@ -3575,6 +3578,76 @@ export class WebServer {
             } finally {
               clearTimeout(timer);
             }
+            return;
+          }
+
+          // 15j. GET /api/settings/media/diagnostics
+          if (pathname === "/api/settings/media/diagnostics" && method === "GET") {
+            const general = this.settingsService.getGeneralSettings().settings;
+
+            const [ffmpegStatus, whisperStatus, ytDlpStatus] = await Promise.all([
+              new AudioTrimmer()
+                .probeFfmpeg()
+                .then((res) => ({
+                  available: res.available,
+                  details: res.version,
+                  error: res.error,
+                }))
+                .catch((err: any) => ({
+                  available: false,
+                  error: err?.message?.split(/\r?\n/)[0] || "Failed to check ffmpeg availability.",
+                })),
+              new LocalWhisperSttAdapter({
+                endpoint: general.localWhisperEndpoint || undefined,
+                model: general.localWhisperModel,
+              })
+                .probeAvailability()
+                .catch((err: any) => ({
+                  available: false,
+                  mode: "cli" as const,
+                  error: err?.message?.split(/\r?\n/)[0] || "Failed to check whisper-local availability.",
+                })),
+              (async () => {
+                const ytDlpCmd = process.env.YT_DLP_PATH?.trim() || "yt-dlp";
+                try {
+                  const res = await defaultCommandRunner(ytDlpCmd, ["--version"], { timeoutMs: 4000 });
+                  if (res.exitCode === 0) {
+                    const ver = (res.stdout || res.stderr).split(/\r?\n/)[0]?.trim();
+                    return {
+                      available: true,
+                      mode: "system" as const,
+                      details: ver ? `yt-dlp ${ver}` : "yt-dlp available on PATH",
+                    };
+                  }
+                } catch {
+                  // Fall through to cached binary check
+                }
+
+                const cachedName = process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp";
+                const cachedPath = path.join(os.homedir(), ".flashcard-master", "yt-dlp", cachedName);
+                if (fs.existsSync(cachedPath)) {
+                  return {
+                    available: true,
+                    mode: "cached" as const,
+                    details: "Managed yt-dlp binary cached",
+                  };
+                }
+
+                return {
+                  available: false,
+                  mode: "auto-download" as const,
+                  details: "Not installed on PATH; auto-downloads on first YouTube fallback",
+                };
+              })(),
+            ]);
+
+            this.sendJson(res, 200, {
+              ffmpeg: ffmpegStatus,
+              ytDlp: ytDlpStatus,
+              whisperLocal: whisperStatus,
+              openaiStt: { configured: Boolean(this.settingsService.getSecret("openai")) },
+              geminiStt: { configured: Boolean(this.settingsService.getSecret("gemini")) },
+            });
             return;
           }
 
