@@ -1,12 +1,24 @@
 import crypto from "node:crypto";
+import {
+  formatTimestamp,
+  formatTimestampRange,
+  parseTimestampToSeconds,
+} from "./subtitle-parser.js";
 
-export type SlicingMode = "outline" | "budget" | "none";
+export type SlicingMode = "outline" | "budget" | "timestamps" | "chapters" | "none";
+
+export interface TimestampRangeInput {
+  start: string | number;
+  end: string | number;
+}
 
 export interface DocumentSlicingOptions {
   mode?: SlicingMode;
   pagesPerChunk?: number;
   wordsPerChunk?: number;
   minChunkWords?: number;
+  minutesPerChunk?: number;
+  timestampRanges?: TimestampRangeInput[];
 }
 
 export interface DocumentSliceInput {
@@ -16,6 +28,8 @@ export interface DocumentSliceInput {
   rawContent?: string | null;
   url?: string | null;
   originUrl?: string | null;
+  startSeconds?: number | null;
+  endSeconds?: number | null;
 }
 
 export interface SlicedSubdocument {
@@ -29,10 +43,175 @@ export interface SlicedSubdocument {
   wordCount: number;
   startPage?: number | null;
   endPage?: number | null;
+  startSeconds?: number | null;
+  endSeconds?: number | null;
+}
+
+interface ParsedCueBlock {
+  startSeconds: number;
+  endSeconds: number;
+  text: string;
+}
+
+const YOUTUBE_URL_REGEX = /(?:youtube\.com\/(?:watch|shorts\/|live\/)|youtu\.be\/)/i;
+const INLINE_BRACKET_TIMESTAMP_REGEX =
+  /\[(\d{1,2}:\d{2}(?::\d{2})?(?:[.,]\d{1,3})?)(?:\s*[-–—]\s*(\d{1,2}:\d{2}(?::\d{2})?(?:[.,]\d{1,3})?))?\]/;
+
+function parseFlexibleTimestamp(value: string | number): number | null {
+  if (typeof value === "number") {
+    return Number.isFinite(value) && value >= 0 ? value : null;
+  }
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed) return null;
+  try {
+    return parseTimestampToSeconds(trimmed);
+  } catch {
+    return null;
+  }
+}
+
+function buildTimestampedUrl(
+  baseUrl: string,
+  startSeconds: number | null | undefined,
+  endSeconds: number | null | undefined,
+  seenUrls?: Map<string, number>,
+  chapterAnchor?: string
+): string | null {
+  if (!baseUrl) return null;
+
+  let url: string;
+  if (typeof startSeconds === "number" && startSeconds >= 0 && YOUTUBE_URL_REGEX.test(baseUrl)) {
+    const cleaned = baseUrl
+      .replace(/([?&])t=\d+s?(?=&|$)/gi, "$1")
+      .replace(/[?&]+$/, "")
+      .replace(/\?&/, "?");
+    const sep = cleaned.includes("?") ? "&" : "?";
+    url = `${cleaned}${sep}t=${Math.floor(startSeconds)}s`;
+  } else if (typeof startSeconds === "number" && startSeconds >= 0) {
+    const startInt = Math.floor(startSeconds);
+    const endInt =
+      typeof endSeconds === "number" && endSeconds > startInt ? Math.ceil(endSeconds) : null;
+    url = endInt !== null ? `${baseUrl}#t=${startInt},${endInt}` : `${baseUrl}#t=${startInt}`;
+  } else if (chapterAnchor) {
+    url = `${baseUrl}#section=${encodeURIComponent(chapterAnchor)}`;
+  } else {
+    url = baseUrl;
+  }
+
+  if (seenUrls) {
+    if (seenUrls.has(url)) {
+      const count = seenUrls.get(url)! + 1;
+      seenUrls.set(url, count);
+      url = url.includes("#") ? `${url}-${count}` : `${url}#slice-${count}`;
+    } else {
+      seenUrls.set(url, 1);
+    }
+  }
+
+  return url;
+}
+
+function parseTranscriptCueBlocks(text: string): ParsedCueBlock[] {
+  if (!text || !text.trim()) {
+    return [];
+  }
+
+  const lines = text.split(/\r?\n/);
+  interface DraftCue {
+    startSeconds: number;
+    explicitEndSeconds: number | null;
+    parts: string[];
+  }
+
+  const drafts: DraftCue[] = [];
+  let current: DraftCue | null = null;
+  let inCodeBlock = false;
+
+  const globalTimestampRegex =
+    /\[(\d{1,2}:\d{2}(?::\d{2})?(?:[.,]\d{1,3})?)(?:\s*[-–—]\s*(\d{1,2}:\d{2}(?::\d{2})?(?:[.,]\d{1,3})?))?\]/g;
+
+  for (const rawLine of lines) {
+    const trimmed = rawLine.trim();
+    if (trimmed.startsWith("```") || trimmed.startsWith("~~~")) {
+      inCodeBlock = !inCodeBlock;
+      continue;
+    }
+    if (inCodeBlock) continue;
+
+    // Skip metadata comments and markdown headings
+    if (/^<!--[\s\S]*?-->$/.test(trimmed) || /^#{1,6}\s+/.test(trimmed)) {
+      continue;
+    }
+
+    if (!trimmed) {
+      continue;
+    }
+
+    const matches = Array.from(trimmed.matchAll(globalTimestampRegex));
+    if (matches.length === 0) {
+      if (current) {
+        current.parts.push(trimmed);
+      }
+      continue;
+    }
+
+    // Preserve any leading text before the first marker on this line
+    const firstIdx = matches[0].index ?? 0;
+    if (firstIdx > 0 && current) {
+      const prefix = trimmed.slice(0, firstIdx).trim();
+      if (prefix) {
+        current.parts.push(prefix);
+      }
+    }
+
+    for (let i = 0; i < matches.length; i++) {
+      const m = matches[i];
+      const startSeconds = parseFlexibleTimestamp(m[1]);
+      if (startSeconds === null) continue;
+      const explicitEndSeconds = m[2] ? parseFlexibleTimestamp(m[2]) : null;
+      const sliceStart = m.index ?? 0;
+      const sliceEnd = i + 1 < matches.length ? (matches[i + 1].index ?? trimmed.length) : trimmed.length;
+      const segmentText = trimmed.slice(sliceStart, sliceEnd).trim();
+
+      current = {
+        startSeconds,
+        explicitEndSeconds:
+          explicitEndSeconds !== null ? Math.max(startSeconds, explicitEndSeconds) : null,
+        parts: segmentText ? [segmentText] : [],
+      };
+      drafts.push(current);
+    }
+  }
+
+  const cues: ParsedCueBlock[] = [];
+  for (let i = 0; i < drafts.length; i++) {
+    const d = drafts[i];
+    const nextStart = i + 1 < drafts.length ? drafts[i + 1].startSeconds : d.startSeconds;
+    const endSeconds =
+      d.explicitEndSeconds !== null
+        ? Math.max(d.startSeconds, d.explicitEndSeconds)
+        : Math.max(d.startSeconds, nextStart);
+    const joined = d.parts.join(" ").replace(/\s+/g, " ").trim();
+    if (joined) {
+      cues.push({
+        startSeconds: d.startSeconds,
+        endSeconds,
+        text: joined,
+      });
+    }
+  }
+
+  return cues;
 }
 
 function computeWordCount(text: string): number {
-  const stripped = text.replace(/<!--[\s\S]*?-->/g, " ").trim();
+  const stripped = text
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(
+      /\[\d{1,2}:\d{2}(?::\d{2})?(?:[.,]\d{1,3})?(?:\s*[-–—]\s*\d{1,2}:\d{2}(?::\d{2})?(?:[.,]\d{1,3})?)?\]/g,
+      " "
+    )
+    .trim();
   if (!stripped) return 0;
   const words = stripped.split(/\s+/).filter(Boolean);
   return words.length;
@@ -58,7 +237,26 @@ export class DocumentSlicingEngine {
       return [];
     }
 
+    if (mode === "none") {
+      return this.sliceFullDocument(input);
+    }
+
+    if (options?.timestampRanges && options.timestampRanges.length > 0) {
+      return this.sliceByCustomTimestampRanges(input, options.timestampRanges);
+    }
+
+    if (mode === "timestamps") {
+      return this.sliceByTimestampIntervals(input, options?.minutesPerChunk ?? 10);
+    }
+
+    if (mode === "chapters") {
+      return this.sliceByChapters(input, options);
+    }
+
     if (mode === "outline") {
+      if (/<!--\s*chapter:/i.test(input.textContent)) {
+        return this.sliceByChapters(input, options);
+      }
       return this.sliceOutline(input, options);
     }
 
@@ -74,6 +272,55 @@ export class DocumentSlicingEngine {
     return this.slice(input, options);
   }
 
+  private buildSingleSlice(
+    input: DocumentSliceInput,
+    title: string,
+    textContent: string,
+    rawContent: string | null = null,
+    startPage: number | null = null,
+    endPage: number | null = null,
+    startSeconds: number | null = null,
+    endSeconds: number | null = null,
+    urlOverride?: string | null
+  ): SlicedSubdocument {
+    let resolvedStartSeconds =
+      startSeconds !== null && startSeconds !== undefined
+        ? startSeconds
+        : (input.startSeconds ?? null);
+    let resolvedEndSeconds =
+      endSeconds !== null && endSeconds !== undefined
+        ? endSeconds
+        : (input.endSeconds ?? null);
+
+    if (resolvedStartSeconds === null && resolvedEndSeconds === null) {
+      const cues = parseTranscriptCueBlocks(textContent);
+      if (cues.length > 0) {
+        resolvedStartSeconds = Math.floor(cues[0].startSeconds);
+        resolvedEndSeconds = Math.ceil(cues[cues.length - 1].endSeconds);
+      }
+    }
+
+    const docUrl = urlOverride !== undefined ? urlOverride : (input.originUrl || input.url || null);
+    const id = computeDeterministicId(input.sourceId, docUrl || title);
+    const wordCount = computeWordCount(textContent);
+    const contentHash = computeContentHash(textContent);
+
+    return {
+      id,
+      sourceId: input.sourceId,
+      title,
+      url: docUrl,
+      textContent,
+      rawContent,
+      contentHash,
+      wordCount,
+      startPage,
+      endPage,
+      startSeconds: resolvedStartSeconds,
+      endSeconds: resolvedEndSeconds,
+    };
+  }
+
   private sliceFullDocument(input: DocumentSliceInput): SlicedSubdocument[] {
     const pageMatches = Array.from(input.textContent.matchAll(/<!--\s*page:\s*(\d+)\s*-->/gi));
     let startPage: number | null = null;
@@ -87,26 +334,328 @@ export class DocumentSlicingEngine {
       }
     }
 
-    const docUrl = input.originUrl || input.url || null;
-    const title = input.title;
-    const id = computeDeterministicId(input.sourceId, docUrl || title);
-    const wordCount = computeWordCount(input.textContent);
-    const contentHash = computeContentHash(input.textContent);
-
     return [
-      {
-        id,
-        sourceId: input.sourceId,
-        title,
-        url: docUrl,
-        textContent: input.textContent,
-        rawContent: input.rawContent || null,
-        contentHash,
-        wordCount,
+      this.buildSingleSlice(
+        input,
+        input.title,
+        input.textContent,
+        input.rawContent || null,
         startPage,
         endPage,
-      },
+        input.startSeconds ?? null,
+        input.endSeconds ?? null
+      ),
     ];
+  }
+
+  private sliceByCustomTimestampRanges(
+    input: DocumentSliceInput,
+    ranges: TimestampRangeInput[]
+  ): SlicedSubdocument[] {
+    const cues = parseTranscriptCueBlocks(input.textContent);
+    if (cues.length === 0) {
+      return this.sliceFullDocument(input);
+    }
+
+    const baseUrl = (input.originUrl || input.url || "").split("#")[0].trim();
+    const seenUrls = new Map<string, number>();
+    const subdocs: SlicedSubdocument[] = [];
+
+    for (const range of ranges) {
+      const rangeStart = parseFlexibleTimestamp(range.start);
+      const rangeEnd = parseFlexibleTimestamp(range.end);
+      if (rangeStart === null || rangeEnd === null || rangeEnd <= rangeStart) {
+        continue;
+      }
+
+      const matched = cues.filter(
+        (cue) =>
+          cue.startSeconds < rangeEnd &&
+          (cue.endSeconds > rangeStart || cue.startSeconds >= rangeStart)
+      );
+
+      if (matched.length === 0) {
+        continue;
+      }
+
+      const textContent = matched.map((c) => c.text).join("\n\n").trim();
+      const startSec = Math.floor(rangeStart);
+      const endSec = Math.ceil(rangeEnd);
+      const title = `${input.title} ${formatTimestampRange(startSec, endSec)}`;
+      const url = buildTimestampedUrl(baseUrl, startSec, endSec, seenUrls);
+
+      subdocs.push(
+        this.buildSingleSlice(input, title, textContent, null, null, null, startSec, endSec, url)
+      );
+    }
+
+    return subdocs;
+  }
+
+  private sliceByTimestampIntervals(
+    input: DocumentSliceInput,
+    minutesPerChunk: number
+  ): SlicedSubdocument[] {
+    const cues = parseTranscriptCueBlocks(input.textContent);
+    if (cues.length === 0) {
+      return this.sliceFullDocument(input);
+    }
+
+    const intervalSeconds = Math.max(1, minutesPerChunk) * 60;
+    const baseUrl = (input.originUrl || input.url || "").split("#")[0].trim();
+    const seenUrls = new Map<string, number>();
+    const subdocs: SlicedSubdocument[] = [];
+
+    let bucket: ParsedCueBlock[] = [];
+    let bucketStart = cues[0].startSeconds;
+    let targetEnd = bucketStart + intervalSeconds;
+
+    const flushBucket = () => {
+      if (bucket.length === 0) return;
+      const firstCue = bucket[0];
+      const lastCue = bucket[bucket.length - 1];
+      const sliceStart = Math.floor(firstCue.startSeconds);
+      const sliceEnd = Math.ceil(Math.max(lastCue.endSeconds, firstCue.startSeconds));
+      const textContent = bucket.map((c) => c.text).join("\n\n").trim();
+      const title = `${input.title} ${formatTimestampRange(sliceStart, sliceEnd)}`;
+      const url = buildTimestampedUrl(baseUrl, sliceStart, sliceEnd, seenUrls);
+
+      subdocs.push(
+        this.buildSingleSlice(input, title, textContent, null, null, null, sliceStart, sliceEnd, url)
+      );
+    };
+
+    for (const cue of cues) {
+      if (bucket.length > 0 && cue.startSeconds >= targetEnd) {
+        flushBucket();
+        bucket = [cue];
+        bucketStart = cue.startSeconds;
+        targetEnd = bucketStart + intervalSeconds;
+      } else {
+        bucket.push(cue);
+      }
+    }
+
+    flushBucket();
+    return subdocs;
+  }
+
+  private sliceByChapters(
+    input: DocumentSliceInput,
+    options?: DocumentSlicingOptions
+  ): SlicedSubdocument[] {
+    const lines = input.textContent.split(/\r?\n/);
+    let inCodeBlock = false;
+    let hasExplicitChapterOrTimestampedHeading = false;
+
+    interface ChapterSectionDraft {
+      title: string;
+      startSeconds: number | null;
+      endSeconds: number | null;
+      fromComment: boolean;
+      hasBodyContent: boolean;
+      lines: string[];
+    }
+
+    const sections: ChapterSectionDraft[] = [];
+    let currentSection: ChapterSectionDraft | null = null;
+    const preChapterLines: string[] = [];
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("```") || trimmed.startsWith("~~~")) {
+        inCodeBlock = !inCodeBlock;
+      }
+
+      const chapterCommentMatch = !inCodeBlock
+        ? trimmed.match(/^<!--\s*chapter:\s*(.*?)\s*-->$/i)
+        : null;
+
+      if (chapterCommentMatch) {
+        hasExplicitChapterOrTimestampedHeading = true;
+        const attrs = chapterCommentMatch[1];
+        const startAttr = attrs.match(/\bstart\s*=\s*["']?(\d+(?:\.\d+)?)["']?/i);
+        const endAttr = attrs.match(/\bend\s*=\s*["']?(\d+(?:\.\d+)?)["']?/i);
+        const titleAttr = attrs.match(/\btitle\s*=\s*(?:"([^"]*)"|'([^']*)')/i);
+
+        const parsedStart = startAttr ? Number(startAttr[1]) : null;
+        const parsedEnd = endAttr ? Number(endAttr[1]) : null;
+        const parsedTitle = (titleAttr?.[1] ?? titleAttr?.[2] ?? "").trim();
+
+        if (currentSection) {
+          sections.push(currentSection);
+        }
+
+        currentSection = {
+          title: parsedTitle || `Chapter ${sections.length + 1}`,
+          startSeconds:
+            parsedStart !== null && Number.isFinite(parsedStart) ? Math.floor(parsedStart) : null,
+          endSeconds:
+            parsedEnd !== null && Number.isFinite(parsedEnd) ? Math.ceil(parsedEnd) : null,
+          fromComment: true,
+          hasBodyContent: false,
+          lines: [line],
+        };
+        continue;
+      }
+
+      const headingMatch = !inCodeBlock ? line.match(/^\s{0,3}(#{1,6})\s+(.+)$/) : null;
+      if (headingMatch) {
+        const rawHeading = headingMatch[2].replace(/#+\s*$/, "").trim();
+        const tsMatch = rawHeading.match(INLINE_BRACKET_TIMESTAMP_REGEX);
+        const cleanHeading = rawHeading
+          .replace(INLINE_BRACKET_TIMESTAMP_REGEX, "")
+          .replace(/^[\s\-–—:]+|[\s\-–—:]+$/g, "")
+          .trim();
+
+        const headingStart = tsMatch?.[1] ? parseFlexibleTimestamp(tsMatch[1]) : null;
+        const headingEnd = tsMatch?.[2] ? parseFlexibleTimestamp(tsMatch[2]) : null;
+        if (headingStart !== null) {
+          hasExplicitChapterOrTimestampedHeading = true;
+        }
+
+        if (currentSection && currentSection.fromComment && !currentSection.hasBodyContent) {
+          // Markdown heading immediately following HTML chapter comment belongs to that same chapter
+          currentSection.lines.push(line);
+          if (cleanHeading && /^Chapter \d+$/.test(currentSection.title)) {
+            currentSection.title = cleanHeading;
+          }
+          if (currentSection.startSeconds === null && headingStart !== null) {
+            currentSection.startSeconds = Math.floor(headingStart);
+          }
+          if (currentSection.endSeconds === null && headingEnd !== null) {
+            currentSection.endSeconds = Math.ceil(headingEnd);
+          }
+          continue;
+        }
+
+        if (currentSection) {
+          sections.push(currentSection);
+        }
+
+        currentSection = {
+          title: cleanHeading || rawHeading,
+          startSeconds: headingStart !== null ? Math.floor(headingStart) : null,
+          endSeconds: headingEnd !== null ? Math.ceil(headingEnd) : null,
+          fromComment: false,
+          hasBodyContent: false,
+          lines: [line],
+        };
+        continue;
+      }
+
+      if (!currentSection) {
+        preChapterLines.push(line);
+      } else {
+        currentSection.lines.push(line);
+        if (trimmed.length > 0 && !/^<!--/.test(trimmed)) {
+          currentSection.hasBodyContent = true;
+        }
+      }
+    }
+
+    if (currentSection) {
+      sections.push(currentSection);
+    }
+
+    if (sections.length === 0) {
+      return this.sliceByTimestampIntervals(input, options?.minutesPerChunk ?? 10);
+    }
+
+    // Check if headings actually represent timestamped/media chapters
+    const anySectionHasCues = sections.some(
+      (sec) => parseTranscriptCueBlocks(sec.lines.join("\n")).length > 0
+    );
+    if (!hasExplicitChapterOrTimestampedHeading && !anySectionHasCues) {
+      return this.sliceByTimestampIntervals(input, options?.minutesPerChunk ?? 10);
+    }
+
+    // Fill missing start/end timestamps from cue blocks inside each section
+    const sectionCues = sections.map((sec) => parseTranscriptCueBlocks(sec.lines.join("\n")));
+    for (let i = 0; i < sections.length; i++) {
+      const sec = sections[i];
+      const cues = sectionCues[i];
+      if (sec.startSeconds === null && cues.length > 0) {
+        sec.startSeconds = Math.floor(cues[0].startSeconds);
+      }
+    }
+
+    for (let i = 0; i < sections.length; i++) {
+      const sec = sections[i];
+      const cues = sectionCues[i];
+      if (sec.endSeconds === null) {
+        const lastCueEnd = cues.length > 0 ? Math.ceil(cues[cues.length - 1].endSeconds) : null;
+        const nextStart =
+          i + 1 < sections.length ? sections[i + 1].startSeconds : null;
+
+        if (lastCueEnd !== null && (sec.startSeconds === null || lastCueEnd > sec.startSeconds)) {
+          sec.endSeconds = lastCueEnd;
+        } else if (nextStart !== null && (sec.startSeconds === null || nextStart >= sec.startSeconds)) {
+          sec.endSeconds = nextStart;
+        } else if (input.endSeconds != null && (sec.startSeconds === null || input.endSeconds >= sec.startSeconds)) {
+          sec.endSeconds = Math.ceil(input.endSeconds);
+        } else if (sec.startSeconds !== null) {
+          sec.endSeconds = sec.startSeconds;
+        }
+      }
+    }
+
+    // Handle pre-chapter lines if they contain spoken transcript cues
+    const preText = preChapterLines.join("\n").trim();
+    const preCues = parseTranscriptCueBlocks(preText);
+    if (preCues.length > 0) {
+      const preStart = Math.floor(preCues[0].startSeconds);
+      const firstSecStart = sections[0].startSeconds;
+      const preEnd =
+        firstSecStart !== null && firstSecStart >= preStart
+          ? firstSecStart
+          : Math.ceil(preCues[preCues.length - 1].endSeconds);
+      sections.unshift({
+        title: "Introduction",
+        startSeconds: preStart,
+        endSeconds: preEnd,
+        fromComment: false,
+        hasBodyContent: true,
+        lines: preChapterLines,
+      });
+    } else if (preText.replace(/<!--[\s\S]*?-->/g, "").trim().length > 0) {
+      sections[0].lines = [...preChapterLines, ...sections[0].lines];
+    }
+
+    const baseUrl = (input.originUrl || input.url || "").split("#")[0].trim();
+    const seenUrls = new Map<string, number>();
+
+    return sections.map((sec) => {
+      const textContent = sec.lines.join("\n").trim();
+      let title = `${input.title} - ${sec.title}`;
+      if (sec.startSeconds !== null) {
+        if (sec.endSeconds !== null && sec.endSeconds > sec.startSeconds) {
+          title = `${input.title} - ${sec.title} ${formatTimestampRange(sec.startSeconds, sec.endSeconds)}`;
+        } else {
+          title = `${input.title} - ${sec.title} [${formatTimestamp(sec.startSeconds)}]`;
+        }
+      }
+
+      const url = buildTimestampedUrl(
+        baseUrl,
+        sec.startSeconds,
+        sec.endSeconds,
+        seenUrls,
+        sec.title
+      );
+
+      return this.buildSingleSlice(
+        input,
+        title,
+        textContent,
+        null,
+        null,
+        null,
+        sec.startSeconds,
+        sec.endSeconds,
+        url
+      );
+    });
   }
 
   private sliceBudget(input: DocumentSliceInput, options?: DocumentSlicingOptions): SlicedSubdocument[] {

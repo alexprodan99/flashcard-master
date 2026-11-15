@@ -2,8 +2,8 @@
 title: 'Story 21.5: Timestamp Slicing Engine, Citation Deep-Linking & Timestamp-Aware `GroundingGuard`'
 type: 'feature'
 created: '2026-11-14'
-status: 'ready-for-dev'
-baseline_commit: '3b74d42'
+status: 'done'
+baseline_commit: '9f98dcf'
 review_loop_iteration: 0
 context:
   - '_bmad-output/implementation-artifacts/epic-21-context.md'
@@ -43,10 +43,10 @@ Long podcasts, video lectures, and YouTube talks need to be sliced by timestamp 
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `packages/core/src/services/document-slicing-engine.ts` -- Add timestamp slicing modes (custom ranges, fixed `N`-minute intervals, and chapters), cue-boundary snapping, and `startSeconds`/`endSeconds` propagation.
-- [ ] `packages/core/src/services/grounding-guard.ts` -- Strip inline timestamp markers (`[MM:SS]`, `[HH:MM:SS]`, `[MM:SS - MM:SS]`) inside `normalizeText()`.
-- [ ] `packages/core/src/services/prompt-builder.ts` & `card-generation-service.ts` -- Add media timestamp citation prompt guidance and deep-link YouTube `sourceOriginUrl` (`?t=<seconds>s` / `&t=<seconds>s`) from `sourceLocator`.
-- [ ] Unit tests -- Test custom timestamp slicing, `N`-minute interval slicing, chapter slicing, YouTube URL timestamp deep-linking, and `GroundingGuard` cross-cue verification.
+- [x] `packages/core/src/services/document-slicing-engine.ts` -- Add timestamp slicing modes (custom ranges, fixed `N`-minute intervals, and chapters), cue-boundary snapping, and `startSeconds`/`endSeconds` propagation.
+- [x] `packages/core/src/services/grounding-guard.ts` -- Strip inline timestamp markers (`[MM:SS]`, `[HH:MM:SS]`, `[MM:SS - MM:SS]`) inside `normalizeText()`.
+- [x] `packages/core/src/services/prompt-builder.ts` & `card-generation-service.ts` -- Add media timestamp citation prompt guidance and deep-link YouTube `sourceOriginUrl` (`?t=<seconds>s` / `&t=<seconds>s`) from `sourceLocator`.
+- [x] Unit tests -- Test custom timestamp slicing, `N`-minute interval slicing, chapter slicing, YouTube URL timestamp deep-linking, and `GroundingGuard` cross-cue verification.
 
 **Acceptance Criteria:**
 - `DocumentSlicingEngine` slices timestamped transcripts by custom timestamp ranges, fixed `N`-minute intervals, or chapter markers, setting `startSeconds` and `endSeconds` on subdocuments.

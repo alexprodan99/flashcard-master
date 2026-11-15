@@ -123,6 +123,8 @@ export class IngestionService {
               rawContent: raw.rawContent || cleanDoc.rawContent || null,
               url: docUrl,
               originUrl: docUrl,
+              startSeconds: cleanDoc.startSeconds ?? null,
+              endSeconds: cleanDoc.endSeconds ?? null,
             },
             options!.slicing
           );
@@ -137,8 +139,8 @@ export class IngestionService {
               contentHash: slice.contentHash,
               startPage: slice.startPage ?? null,
               endPage: slice.endPage ?? null,
-              startSeconds: (slice as any).startSeconds ?? cleanDoc.startSeconds ?? null,
-              endSeconds: (slice as any).endSeconds ?? cleanDoc.endSeconds ?? null,
+              startSeconds: slice.startSeconds ?? cleanDoc.startSeconds ?? null,
+              endSeconds: slice.endSeconds ?? cleanDoc.endSeconds ?? null,
             });
           }
         } else {
@@ -184,6 +186,8 @@ export class IngestionService {
                 rawContent: raw.rawContent || cleanDoc.rawContent || null,
                 url: docUrl,
                 originUrl: docUrl,
+                startSeconds: cleanDoc.startSeconds ?? null,
+                endSeconds: cleanDoc.endSeconds ?? null,
               },
               options!.slicing
             );
@@ -200,8 +204,8 @@ export class IngestionService {
                 wordCount: slice.wordCount,
                 startPage: slice.startPage ?? null,
                 endPage: slice.endPage ?? null,
-                startSeconds: (slice as any).startSeconds ?? cleanDoc.startSeconds ?? null,
-                endSeconds: (slice as any).endSeconds ?? cleanDoc.endSeconds ?? null,
+                startSeconds: slice.startSeconds ?? cleanDoc.startSeconds ?? null,
+                endSeconds: slice.endSeconds ?? cleanDoc.endSeconds ?? null,
               });
             }
           } else {

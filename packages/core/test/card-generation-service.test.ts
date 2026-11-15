@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { CardGenerationService, formatCardSourceLocator } from "../src/services/card-generation-service.js";
+import {
+  CardGenerationService,
+  formatCardSourceLocator,
+  appendTimestampToMediaUrl,
+} from "../src/services/card-generation-service.js";
 import type { LLMProviderPort, CardGenerationDraft } from "../src/ports/index.js";
 import type { CleanTextDocument } from "../src/domain/models.js";
 
@@ -269,5 +273,96 @@ describe("CardGenerationService", () => {
     const drafts = await service.generateFromDocument(subdoc);
     expect(drafts.length).toBe(1);
     expect(drafts[0].sourceLocator).toBe("Calculus.pdf - Page 14, Section 2.1");
+  });
+
+  describe("appendTimestampToMediaUrl", () => {
+    it("appends &t=<seconds>s to youtube.com/watch?v=... URLs from [MM:SS - MM:SS] locator", () => {
+      expect(
+        appendTimestampToMediaUrl(
+          "https://www.youtube.com/watch?v=eS1zZKHFzwE",
+          "Jensen Huang Lecture - [04:12 - 04:45]"
+        )
+      ).toBe("https://www.youtube.com/watch?v=eS1zZKHFzwE&t=252s");
+    });
+
+    it("appends ?t=<seconds>s to short youtu.be URLs and supports HH:MM:SS locators", () => {
+      expect(
+        appendTimestampToMediaUrl("https://youtu.be/eS1zZKHFzwE", "[01:02:05 - 01:03:00]")
+      ).toBe("https://youtu.be/eS1zZKHFzwE?t=3725s");
+    });
+
+    it("replaces pre-existing t= query param without duplicating it", () => {
+      expect(
+        appendTimestampToMediaUrl(
+          "https://www.youtube.com/watch?v=abc123&t=60s",
+          "[08:30 - 09:00]"
+        )
+      ).toBe("https://www.youtube.com/watch?v=abc123&t=510s");
+
+      expect(
+        appendTimestampToMediaUrl(
+          "https://www.youtube.com/watch?t=60s&v=abc123",
+          "[02:00]"
+        )
+      ).toBe("https://www.youtube.com/watch?v=abc123&t=120s");
+    });
+
+    it("falls back to doc startSeconds when sourceLocator lacks a timestamp", () => {
+      expect(
+        appendTimestampToMediaUrl(
+          "https://www.youtube.com/watch?v=abc123",
+          "Chapter 2: Optimizers",
+          185
+        )
+      ).toBe("https://www.youtube.com/watch?v=abc123&t=185s");
+    });
+
+    it("leaves non-YouTube URLs untouched", () => {
+      expect(
+        appendTimestampToMediaUrl("https://example.com/lecture-notes", "[04:12 - 04:45]", 252)
+      ).toBe("https://example.com/lecture-notes");
+    });
+  });
+
+  it("formats media citations, instructs LLM on timestamps, verifies cross-cue quotes, and deep-links originUrl", async () => {
+    let capturedPrompt = "";
+    const mediaProvider: LLMProviderPort = {
+      providerName: "media-llm",
+      async generateQAPairs(_text: string, options: any): Promise<CardGenerationDraft[]> {
+        capturedPrompt = options.personaPrompt;
+        return [
+          {
+            question: "How does scaled dot-product attention normalize scores?",
+            answer: "By dividing the dot products by the square root of key dimension dk.",
+            sourceQuote:
+              "Scaled dot-product attention computes weights by dividing query-key products by the square root of the key dimension.",
+            sourceLocator: "[04:12 - 04:20]",
+            difficulty: "intermediate",
+          },
+        ];
+      },
+    };
+
+    const service = new CardGenerationService(mediaProvider);
+    const mediaSubdoc: CleanTextDocument = {
+      id: "doc-yt-slice",
+      sourceId: "source-yt",
+      title: "Transformer Architecture [00:00 - 10:00]",
+      originUrl: "https://www.youtube.com/watch?v=zjkBMFhNj_g&t=0s",
+      startSeconds: 0,
+      endSeconds: 600,
+      textContent: [
+        "[04:12 - 04:16] Scaled dot-product attention computes weights by dividing",
+        "[04:16 - 04:20] query-key products by the square root of the key dimension.",
+      ].join("\n\n"),
+      contentHash: "hash-yt",
+    };
+
+    const drafts = await service.generateFromDocument(mediaSubdoc);
+    expect(drafts).toHaveLength(1);
+    expect(capturedPrompt).toContain("MEDIA TIMESTAMP CITATION");
+    expect(drafts[0].sourceLocator).toBe("Transformer Architecture - [04:12 - 04:20]");
+    expect(drafts[0].originUrl).toBe("https://www.youtube.com/watch?v=zjkBMFhNj_g&t=252s");
+    expect(drafts[0].sourceOriginUrl).toBe("https://www.youtube.com/watch?v=zjkBMFhNj_g&t=252s");
   });
 });

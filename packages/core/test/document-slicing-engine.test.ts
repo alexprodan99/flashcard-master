@@ -280,4 +280,177 @@ Page 2 text also without headings.
       expect(engine.slice({ sourceId: "src", title: "Spaces", textContent: "   \n\n  " })).toEqual([]);
     });
   });
+
+  describe("Timestamp & Chapter Slicing Modes", () => {
+    it("slices transcript by custom timestampRanges with non-overlapping boundaries", () => {
+      const transcript = [
+        "[00:00 - 00:45] Introduction to backpropagation.",
+        "[00:45 - 02:00] Chain rule intuition.",
+        "[02:00 - 03:30] Gradient descent updates weights.",
+        "[03:30 - 05:00] Learning rate schedules and convergence.",
+        "[05:00 - 06:15] Regularization and dropout.",
+      ].join("\n\n");
+
+      const subdocs = engine.slice(
+        {
+          sourceId: "src-yt-ranges",
+          title: "Deep Learning Lecture",
+          textContent: transcript,
+          originUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        },
+        {
+          mode: "timestamps",
+          timestampRanges: [
+            { start: "00:00", end: "02:00" },
+            { start: "02:00", end: "05:00" },
+          ],
+        }
+      );
+
+      expect(subdocs).toHaveLength(2);
+
+      expect(subdocs[0].title).toBe("Deep Learning Lecture [00:00 - 02:00]");
+      expect(subdocs[0].startSeconds).toBe(0);
+      expect(subdocs[0].endSeconds).toBe(120);
+      expect(subdocs[0].url).toBe("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=0s");
+      expect(subdocs[0].textContent).toContain("Introduction to backpropagation.");
+      expect(subdocs[0].textContent).toContain("Chain rule intuition.");
+      expect(subdocs[0].textContent).not.toContain("Gradient descent updates weights.");
+
+      expect(subdocs[1].title).toBe("Deep Learning Lecture [02:00 - 05:00]");
+      expect(subdocs[1].startSeconds).toBe(120);
+      expect(subdocs[1].endSeconds).toBe(300);
+      expect(subdocs[1].url).toBe("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=120s");
+      expect(subdocs[1].textContent).toContain("Gradient descent updates weights.");
+      expect(subdocs[1].textContent).toContain("Learning rate schedules and convergence.");
+      expect(subdocs[1].textContent).not.toContain("Regularization and dropout.");
+    });
+
+    it("slices transcript by fixed N-minute intervals while snapping cleanly to cue boundaries", () => {
+      const transcript = [
+        "[00:00 - 01:30] First segment opens the talk.",
+        "[02:00 - 04:40] Second segment develops the core thesis.",
+        "[04:50 - 05:25] Third segment starts before five minutes and finishes slightly after without mid-sentence split.",
+        "[05:25 - 08:10] Fourth segment begins a fresh bucket after the boundary.",
+        "[08:10 - 11:00] Fifth segment closes the session.",
+      ].join("\n\n");
+
+      const subdocs = engine.slice(
+        {
+          sourceId: "src-intervals",
+          title: "Architecture Talk",
+          textContent: transcript,
+          originUrl: "https://youtu.be/abc123xyz",
+        },
+        {
+          mode: "timestamps",
+          minutesPerChunk: 5,
+        }
+      );
+
+      expect(subdocs).toHaveLength(2);
+
+      // Bucket 1 includes cues starting at 0, 120, and 290 (< 300) and snaps end to 05:25 (325s)
+      expect(subdocs[0].title).toBe("Architecture Talk [00:00 - 05:25]");
+      expect(subdocs[0].startSeconds).toBe(0);
+      expect(subdocs[0].endSeconds).toBe(325);
+      expect(subdocs[0].url).toBe("https://youtu.be/abc123xyz?t=0s");
+      expect(subdocs[0].textContent).toContain("finishes slightly after without mid-sentence split.");
+      expect(subdocs[0].textContent).not.toContain("begins a fresh bucket");
+
+      // Bucket 2 begins cleanly at 05:25 (325s) and ends at 11:00 (660s)
+      expect(subdocs[1].title).toBe("Architecture Talk [05:25 - 11:00]");
+      expect(subdocs[1].startSeconds).toBe(325);
+      expect(subdocs[1].endSeconds).toBe(660);
+      expect(subdocs[1].url).toBe("https://youtu.be/abc123xyz?t=325s");
+      expect(subdocs[1].textContent).toContain("Fifth segment closes the session.");
+    });
+
+    it("slices markdown chapter headings emitted for videos with chapters (mode: 'chapters')", () => {
+      const transcript = [
+        "## [00:00 - 08:30] Attention Foundations",
+        "",
+        "[00:00 - 00:45] Self-attention relates tokens across a sequence.",
+        "",
+        "## [08:30 - 15:00] Multi-Head Projections",
+        "",
+        "[08:30 - 09:15] Multiple heads learn complementary subspaces.",
+      ].join("\n");
+
+      const subdocs = engine.slice(
+        {
+          sourceId: "src-yt-chapters",
+          title: "Transformers Explained",
+          textContent: transcript,
+          originUrl: "https://www.youtube.com/watch?v=zjkBMFhNj_g",
+        },
+        { mode: "chapters" }
+      );
+
+      expect(subdocs).toHaveLength(2);
+      expect(subdocs[0].title).toBe("Transformers Explained - Attention Foundations [00:00 - 08:30]");
+      expect(subdocs[0].startSeconds).toBe(0);
+      expect(subdocs[0].endSeconds).toBe(510);
+      expect(subdocs[0].url).toBe("https://www.youtube.com/watch?v=zjkBMFhNj_g&t=0s");
+
+      expect(subdocs[1].title).toBe("Transformers Explained - Multi-Head Projections [08:30 - 15:00]");
+      expect(subdocs[1].startSeconds).toBe(510);
+      expect(subdocs[1].endSeconds).toBe(900);
+      expect(subdocs[1].url).toBe("https://www.youtube.com/watch?v=zjkBMFhNj_g&t=510s");
+    });
+
+    it("slices transcripts containing HTML <!-- chapter: ... --> markers under 'chapters' and 'outline'", () => {
+      const transcript = [
+        '<!-- chapter: start=0 end=180 title="Cold Open" -->',
+        "[00:00 - 01:00] Hook introducing the problem statement.",
+        "",
+        '<!-- chapter: start=180 end=420 title="Deep Dive" -->',
+        "[03:00 - 04:10] Walkthrough of the internal state machine.",
+      ].join("\n");
+
+      for (const mode of ["chapters", "outline"] as const) {
+        const subdocs = engine.slice(
+          {
+            sourceId: "src-html-chapters",
+            title: "Podcast Episode 1",
+            textContent: transcript,
+            originUrl: "file:///podcasts/ep1.mp3",
+          },
+          { mode }
+        );
+
+        expect(subdocs).toHaveLength(2);
+        expect(subdocs[0].title).toBe("Podcast Episode 1 - Cold Open [00:00 - 03:00]");
+        expect(subdocs[0].startSeconds).toBe(0);
+        expect(subdocs[0].endSeconds).toBe(180);
+        expect(subdocs[0].wordCount).toBe(5);
+
+        expect(subdocs[1].title).toBe("Podcast Episode 1 - Deep Dive [03:00 - 07:00]");
+        expect(subdocs[1].startSeconds).toBe(180);
+        expect(subdocs[1].endSeconds).toBe(420);
+        expect(subdocs[1].wordCount).toBe(6);
+      }
+    });
+
+    it("falls back to N-minute interval slicing when chapters mode finds no chapters", () => {
+      const transcript = [
+        "[00:00 - 04:00] Plain transcript without headings or chapter comments.",
+        "[10:30 - 14:00] Later topic past the 10-minute mark.",
+      ].join("\n\n");
+
+      const subdocs = engine.slice(
+        {
+          sourceId: "src-no-chapters",
+          title: "Unchaptered Video",
+          textContent: transcript,
+          originUrl: "https://www.youtube.com/watch?v=nochap123",
+        },
+        { mode: "chapters", minutesPerChunk: 10 }
+      );
+
+      expect(subdocs).toHaveLength(2);
+      expect(subdocs[0].startSeconds).toBe(0);
+      expect(subdocs[1].startSeconds).toBe(630);
+    });
+  });
 });

@@ -24,12 +24,18 @@ export class GroundingGuard {
       return "";
     }
     return text
-      // 1. Normalize unicode quotes and apostrophes
+      // 1. Strip inline media chapter comments and timestamp markers ([MM:SS], [HH:MM:SS], [MM:SS - MM:SS])
+      .replace(/<!--\s*chapter:[\s\S]*?-->/gi, " ")
+      .replace(
+        /\[\d{1,2}:\d{2}(?::\d{2})?(?:[.,]\d{1,3})?(?:\s*[-–—]\s*\d{1,2}:\d{2}(?::\d{2})?(?:[.,]\d{1,3})?)?\]/g,
+        " "
+      )
+      // 2. Normalize unicode quotes and apostrophes
       .replace(/[\u201C\u201D\u201E\u00AB\u00BB]/g, '"')
       .replace(/[\u2018\u2019]/g, "'")
-      // 2. Normalize unicode dashes and hyphens
+      // 3. Normalize unicode dashes and hyphens
       .replace(/[\u2013\u2014\u2015]/g, "-")
-      // 3. Normalize multiple whitespace and newlines
+      // 4. Normalize multiple whitespace and newlines
       .replace(/\s+/g, " ")
       .trim();
   }
@@ -44,10 +50,11 @@ export class GroundingGuard {
     }
 
     const rawQuote = draft.sourceQuote.trim();
-    if (rawQuote.length < this.minQuoteLength) {
+    const normQuote = this.normalizeText(rawQuote);
+    if (rawQuote.length < this.minQuoteLength || normQuote.length < this.minQuoteLength) {
       return {
         isValid: false,
-        failureReason: `Source quote is too short (${rawQuote.length} chars, minimum is ${this.minQuoteLength}).`,
+        failureReason: `Source quote is too short (${normQuote.length} chars, minimum is ${this.minQuoteLength}).`,
         matchConfidence: 0.0,
       };
     }
@@ -79,10 +86,9 @@ export class GroundingGuard {
       };
     }
 
-    // Tier 3: Normalized whitespace and punctuation match
+    // Tier 3: Normalized whitespace, punctuation, and timestamp-stripped match
     const normSource = this.normalizeText(sourceText);
-    const normQuote = this.normalizeText(rawQuote);
-    if (normSource.includes(normQuote)) {
+    if (normQuote.length >= this.minQuoteLength && normSource.includes(normQuote)) {
       return {
         isValid: true,
         matchedQuote: normQuote,
