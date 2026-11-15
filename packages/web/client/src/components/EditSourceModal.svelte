@@ -1,9 +1,11 @@
 <script lang="ts">
   import { updateSource, uploadSourceFile } from '../lib/api';
-  import type { DataSource } from '../lib/types';
+  import type { DataSource, DataSourceType, MediaSourceItem } from '../lib/types';
+  import { parseMediaItemsSummary, validateMediaItems } from '../lib/formatters.js';
   import { settingsStore } from '../stores/index.js';
   import { buildNotionUri, parseNotionUri, isValidNotionInput } from '../lib/notion-uri.js';
   import UrlListManager from './UrlListManager.svelte';
+  import MediaItemListEditor from './MediaItemListEditor.svelte';
   import TagInput from './TagInput.svelte';
 
   interface Props {
@@ -19,12 +21,16 @@
   let name = $state('');
   let uri = $state('');
   let webUrls = $state<string[]>([]);
+  let mediaItems = $state<MediaSourceItem[]>([]);
   let notionRecursive = $state(false);
   let tags = $state<string[]>([]);
   let isSubmitting = $state(false);
   let errorMessage = $state<string | null>(null);
   let isUploadingFile = $state(false);
   let fileInputRef = $state<HTMLInputElement | null>(null);
+
+  const isMediaType = (t: DataSourceType): t is 'audio' | 'video' | 'youtube' =>
+    t === 'audio' || t === 'video' || t === 'youtube';
 
   async function handleFileReplace(file: File) {
     const lastDot = file.name.lastIndexOf('.');
@@ -88,6 +94,8 @@
         } else {
           webUrls = [];
         }
+      } else if (isMediaType(source.type)) {
+        mediaItems = parseMediaItemsSummary(source.uri || '', source.type).items;
       } else if (source.type === 'notion') {
         const parsed = parseNotionUri(source.uri || '', source.tags || []);
         notionRecursive = parsed.isRecursive;
@@ -110,6 +118,13 @@
         return;
       }
       finalUri = cleanUrls.length === 1 ? cleanUrls[0] : JSON.stringify(cleanUrls);
+    } else if (isMediaType(source.type)) {
+      const validationErr = validateMediaItems(mediaItems, source.type);
+      if (validationErr) {
+        errorMessage = validationErr;
+        return;
+      }
+      finalUri = JSON.stringify(mediaItems);
     } else if (source.type === 'notion') {
       const rawUri = uri.trim();
       if (!rawUri) {
@@ -278,6 +293,17 @@
               </label>
             </div>
           </div>
+        {:else if isMediaType(source.type)}
+          <div class="form-group">
+            <MediaItemListEditor
+              sourceType={source.type}
+              bind:items={mediaItems}
+              disabled={isSubmitting}
+              {onNavigate}
+              onCloseModal={onClose}
+              onError={(msg) => (errorMessage = msg)}
+            />
+          </div>
         {:else}
           <div class="form-group">
             <label for="edit-src-uri">
@@ -331,7 +357,9 @@
     border: 1px solid #334155;
     border-radius: 16px;
     width: 100%;
-    max-width: 540px;
+    max-width: 640px;
+    max-height: 90vh;
+    overflow-y: auto;
     padding: 28px;
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
   }
@@ -398,6 +426,24 @@
     background: rgba(14, 165, 233, 0.15);
     color: #38bdf8;
     border: 1px solid rgba(14, 165, 233, 0.3);
+  }
+
+  .type-pill.audio {
+    background: rgba(168, 85, 247, 0.15);
+    color: #c084fc;
+    border: 1px solid rgba(168, 85, 247, 0.3);
+  }
+
+  .type-pill.video {
+    background: rgba(20, 184, 166, 0.15);
+    color: #2dd4bf;
+    border: 1px solid rgba(20, 184, 166, 0.3);
+  }
+
+  .type-pill.youtube {
+    background: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.3);
   }
 
   .close-btn {

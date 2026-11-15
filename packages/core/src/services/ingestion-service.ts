@@ -90,6 +90,14 @@ export class IngestionService {
 
       const isSlicingActive = Boolean(options?.slicing && options.slicing.mode !== "none");
 
+      if (isSlicingActive && rawDocs.length > 0) {
+        options?.onLog?.(
+          "info",
+          `Slicing transcript/documents (${options?.slicing?.mode}) for "${source.name}"...`,
+          { sourceId: source.id, stage: "slicing" }
+        );
+      }
+
       // Extract and filter for incremental delta
       for (const raw of rawDocs) {
         const cleanDoc = strategy.extractCleanText(raw);

@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { DataSource, DiscoveredDocument } from '../lib/types.js';
-  import { formatPageBadge } from '../lib/formatters.js';
+  import { formatPageBadge, formatTimestampBadge } from '../lib/formatters.js';
 
   interface Props {
     isOpen: boolean;
@@ -67,19 +67,20 @@
     const pageNorm = (doc.startPage != null && doc.endPage != null)
       ? `${doc.startPage} ${doc.endPage} page ${doc.startPage} page ${doc.endPage} p ${doc.startPage} p ${doc.endPage} pp ${doc.startPage}-${doc.endPage} pages ${doc.startPage}-${doc.endPage}`
       : (doc.startPage != null ? `${doc.startPage} page ${doc.startPage} p ${doc.startPage}` : '');
+    const tsNorm = normalizeSearchText(formatTimestampBadge(doc));
 
     return tokens.every((token) => {
-      if (titleNorm.includes(token) || urlNorm.includes(token) || textNorm.includes(token) || pageNorm.includes(token)) {
+      if (titleNorm.includes(token) || urlNorm.includes(token) || textNorm.includes(token) || pageNorm.includes(token) || tsNorm.includes(token)) {
         return true;
       }
       if (token.length > 3 && token.endsWith('s') && !token.endsWith('ss')) {
         const singular = token.slice(0, -1);
-        if (titleNorm.includes(singular) || urlNorm.includes(singular) || textNorm.includes(singular) || pageNorm.includes(singular)) {
+        if (titleNorm.includes(singular) || urlNorm.includes(singular) || textNorm.includes(singular) || pageNorm.includes(singular) || tsNorm.includes(singular)) {
           return true;
         }
       } else if (token.length > 3 && !token.endsWith('s')) {
         const plural = token + 's';
-        if (titleNorm.includes(plural) || urlNorm.includes(plural) || textNorm.includes(plural) || pageNorm.includes(plural)) {
+        if (titleNorm.includes(plural) || urlNorm.includes(plural) || textNorm.includes(plural) || pageNorm.includes(plural) || tsNorm.includes(plural)) {
           return true;
         }
       }
@@ -377,6 +378,11 @@
                       {doc.title}
                     </div>
                     <div class="doc-meta-row">
+                      {#if formatTimestampBadge(doc)}
+                        <span class="meta-item timestamp-badge">
+                          ⏱️ {formatTimestampBadge(doc)}
+                        </span>
+                      {/if}
                       {#if formatPageBadge(doc)}
                         <span class="meta-item page-badge">
                           📄 {formatPageBadge(doc)}
@@ -527,6 +533,21 @@
   .type-badge.text {
     background: #14532d;
     color: #86efac;
+  }
+
+  .type-badge.audio {
+    background: rgba(168, 85, 247, 0.25);
+    color: #c084fc;
+  }
+
+  .type-badge.video {
+    background: rgba(20, 184, 166, 0.25);
+    color: #2dd4bf;
+  }
+
+  .type-badge.youtube {
+    background: rgba(239, 68, 68, 0.25);
+    color: #f87171;
   }
 
   .header-text {
@@ -846,6 +867,15 @@
     padding: 1px 6px;
     border-radius: 4px;
     border: 1px solid #334155;
+    font-weight: 500;
+  }
+
+  .meta-item.timestamp-badge {
+    background: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+    padding: 1px 6px;
+    border-radius: 4px;
+    border: 1px solid rgba(245, 158, 11, 0.35);
     font-weight: 500;
   }
 

@@ -1,8 +1,26 @@
-export type DataSourceType = 'rss' | 'web' | 'local' | 'sitemap' | 'llms-txt' | 'notion';
+export type DataSourceType = 'rss' | 'web' | 'local' | 'sitemap' | 'llms-txt' | 'notion' | 'audio' | 'video' | 'youtube';
 export type DifficultyLevel = 'beginner' | 'intermediate' | 'expert' | 'mixed';
 export type PersonaType = 'socratic-mentor' | 'strict-examiner' | 'analogy-builder';
 export type CardDepthMode = 'atomic' | 'deep-dive' | 'scenario';
 export type DocumentExportFormat = 'markdown' | 'html' | 'txt' | 'json' | 'epub';
+
+export type SttProvider = 'openai' | 'gemini' | 'whisper-local';
+export type MediaExtractionMode = 'subtitles' | 'stt' | 'auto';
+
+export interface TimestampRange {
+  start: string;
+  end: string;
+  label?: string;
+}
+
+export interface MediaSourceItem {
+  uri: string;
+  title?: string;
+  extractionMode: MediaExtractionMode;
+  subtitlePath?: string;
+  sttProvider?: SttProvider;
+  timestampRanges?: TimestampRange[];
+}
 
 export interface DataSource {
   id: string;
@@ -15,13 +33,15 @@ export interface DataSource {
   updatedAt: string;
 }
 
-export type SlicingMode = 'outline' | 'budget' | 'none';
+export type SlicingMode = 'outline' | 'budget' | 'timestamps' | 'chapters' | 'none';
 
 export interface DocumentSlicingOptions {
   mode?: SlicingMode;
   pagesPerChunk?: number;
   wordsPerChunk?: number;
   minChunkWords?: number;
+  minutesPerChunk?: number;
+  timestampRanges?: TimestampRange[];
 }
 
 export interface DiscoveredDocument {
@@ -35,6 +55,8 @@ export interface DiscoveredDocument {
   cardCount?: number;
   startPage?: number | null;
   endPage?: number | null;
+  startSeconds?: number | null;
+  endSeconds?: number | null;
   createdAt: string;
   updatedAt: string;
 }
