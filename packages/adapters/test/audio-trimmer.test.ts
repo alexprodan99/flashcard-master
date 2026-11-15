@@ -3,7 +3,12 @@ import os from "node:os";
 import path from "node:path";
 import { describe, it, expect } from "vitest";
 import type { SpeechToTextPort } from "@flashcard-master/core";
-import { AudioTrimmer, type CommandRunner } from "../src/media/audio-trimmer.js";
+import {
+  AudioTrimmer,
+  resolveBundledFfmpegPath,
+  resolveBundledFfprobePath,
+  type CommandRunner,
+} from "../src/media/audio-trimmer.js";
 
 describe("AudioTrimmer", () => {
   it("parses timestamp ranges and rejects invalid end <= start windows", () => {
@@ -266,5 +271,19 @@ describe("AudioTrimmer", () => {
     await expect(trimmer.extractAndTrim("/media/audio.mp3")).rejects.toThrow(
       /ffmpeg is required to extract and trim audio/i
     );
+  });
+
+  it("resolves bundled ffmpeg-static and ffprobe-static binaries on disk and probes ffmpeg successfully", async () => {
+    const ffmpegPath = resolveBundledFfmpegPath();
+    const ffprobePath = resolveBundledFfprobePath();
+
+    expect(path.isAbsolute(ffmpegPath)).toBe(true);
+    expect(path.isAbsolute(ffprobePath)).toBe(true);
+    await expect(fs.stat(ffmpegPath)).resolves.toMatchObject({ size: expect.any(Number) });
+    await expect(fs.stat(ffprobePath)).resolves.toMatchObject({ size: expect.any(Number) });
+
+    const probe = await new AudioTrimmer().probeFfmpeg();
+    expect(probe.available).toBe(true);
+    expect(probe.version).toMatch(/ffmpeg version/i);
   });
 });

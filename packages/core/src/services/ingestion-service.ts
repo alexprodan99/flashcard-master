@@ -137,6 +137,8 @@ export class IngestionService {
               contentHash: slice.contentHash,
               startPage: slice.startPage ?? null,
               endPage: slice.endPage ?? null,
+              startSeconds: (slice as any).startSeconds ?? cleanDoc.startSeconds ?? null,
+              endSeconds: (slice as any).endSeconds ?? cleanDoc.endSeconds ?? null,
             });
           }
         } else {
@@ -198,6 +200,8 @@ export class IngestionService {
                 wordCount: slice.wordCount,
                 startPage: slice.startPage ?? null,
                 endPage: slice.endPage ?? null,
+                startSeconds: (slice as any).startSeconds ?? cleanDoc.startSeconds ?? null,
+                endSeconds: (slice as any).endSeconds ?? cleanDoc.endSeconds ?? null,
               });
             }
           } else {
@@ -223,6 +227,8 @@ export class IngestionService {
               wordCount,
               startPage: cleanDoc.startPage ?? null,
               endPage: cleanDoc.endPage ?? null,
+              startSeconds: cleanDoc.startSeconds ?? null,
+              endSeconds: cleanDoc.endSeconds ?? null,
             });
           }
         }

@@ -37,6 +37,8 @@ import {
   EpubFlashcardExporter,
   ProviderVerifier,
   AnkiConnectAdapter,
+  AudioIngestionStrategy,
+  VideoIngestionStrategy,
 } from "@flashcard-master/adapters";
 import { JobManager, type ConcurrencyLimits, type JobManagerOptions } from "./jobs/index.js";
 import { WorkerExecutor } from "./workers/index.js";
@@ -118,6 +120,19 @@ export class WebServer {
       this.ankiConnectAdapter = options.ankiConnectAdapter;
     } else {
       this.ankiConnectAdapter = new AnkiConnectAdapter(() => this.settingsService.getAnkiConnectOptions());
+    }
+
+    if (options.strategyRegistry) {
+      if (!options.strategyRegistry.hasStrategy("audio")) {
+        options.strategyRegistry.register(
+          new AudioIngestionStrategy({ settingsService: this.settingsService })
+        );
+      }
+      if (!options.strategyRegistry.hasStrategy("video")) {
+        options.strategyRegistry.register(
+          new VideoIngestionStrategy({ settingsService: this.settingsService })
+        );
+      }
     }
 
     const concurrencyLimits = this.settingsService.getWorkerConcurrencyLimits();
@@ -2616,7 +2631,7 @@ export class WebServer {
                   } else if (
                     json.encoding === "base64" ||
                     json.isBase64 === true ||
-                    (/\.(pdf|docx|png|jpg|jpeg|gif|webp|zip)$/i.test(filename || "") &&
+                    (/\.(pdf|docx|png|jpg|jpeg|gif|webp|zip|mp3|wav|m4a|ogg|flac|mp4|mkv|webm|mov)$/i.test(filename || "") &&
                       /^[A-Za-z0-9+/=\r\n\s]+$/.test(contentStr) &&
                       contentStr.replace(/[\r\n\s]/g, "").length % 4 === 0)
                   ) {
@@ -2674,10 +2689,28 @@ export class WebServer {
               return;
             }
 
-            const ALLOWED_EXTS = [".md", ".markdown", ".txt", ".pdf", ".docx", ".epub"];
+            const ALLOWED_EXTS = [
+              ".md",
+              ".markdown",
+              ".txt",
+              ".pdf",
+              ".docx",
+              ".epub",
+              ".mp3",
+              ".wav",
+              ".m4a",
+              ".ogg",
+              ".flac",
+              ".mp4",
+              ".mkv",
+              ".webm",
+              ".mov",
+              ".srt",
+              ".vtt",
+            ];
             if (!ALLOWED_EXTS.includes(ext)) {
               this.sendJson(res, 400, {
-                error: `Unsupported file type "${ext}". Only .md, .markdown, .txt, .pdf, .docx, and .epub files are supported.`,
+                error: `Unsupported file type "${ext}". Supported document, media, and subtitle extensions: ${ALLOWED_EXTS.join(", ")}.`,
               });
               return;
             }

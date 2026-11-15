@@ -1,5 +1,7 @@
 import { execFile } from "node:child_process";
+import * as fsSync from "node:fs";
 import * as fs from "node:fs/promises";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -52,10 +54,77 @@ export interface AudioTrimmerOptions {
   commandRunner?: CommandRunner;
 }
 
+const nodeRequire = createRequire(import.meta.url);
+
+function resolveAsarUnpackedPath(candidate: string): string {
+  if (/([\\/])app\.asar([\\/])/.test(candidate)) {
+    const unpacked = candidate.replace(/([\\/])app\.asar([\\/])/, "$1app.asar.unpacked$2");
+    if (fsSync.existsSync(unpacked)) {
+      return unpacked;
+    }
+  }
+  return candidate;
+}
+
+function resolveBundledMediaBinary(options: {
+  envVarName: "FFMPEG_PATH" | "FFPROBE_PATH";
+  packageName: "ffmpeg-static" | "ffprobe-static";
+  fallbackCommand: "ffmpeg" | "ffprobe";
+}): string {
+  const envOverride = process.env[options.envVarName]?.trim();
+  if (envOverride) {
+    return envOverride;
+  }
+
+  try {
+    const loaded = nodeRequire(options.packageName) as string | { path?: string } | null | undefined;
+    const rawPath = typeof loaded === "string" ? loaded : loaded?.path;
+    if (typeof rawPath === "string" && rawPath.trim()) {
+      const candidate = resolveAsarUnpackedPath(rawPath.trim());
+      if (fsSync.existsSync(candidate)) {
+        return candidate;
+      }
+    }
+  } catch {
+    // Fall back to system PATH binary if optional static binary is unavailable
+  }
+
+  return options.fallbackCommand;
+}
+
+/**
+ * Resolves the bundled ffmpeg binary (or FFMPEG_PATH override / PATH fallback).
+ */
+export function resolveBundledFfmpegPath(): string {
+  return resolveBundledMediaBinary({
+    envVarName: "FFMPEG_PATH",
+    packageName: "ffmpeg-static",
+    fallbackCommand: "ffmpeg",
+  });
+}
+
+/**
+ * Resolves the bundled ffprobe binary (or FFPROBE_PATH override / PATH fallback).
+ */
+export function resolveBundledFfprobePath(): string {
+  return resolveBundledMediaBinary({
+    envVarName: "FFPROBE_PATH",
+    packageName: "ffprobe-static",
+    fallbackCommand: "ffprobe",
+  });
+}
+
 export const defaultCommandRunner: CommandRunner = (command, args, options) => {
+  const resolvedCommand =
+    command === "ffmpeg"
+      ? resolveBundledFfmpegPath()
+      : command === "ffprobe"
+        ? resolveBundledFfprobePath()
+        : command;
+
   return new Promise((resolve, reject) => {
     execFile(
-      command,
+      resolvedCommand,
       args,
       {
         windowsHide: true,

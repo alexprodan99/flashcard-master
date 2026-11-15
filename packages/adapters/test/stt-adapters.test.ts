@@ -1,6 +1,8 @@
 import * as fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import * as zlib from "node:zlib";
+import JSZip from "jszip";
 import { describe, it, expect, vi } from "vitest";
 import { SettingsService, type SettingsRepository } from "@flashcard-master/core";
 import { AudioTrimmer } from "../src/media/audio-trimmer.js";
@@ -535,6 +537,197 @@ describe("STT Adapters", () => {
         adapter.transcribe({ audioPath: "/tmp/note.mp3" })
       ).rejects.toThrow(/\[whisper-local\].*was not found/i);
     });
+
+    it("auto-downloads Windows whisper.cpp zip binary + ggml-tiny.bin model, converts via ffmpeg, and parses transcript.json", async () => {
+      const cacheDir = await fs.mkdtemp(path.join(os.tmpdir(), "fcm-whisper-win-"));
+      try {
+        const zip = new JSZip();
+        zip.file("Release/whisper-cli.exe", Buffer.from("whisper-cli-exe-bytes"));
+        zip.file("Release/main.exe", Buffer.from("legacy-main-exe-bytes"));
+        zip.file("Release/whisper.dll", Buffer.from("whisper-dll-bytes"));
+        const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });
+        const modelBuffer = Buffer.from("ggml-tiny-weights");
+
+        const requestedUrls: string[] = [];
+        const mockFetch = async (url: string | URL | Request) => {
+          const u = String(url);
+          requestedUrls.push(u);
+          if (u.endsWith(".zip")) {
+            return new Response(new Uint8Array(zipBuffer), { status: 200 });
+          }
+          if (u.endsWith("ggml-tiny.bin")) {
+            return new Response(new Uint8Array(modelBuffer), { status: 200 });
+          }
+          return new Response("Not Found", { status: 404 });
+        };
+
+        const executedCommands: Array<{ cmd: string; args: string[] }> = [];
+        const runner = async (cmd: string, args: string[]) => {
+          executedCommands.push({ cmd, args });
+          if (cmd === "ffmpeg") {
+            const wavPath = args[args.length - 1];
+            await fs.writeFile(wavPath, Buffer.from("pcm-16k-wav"));
+            return { stdout: "", stderr: "", exitCode: 0 };
+          }
+          const ofPrefix = args[args.indexOf("-of") + 1];
+          await fs.writeFile(
+            `${ofPrefix}.json`,
+            JSON.stringify({
+              result: { language: "en" },
+              transcription: [
+                { offsets: { from: 0, to: 4200 }, text: " Bundled whisper-cli auto-downloaded cleanly." },
+              ],
+            })
+          );
+          return { stdout: "", stderr: "", exitCode: 0 };
+        };
+
+        const adapter = new LocalWhisperSttAdapter({
+          cacheDir,
+          model: "tiny",
+          autoDownload: true,
+          platform: "win32",
+          arch: "x64",
+          commandRunner: runner,
+          customFetch: mockFetch as typeof fetch,
+        });
+
+        const initialProbe = await adapter.probeAvailability();
+        expect(initialProbe).toEqual({
+          available: true,
+          mode: "cli",
+          details: expect.stringContaining("will auto-download on first run"),
+        });
+
+        const res = await adapter.transcribe({
+          audioPath: "/videos/lecture.mp4",
+          language: "en",
+          timestampOffsetSeconds: 10,
+        });
+
+        expect(requestedUrls).toEqual([
+          "https://github.com/ggml-org/whisper.cpp/releases/download/v1.9.2/whisper-bin-x64.zip",
+          "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin",
+        ]);
+
+        const expectedBin = path.join(cacheDir, "bin", "whisper-cli.exe");
+        const expectedDll = path.join(cacheDir, "bin", "whisper.dll");
+        const expectedModel = path.join(cacheDir, "models", "ggml-tiny.bin");
+        expect(await fs.readFile(expectedBin, "utf8")).toBe("whisper-cli-exe-bytes");
+        expect(await fs.readFile(expectedDll, "utf8")).toBe("whisper-dll-bytes");
+        expect(await fs.readFile(expectedModel, "utf8")).toBe("ggml-tiny-weights");
+
+        expect(executedCommands[0].cmd).toBe("ffmpeg");
+        expect(executedCommands[1].cmd).toBe(expectedBin);
+        expect(executedCommands[1].args).toContain("-m");
+        expect(executedCommands[1].args).toContain(expectedModel);
+        expect(executedCommands[1].args).toContain("-oj");
+        expect(executedCommands[1].args[executedCommands[1].args.indexOf("-f") + 1]).toMatch(/input-16k\.wav$/);
+
+        expect(res).toEqual({
+          provider: "whisper-local",
+          language: "en",
+          durationSeconds: 4.2,
+          text: "Bundled whisper-cli auto-downloaded cleanly.",
+          cues: [
+            { startSeconds: 10, endSeconds: 14.2, text: "Bundled whisper-cli auto-downloaded cleanly." },
+          ],
+        });
+
+        const cachedProbe = await adapter.probeAvailability();
+        expect(cachedProbe).toEqual({
+          available: true,
+          mode: "cli",
+          details: expect.stringContaining("binary cached"),
+        });
+      } finally {
+        await fs.rm(cacheDir, { recursive: true, force: true });
+      }
+    });
+
+    it("auto-downloads and extracts .tgz and .tar.gz whisper.cpp archives for darwin and linux", async () => {
+      function buildTarBuffer(entries: Array<{ name: string; content?: Buffer; linkname?: string; type?: string }>): Buffer {
+        const blocks: Buffer[] = [];
+        for (const entry of entries) {
+          const header = Buffer.alloc(512, 0);
+          header.write(entry.name, 0, Math.min(entry.name.length, 100), "utf8");
+          header.write("0000755\0", 100, 8, "ascii");
+          header.write("0000000\0", 108, 8, "ascii");
+          header.write("0000000\0", 116, 8, "ascii");
+          const size = entry.content ? entry.content.length : 0;
+          header.write(`${size.toString(8).padStart(11, "0")}\0`, 124, 12, "ascii");
+          header.write("00000000000\0", 136, 12, "ascii");
+          header.fill(0x20, 148, 156);
+          const typeChar = entry.type ?? "0";
+          header[156] = typeChar.charCodeAt(0);
+          if (entry.linkname) {
+            header.write(entry.linkname, 157, Math.min(entry.linkname.length, 100), "utf8");
+          }
+          header.write("ustar\0", 257, 6, "ascii");
+          header.write("00", 263, 2, "ascii");
+          let sum = 0;
+          for (let i = 0; i < 512; i += 1) sum += header[i];
+          header.write(`${sum.toString(8).padStart(6, "0")}\0 `, 148, 8, "ascii");
+          blocks.push(header);
+          if (entry.content && entry.content.length > 0) {
+            const pad = Math.ceil(entry.content.length / 512) * 512;
+            const dataBlock = Buffer.alloc(pad, 0);
+            entry.content.copy(dataBlock);
+            blocks.push(dataBlock);
+          }
+        }
+        blocks.push(Buffer.alloc(1024, 0));
+        return Buffer.concat(blocks);
+      }
+
+      const darwinCache = await fs.mkdtemp(path.join(os.tmpdir(), "fcm-whisper-mac-"));
+      const linuxCache = await fs.mkdtemp(path.join(os.tmpdir(), "fcm-whisper-lin-"));
+
+      try {
+        const darwinTarGz = zlib.gzipSync(
+          buildTarBuffer([
+            { name: "package/whisper-aarch64-apple-darwin", content: Buffer.from("macho-arm64-bin") },
+          ])
+        );
+        const darwinAdapter = new LocalWhisperSttAdapter({
+          cacheDir: darwinCache,
+          autoDownload: true,
+          platform: "darwin",
+          arch: "arm64",
+          customFetch: (async () =>
+            new Response(new Uint8Array(darwinTarGz), { status: 200 })) as typeof fetch,
+        });
+
+        const macBin = await darwinAdapter.ensureWhisperCppBinary();
+        expect(macBin).toBe(path.join(darwinCache, "bin", "whisper-cli"));
+        expect(await fs.readFile(macBin, "utf8")).toBe("macho-arm64-bin");
+
+        const linuxTarGz = zlib.gzipSync(
+          buildTarBuffer([
+            { name: "whisper-bin-ubuntu-x64/whisper-cli", content: Buffer.from("elf-x64-bin") },
+            { name: "whisper-bin-ubuntu-x64/libwhisper.so.1.9.5", content: Buffer.from("libwhisper-so") },
+            { name: "whisper-bin-ubuntu-x64/libwhisper.so.1", type: "2", linkname: "libwhisper.so.1.9.5" },
+          ])
+        );
+        const linuxAdapter = new LocalWhisperSttAdapter({
+          cacheDir: linuxCache,
+          autoDownload: true,
+          platform: "linux",
+          arch: "x64",
+          customFetch: (async () =>
+            new Response(new Uint8Array(linuxTarGz), { status: 200 })) as typeof fetch,
+        });
+
+        const linBin = await linuxAdapter.ensureWhisperCppBinary();
+        expect(linBin).toBe(path.join(linuxCache, "bin", "whisper-cli"));
+        expect(await fs.readFile(linBin, "utf8")).toBe("elf-x64-bin");
+        expect(await fs.readFile(path.join(linuxCache, "bin", "libwhisper.so.1.9.5"), "utf8")).toBe("libwhisper-so");
+        expect(await fs.readFile(path.join(linuxCache, "bin", "libwhisper.so.1"), "utf8")).toBe("libwhisper-so");
+      } finally {
+        await fs.rm(darwinCache, { recursive: true, force: true });
+        await fs.rm(linuxCache, { recursive: true, force: true });
+      }
+    });
   });
 
   describe("createSttAdapter & createSttAdapterFromSettings", () => {
@@ -565,6 +758,17 @@ describe("STT Adapters", () => {
 
       const explicit = createSttAdapter({ provider: "whisper-local", localWhisperModel: "large-v3" });
       expect((explicit as LocalWhisperSttAdapter).model).toBe("large-v3");
+    });
+
+    it("falls back to gemini when default_stt_provider and openai_api_key are unset but gemini_api_key is configured", () => {
+      const repo = createMemorySettingsRepo({
+        gemini_api_key: "gem-only-key",
+      });
+      const settingsService = new SettingsService(repo, {});
+
+      const adapter = createSttAdapterFromSettings(undefined, settingsService, {}, {});
+      expect(adapter).toBeInstanceOf(GeminiSttAdapter);
+      expect(adapter.provider).toBe("gemini");
     });
   });
 });
