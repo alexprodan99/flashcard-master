@@ -2,7 +2,7 @@
 title: 'Story 21.7: Settings Default STT Configuration, CLI Media Flags & End-to-End Verification Suite'
 type: 'feature'
 created: '2026-11-14'
-status: 'ready-for-dev'
+status: 'done'
 baseline_commit: '3b74d42'
 review_loop_iteration: 0
 context:
@@ -47,11 +47,11 @@ Users need persistent default Speech-to-Text preferences (default STT provider, 
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `packages/core/src/domain/models.ts` & `services/settings-service.ts` -- Add `defaultSttProvider`, `localWhisperModel`, `localWhisperEndpoint`, and `defaultSubtitleLanguage` to `GeneralSettingsSchema` and env/db defaults.
-- [ ] `packages/web/src/routes/settings.ts` & `packages/web/client/src/views/SettingsView.svelte` -- Expose Speech-to-Text settings persistence and media tool readiness diagnostics (`ffmpeg`, `yt-dlp`, `whisper-local`) and wire defaults into `AddSourceModal.svelte`.
-- [ ] `packages/cli/src/` -- Support `--type audio|video|youtube`, `--stt-provider`, `--subtitles`, `--timestamps`, and `--interval-minutes` flags plus timestamp coordinate display in document inspection.
-- [ ] `docs/user-guide/ingestion-playbook.md` -- Document Audio, Video, and YouTube sources, subtitle formats, Speech-to-Text options, and timestamp slicing/citations.
-- [ ] Integration tests & monorepo gates -- Add E2E media pipeline test and verify `npm test`, `npm run typecheck`, `npm run lint`, and `npm run build`.
+- [x] `packages/core/src/domain/models.ts` & `services/settings-service.ts` -- Add `defaultSttProvider`, `localWhisperModel`, `localWhisperEndpoint`, and `defaultSubtitleLanguage` to `GeneralSettingsSchema` and env/db defaults.
+- [x] `packages/web/src/routes/settings.ts` & `packages/web/client/src/views/SettingsView.svelte` -- Expose Speech-to-Text settings persistence and media tool readiness diagnostics (`ffmpeg`, `yt-dlp`, `whisper-local`) and wire defaults into `AddSourceModal.svelte`.
+- [x] `packages/cli/src/` -- Support `--type audio|video|youtube`, `--stt-provider`, `--subtitles`, `--timestamps`, and `--interval-minutes` flags plus timestamp coordinate display in document inspection.
+- [x] `docs/user-guide/ingestion-playbook.md` -- Document Audio, Video, and YouTube sources, subtitle formats, Speech-to-Text options, and timestamp slicing/citations.
+- [x] Integration tests & monorepo gates -- Add E2E media pipeline test and verify `npm test`, `npm run typecheck`, `npm run lint`, and `npm run build`.
 
 **Acceptance Criteria:**
 - `SettingsView.svelte` and `SettingsService` persist and expose default STT provider, local Whisper configuration, and preferred caption language, pre-filling defaults in `AddSourceModal.svelte`.

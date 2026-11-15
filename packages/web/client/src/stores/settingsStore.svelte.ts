@@ -7,6 +7,7 @@ import type {
   GeneralSettingsResponse,
   SettingSource,
   AnkiTestResult,
+  MediaDiagnosticsResult,
 } from '../lib/types.js';
 import {
   fetchSettingsKeys,
@@ -18,6 +19,7 @@ import {
   fetchGeneralSettings,
   updateGeneralSettings,
   testAnkiConnect,
+  fetchMediaDiagnostics,
 } from '../lib/api.js';
 import { toastStore } from './toastStore.svelte.js';
 
@@ -56,6 +58,10 @@ function createInitialGeneralSettings(): GeneralSettings {
     workerTimeoutMinutes: 15,
     defaultSlicingMode: 'outline',
     defaultPageBudget: 10,
+    defaultSttProvider: 'openai',
+    localWhisperModel: 'base',
+    localWhisperEndpoint: '',
+    defaultSubtitleLanguage: 'en',
     epubDefaultAuthor: 'Flashcard Master',
     epubDefaultPublisher: 'Flashcard Master Studio',
   };
@@ -102,6 +108,8 @@ export class SettingsStore {
   savingGeneral = $state(false);
   testingAnki = $state(false);
   ankiTestResult = $state<AnkiTestResult | null>(null);
+  checkingMediaDiagnostics = $state(false);
+  mediaDiagnostics = $state<MediaDiagnosticsResult | null>(null);
 
   async loadKeys(): Promise<void> {
     this.loading = true;
@@ -187,6 +195,22 @@ export class SettingsStore {
       return failRes;
     } finally {
       this.testingAnki = false;
+    }
+  }
+
+  async checkMediaDiagnostics(isSilent = false): Promise<MediaDiagnosticsResult | null> {
+    this.checkingMediaDiagnostics = true;
+    try {
+      const res = await fetchMediaDiagnostics();
+      this.mediaDiagnostics = res;
+      return res;
+    } catch (err: any) {
+      if (!isSilent) {
+        toastStore.error(err.message || 'Failed to check media dependencies');
+      }
+      return null;
+    } finally {
+      this.checkingMediaDiagnostics = false;
     }
   }
 

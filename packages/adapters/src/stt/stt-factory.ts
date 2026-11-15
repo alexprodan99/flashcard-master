@@ -71,7 +71,7 @@ export function createSttAdapterFromSettings(
   const configuredDefault =
     provider ??
     overrides.provider ??
-    settingsService?.get("default_stt_provider") ??
+    settingsService?.getSetting("default_stt_provider") ??
     env.DEFAULT_STT_PROVIDER;
 
   const hasOpenAiKey = Boolean(

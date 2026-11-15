@@ -1583,6 +1583,164 @@
     </section>
     {/if}
 
+    <!-- Section 7: Speech-to-Text & Media Diagnostics -->
+    {#if activeTab === 'all' || activeTab === 'general'}
+      <section class="settings-section" id="section-stt-media">
+        <div class="section-header">
+          <div class="section-title-wrap">
+            <span class="section-icon">🎙️</span>
+            <h2 class="section-title">Speech-to-Text & Media Defaults</h2>
+          </div>
+          <p class="section-desc">
+            Configure default Speech-to-Text provider, local offline Whisper settings, preferred YouTube subtitle language, and verify local media dependencies.
+          </p>
+        </div>
+
+        <div class="card provider-card">
+          <div class="inputs-container">
+            <div class="input-row-grid">
+              <div class="input-group">
+                <label for="stt-default-provider" class="input-label">
+                  Default Speech-to-Text Provider
+                  <span class="badge-mini {getGeneralSourceBadge('defaultSttProvider', 'DEFAULT_STT_PROVIDER').cssClass}">
+                    {getGeneralSourceBadge('defaultSttProvider', 'DEFAULT_STT_PROVIDER').label}
+                  </span>
+                </label>
+                <select
+                  id="stt-default-provider"
+                  class="select-input"
+                  bind:value={formGeneral.defaultSttProvider}
+                >
+                  <option value="openai">🤖 OpenAI Whisper API (Cloud)</option>
+                  <option value="gemini">✨ Google Gemini Audio (Cloud)</option>
+                  <option value="whisper-local">💻 Local Whisper (Offline / Self-Hosted)</option>
+                </select>
+              </div>
+
+              <div class="input-group">
+                <label for="stt-subtitle-lang" class="input-label">
+                  Preferred Subtitle Language (ISO 639-1)
+                  <span class="badge-mini {getGeneralSourceBadge('defaultSubtitleLanguage', 'DEFAULT_SUBTITLE_LANGUAGE').cssClass}">
+                    {getGeneralSourceBadge('defaultSubtitleLanguage', 'DEFAULT_SUBTITLE_LANGUAGE').label}
+                  </span>
+                </label>
+                <input
+                  id="stt-subtitle-lang"
+                  type="text"
+                  class="text-input"
+                  bind:value={formGeneral.defaultSubtitleLanguage}
+                  placeholder="en"
+                />
+              </div>
+            </div>
+
+            <div class="input-row-grid">
+              <div class="input-group">
+                <label for="stt-whisper-model" class="input-label">
+                  Local Whisper Model Tier
+                  <span class="badge-mini {getGeneralSourceBadge('localWhisperModel', 'LOCAL_WHISPER_MODEL').cssClass}">
+                    {getGeneralSourceBadge('localWhisperModel', 'LOCAL_WHISPER_MODEL').label}
+                  </span>
+                </label>
+                <select
+                  id="stt-whisper-model"
+                  class="select-input"
+                  bind:value={formGeneral.localWhisperModel}
+                >
+                  <option value="tiny">tiny (Fastest, lowest RAM)</option>
+                  <option value="base">base (Balanced default)</option>
+                  <option value="small">small (Better accuracy)</option>
+                  <option value="medium">medium (High accuracy)</option>
+                  <option value="large-v3">large-v3 (Best accuracy, heaviest)</option>
+                </select>
+              </div>
+
+              <div class="input-group">
+                <label for="stt-whisper-endpoint" class="input-label">
+                  Local Whisper Endpoint / CLI Path (Optional)
+                  <span class="badge-mini {getGeneralSourceBadge('localWhisperEndpoint', 'LOCAL_WHISPER_ENDPOINT').cssClass}">
+                    {getGeneralSourceBadge('localWhisperEndpoint', 'LOCAL_WHISPER_ENDPOINT').label}
+                  </span>
+                </label>
+                <input
+                  id="stt-whisper-endpoint"
+                  type="text"
+                  class="text-input"
+                  bind:value={formGeneral.localWhisperEndpoint}
+                  placeholder="http://localhost:8080 or leave empty for managed whisper.cpp"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div class="media-diagnostics-panel">
+            <div class="media-diagnostics-header">
+              <div>
+                <strong>🔍 Media & STT Dependency Readiness</strong>
+                <p class="media-diagnostics-sub">
+                  Inspect local <code>ffmpeg</code>, <code>yt-dlp</code>, <code>whisper-local</code>, and cloud STT key availability.
+                </p>
+              </div>
+              <button
+                type="button"
+                class="btn btn-outline"
+                onclick={() => settingsStore.checkMediaDiagnostics()}
+                disabled={settingsStore.checkingMediaDiagnostics}
+              >
+                {settingsStore.checkingMediaDiagnostics ? '⏳ Checking...' : '🩺 Check Media Tools'}
+              </button>
+            </div>
+
+            {#if settingsStore.mediaDiagnostics}
+              {@const diag = settingsStore.mediaDiagnostics}
+              <div class="media-diagnostics-grid">
+                <div class="diag-row">
+                  <span class="diag-name">ffmpeg (Audio Trimming)</span>
+                  <span class="badge {diag.ffmpeg.available ? 'badge-configured' : 'badge-unconfigured'}">
+                    {diag.ffmpeg.available ? '✓ Ready' : '✗ Missing'}
+                  </span>
+                  <span class="diag-detail">{diag.ffmpeg.details || diag.ffmpeg.error || ''}</span>
+                </div>
+                <div class="diag-row">
+                  <span class="diag-name">yt-dlp (YouTube Fallback)</span>
+                  <span class="badge {diag.ytDlp.available ? 'badge-configured' : 'badge-env'}">
+                    {diag.ytDlp.available ? '✓ Ready' : '⬇ Auto-Download'}
+                  </span>
+                  <span class="diag-detail">{diag.ytDlp.details || diag.ytDlp.error || ''}</span>
+                </div>
+                <div class="diag-row">
+                  <span class="diag-name">whisper-local ({diag.whisperLocal.mode.toUpperCase()})</span>
+                  <span class="badge {diag.whisperLocal.available ? 'badge-configured' : 'badge-unconfigured'}">
+                    {diag.whisperLocal.available ? '✓ Ready' : '✗ Unavailable'}
+                  </span>
+                  <span class="diag-detail">{diag.whisperLocal.details || diag.whisperLocal.error || ''}</span>
+                </div>
+                <div class="diag-row">
+                  <span class="diag-name">Cloud STT Keys</span>
+                  <span class="badge {diag.openaiStt.configured || diag.geminiStt.configured ? 'badge-configured' : 'badge-unconfigured'}">
+                    {diag.openaiStt.configured ? 'OpenAI ✓' : 'OpenAI —'} · {diag.geminiStt.configured ? 'Gemini ✓' : 'Gemini —'}
+                  </span>
+                  <span class="diag-detail">Configured in LLM Provider Keys above</span>
+                </div>
+              </div>
+            {/if}
+          </div>
+
+          <div class="form-actions right-align">
+            <button
+              type="button"
+              class="btn btn-primary"
+              onclick={() => handleSaveGeneral('Speech-to-Text & Media')}
+              disabled={settingsStore.savingGeneral}
+            >
+              <span class="icon">💾</span>
+              <span>{settingsStore.savingGeneral ? 'Saving...' : 'Save Speech-to-Text Settings'}</span>
+            </button>
+          </div>
+        </div>
+      </section>
+    {/if}
+
     <!-- Logging & Diagnostics Section -->
     {#if activeTab === 'all' || activeTab === 'logging'}
       <section class="settings-section" id="section-logging">
@@ -2816,5 +2974,60 @@
 
   .btn-text-danger:hover {
     background: rgba(239, 68, 68, 0.15);
+  }
+
+  .media-diagnostics-panel {
+    margin-top: 16px;
+    padding: 14px 16px;
+    border-radius: 10px;
+    border: 1px solid #334155;
+    background: rgba(15, 23, 42, 0.45);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .media-diagnostics-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .media-diagnostics-sub {
+    margin: 4px 0 0;
+    font-size: 12px;
+    color: #94a3b8;
+  }
+
+  .media-diagnostics-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .diag-row {
+    display: grid;
+    grid-template-columns: 200px auto 1fr;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: rgba(30, 41, 59, 0.65);
+    font-size: 13px;
+  }
+
+  .diag-name {
+    font-weight: 600;
+    color: #e2e8f0;
+  }
+
+  .diag-detail {
+    color: #94a3b8;
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 </style>

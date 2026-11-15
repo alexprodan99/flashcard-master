@@ -10,11 +10,80 @@ import {
   type PersonaType,
   type CardDepthMode,
   type SlicingMode,
+  type SttProvider,
+  type TimestampRange,
   type DocumentSlicingOptions,
   CardGenerationService,
+  SttProviderSchema,
+  formatTimestampRange,
 } from "@flashcard-master/core";
 import { createLLMAdapter, DocumentExportService } from "@flashcard-master/adapters";
 import { createWebServer } from "@flashcard-master/web";
+
+function parseCliTimestampRanges(raw?: string): TimestampRange[] {
+  if (!raw || !raw.trim()) return [];
+  const ranges: TimestampRange[] = [];
+  for (const token of raw.split(",")) {
+    const clean = token.trim();
+    if (!clean) continue;
+    const parts = clean.split("-");
+    if (parts.length !== 2 || !parts[0].trim() || !parts[1].trim()) {
+      throw new Error(`Invalid timestamp range "${clean}". Expected format: "MM:SS-MM:SS" (e.g. "00:00-05:00,10:00-15:00").`);
+    }
+    ranges.push({ start: parts[0].trim(), end: parts[1].trim() });
+  }
+  return ranges;
+}
+
+function buildCliSlicingOptions(options: {
+  slicingMode?: string;
+  pagesPerChunk?: string;
+  wordsPerChunk?: string;
+  minChunkWords?: string;
+  intervalMinutes?: string;
+  timestamps?: string;
+}): DocumentSlicingOptions | undefined {
+  const validModes = ["outline", "budget", "timestamps", "chapters", "none"];
+  if (options.slicingMode && !validModes.includes(options.slicingMode)) {
+    throw new Error(`Invalid slicing mode "${options.slicingMode}". Must be one of: ${validModes.join(", ")}`);
+  }
+
+  const parsedPages = options.pagesPerChunk ? parseInt(options.pagesPerChunk, 10) : undefined;
+  const parsedWords = options.wordsPerChunk ? parseInt(options.wordsPerChunk, 10) : undefined;
+  const parsedMinWords = options.minChunkWords ? parseInt(options.minChunkWords, 10) : undefined;
+  const parsedMinutes = options.intervalMinutes ? parseInt(options.intervalMinutes, 10) : undefined;
+  const parsedRanges = parseCliTimestampRanges(options.timestamps);
+
+  if (
+    !options.slicingMode &&
+    !parsedPages &&
+    !parsedWords &&
+    !parsedMinWords &&
+    !parsedMinutes &&
+    parsedRanges.length === 0
+  ) {
+    return undefined;
+  }
+
+  const inferredMode: SlicingMode | undefined =
+    (options.slicingMode as SlicingMode) ||
+    (parsedMinutes || parsedRanges.length > 0
+      ? "timestamps"
+      : parsedPages || parsedWords
+        ? "budget"
+        : parsedMinWords
+          ? "outline"
+          : undefined);
+
+  return {
+    mode: inferredMode,
+    pagesPerChunk: parsedPages && !isNaN(parsedPages) && parsedPages > 0 ? parsedPages : undefined,
+    wordsPerChunk: parsedWords && !isNaN(parsedWords) && parsedWords > 0 ? parsedWords : undefined,
+    minChunkWords: parsedMinWords && !isNaN(parsedMinWords) && parsedMinWords > 0 ? parsedMinWords : undefined,
+    minutesPerChunk: parsedMinutes && !isNaN(parsedMinutes) && parsedMinutes > 0 ? parsedMinutes : undefined,
+    timestampRanges: parsedRanges.length > 0 ? parsedRanges : undefined,
+  };
+}
 
 export function createCli(providedContext?: AppContext): Command {
   const program = new Command();
@@ -115,10 +184,14 @@ export function createCli(providedContext?: AppContext): Command {
     .command("add <name> <type> <uri>")
     .description("Register a new data source")
     .option("-t, --tags <tags>", "Comma-separated list of tags", "")
-    .option("--slicing-mode <mode>", "Document slicing mode: outline | budget | none")
+    .option("--slicing-mode <mode>", "Document slicing mode: outline | budget | timestamps | chapters | none")
     .option("--pages-per-chunk <count>", "Page budget chunk size (number of pages)")
     .option("--words-per-chunk <count>", "Word budget chunk size (number of words)")
     .option("--min-chunk-words <count>", "Minimum section words for outline slicing")
+    .option("--stt-provider <provider>", "Speech-to-Text provider for media sources: openai | gemini | whisper-local")
+    .option("--subtitles <path>", "Path to external .srt/.vtt subtitle sidecar file for audio/video sources")
+    .option("--timestamps <ranges>", "Comma-separated start-end timestamp ranges (e.g. 00:00-05:00,10:00-15:00)")
+    .option("--interval-minutes <minutes>", "Transcript window size in minutes for timestamp/chapter slicing")
     .option("--sync", "Immediately trigger ingestion sync upon adding")
     .action(async (name: string, type: string, uri: string, options: {
       tags: string;
@@ -126,49 +199,61 @@ export function createCli(providedContext?: AppContext): Command {
       pagesPerChunk?: string;
       wordsPerChunk?: string;
       minChunkWords?: string;
+      sttProvider?: string;
+      subtitles?: string;
+      timestamps?: string;
+      intervalMinutes?: string;
       sync?: boolean;
     }) => {
       try {
-        const validTypes: DataSourceType[] = ["rss", "web", "local", "sitemap", "llms-txt", "notion"];
+        const validTypes: DataSourceType[] = ["rss", "web", "local", "sitemap", "llms-txt", "notion", "audio", "video", "youtube"];
         if (!validTypes.includes(type as DataSourceType)) {
           console.error(`Error: Invalid source type "${type}". Must be one of: ${validTypes.join(", ")}`);
           process.exitCode = 1;
           return;
         }
 
+        const isMedia = type === "audio" || type === "video" || type === "youtube";
+        let resolvedStt: SttProvider | undefined;
+        if (options.sttProvider) {
+          const parsed = SttProviderSchema.safeParse(options.sttProvider.trim());
+          if (!parsed.success) {
+            console.error(`Error: Invalid STT provider "${options.sttProvider}". Must be one of: openai, gemini, whisper-local`);
+            process.exitCode = 1;
+            return;
+          }
+          resolvedStt = parsed.data;
+        }
+
+        const parsedRanges = parseCliTimestampRanges(options.timestamps);
+        let finalUri = uri;
+        if (isMedia && !uri.trim().startsWith("[") && !uri.trim().startsWith("{")) {
+          finalUri = JSON.stringify([
+            {
+              uri: uri.trim(),
+              extractionMode: options.subtitles ? "subtitles" : "auto",
+              ...(resolvedStt ? { sttProvider: resolvedStt } : {}),
+              ...(options.subtitles ? { subtitlePath: options.subtitles.trim() } : {}),
+              ...(parsedRanges.length > 0 ? { timestampRanges: parsedRanges } : {}),
+            },
+          ]);
+        }
+
         const tags = options.tags
           ? options.tags.split(",").map((t) => t.trim()).filter((t) => t.length > 0)
           : [];
 
+        const slicing = buildCliSlicingOptions(options);
+
         const source = context.sourceRepo.create({
           name,
           type: type as DataSourceType,
-          uri,
+          uri: finalUri,
           tags,
           isActive: true,
         });
 
         console.log(`✅ Successfully added data source: [${source.id}] "${source.name}" (${source.type})`);
-
-        if (options.slicingMode && !["outline", "budget", "none"].includes(options.slicingMode)) {
-          console.error(`Error: Invalid slicing mode "${options.slicingMode}". Must be one of: outline, budget, none`);
-          process.exitCode = 1;
-          return;
-        }
-
-        let slicing: DocumentSlicingOptions | undefined;
-        if (options.slicingMode || options.pagesPerChunk || options.wordsPerChunk || options.minChunkWords) {
-          const parsedPages = options.pagesPerChunk ? parseInt(options.pagesPerChunk, 10) : undefined;
-          const parsedWords = options.wordsPerChunk ? parseInt(options.wordsPerChunk, 10) : undefined;
-          const parsedMinWords = options.minChunkWords ? parseInt(options.minChunkWords, 10) : undefined;
-
-          slicing = {
-            mode: (options.slicingMode as SlicingMode) || (parsedPages || parsedWords ? "budget" : parsedMinWords ? "outline" : undefined),
-            pagesPerChunk: parsedPages && !isNaN(parsedPages) && parsedPages > 0 ? parsedPages : undefined,
-            wordsPerChunk: parsedWords && !isNaN(parsedWords) && parsedWords > 0 ? parsedWords : undefined,
-            minChunkWords: parsedMinWords && !isNaN(parsedMinWords) && parsedMinWords > 0 ? parsedMinWords : undefined,
-          };
-        }
 
         if (slicing && !options.sync) {
           console.warn("⚠️  Warning: Slicing options require '--sync' to take effect upon adding. Use 'flashcard-master sync <sourceId>' with slicing options to ingest.");
@@ -293,6 +378,13 @@ export function createCli(providedContext?: AppContext): Command {
               : `Page: ${doc.startPage}`;
             console.log(`  ${pageLabel}`);
           }
+          if (doc.startSeconds != null) {
+            const rangeText = formatTimestampRange(
+              doc.startSeconds,
+              doc.endSeconds ?? doc.startSeconds
+            ).replace(/^\[|\]$/g, "");
+            console.log(`  Timestamps: ${rangeText}`);
+          }
           console.log(`  Words: ${(doc.wordCount ?? 0).toLocaleString()} | Generated Cards: ${doc.cardCount}`);
           console.log("--------------------------------------------------------------------------------");
         }
@@ -363,29 +455,13 @@ export function createCli(providedContext?: AppContext): Command {
       pagesPerChunk?: string;
       wordsPerChunk?: string;
       minChunkWords?: string;
+      intervalMinutes?: string;
+      timestamps?: string;
     }
   ) => {
     try {
       console.log(`Starting ingestion synchronization${sourceId ? ` for source [${sourceId}]` : " for all active sources"}...`);
-      if (options.slicingMode && !["outline", "budget", "none"].includes(options.slicingMode)) {
-        console.error(`Error: Invalid slicing mode "${options.slicingMode}". Must be one of: outline, budget, none`);
-        process.exitCode = 1;
-        return;
-      }
-
-      let slicing: DocumentSlicingOptions | undefined;
-      if (options.slicingMode || options.pagesPerChunk || options.wordsPerChunk || options.minChunkWords) {
-        const parsedPages = options.pagesPerChunk ? parseInt(options.pagesPerChunk, 10) : undefined;
-        const parsedWords = options.wordsPerChunk ? parseInt(options.wordsPerChunk, 10) : undefined;
-        const parsedMinWords = options.minChunkWords ? parseInt(options.minChunkWords, 10) : undefined;
-
-        slicing = {
-          mode: (options.slicingMode as SlicingMode) || (parsedPages || parsedWords ? "budget" : parsedMinWords ? "outline" : undefined),
-          pagesPerChunk: parsedPages && !isNaN(parsedPages) && parsedPages > 0 ? parsedPages : undefined,
-          wordsPerChunk: parsedWords && !isNaN(parsedWords) && parsedWords > 0 ? parsedWords : undefined,
-          minChunkWords: parsedMinWords && !isNaN(parsedMinWords) && parsedMinWords > 0 ? parsedMinWords : undefined,
-        };
-      }
+      const slicing = buildCliSlicingOptions(options);
 
       const results = sourceId
         ? [await context.ingestionService.syncSource(sourceId, { slicing })]
@@ -410,10 +486,12 @@ export function createCli(providedContext?: AppContext): Command {
   sourcesCmd
     .command("sync [sourceId]")
     .description("Synchronize and fetch new text documents from registered sources")
-    .option("--slicing-mode <mode>", "Document slicing mode: outline | budget | none")
+    .option("--slicing-mode <mode>", "Document slicing mode: outline | budget | timestamps | chapters | none")
     .option("--pages-per-chunk <count>", "Page budget chunk size (number of pages)")
     .option("--words-per-chunk <count>", "Word budget chunk size (number of words)")
     .option("--min-chunk-words <count>", "Minimum section words for outline slicing")
+    .option("--interval-minutes <minutes>", "Transcript window size in minutes for timestamp/chapter slicing")
+    .option("--timestamps <ranges>", "Comma-separated start-end timestamp ranges (e.g. 00:00-05:00,10:00-15:00)")
     .action(runSync);
 
   // ==========================================
@@ -422,10 +500,12 @@ export function createCli(providedContext?: AppContext): Command {
   program
     .command("sync [sourceId]")
     .description("Synchronize and fetch new text documents from registered sources")
-    .option("--slicing-mode <mode>", "Document slicing mode: outline | budget | none")
+    .option("--slicing-mode <mode>", "Document slicing mode: outline | budget | timestamps | chapters | none")
     .option("--pages-per-chunk <count>", "Page budget chunk size (number of pages)")
     .option("--words-per-chunk <count>", "Word budget chunk size (number of words)")
     .option("--min-chunk-words <count>", "Minimum section words for outline slicing")
+    .option("--interval-minutes <minutes>", "Transcript window size in minutes for timestamp/chapter slicing")
+    .option("--timestamps <ranges>", "Comma-separated start-end timestamp ranges (e.g. 00:00-05:00,10:00-15:00)")
     .action(runSync);
 
   // ==========================================

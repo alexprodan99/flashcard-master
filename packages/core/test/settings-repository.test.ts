@@ -230,6 +230,10 @@ describe("SqliteSettingsRepository & SettingsService", () => {
       expect(res.settings.workerTimeoutMinutes).toBe(15);
       expect(res.settings.defaultSlicingMode).toBe("outline");
       expect(res.settings.defaultPageBudget).toBe(10);
+      expect(res.settings.defaultSttProvider).toBe("openai");
+      expect(res.settings.localWhisperModel).toBe("base");
+      expect(res.settings.localWhisperEndpoint).toBe("");
+      expect(res.settings.defaultSubtitleLanguage).toBe("en");
       expect(res.settings.epubDefaultAuthor).toBe("Flashcard Master");
       expect(res.settings.epubDefaultPublisher).toBe("Flashcard Master Studio");
 
@@ -246,6 +250,10 @@ describe("SqliteSettingsRepository & SettingsService", () => {
         ANKI_CONNECT_TIMEOUT_MS: "5000",
         DEFAULT_AI_PROVIDER: "openai",
         DEFAULT_AI_MODEL: "gpt-4o-mini",
+        DEFAULT_STT_PROVIDER: "whisper-local",
+        LOCAL_WHISPER_MODEL: "medium",
+        LOCAL_WHISPER_ENDPOINT: "http://localhost:8080",
+        DEFAULT_SUBTITLE_LANGUAGE: "ro",
         MAX_GENERATION_WORKERS: "4",
         WORKER_TIMEOUT_MINUTES: "30",
         DEFAULT_SLICING_MODE: "budget",

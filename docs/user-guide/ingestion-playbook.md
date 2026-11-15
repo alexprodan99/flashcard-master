@@ -14,6 +14,9 @@ Flashcard Master features a modular, extensible ingestion pipeline built on Hexa
 | **EPUB E-Books** | EPUB3 Navigation + JSZip | Technical manuals, e-books, textbooks | Chapter extraction, semantic heading outline slicing, cover image extraction. |
 | **PDF Documents** | UnPDF / Native Text Extractor | Academic papers, lecture slides, books | Multi-page text extraction, page coordinate indexing (`startPage`, `endPage`). |
 | **Notion Workspaces** | Notion Official SDK Client | Knowledge bases, personal wikis | Recursive page hierarchy crawling, database table syncing, media asset localization. |
+| **Local Audio** | `AudioIngestionStrategy` + STT | Podcasts, voice memos, recorded lectures | `.mp3`, `.wav`, `.m4a`, `.ogg`, `.flac`; `.srt`/`.vtt` sidecar pairing; pre-STT `ffmpeg` range trimming. |
+| **Local Video** | `VideoIngestionStrategy` + `ffmpeg` | Screen recordings, downloaded courses | `.mp4`, `.mkv`, `.webm`, `.mov`; embedded/sidecar subtitle extraction before STT fallback. |
+| **YouTube Videos** | `YouTubeIngestionStrategy` | Online lectures, talks, tutorials | Manual/auto caption tracks, `ytInitialData`/description chapter extraction, `yt-dlp` STT fallback, `?t=Ns` citations. |
 
 ---
 
@@ -103,3 +106,40 @@ Data sources can be organized with interactive tags (e.g. `#neuroscience`, `#jav
 - Assign tags during source creation or update them in **Data Sources**.
 - In **Generate Studio**, filter your source library by tags to focus card generation on specific topics.
 - In **Question Explorer**, filter cards by source tags and deck memberships.
+
+---
+
+## 🎙️ Audio, Video & YouTube Ingestion
+
+Flashcard Master supports ingesting spoken-word content from local audio files (`.mp3`, `.wav`, `.m4a`, `.ogg`, `.flac`), local video files (`.mp4`, `.mkv`, `.webm`, `.mov`), and YouTube URLs (`youtube.com/watch?v=...`, `youtu.be/...`, `shorts/`, `live/`).
+
+### Subtitle-First Extraction & Speech-to-Text Providers
+For video and YouTube sources, Flashcard Master prioritizes existing transcripts before running Speech-to-Text (STT):
+1. **Sidecar / Embedded Subtitles (`subtitles` or `auto` mode)**:
+   - Place a matching `.srt` or `.vtt` file next to your media file (or attach it in the Web UI / via `--subtitles <path>`).
+   - For local videos, `ffmpeg` probes embedded subtitle streams automatically.
+   - For YouTube, creator captions are preferred over auto-generated ASR tracks using your configured **Preferred Subtitle Language** (`DEFAULT_SUBTITLE_LANGUAGE`, default `en`).
+2. **Speech-to-Text Fallback (`stt` or `auto` mode)**:
+   - **OpenAI Whisper (`openai`)**: Cloud transcription using your `OPENAI_API_KEY`.
+   - **Google Gemini (`gemini`)**: Multimodal audio transcription using your `GEMINI_API_KEY`.
+   - **Local Whisper (`whisper-local`)**: Offline transcription via a local `whisper.cpp` HTTP server or CLI binary (`LOCAL_WHISPER_MODEL` / `LOCAL_WHISPER_ENDPOINT`).
+
+Configure your defaults and check `ffmpeg`, `yt-dlp`, and `whisper-local` readiness in **Settings ➔ General ➔ Speech-to-Text & Media Defaults**.
+
+### Timestamp Ranges, Chapter Slicing & Deep-Link Citations
+- **Pre-STT Range Trimming**: Specify custom timestamp windows (e.g. `05:00-15:00`) per media item so `ffmpeg` trims the audio *before* calling STT, saving both time and API cost while preserving original timestamps.
+- **Slicing Modes**:
+  - **Video Chapters (`chapters`)** *(YouTube)*: Splits transcripts along YouTube chapter boundaries (falling back to fixed N-minute windows when no chapters are present).
+  - **Time Windows (`timestamps`)**: Splits transcripts into fixed N-minute windows (e.g. `10` minutes) aligned cleanly to cue boundaries.
+- **CLI Examples**:
+  ```bash
+  # Add and sync a YouTube source with chapter slicing
+  flashcard-master sources add "LLM Intro" youtube "https://www.youtube.com/watch?v=LPZh9BOjkQs" --slicing-mode chapters --interval-minutes 10 --sync
+
+  # Add a local video with a custom timestamp range and offline Whisper STT
+  flashcard-master sources add "Systems Lecture" video "/path/to/lecture.mp4" --stt-provider whisper-local --timestamps "02:00-12:00" --sync
+
+  # Inspect discovered timestamp slices
+  flashcard-master sources docs <source-id>
+  ```
+- Generated flashcards retain `⏱️ MM:SS - MM:SS` locators and clickable deep-link URLs (`&t=<seconds>s` for YouTube, `#t=<start>,<end>` for local media).

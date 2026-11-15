@@ -570,6 +570,87 @@ describe("CLI Application", () => {
       })
     );
   });
+
+  it("registers and syncs a YouTube media source with STT, timestamp, and chapter slicing flags (Story 21.7)", async () => {
+    const syncSpy = vi.spyOn(context.ingestionService, "syncSource").mockResolvedValueOnce({
+      sourceId: "yt-id",
+      sourceName: "LLM Intro",
+      newCount: 2,
+      totalFetched: 1,
+      newDocuments: [],
+      skippedCount: 0,
+      durationMs: 25,
+    });
+
+    const cli = createCli(context);
+    cli.exitOverride();
+
+    await cli.parseAsync([
+      "node",
+      "flashcard-master",
+      "sources",
+      "add",
+      "LLM Intro",
+      "youtube",
+      "https://www.youtube.com/watch?v=LPZh9BOjkQs",
+      "--stt-provider",
+      "whisper-local",
+      "--timestamps",
+      "00:00-03:00",
+      "--slicing-mode",
+      "chapters",
+      "--interval-minutes",
+      "10",
+      "--sync",
+    ]);
+
+    const created = context.sourceRepo.list().find((s) => s.name === "LLM Intro");
+    expect(created).toBeDefined();
+    expect(created?.type).toBe("youtube");
+    expect(JSON.parse(created!.uri)).toEqual([
+      {
+        uri: "https://www.youtube.com/watch?v=LPZh9BOjkQs",
+        extractionMode: "auto",
+        sttProvider: "whisper-local",
+        timestampRanges: [{ start: "00:00", end: "03:00" }],
+      },
+    ]);
+    expect(syncSpy).toHaveBeenCalledWith(created!.id, {
+      slicing: {
+        mode: "chapters",
+        pagesPerChunk: undefined,
+        wordsPerChunk: undefined,
+        minChunkWords: undefined,
+        minutesPerChunk: 10,
+        timestampRanges: [{ start: "00:00", end: "03:00" }],
+      },
+    });
+  });
+
+  it("renders timestamp bounds in sources docs output for media slices (Story 21.7)", async () => {
+    const source = context.sourceRepo.create({
+      name: "Lecture Video",
+      type: "youtube",
+      uri: "https://www.youtube.com/watch?v=LPZh9BOjkQs",
+    });
+
+    context.docRepo.upsert({
+      sourceId: source.id,
+      title: "Lecture Video - How chatbots work [00:00 - 00:36]",
+      url: "https://www.youtube.com/watch?v=LPZh9BOjkQs&t=0s",
+      textContent: "Chatbot introduction text.",
+      startSeconds: 0,
+      endSeconds: 36,
+    });
+
+    const cli = createCli(context);
+    cli.exitOverride();
+
+    logs = [];
+    await cli.parseAsync(["node", "flashcard-master", "sources", "docs", source.id]);
+
+    expect(logs.some((l) => l.includes("Timestamps: 00:00 - 00:36"))).toBe(true);
+  });
 });
 
 

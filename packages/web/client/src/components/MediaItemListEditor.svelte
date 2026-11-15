@@ -78,7 +78,7 @@
         uri: clean,
         ...(inferredTitle ? { title: inferredTitle } : {}),
         extractionMode: defaultExtractionMode(),
-        sttProvider: 'openai',
+        sttProvider: settingsStore.general.defaultSttProvider || 'openai',
         timestampRanges: [],
       });
     }
@@ -332,7 +332,7 @@
   {#if items.length > 0}
     <div class="media-items-list">
       {#each items as item, idx (item.uri)}
-        {@const activeProvider = item.sttProvider || 'openai'}
+        {@const activeProvider = item.sttProvider || settingsStore.general.defaultSttProvider || 'openai'}
         {@const showStt = item.extractionMode === 'stt' || item.extractionMode === 'auto'}
         {@const missingKey = showStt && isMissingSttKey(activeProvider)}
         <div class="media-item-card">

@@ -14,6 +14,7 @@ import type {
   GeneralSettings,
   GeneralSettingsResponse,
   AnkiTestResult,
+  MediaDiagnosticsResult,
   PaginatedCardsResponse,
 } from './types.js';
 
@@ -582,6 +583,15 @@ export async function testAnkiConnect(options?: {
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || 'Failed to test AnkiConnect');
+  }
+  return res.json();
+}
+
+export async function fetchMediaDiagnostics(): Promise<MediaDiagnosticsResult> {
+  const res = await fetch('/api/settings/media/diagnostics');
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to check media diagnostics');
   }
   return res.json();
 }

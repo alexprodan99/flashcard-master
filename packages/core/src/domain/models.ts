@@ -340,6 +340,9 @@ export type ProviderVerificationResult = z.infer<typeof ProviderVerificationResu
 export const SettingSourceSchema = z.enum(["database", "environment", "default"]);
 export type SettingSource = z.infer<typeof SettingSourceSchema>;
 
+export const LocalWhisperModelSchema = z.enum(["tiny", "base", "small", "medium", "large-v3"]);
+export type LocalWhisperModel = z.infer<typeof LocalWhisperModelSchema>;
+
 export const GeneralSettingsSchema = z.object({
   // Anki Desktop Integration
   ankiconnectUrl: z.string().default("http://127.0.0.1:8765"),
@@ -363,6 +366,12 @@ export const GeneralSettingsSchema = z.object({
   // Slicing Defaults
   defaultSlicingMode: z.enum(["outline", "budget", "none"]).default("outline"),
   defaultPageBudget: z.number().int().min(1).max(100).default(10),
+
+  // Speech-to-Text & Media Defaults
+  defaultSttProvider: SttProviderSchema.default("openai"),
+  localWhisperModel: LocalWhisperModelSchema.default("base"),
+  localWhisperEndpoint: z.string().default(""),
+  defaultSubtitleLanguage: z.string().default("en"),
 
   // EPUB Publishing Metadata
   epubDefaultAuthor: z.string().default("Flashcard Master"),
