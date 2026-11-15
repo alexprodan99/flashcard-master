@@ -628,6 +628,22 @@ export class YouTubeIngestionStrategy implements IngestionStrategy {
     return configured?.trim() || "en";
   }
 
+  private findTrackByLanguage(
+    tracks: YouTubeCaptionTrack[],
+    language: string
+  ): YouTubeCaptionTrack | undefined {
+    const targetLow = language.toLowerCase();
+    const targetBase = targetLow.split(/[-_]/)[0];
+
+    return (
+      tracks.find((t) => t.languageCode.toLowerCase() === targetLow) ??
+      tracks.find((t) => {
+        const low = t.languageCode.toLowerCase();
+        return low.startsWith(`${targetLow}-`) || low.split(/[-_]/)[0] === targetBase;
+      })
+    );
+  }
+
   private pickBestLanguageTrack(
     tracks: YouTubeCaptionTrack[],
     preferredLanguage: string
@@ -636,15 +652,10 @@ export class YouTubeIngestionStrategy implements IngestionStrategy {
       return null;
     }
 
-    const prefLow = preferredLanguage.toLowerCase();
-    const prefBase = prefLow.split(/[-_]/)[0];
-
+    const prefBase = preferredLanguage.toLowerCase().split(/[-_]/)[0];
     return (
-      tracks.find((t) => t.languageCode.toLowerCase() === prefLow) ??
-      tracks.find((t) => {
-        const low = t.languageCode.toLowerCase();
-        return low.startsWith(`${prefLow}-`) || low.split(/[-_]/)[0] === prefBase;
-      }) ??
+      this.findTrackByLanguage(tracks, preferredLanguage) ??
+      (prefBase !== "en" ? this.findTrackByLanguage(tracks, "en") : undefined) ??
       tracks[0]
     );
   }

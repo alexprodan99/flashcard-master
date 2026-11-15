@@ -597,5 +597,63 @@ describe("YouTubeIngestionStrategy (Story 21.4)", () => {
     expect(saved[0].endSeconds).toBe(4);
     db.close();
   });
+
+  it("falls back to English before first alphabetical track when preferred language is unavailable", async () => {
+    const multiTrackResponse = {
+      playabilityStatus: { status: "OK" },
+      videoDetails: { videoId: "MultiLang01", title: "Multilingual Talk", lengthSeconds: "60" },
+      captions: {
+        playerCaptionsTracklistRenderer: {
+          captionTracks: [
+            { baseUrl: "https://cap.example/ar", languageCode: "ar", name: { simpleText: "Arabic" } },
+            { baseUrl: "https://cap.example/en", languageCode: "en", name: { simpleText: "English" } },
+            { baseUrl: "https://cap.example/fr", languageCode: "fr", name: { simpleText: "French" } },
+          ],
+        },
+      },
+    };
+    const spanishOnlyResponse = {
+      playabilityStatus: { status: "OK" },
+      videoDetails: { videoId: "SpanishOnly", title: "Charla en Español", lengthSeconds: "60" },
+      captions: {
+        playerCaptionsTracklistRenderer: {
+          captionTracks: [
+            { baseUrl: "https://cap.example/es", languageCode: "es", name: { simpleText: "Spanish" } },
+          ],
+        },
+      },
+    };
+
+    const fetchedCaptionUrls: string[] = [];
+    const customFetch = (async (url: string | URL | Request) => {
+      const u = String(url);
+      if (u.startsWith("https://www.youtube.com/watch?v=MultiLang01")) {
+        return new Response(buildWatchHtml(multiTrackResponse), { status: 200 });
+      }
+      if (u.startsWith("https://www.youtube.com/watch?v=SpanishOnly")) {
+        return new Response(buildWatchHtml(spanishOnlyResponse), { status: 200 });
+      }
+      if (u.startsWith("https://cap.example/")) {
+        fetchedCaptionUrls.push(u);
+        return new Response(`<transcript><text start="0" dur="4">Selected ${u.split("/").pop()}</text></transcript>`, {
+          status: 200,
+        });
+      }
+      return new Response("Not Found", { status: 404 });
+    }) as typeof fetch;
+
+    const strategy = new YouTubeIngestionStrategy({
+      customFetch,
+      defaultCaptionLanguage: "ro",
+    });
+
+    const multiDocs = await strategy.fetch(makeYouTubeSource("https://www.youtube.com/watch?v=MultiLang01"));
+    expect(multiDocs[0].rawContent).toContain("Selected en");
+
+    const singleDocs = await strategy.fetch(makeYouTubeSource("https://www.youtube.com/watch?v=SpanishOnly"));
+    expect(singleDocs[0].rawContent).toContain("Selected es");
+
+    expect(fetchedCaptionUrls).toEqual(["https://cap.example/en", "https://cap.example/es"]);
+  });
 });
 
