@@ -170,6 +170,44 @@ export function filterCuesByTimestampRanges(
   return filtered;
 }
 
+/**
+ * Normalizes a timestamped media RawDocument into a CleanTextDocument while preserving `#cfg` hash salt
+ * and `[startSeconds, endSeconds]` timeline bounds.
+ */
+export function extractCleanTextFromMediaRaw(raw: RawDocument): CleanTextDocument {
+  let clean = (raw.rawContent || "").replace(/\r\n/g, "\n");
+  clean = clean
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  const cfgMatch = raw.guid?.match(/#cfg=([a-f0-9]+)$/i);
+  const hashInput = cfgMatch ? `${clean}\n#cfg=${cfgMatch[1]}` : clean;
+  const contentHash = crypto.createHash("sha256").update(hashInput, "utf8").digest("hex");
+
+  let startSeconds = raw.startSeconds ?? null;
+  let endSeconds = raw.endSeconds ?? null;
+  if (startSeconds === null || endSeconds === null) {
+    const bounds = extractTimestampBoundsFromText(clean);
+    startSeconds = startSeconds ?? bounds.startSeconds;
+    endSeconds = endSeconds ?? bounds.endSeconds;
+  }
+
+  return {
+    id: raw.id,
+    sourceId: raw.sourceId,
+    title: raw.title,
+    textContent: clean,
+    rawContent: raw.rawContent,
+    originUrl: raw.originUrl,
+    contentHash,
+    startSeconds,
+    endSeconds,
+  };
+}
+
 export class MediaTranscriptResolver {
   private readonly settingsService?: SettingsService;
   private readonly sttPort?: SpeechToTextPort;
@@ -667,36 +705,6 @@ export class MediaTranscriptResolver {
   }
 
   extractCleanText(raw: RawDocument): CleanTextDocument {
-    let clean = (raw.rawContent || "").replace(/\r\n/g, "\n");
-    clean = clean
-      .split("\n")
-      .map((line) => line.trimEnd())
-      .join("\n")
-      .replace(/\n{3,}/g, "\n\n")
-      .trim();
-
-    const cfgMatch = raw.guid?.match(/#cfg=([a-f0-9]+)$/i);
-    const hashInput = cfgMatch ? `${clean}\n#cfg=${cfgMatch[1]}` : clean;
-    const contentHash = crypto.createHash("sha256").update(hashInput, "utf8").digest("hex");
-
-    let startSeconds = raw.startSeconds ?? null;
-    let endSeconds = raw.endSeconds ?? null;
-    if (startSeconds === null || endSeconds === null) {
-      const bounds = extractTimestampBoundsFromText(clean);
-      startSeconds = startSeconds ?? bounds.startSeconds;
-      endSeconds = endSeconds ?? bounds.endSeconds;
-    }
-
-    return {
-      id: raw.id,
-      sourceId: raw.sourceId,
-      title: raw.title,
-      textContent: clean,
-      rawContent: raw.rawContent,
-      originUrl: raw.originUrl,
-      contentHash,
-      startSeconds,
-      endSeconds,
-    };
+    return extractCleanTextFromMediaRaw(raw);
   }
 }

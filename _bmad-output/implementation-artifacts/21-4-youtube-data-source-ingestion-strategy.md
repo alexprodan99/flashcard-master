@@ -2,8 +2,8 @@
 title: 'Story 21.4: YouTube Data Source Ingestion Strategy (`youtube` Data Source)'
 type: 'feature'
 created: '2026-11-14'
-status: 'ready-for-dev'
-baseline_commit: '3b74d42'
+status: 'done'
+baseline_commit: 'e902419'
 review_loop_iteration: 0
 context:
   - '_bmad-output/implementation-artifacts/epic-21-context.md'
@@ -45,9 +45,9 @@ YouTube videos are a major learning medium with unique URL formats, manual and a
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `packages/adapters/src/ingestion/youtube-strategy.ts` -- Implement YouTube URL parser/normalizer (`extractYouTubeVideoId`), metadata & chapter extraction, manual/auto caption fetcher, and trimmed audio STT fallback (`YouTubeIngestionStrategy`).
-- [ ] `packages/adapters/src/index.ts` & runtime wiring -- Export and register `YouTubeIngestionStrategy` in `StrategyRegistry`.
-- [ ] Unit tests -- Test URL normalization (`watch?v=`, `youtu.be/`, `shorts/`), chapter extraction, manual vs. auto caption selection, custom timestamp filtering on captions, STT fallback when captions are missing, and error messages for unavailable videos.
+- [x] `packages/adapters/src/ingestion/youtube-strategy.ts` -- Implement YouTube URL parser/normalizer (`extractYouTubeVideoId`), metadata & chapter extraction, manual/auto caption fetcher, and trimmed audio STT fallback (`YouTubeIngestionStrategy`).
+- [x] `packages/adapters/src/index.ts` & runtime wiring -- Export and register `YouTubeIngestionStrategy` in `StrategyRegistry`.
+- [x] Unit tests -- Test URL normalization (`watch?v=`, `youtu.be/`, `shorts/`), chapter extraction, manual vs. auto caption selection, custom timestamp filtering on captions, STT fallback when captions are missing, and error messages for unavailable videos.
 
 **Acceptance Criteria:**
 - `YouTubeIngestionStrategy` parses and normalizes multiple YouTube URL formats within a single data source.

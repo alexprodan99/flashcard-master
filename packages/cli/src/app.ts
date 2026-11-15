@@ -33,6 +33,7 @@ import {
   NotionStrategy,
   AudioIngestionStrategy,
   VideoIngestionStrategy,
+  YouTubeIngestionStrategy,
   createLLMAdapter,
   AnkiPackageExporter,
   AnkiConnectAdapter,
@@ -104,6 +105,7 @@ export function createAppContext(options: AppOptions = {}): AppContext {
   strategyRegistry.register(new NotionStrategy({ settingsService, mediaService }));
   strategyRegistry.register(new AudioIngestionStrategy({ settingsService }));
   strategyRegistry.register(new VideoIngestionStrategy({ settingsService }));
+  strategyRegistry.register(new YouTubeIngestionStrategy({ settingsService }));
 
   const ingestionService = new IngestionService(sourceRepo, syncRepo, strategyRegistry, docRepo);
 
