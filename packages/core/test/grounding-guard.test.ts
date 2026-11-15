@@ -94,4 +94,60 @@ describe("GroundingGuard", () => {
     expect(filtered.length).toBe(1);
     expect(filtered[0].question).toBe("How does Raft elect leaders?");
   });
+
+  it("verifies verbatim spoken quotes spanning multiple inline [MM:SS - MM:SS] subtitle cues", () => {
+    const transcriptSource = `
+<!-- chapter: start=0 end=180 title="Consensus Intro" -->
+[00:12 - 00:18] Distributed consensus lets a cluster agree on logs
+[00:18 - 00:25] even when individual nodes experience transient network partitions.
+[01:02:04 - 01:02:10] Followers reset their randomized election timer upon receiving valid AppendEntries RPCs.
+`;
+
+    const crossCueDraft: CardGenerationDraft = {
+      question: "What does distributed consensus enable during network partitions?",
+      answer: "Cluster agreement on logs even when individual nodes experience partitions.",
+      sourceQuote:
+        "Distributed consensus lets a cluster agree on logs even when individual nodes experience transient network partitions.",
+      difficulty: "intermediate",
+    };
+
+    const crossCueResult = guard.verifyDraft(crossCueDraft, transcriptSource);
+    expect(crossCueResult.isValid).toBe(true);
+    expect(crossCueResult.matchConfidence).toBe(0.95);
+
+    const hhmmssDraft: CardGenerationDraft = {
+      question: "When do followers reset their election timer?",
+      answer: "Upon receiving valid AppendEntries RPCs.",
+      sourceQuote: "Followers reset their randomized election timer upon receiving valid AppendEntries RPCs.",
+      difficulty: "intermediate",
+    };
+
+    const hhmmssResult = guard.verifyDraft(hhmmssDraft, transcriptSource);
+    expect(hhmmssResult.isValid).toBe(true);
+  });
+
+  it("rejects quotes padded with timestamps that fall below minQuoteLength and hallucinated transcript quotes", () => {
+    const transcriptSource = "[00:05 - 00:10] Hi team, welcome to the architecture review session.";
+
+    const paddedShort: CardGenerationDraft = {
+      question: "Greeting?",
+      answer: "Hi team.",
+      sourceQuote: "[00:05 - 00:10] Hi team",
+      difficulty: "beginner",
+    };
+
+    const shortResult = guard.verifyDraft(paddedShort, transcriptSource);
+    expect(shortResult.isValid).toBe(false);
+    expect(shortResult.failureReason).toContain("too short");
+
+    const hallucinated: CardGenerationDraft = {
+      question: "What topic?",
+      answer: "Kubernetes controllers.",
+      sourceQuote: "Kubernetes reconciliation loops monitor desired state continuously.",
+      difficulty: "intermediate",
+    };
+
+    const hallResult = guard.verifyDraft(hallucinated, transcriptSource);
+    expect(hallResult.isValid).toBe(false);
+  });
 });

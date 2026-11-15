@@ -3,6 +3,11 @@ import type { LLMProviderPort, CardGenerationDraft } from "../ports/index.js";
 import { TextChunker, type TextChunkerOptions } from "./text-chunker.js";
 import { PromptBuilder } from "./prompt-builder.js";
 import { GroundingGuard } from "./grounding-guard.js";
+import {
+  formatTimestamp,
+  formatTimestampRange,
+  parseTimestampToSeconds,
+} from "./subtitle-parser.js";
 
 export interface CardGenerationOptions {
   difficulty?: DifficultyLevel;
@@ -17,14 +22,79 @@ export interface CardGenerationOptions {
 export interface GeneratedCardDraft extends CardGenerationDraft {
   sourceId: string;
   originUrl?: string;
+  sourceOriginUrl?: string;
   documentTitle?: string;
+}
+
+const YOUTUBE_URL_REGEX = /(?:youtube\.com\/(?:watch|shorts\/|live\/)|youtu\.be\/)/i;
+
+export function appendTimestampToMediaUrl(
+  originUrl?: string | null,
+  sourceLocator?: string | null,
+  fallbackStartSeconds?: number | null
+): string | undefined {
+  if (!originUrl) {
+    return undefined;
+  }
+
+  if (!YOUTUBE_URL_REGEX.test(originUrl)) {
+    return originUrl;
+  }
+
+  let targetSeconds: number | null = null;
+  const locator = (sourceLocator || "").trim();
+
+  if (locator) {
+    const bracketMatch = locator.match(
+      /\[(\d{1,2}:\d{2}(?::\d{2})?)(?:\s*[-–—]\s*\d{1,2}:\d{2}(?::\d{2})?)?\]/
+    );
+    const bareMatch = bracketMatch ? null : locator.match(/\b(\d{1,2}:\d{2}(?::\d{2})?)\b/);
+    const rawTs = bracketMatch?.[1] ?? bareMatch?.[1];
+    if (rawTs) {
+      try {
+        const parsed = parseTimestampToSeconds(rawTs);
+        if (Number.isFinite(parsed) && parsed >= 0) {
+          targetSeconds = Math.floor(parsed);
+        }
+      } catch {
+        // Ignore unparseable timestamp tokens
+      }
+    }
+  }
+
+  if (
+    targetSeconds === null &&
+    typeof fallbackStartSeconds === "number" &&
+    Number.isFinite(fallbackStartSeconds) &&
+    fallbackStartSeconds >= 0
+  ) {
+    targetSeconds = Math.floor(fallbackStartSeconds);
+  }
+
+  if (targetSeconds === null || targetSeconds < 0) {
+    return originUrl;
+  }
+
+  const hashIdx = originUrl.indexOf("#");
+  const baseAndQuery = hashIdx >= 0 ? originUrl.slice(0, hashIdx) : originUrl;
+  const hashSuffix = hashIdx >= 0 ? originUrl.slice(hashIdx) : "";
+
+  const cleanedBase = baseAndQuery.replace(
+    /([?&])t=\d+s?(&?)/gi,
+    (_m, p1: string, p2: string) => (p1 === "?" ? (p2 ? "?" : "") : p2 ? "&" : "")
+  );
+
+  const sep = cleanedBase.includes("?") ? "&" : "?";
+  return `${cleanedBase}${sep}t=${targetSeconds}s${hashSuffix}`;
 }
 
 export function formatCardSourceLocator(
   docTitle: string,
   startPage?: number | null,
   endPage?: number | null,
-  draftLocator?: string
+  draftLocator?: string,
+  startSeconds?: number | null,
+  endSeconds?: number | null
 ): string {
   let cleanTitle = (docTitle || "Document").trim();
   let cleanDraft = (draftLocator || "").trim();
@@ -35,11 +105,29 @@ export function formatCardSourceLocator(
   }
 
   const hasPageInDraft = /\bpages?\s*\d+/i.test(cleanDraft);
+  const hasTimestampInDraft =
+    /\[\d{1,2}:\d{2}(?::\d{2})?(?:\s*[-–—]\s*\d{1,2}:\d{2}(?::\d{2})?)?\]|\b\d{1,2}:\d{2}(?::\d{2})?\b/.test(
+      cleanDraft
+    );
 
   // If cleanDraft specifies a page, strip any chunk page range suffix from cleanTitle
   // to avoid redundant locators like "Book - Pages 26-30 - Page 27"
   if (hasPageInDraft) {
     cleanTitle = cleanTitle.replace(/\s*[-–—]\s*Pages?\s*\d+(?:\s*[-–—]\s*\d+)?\s*$/i, "").trim();
+    if (cleanDraft.startsWith(cleanTitle)) {
+      cleanDraft = cleanDraft.slice(cleanTitle.length).replace(/^[\s\-:,]+/, "").trim();
+    }
+  }
+
+  // If cleanDraft specifies a timestamp, strip any trailing chunk timestamp range from cleanTitle
+  // to avoid redundant locators like "Lecture [00:00 - 10:00] - [04:12 - 04:45]"
+  if (hasTimestampInDraft) {
+    cleanTitle = cleanTitle
+      .replace(
+        /\s*(?:[-–—]\s*)?\[\d{1,2}:\d{2}(?::\d{2})?(?:\s*[-–—]\s*\d{1,2}:\d{2}(?::\d{2})?)?\]\s*$/,
+        ""
+      )
+      .trim();
     if (cleanDraft.startsWith(cleanTitle)) {
       cleanDraft = cleanDraft.slice(cleanTitle.length).replace(/^[\s\-:,]+/, "").trim();
     }
@@ -58,12 +146,30 @@ export function formatCardSourceLocator(
     pagePart = "";
   }
 
-  if (!cleanDraft) {
-    return pagePart ? `${cleanTitle} - ${pagePart}` : cleanTitle;
+  let timePart = "";
+  if (
+    !hasTimestampInDraft &&
+    typeof startSeconds === "number" &&
+    startSeconds >= 0 &&
+    !/\[\d{1,2}:\d{2}/.test(cleanTitle)
+  ) {
+    timePart =
+      typeof endSeconds === "number" && endSeconds > startSeconds
+        ? formatTimestampRange(startSeconds, endSeconds)
+        : `[${formatTimestamp(startSeconds)}]`;
   }
 
-  if (pagePart && !hasPageInDraft) {
-    return `${cleanTitle} - ${pagePart}, ${cleanDraft}`;
+  const coordParts = [
+    pagePart && !hasPageInDraft ? pagePart : "",
+    timePart && !hasTimestampInDraft ? timePart : "",
+  ].filter(Boolean);
+
+  if (!cleanDraft) {
+    return coordParts.length > 0 ? `${cleanTitle} - ${coordParts.join(", ")}` : cleanTitle;
+  }
+
+  if (coordParts.length > 0) {
+    return `${cleanTitle} - ${coordParts.join(", ")}, ${cleanDraft}`;
   }
 
   return `${cleanTitle} - ${cleanDraft}`;
@@ -98,6 +204,10 @@ export class CardGenerationService {
     const depthMode = options.depthMode ?? "atomic";
     const targetCount = options.targetCountPerChunk ?? 4;
     const enforceGrounding = options.enforceGrounding ?? true;
+    const isMediaTranscript =
+      typeof doc.startSeconds === "number" ||
+      typeof doc.endSeconds === "number" ||
+      /\[\d{1,2}:\d{2}(?::\d{2})?(?:\s*[-–—]\s*\d{1,2}:\d{2}(?::\d{2})?)?\]/.test(doc.textContent);
 
     const chunks = this.chunker.chunkText(doc.textContent, options.chunkOptions);
     const allDrafts: GeneratedCardDraft[] = [];
@@ -113,6 +223,7 @@ export class CardGenerationService {
           persona,
           depthMode,
           targetCount: oversampledTarget,
+          includeMediaTimestamps: isMediaTranscript,
         });
 
         const rawDrafts = await this.llmProvider.generateQAPairs(chunk, {
@@ -138,6 +249,7 @@ export class CardGenerationService {
               persona,
               depthMode,
               targetCount: deficit + 1,
+              includeMediaTimestamps: isMediaTranscript,
             });
 
             const retryDrafts = await this.llmProvider.generateQAPairs(chunk, {
@@ -161,6 +273,19 @@ export class CardGenerationService {
         const finalChunkDrafts = validDrafts.slice(0, targetCount);
 
         for (const draft of finalChunkDrafts) {
+          const sourceLocator = formatCardSourceLocator(
+            doc.title,
+            doc.startPage,
+            doc.endPage,
+            draft.sourceLocator,
+            doc.startSeconds,
+            doc.endSeconds
+          );
+          const resolvedOriginUrl = appendTimestampToMediaUrl(
+            doc.originUrl,
+            draft.sourceLocator || sourceLocator,
+            doc.startSeconds
+          );
           const mapped: GeneratedCardDraft = {
             question: draft.question,
             answer: draft.answer,
@@ -168,14 +293,10 @@ export class CardGenerationService {
             citation: draft.citation || draft.sourceQuote,
             difficulty: draft.difficulty || difficulty,
             keywords: draft.keywords || [],
-            sourceLocator: formatCardSourceLocator(
-              doc.title,
-              doc.startPage,
-              doc.endPage,
-              draft.sourceLocator
-            ),
+            sourceLocator,
             sourceId: doc.sourceId,
-            originUrl: doc.originUrl,
+            originUrl: resolvedOriginUrl,
+            sourceOriginUrl: resolvedOriginUrl,
             documentTitle: doc.title,
           };
           allDrafts.push(mapped);
