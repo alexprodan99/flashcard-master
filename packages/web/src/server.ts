@@ -39,6 +39,7 @@ import {
   AnkiConnectAdapter,
   AudioIngestionStrategy,
   VideoIngestionStrategy,
+  YouTubeIngestionStrategy,
 } from "@flashcard-master/adapters";
 import { JobManager, type ConcurrencyLimits, type JobManagerOptions } from "./jobs/index.js";
 import { WorkerExecutor } from "./workers/index.js";
@@ -131,6 +132,11 @@ export class WebServer {
       if (!options.strategyRegistry.hasStrategy("video")) {
         options.strategyRegistry.register(
           new VideoIngestionStrategy({ settingsService: this.settingsService })
+        );
+      }
+      if (!options.strategyRegistry.hasStrategy("youtube")) {
+        options.strategyRegistry.register(
+          new YouTubeIngestionStrategy({ settingsService: this.settingsService })
         );
       }
     }

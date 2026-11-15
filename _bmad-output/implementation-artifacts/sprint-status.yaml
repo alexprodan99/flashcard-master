@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 08-30-2026 20:47
-last_updated: 11-14-2026 15:53
+last_updated: 11-15-2026 08:52
 project: flashcard-master
 project_key: NOKEY
 tracking_system: file-system
@@ -214,7 +214,7 @@ development_status:
   21-1-media-domain-schema-and-subtitle-parser: done
   21-2-speech-to-text-port-audio-trimming-and-adapters: done
   21-3-local-audio-and-video-ingestion-strategies: done
-  21-4-youtube-data-source-ingestion-strategy: ready-for-dev
+  21-4-youtube-data-source-ingestion-strategy: done
   21-5-timestamp-slicing-citations-and-grounding-guard: ready-for-dev
   21-6-web-ui-media-sources-timestamp-controls-and-inspector: ready-for-dev
   21-7-settings-stt-defaults-cli-media-flags-and-verification: ready-for-dev

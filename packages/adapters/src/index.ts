@@ -10,6 +10,7 @@ export * from "./ingestion/notion-strategy.js";
 export * from "./ingestion/media-transcript-resolver.js";
 export * from "./ingestion/audio-strategy.js";
 export * from "./ingestion/video-strategy.js";
+export * from "./ingestion/youtube-strategy.js";
 export * from "./llm/types.js";
 export * from "./llm/openai-adapter.js";
 export * from "./llm/gemini-adapter.js";
