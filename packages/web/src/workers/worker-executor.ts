@@ -310,10 +310,29 @@ export class WorkerExecutor {
                 (msg.documents === undefined || !this.options.documentRepo)
               ) {
                 try {
+                  const STAGE_STEP_MAP: Record<string, number> = {
+                    probing_subtitles: 1,
+                    extracting_embedded_subtitles: 2,
+                    trimming_audio: 2,
+                    transcribing_stt: 3,
+                    formatting_transcript: 3,
+                    slicing: 4,
+                  };
+
                   const syncResult = await this.options.ingestionService.syncSource(msg.sourceId, {
                     slicing: msg.slicing,
                     onLog: (level, message, details) => {
                       ctx.log(msg.stepNumber || 0, msg.stepTitle || "Source Sync", level, message, details);
+                      if (details && typeof details === "object" && typeof details.stage === "string") {
+                        const multiMatch = msg.stepTitle?.match(/^Sync \d+\/(\d+):/);
+                        const totalSources = multiMatch ? parseInt(multiMatch[1], 10) : 1;
+                        if (totalSources <= 1) {
+                          const mappedStep = STAGE_STEP_MAP[details.stage] ?? 2;
+                          ctx.updateProgress(mappedStep, 4, message);
+                        } else {
+                          ctx.updateProgress(msg.stepNumber || 1, totalSources, `${msg.stepTitle} — ${message}`);
+                        }
+                      }
                     },
                     signal: ctx.signal,
                   });

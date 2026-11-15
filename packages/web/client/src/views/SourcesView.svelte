@@ -7,6 +7,7 @@
   import SourceDocumentInspector from '../components/SourceDocumentInspector.svelte';
   import DocumentExportModal from '../components/DocumentExportModal.svelte';
   import { parseNotionUri } from '../lib/notion-uri.js';
+  import { parseMediaItemsSummary } from '../lib/formatters.js';
   import { sourcesStore, toastStore, taskStore } from '../stores/index.js';
 
   interface Props {
@@ -89,7 +90,13 @@
     if (sourcesStore.syncingSourceIds[source.id]) return;
     sourcesStore.setSyncing(source.id, true);
     try {
-      const result: any = await syncSource(source.id);
+      const syncOpts =
+        source.type === 'youtube'
+          ? { slicing: { mode: 'chapters' as const, minutesPerChunk: 10 } }
+          : source.type === 'audio' || source.type === 'video'
+            ? { slicing: { mode: 'timestamps' as const, minutesPerChunk: 10 } }
+            : undefined;
+      const result: any = await syncSource(source.id, syncOpts);
       if (result.jobId) {
         sourcesStore.setSyncing(source.id, true, result.jobId);
         toastStore.info(`⚡ Sync queued (#${result.jobId.slice(0, 8)}) for "${source.name}". Ingesting in background...`);
@@ -235,7 +242,12 @@
     toastStore.success(`Data source "${updated.name}" updated successfully.`);
   }
 
-  function getUriSummary(source: DataSource): { displayUri: string; countBadge?: string } {
+  function getUriSummary(source: DataSource): {
+    displayUri: string;
+    countBadge?: string;
+    isExternalLink?: boolean;
+    linkHref?: string;
+  } {
     if (source.type === 'web') {
       const raw = source.uri || '';
       if (raw.trim().startsWith('[') && raw.trim().endsWith(']')) {
@@ -249,6 +261,16 @@
           }
         } catch {}
       }
+    } else if (source.type === 'audio' || source.type === 'video' || source.type === 'youtube') {
+      const summary = parseMediaItemsSummary(source.uri || '', source.type);
+      const unit = source.type === 'youtube' ? 'videos' : 'files';
+      const firstRawUri = summary.items[0]?.uri || '';
+      return {
+        displayUri: `${summary.firstUri}${summary.count > 1 ? ` (+${summary.count - 1} more)` : ''}`,
+        countBadge: summary.count > 1 ? `${summary.count} ${unit}` : undefined,
+        isExternalLink: source.type === 'youtube' && /^https?:\/\//i.test(firstRawUri),
+        linkHref: source.type === 'youtube' ? firstRawUri : undefined,
+      };
     } else if (source.type === 'notion') {
       const parsed = parseNotionUri(source.uri || '', source.tags || []);
       return {
@@ -335,7 +357,19 @@
                 <div class="source-info">
                   <span class="source-name">{s.name}</span>
                   <div class="uri-row">
-                    <span class="source-uri" title={s.uri}>{uriInfo.displayUri}</span>
+                    {#if uriInfo.isExternalLink && uriInfo.linkHref}
+                      <a
+                        href={uriInfo.linkHref}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="source-uri source-uri-link"
+                        title={s.uri}
+                      >
+                        {uriInfo.displayUri} ↗
+                      </a>
+                    {:else}
+                      <span class="source-uri" title={s.uri}>{uriInfo.displayUri}</span>
+                    {/if}
                     {#if uriInfo.countBadge}
                       <span class="url-count-pill">{uriInfo.countBadge}</span>
                     {/if}
@@ -617,6 +651,33 @@
     background: rgba(14, 165, 233, 0.15);
     color: #38bdf8;
     border: 1px solid rgba(14, 165, 233, 0.3);
+  }
+
+  .type-badge.audio {
+    background: rgba(168, 85, 247, 0.15);
+    color: #c084fc;
+    border: 1px solid rgba(168, 85, 247, 0.3);
+  }
+
+  .type-badge.video {
+    background: rgba(20, 184, 166, 0.15);
+    color: #2dd4bf;
+    border: 1px solid rgba(20, 184, 166, 0.3);
+  }
+
+  .type-badge.youtube {
+    background: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+  }
+
+  .source-uri-link {
+    color: #60a5fa;
+    text-decoration: none;
+  }
+
+  .source-uri-link:hover {
+    text-decoration: underline;
   }
 
   .deck-badge {

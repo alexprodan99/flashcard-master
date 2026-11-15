@@ -234,6 +234,24 @@ function extractBalancedJsonObject(source: string, openBraceIndex: number): stri
   return null;
 }
 
+function extractEmbeddedJsonFromHtml(
+  body: string,
+  markerRegex: RegExp
+): Record<string, any> | null {
+  for (const match of body.matchAll(markerRegex)) {
+    const braceIdx = (match.index ?? 0) + match[0].length - 1;
+    const jsonSlice = extractBalancedJsonObject(body, braceIdx);
+    if (!jsonSlice) continue;
+    try {
+      return JSON.parse(jsonSlice) as Record<string, any>;
+    } catch {
+      // Try next occurrence if this match was inside a comment or unrelated script
+    }
+  }
+
+  return null;
+}
+
 function extractPlayerResponseFromHtml(body: string): Record<string, any> | null {
   const trimmed = body.trim();
   if (!trimmed) {
@@ -248,19 +266,21 @@ function extractPlayerResponseFromHtml(body: string): Record<string, any> | null
     }
   }
 
-  const markerRegex = /(?:ytInitialPlayerResponse\s*=\s*|["']ytInitialPlayerResponse["']\s*:\s*)\{/g;
-  for (const match of body.matchAll(markerRegex)) {
-    const braceIdx = (match.index ?? 0) + match[0].length - 1;
-    const jsonSlice = extractBalancedJsonObject(body, braceIdx);
-    if (!jsonSlice) continue;
-    try {
-      return JSON.parse(jsonSlice) as Record<string, any>;
-    } catch {
-      // Try next occurrence if this match was inside a comment or unrelated script
-    }
+  return extractEmbeddedJsonFromHtml(
+    body,
+    /(?:ytInitialPlayerResponse\s*=\s*|["']ytInitialPlayerResponse["']\s*:\s*)\{/g
+  );
+}
+
+function extractInitialDataFromHtml(body: string): Record<string, any> | null {
+  if (!body.trim()) {
+    return null;
   }
 
-  return null;
+  return extractEmbeddedJsonFromHtml(
+    body,
+    /(?:ytInitialData\s*=\s*|["']ytInitialData["']\s*:\s*)\{/g
+  );
 }
 
 function readRendererText(value: unknown): string {
@@ -350,16 +370,83 @@ function parseCaptionTracksFromPlayerResponse(
   return captionTracks;
 }
 
+function extractMarkerChapters(root: Record<string, any> | null | undefined): unknown[][] {
+  if (!root || typeof root !== "object") {
+    return [];
+  }
+
+  const candidates: unknown[][] = [];
+  const playerOverlay = root?.playerOverlays?.playerOverlayRenderer;
+  const markersMap =
+    playerOverlay?.decoratedPlayerBarRenderer?.decoratedPlayerBarRenderer?.playerBar
+      ?.multiMarkersPlayerBarRenderer?.markersMap ??
+    playerOverlay?.decoratedPlayerBarRenderer?.playerBar?.multiMarkersPlayerBarRenderer
+      ?.markersMap;
+
+  if (Array.isArray(markersMap)) {
+    const priority = (key: unknown): number => {
+      if (key === "DESCRIPTION_CHAPTERS") return 0;
+      if (key === "AUTO_CHAPTERS") return 1;
+      return 2;
+    };
+    const sortedEntries = [...markersMap].sort((a, b) => priority(a?.key) - priority(b?.key));
+    for (const entry of sortedEntries) {
+      const chapters = entry?.value?.chapters;
+      if (Array.isArray(chapters) && chapters.length > 0) {
+        candidates.push(chapters);
+      }
+    }
+  }
+
+  const engagementPanels = root?.engagementPanels;
+  if (Array.isArray(engagementPanels)) {
+    for (const panel of engagementPanels) {
+      const contents =
+        panel?.engagementPanelSectionListRenderer?.content?.macroMarkersListRenderer?.contents;
+      if (Array.isArray(contents) && contents.length > 0) {
+        candidates.push(contents);
+      }
+    }
+  }
+
+  return candidates;
+}
+
+function resolveChapterStartSeconds(ch: Record<string, any>): number {
+  if (typeof ch.startSeconds === "number") {
+    return ch.startSeconds;
+  }
+  if (typeof ch.timeRangeStartMillis === "number") {
+    return Math.max(0, ch.timeRangeStartMillis / 1000);
+  }
+  if (typeof ch.startMs === "number") {
+    return Math.max(0, ch.startMs / 1000);
+  }
+  const tapStart = ch.onTap?.watchEndpoint?.startTimeSeconds;
+  if (typeof tapStart === "number") {
+    return Math.max(0, tapStart);
+  }
+  const timeText = readRendererText(ch.timeDescription);
+  if (timeText) {
+    try {
+      return parseTimestampToSeconds(timeText);
+    } catch {
+      return NaN;
+    }
+  }
+  return NaN;
+}
+
 function extractChaptersFromPlayerResponse(
   playerResponse: Record<string, any>,
-  durationSeconds?: number
+  durationSeconds?: number,
+  initialData?: Record<string, any> | null
 ): YouTubeChapter[] {
-  const structuredCandidates = [
+  const structuredCandidates: unknown[] = [
     playerResponse?.chapters,
     playerResponse?.videoDetails?.chapters,
-    playerResponse?.playerOverlays?.playerOverlayRenderer?.decoratedPlayerBarRenderer
-      ?.decoratedPlayerBarRenderer?.playerBar?.multiMarkersPlayerBarRenderer?.markersMap?.[0]
-      ?.value?.chapters,
+    ...extractMarkerChapters(playerResponse),
+    ...extractMarkerChapters(initialData),
   ];
 
   for (const candidate of structuredCandidates) {
@@ -367,17 +454,10 @@ function extractChaptersFromPlayerResponse(
 
     const extracted: YouTubeChapter[] = [];
     for (const rawItem of candidate) {
-      const ch = rawItem?.chapterRenderer ?? rawItem;
+      const ch = rawItem?.chapterRenderer ?? rawItem?.macroMarkersListItemRenderer ?? rawItem;
       if (!ch || typeof ch !== "object") continue;
       const title = readRendererText(ch.title);
-      const startSeconds =
-        typeof ch.startSeconds === "number"
-          ? ch.startSeconds
-          : typeof ch.timeRangeStartMillis === "number"
-            ? Math.max(0, ch.timeRangeStartMillis / 1000)
-            : typeof ch.startMs === "number"
-              ? Math.max(0, ch.startMs / 1000)
-              : NaN;
+      const startSeconds = resolveChapterStartSeconds(ch);
       const endSeconds = typeof ch.endSeconds === "number" ? ch.endSeconds : undefined;
       if (title && Number.isFinite(startSeconds)) {
         extracted.push({ title, startSeconds, endSeconds });
@@ -846,7 +926,8 @@ export class YouTubeIngestionStrategy implements IngestionStrategy {
 
     const captionTracks = parseCaptionTracksFromPlayerResponse(playerResponse);
 
-    const chapters = extractChaptersFromPlayerResponse(playerResponse, durationSeconds);
+    const initialData = extractInitialDataFromHtml(responseText);
+    const chapters = extractChaptersFromPlayerResponse(playerResponse, durationSeconds, initialData);
 
     return {
       videoId,

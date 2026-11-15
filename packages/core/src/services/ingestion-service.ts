@@ -90,16 +90,33 @@ export class IngestionService {
 
       const isSlicingActive = Boolean(options?.slicing && options.slicing.mode !== "none");
 
+      if (isSlicingActive && rawDocs.length > 0) {
+        options?.onLog?.(
+          "info",
+          `Slicing transcript/documents (${options?.slicing?.mode}) for "${source.name}"...`,
+          { sourceId: source.id, stage: "slicing" }
+        );
+      }
+
       // Extract and filter for incremental delta
       for (const raw of rawDocs) {
         const cleanDoc = strategy.extractCleanText(raw);
 
         // Deduplication check against previous sync
-        const isSeenGuid = lastSync?.lastGuid && raw.guid && raw.guid === lastSync.lastGuid;
-        const isSeenHash = lastSync?.contentHash && cleanDoc.contentHash === lastSync.contentHash;
+        const isSameContent = Boolean(
+          lastSync?.contentHash && cleanDoc.contentHash === lastSync.contentHash
+        );
+        const isSeenGuid = Boolean(
+          lastSync?.lastGuid && raw.guid && raw.guid === lastSync.lastGuid
+        );
 
-        if (isSeenGuid || isSeenHash) {
-          continue;
+        if (!isSlicingActive) {
+          if (isSameContent) {
+            continue;
+          }
+          if (source.type === "rss" && isSeenGuid) {
+            continue;
+          }
         }
 
         if (cleanDoc.startPage == null && cleanDoc.textContent) {

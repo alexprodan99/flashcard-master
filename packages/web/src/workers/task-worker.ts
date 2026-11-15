@@ -186,6 +186,8 @@ if (parentPort) {
         contentHash: "",
         startPage: doc.startPage ?? null,
         endPage: doc.endPage ?? null,
+        startSeconds: doc.startSeconds ?? null,
+        endSeconds: doc.endSeconds ?? null,
       };
 
       let docCreatedCount = 0;
@@ -213,7 +215,7 @@ if (parentPort) {
                 targetDeck: targetDeckOverride || "Default",
                 sourceId: doc.sourceId,
                 documentTitle: doc.title,
-                originUrl: doc.originUrl,
+                originUrl: d.originUrl || d.sourceOriginUrl || doc.originUrl,
                 persona: persona || "socratic-mentor",
                 tags: (doc as any).tags || [],
                 cards: [{

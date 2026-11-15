@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  DocumentSlicingEngine,
   IngestionService,
   StrategyRegistry,
   DataSourceRepository,
@@ -22,8 +23,14 @@ import {
   parseYouTubeCaptionPayload,
 } from "../src/index.js";
 
-function buildWatchHtml(playerResponse: Record<string, any>): string {
-  return `<!doctype html><html><head><title>YouTube</title></head><body><script>var ytInitialPlayerResponse = ${JSON.stringify(playerResponse)};</script></body></html>`;
+function buildWatchHtml(
+  playerResponse: Record<string, any>,
+  initialData?: Record<string, any>
+): string {
+  const initialDataScript = initialData
+    ? `<script>var ytInitialData = ${JSON.stringify(initialData)};</script>`
+    : "";
+  return `<!doctype html><html><head><title>YouTube</title></head><body><script>var ytInitialPlayerResponse = ${JSON.stringify(playerResponse)};</script>${initialDataScript}</body></html>`;
 }
 
 function makeYouTubeSource(uri: string, id = "yt-src-1"): DataSource {
@@ -654,6 +661,126 @@ describe("YouTubeIngestionStrategy (Story 21.4)", () => {
     expect(singleDocs[0].rawContent).toContain("Selected es");
 
     expect(fetchedCaptionUrls).toEqual(["https://cap.example/en", "https://cap.example/es"]);
+  });
+
+  it("extracts chapters from ytInitialData markersMap (even after HEATSEEKER) when description has no timestamps", async () => {
+    const playerResponse = {
+      playabilityStatus: { status: "OK" },
+      videoDetails: {
+        videoId: "AutoChap001",
+        title: "Large Language Models explained briefly",
+        author: "3Blue1Brown",
+        lengthSeconds: "478",
+        shortDescription: "A light intro to LLMs without timestamp lines in description.",
+      },
+      captions: {
+        playerCaptionsTracklistRenderer: {
+          captionTracks: [{ baseUrl: "https://cap.example/auto-ch", languageCode: "en" }],
+        },
+      },
+    };
+
+    const initialData = {
+      playerOverlays: {
+        playerOverlayRenderer: {
+          decoratedPlayerBarRenderer: {
+            decoratedPlayerBarRenderer: {
+              playerBar: {
+                multiMarkersPlayerBarRenderer: {
+                  markersMap: [
+                    {
+                      key: "HEATSEEKER",
+                      value: { heatmap: { heatmapRenderer: { maxHeightDp: 40 } } },
+                    },
+                    {
+                      key: "AUTO_CHAPTERS",
+                      value: {
+                        chapters: [
+                          {
+                            chapterRenderer: {
+                              title: { simpleText: "How chatbots work" },
+                              timeRangeStartMillis: 0,
+                            },
+                          },
+                          {
+                            chapterRenderer: {
+                              title: { simpleText: "Large language models" },
+                              timeRangeStartMillis: 35079,
+                            },
+                          },
+                          {
+                            chapterRenderer: {
+                              title: { simpleText: "Transformer architecture" },
+                              timeRangeStartMillis: 282240,
+                            },
+                          },
+                        ],
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const customFetch = (async (url: string | URL | Request) => {
+      const u = String(url);
+      if (u.startsWith("https://www.youtube.com/watch?v=AutoChap001")) {
+        return new Response(buildWatchHtml(playerResponse, initialData), { status: 200 });
+      }
+      if (u === "https://cap.example/auto-ch") {
+        return new Response(
+          [
+            `<transcript>`,
+            `<text start="2.0" dur="5.0">Imagine chatting with a helpful bot.</text>`,
+            `<text start="40.0" dur="6.0">Next word prediction powers large language models.</text>`,
+            `<text start="290.0" dur="6.0">Inside the transformer, attention moves context between words.</text>`,
+            `</transcript>`,
+          ].join(""),
+          { status: 200 }
+        );
+      }
+      return new Response("Not Found", { status: 404 });
+    }) as typeof fetch;
+
+    const strategy = new YouTubeIngestionStrategy({ customFetch });
+    const metadata = await strategy.fetchVideoMetadata(
+      "AutoChap001",
+      "https://www.youtube.com/watch?v=AutoChap001"
+    );
+    expect(metadata.chapters).toEqual([
+      { title: "How chatbots work", startSeconds: 0, endSeconds: 35.079 },
+      { title: "Large language models", startSeconds: 35.079, endSeconds: 282.24 },
+      { title: "Transformer architecture", startSeconds: 282.24, endSeconds: 478 },
+    ]);
+
+    const rawDocs = await strategy.fetch(makeYouTubeSource("https://www.youtube.com/watch?v=AutoChap001"));
+    expect(rawDocs).toHaveLength(1);
+
+    const cleanDoc = strategy.extractCleanText(rawDocs[0]);
+    expect(cleanDoc.textContent).toContain("## [00:00 - 00:36] How chatbots work");
+    expect(cleanDoc.textContent).toContain("## [00:35 - 04:43] Large language models");
+    expect(cleanDoc.textContent).toContain("## [04:42 - 07:58] Transformer architecture");
+
+    const slicer = new DocumentSlicingEngine();
+    const sliced = slicer.slice(
+      {
+        sourceId: "yt-src-1",
+        title: cleanDoc.title,
+        textContent: cleanDoc.textContent,
+        originUrl: cleanDoc.originUrl,
+      },
+      { mode: "chapters", minutesPerChunk: 10 }
+    );
+    expect(sliced).toHaveLength(3);
+    expect(sliced.map((s) => s.title)).toEqual([
+      "Large Language Models explained briefly - How chatbots work [00:00 - 00:36]",
+      "Large Language Models explained briefly - Large language models [00:35 - 04:43]",
+      "Large Language Models explained briefly - Transformer architecture [04:42 - 07:58]",
+    ]);
   });
 });
 

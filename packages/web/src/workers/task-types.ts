@@ -24,6 +24,8 @@ export interface GenerationTaskPayload {
     originUrl?: string;
     startPage?: number | null;
     endPage?: number | null;
+    startSeconds?: number | null;
+    endSeconds?: number | null;
   }>;
   provider: string;
   model?: string;

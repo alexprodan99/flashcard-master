@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { DiscoveredDocument } from '../lib/types';
-  import { formatPageBadge } from '../lib/formatters.js';
+  import { formatPageBadge, formatTimestampBadge } from '../lib/formatters.js';
 
   interface Props {
     isOpen: boolean;
@@ -167,6 +167,9 @@
         <div class="header-details">
           <h3>{document.title}</h3>
           <div class="preview-meta">
+            {#if formatTimestampBadge(document)}
+              <span class="meta-pill timestamp-pill">⏱️ {formatTimestampBadge(document)}</span>
+            {/if}
             {#if formatPageBadge(document)}
               <span class="meta-pill page-pill">📄 {formatPageBadge(document)}</span>
             {/if}
@@ -346,6 +349,12 @@
     background: rgba(14, 165, 233, 0.15);
     color: #38bdf8;
     border: 1px solid rgba(14, 165, 233, 0.3);
+  }
+
+  .meta-pill.timestamp-pill {
+    background: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+    border: 1px solid rgba(245, 158, 11, 0.35);
   }
 
   .meta-pill.card-pill {

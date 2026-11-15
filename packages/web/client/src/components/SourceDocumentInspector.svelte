@@ -3,7 +3,7 @@
   import { fetchSourceDocuments, fetchDocumentDetails, generateCards, deleteDocument, deleteDocumentsBulk } from '../lib/api';
   import { toastStore, taskStore, generateStore } from '../stores/index.js';
   import type { DataSource, DiscoveredDocument, PersonaType, DifficultyLevel, CardDepthMode } from '../lib/types';
-  import { formatPageBadge } from '../lib/formatters.js';
+  import { formatPageBadge, formatTimestampBadge, parseMediaItemsSummary } from '../lib/formatters.js';
   import GenerationConfigFields from './GenerationConfigFields.svelte';
   import DocumentPreviewModal from './DocumentPreviewModal.svelte';
   import DocumentExportModal from './DocumentExportModal.svelte';
@@ -308,7 +308,14 @@
             <span class="type-badge {source.type}">{source.type}</span>
           </div>
           <h2>{source.name}</h2>
-          <p class="source-uri" title={source.uri}>{source.uri}</p>
+          {#if source.type === 'audio' || source.type === 'video' || source.type === 'youtube'}
+            {@const summary = parseMediaItemsSummary(source.uri || '', source.type)}
+            <p class="source-uri" title={source.uri}>
+              {summary.firstUri}{summary.count > 1 ? ` (+${summary.count - 1} more)` : ''}
+            </p>
+          {:else}
+            <p class="source-uri" title={source.uri}>{source.uri}</p>
+          {/if}
         </div>
         <button class="btn-close" onclick={onClose} aria-label="Close Inspector">✕</button>
       </div>
@@ -412,6 +419,9 @@
                   <div class="doc-header">
                     <h4 class="doc-title">{doc.title}</h4>
                     <div class="doc-badges">
+                      {#if formatTimestampBadge(doc)}
+                        <span class="badge timestamp-badge">⏱️ {formatTimestampBadge(doc)}</span>
+                      {/if}
                       {#if formatPageBadge(doc)}
                         <span class="badge page-badge">📄 {formatPageBadge(doc)}</span>
                       {/if}
@@ -831,6 +841,12 @@
     border: 1px solid rgba(14, 165, 233, 0.3);
   }
 
+  .badge.timestamp-badge {
+    background: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+    border: 1px solid rgba(245, 158, 11, 0.35);
+  }
+
   .badge.word-count {
     background: rgba(255, 255, 255, 0.05);
     color: #94a3b8;
@@ -955,6 +971,9 @@
   .type-badge.sitemap { background: rgba(16, 185, 129, 0.15); color: #34d399; }
   .type-badge.llms-txt { background: rgba(236, 72, 153, 0.15); color: #f472b6; }
   .type-badge.notion { background: rgba(14, 165, 233, 0.15); color: #38bdf8; }
+  .type-badge.audio { background: rgba(168, 85, 247, 0.15); color: #c084fc; }
+  .type-badge.video { background: rgba(20, 184, 166, 0.15); color: #2dd4bf; }
+  .type-badge.youtube { background: rgba(239, 68, 68, 0.15); color: #f87171; }
 
   .deck-badge {
     font-size: 11px;

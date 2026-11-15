@@ -2326,6 +2326,8 @@ export class WebServer {
                 originUrl?: string;
                 startPage?: number | null;
                 endPage?: number | null;
+                startSeconds?: number | null;
+                endSeconds?: number | null;
               }> = [];
 
               if (Array.isArray(body.documentIds)) {
@@ -2345,6 +2347,8 @@ export class WebServer {
                         originUrl: doc.url || undefined,
                         startPage: doc.startPage ?? null,
                         endPage: doc.endPage ?? null,
+                        startSeconds: doc.startSeconds ?? null,
+                        endSeconds: doc.endSeconds ?? null,
                       });
                     }
                   }
@@ -2372,6 +2376,8 @@ export class WebServer {
                         originUrl: doc.url || undefined,
                         startPage: doc.startPage ?? null,
                         endPage: doc.endPage ?? null,
+                        startSeconds: doc.startSeconds ?? null,
+                        endSeconds: doc.endSeconds ?? null,
                       });
                     }
                   }
@@ -2475,6 +2481,8 @@ export class WebServer {
                     contentHash: doc.contentHash || "",
                     startPage: doc.startPage ?? null,
                     endPage: doc.endPage ?? null,
+                    startSeconds: doc.startSeconds ?? null,
+                    endSeconds: doc.endSeconds ?? null,
                   };
                   const drafts = await genService.generateFromDocument(cleanDoc, {
                     difficulty,

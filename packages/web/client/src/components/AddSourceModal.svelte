@@ -1,9 +1,11 @@
 <script lang="ts">
   import { createSource, uploadSourceFile, syncSource } from '../lib/api';
-  import type { DataSource, DataSourceType, SlicingMode, DocumentSlicingOptions } from '../lib/types';
+  import type { DataSource, DataSourceType, MediaSourceItem, SlicingMode, DocumentSlicingOptions } from '../lib/types';
   import { settingsStore, toastStore } from '../stores/index.js';
   import { buildNotionUri, isValidNotionInput } from '../lib/notion-uri.js';
+  import { validateMediaItems } from '../lib/formatters.js';
   import UrlListManager from './UrlListManager.svelte';
+  import MediaItemListEditor from './MediaItemListEditor.svelte';
   import TagInput from './TagInput.svelte';
 
   interface Props {
@@ -19,10 +21,14 @@
   let type = $state<DataSourceType>('rss');
   let uri = $state('');
   let webUrls = $state<string[]>([]);
+  let mediaItems = $state<MediaSourceItem[]>([]);
   let notionRecursive = $state(false);
   let tags = $state<string[]>([]);
   let isSubmitting = $state(false);
   let errorMessage = $state<string | null>(null);
+
+  const isMediaType = (t: DataSourceType): t is 'audio' | 'video' | 'youtube' =>
+    t === 'audio' || t === 'video' || t === 'youtube';
 
   $effect(() => {
     if (isOpen && !settingsStore.hasLoaded && !settingsStore.loading) {
@@ -36,14 +42,52 @@
   let showAdvancedPath = $state(false);
   let fileInputRef = $state<HTMLInputElement | null>(null);
 
-  // Slicing configuration state (Story 17.6)
+  // Slicing configuration state (Story 17.6 & Story 21.6)
   let slicingMode = $state<SlicingMode>('outline');
   let pagesPerChunk = $state<number | string>(5);
   let wordsPerChunk = $state<number | string>(1500);
   let minChunkWords = $state<number | string>(200);
+  let minutesPerChunk = $state<number | string>(10);
   let syncImmediately = $state(true);
 
+  $effect(() => {
+    if (isMediaType(type)) {
+      if (slicingMode !== 'timestamps' && slicingMode !== 'chapters' && slicingMode !== 'none') {
+        slicingMode = 'timestamps';
+      }
+      if (type !== 'youtube' && slicingMode === 'chapters') {
+        slicingMode = 'timestamps';
+      }
+      if (!name.trim() && mediaItems.length > 0 && mediaItems[0].title) {
+        name =
+          mediaItems.length === 1
+            ? mediaItems[0].title
+            : `${mediaItems[0].title} & ${mediaItems.length - 1} more`;
+      }
+    } else if (type === 'local') {
+      if (slicingMode === 'timestamps' || slicingMode === 'chapters') {
+        slicingMode = 'outline';
+      }
+    }
+  });
+
   function getSlicingOptions(): DocumentSlicingOptions | undefined {
+    if (isMediaType(type)) {
+      if (slicingMode === 'timestamps') {
+        return {
+          mode: 'timestamps',
+          minutesPerChunk: Math.max(1, parseInt(String(minutesPerChunk), 10) || 10),
+        };
+      }
+      if (slicingMode === 'chapters' && type === 'youtube') {
+        return {
+          mode: 'chapters',
+          minutesPerChunk: Math.max(1, parseInt(String(minutesPerChunk), 10) || 10),
+        };
+      }
+      return { mode: 'none' };
+    }
+
     if (type !== 'local') return undefined;
     if (slicingMode === 'budget') {
       return {
@@ -186,6 +230,13 @@
         errorMessage = 'Please select a Markdown or text file to upload, or specify a directory path.';
         return;
       }
+    } else if (isMediaType(type)) {
+      const validationErr = validateMediaItems(mediaItems, type);
+      if (validationErr) {
+        errorMessage = validationErr;
+        return;
+      }
+      finalUri = JSON.stringify(mediaItems);
     } else if (type === 'notion') {
       const rawUri = uri.trim();
       if (!rawUri) {
@@ -244,8 +295,9 @@
       name = '';
       uri = '';
       webUrls = [];
+      mediaItems = [];
       tags = [];
-      selectedLocalFile = null;
+      selectedLocalFiles = [];
       isUploadingFile = false;
       isDragging = false;
       showAdvancedPath = false;
@@ -254,6 +306,7 @@
       pagesPerChunk = 5;
       wordsPerChunk = 1500;
       minChunkWords = 200;
+      minutesPerChunk = 10;
       syncImmediately = true;
       onSourceCreated(source);
       onClose();
@@ -310,6 +363,18 @@
             <label class="type-option" class:selected={type === 'notion'}>
               <input type="radio" name="sourceType" value="notion" bind:group={type} />
               <span>📓 Notion</span>
+            </label>
+            <label class="type-option" class:selected={type === 'audio'}>
+              <input type="radio" name="sourceType" value="audio" bind:group={type} />
+              <span>🎵 Audio</span>
+            </label>
+            <label class="type-option" class:selected={type === 'video'}>
+              <input type="radio" name="sourceType" value="video" bind:group={type} />
+              <span>🎬 Video</span>
+            </label>
+            <label class="type-option" class:selected={type === 'youtube'}>
+              <input type="radio" name="sourceType" value="youtube" bind:group={type} />
+              <span>▶️ YouTube</span>
             </label>
           </div>
         </div>
@@ -576,6 +641,76 @@
               </label>
             </div>
           </div>
+        {:else if isMediaType(type)}
+          <div class="form-group">
+            <MediaItemListEditor
+              sourceType={type}
+              bind:items={mediaItems}
+              disabled={isSubmitting}
+              {onNavigate}
+              onCloseModal={onClose}
+              onError={(msg) => (errorMessage = msg)}
+            />
+
+            <div class="slicing-config-card">
+              <div class="slicing-card-header">
+                <span class="slicing-header-title">⏱️ Media Transcript Slicing Strategy</span>
+                <span class="slicing-header-sub">
+                  Slice long lectures &amp; videos into timestamp-bounded study sections
+                </span>
+              </div>
+
+              <div class="slicing-mode-selector">
+                <label class="slicing-mode-option" class:selected={slicingMode === 'timestamps'}>
+                  <input type="radio" name="mediaSlicingMode" value="timestamps" bind:group={slicingMode} />
+                  <span class="slicing-mode-label">
+                    <strong>Time Windows / Custom</strong>
+                    <small>Uses per-item custom ranges or fixed minute intervals</small>
+                  </span>
+                </label>
+                {#if type === 'youtube'}
+                  <label class="slicing-mode-option" class:selected={slicingMode === 'chapters'}>
+                    <input type="radio" name="mediaSlicingMode" value="chapters" bind:group={slicingMode} />
+                    <span class="slicing-mode-label">
+                      <strong>Video Chapters</strong>
+                      <small>Slices by YouTube description chapters (falls back to windows)</small>
+                    </span>
+                  </label>
+                {/if}
+                <label class="slicing-mode-option" class:selected={slicingMode === 'none'}>
+                  <input type="radio" name="mediaSlicingMode" value="none" bind:group={slicingMode} />
+                  <span class="slicing-mode-label">
+                    <strong>Full Transcript</strong>
+                    <small>Keep each media item as one complete document</small>
+                  </span>
+                </label>
+              </div>
+
+              {#if slicingMode === 'timestamps' || slicingMode === 'chapters'}
+                <div class="slicing-thresholds-grid">
+                  <div class="threshold-field">
+                    <label for="slicing-minutes-per-chunk">
+                      {slicingMode === 'chapters' ? 'Fallback Window (Minutes)' : 'Minutes per Window'}
+                    </label>
+                    <input
+                      id="slicing-minutes-per-chunk"
+                      type="number"
+                      min="1"
+                      max="120"
+                      step="1"
+                      placeholder="10"
+                      bind:value={minutesPerChunk}
+                    />
+                    <span class="threshold-hint">
+                      {slicingMode === 'chapters'
+                        ? 'Fallback time window in minutes used only if a video has no chapters (default: 10).'
+                        : 'Default time window length in minutes when custom timestamp ranges are absent (default: 10).'}
+                    </span>
+                  </div>
+                </div>
+              {/if}
+            </div>
+          </div>
         {:else}
           <div class="form-group">
             <label for="src-uri">
@@ -644,7 +779,9 @@
     border: 1px solid #334155;
     border-radius: 16px;
     width: 100%;
-    max-width: 540px;
+    max-width: 640px;
+    max-height: 90vh;
+    overflow-y: auto;
     padding: 28px;
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
   }
@@ -1111,7 +1248,7 @@
 
   .slicing-mode-selector {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
     gap: 8px;
   }
 

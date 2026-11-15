@@ -216,7 +216,7 @@ development_status:
   21-3-local-audio-and-video-ingestion-strategies: done
   21-4-youtube-data-source-ingestion-strategy: done
   21-5-timestamp-slicing-citations-and-grounding-guard: done
-  21-6-web-ui-media-sources-timestamp-controls-and-inspector: ready-for-dev
+  21-6-web-ui-media-sources-timestamp-controls-and-inspector: done
   21-7-settings-stt-defaults-cli-media-flags-and-verification: ready-for-dev
   epic-21-retrospective: optional
 action_items:

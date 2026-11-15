@@ -6,6 +6,7 @@
   import CloneDeckModal from '../components/CloneDeckModal.svelte';
   import SplitDeckModal from '../components/SplitDeckModal.svelte';
   import MoveCardsModal from '../components/MoveCardsModal.svelte';
+  import { formatLocatorLabel } from '../lib/formatters.js';
   import { explorerStore, toastStore } from '../stores/index.js';
 
   let cards = $derived(explorerStore.cards);
@@ -407,7 +408,21 @@
               <span class="difficulty-badge {card.difficulty}">{card.difficulty}</span>
               <span class="deck-tag">📦 {card.targetDeck || 'Default'}</span>
               {#if card.sourceLocator}
-                <span class="locator-badge" title="Source Locator">📍 {card.sourceLocator}</span>
+                {#if card.sourceOriginUrl && /^https?:\/\//i.test(card.sourceOriginUrl)}
+                  <a
+                    href={card.sourceOriginUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="locator-badge locator-link"
+                    title="Open source at {card.sourceLocator}"
+                  >
+                    {formatLocatorLabel(card.sourceLocator)} ↗
+                  </a>
+                {:else}
+                  <span class="locator-badge" title="Source Locator">
+                    {formatLocatorLabel(card.sourceLocator)}
+                  </span>
+                {/if}
               {/if}
             </div>
           </div>
@@ -890,6 +905,17 @@
     border: 1px solid rgba(14, 165, 233, 0.3);
     padding: 2px 6px;
     border-radius: 4px;
+  }
+
+  .locator-link {
+    text-decoration: none;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+  }
+
+  .locator-link:hover {
+    background: rgba(14, 165, 233, 0.28);
+    border-color: rgba(14, 165, 233, 0.6);
   }
 
   .card-question {
