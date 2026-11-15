@@ -91,9 +91,11 @@
     sourcesStore.setSyncing(source.id, true);
     try {
       const syncOpts =
-        source.type === 'audio' || source.type === 'video' || source.type === 'youtube'
-          ? { slicing: { mode: 'timestamps' as const, minutesPerChunk: 10 } }
-          : undefined;
+        source.type === 'youtube'
+          ? { slicing: { mode: 'chapters' as const, minutesPerChunk: 10 } }
+          : source.type === 'audio' || source.type === 'video'
+            ? { slicing: { mode: 'timestamps' as const, minutesPerChunk: 10 } }
+            : undefined;
       const result: any = await syncSource(source.id, syncOpts);
       if (result.jobId) {
         sourcesStore.setSyncing(source.id, true, result.jobId);

@@ -103,11 +103,20 @@ export class IngestionService {
         const cleanDoc = strategy.extractCleanText(raw);
 
         // Deduplication check against previous sync
-        const isSeenGuid = lastSync?.lastGuid && raw.guid && raw.guid === lastSync.lastGuid;
-        const isSeenHash = lastSync?.contentHash && cleanDoc.contentHash === lastSync.contentHash;
+        const isSameContent = Boolean(
+          lastSync?.contentHash && cleanDoc.contentHash === lastSync.contentHash
+        );
+        const isSeenGuid = Boolean(
+          lastSync?.lastGuid && raw.guid && raw.guid === lastSync.lastGuid
+        );
 
-        if (isSeenGuid || isSeenHash) {
-          continue;
+        if (!isSlicingActive) {
+          if (isSameContent) {
+            continue;
+          }
+          if (source.type === "rss" && isSeenGuid) {
+            continue;
+          }
         }
 
         if (cleanDoc.startPage == null && cleanDoc.textContent) {
