@@ -505,6 +505,24 @@
     border: 1px solid rgba(14, 165, 233, 0.3);
   }
 
+  .type-badge.audio {
+    background: rgba(168, 85, 247, 0.15);
+    color: #c084fc;
+    border: 1px solid rgba(168, 85, 247, 0.3);
+  }
+
+  .type-badge.video {
+    background: rgba(20, 184, 166, 0.15);
+    color: #2dd4bf;
+    border: 1px solid rgba(20, 184, 166, 0.3);
+  }
+
+  .type-badge.youtube {
+    background: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+  }
+
   .source-meta {
     display: flex;
     align-items: center;

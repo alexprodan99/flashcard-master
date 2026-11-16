@@ -1770,6 +1770,9 @@
   .type-badge.sitemap { background: rgba(16, 185, 129, 0.15); color: #34d399; }
   .type-badge.llms-txt { background: rgba(236, 72, 153, 0.15); color: #f472b6; }
   .type-badge.notion { background: rgba(14, 165, 233, 0.15); color: #38bdf8; }
+  .type-badge.audio { background: rgba(168, 85, 247, 0.15); color: #c084fc; }
+  .type-badge.video { background: rgba(20, 184, 166, 0.15); color: #2dd4bf; }
+  .type-badge.youtube { background: rgba(239, 68, 68, 0.15); color: #f87171; }
 
   .btn {
     padding: 8px 16px;
