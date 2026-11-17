@@ -135,7 +135,7 @@
 
   let hasLoaded = $state(false);
 
-  export type SettingsTab = 'all' | 'sources' | 'providers' | 'anki' | 'general' | 'workers' | 'logging';
+  export type SettingsTab = 'all' | 'sources' | 'providers' | 'anki' | 'general' | 'workers' | 'media' | 'logging';
   let activeTab = $state<SettingsTab>('all');
 
   let keys = $derived(settingsStore.keys);
@@ -482,6 +482,19 @@
       >
         <span class="tab-icon">⚡</span>
         <span class="tab-label">Worker Limits</span>
+      </button>
+
+      <button
+        type="button"
+        role="tab"
+        id="tab-media"
+        aria-selected={activeTab === 'media'}
+        class="tab-btn"
+        class:active={activeTab === 'media'}
+        onclick={() => (activeTab = 'media')}
+      >
+        <span class="tab-icon">🎙️</span>
+        <span class="tab-label">Media &amp; STT</span>
       </button>
 
       <button
@@ -1584,7 +1597,7 @@
     {/if}
 
     <!-- Section 7: Speech-to-Text & Media Diagnostics -->
-    {#if activeTab === 'all' || activeTab === 'general'}
+    {#if activeTab === 'all' || activeTab === 'media'}
       <section class="settings-section" id="section-stt-media">
         <div class="section-header">
           <div class="section-title-wrap">
@@ -1853,25 +1866,29 @@
   /* Interactive Tab Navigation */
   .settings-tabs-nav {
     display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
+    flex-wrap: nowrap;
+    gap: 4px;
     padding: 6px;
     background: #0f172a;
     border: 1px solid #1e293b;
     border-radius: 12px;
+    overflow-x: auto;
+    scrollbar-width: thin;
   }
 
   .tab-btn {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 16px;
+    gap: 6px;
+    padding: 8px 12px;
     background: transparent;
     border: 1px solid transparent;
     border-radius: 8px;
     color: #94a3b8;
     font-size: 13px;
     font-weight: 500;
+    white-space: nowrap;
+    flex-shrink: 0;
     cursor: pointer;
     transition: all 0.15s ease;
   }

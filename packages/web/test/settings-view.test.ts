@@ -238,4 +238,19 @@ describe('SettingsView Component Unit Tests (Epic 18 Action Item 2)', () => {
     // Now save button should be enabled
     expect(saveBtn?.disabled).toBe(false);
   });
+
+  it('switches to Media & STT tab and isolates the Speech-to-Text & Media Defaults section', async () => {
+    await mountAndWait();
+
+    const mediaTab = target.querySelector<HTMLButtonElement>('#tab-media');
+    expect(mediaTab).not.toBeNull();
+    expect(mediaTab?.textContent).toContain('Media & STT');
+
+    mediaTab?.click();
+    flushSync();
+
+    expect(target.querySelector('#section-stt-media')).not.toBeNull();
+    expect(target.querySelector('#section-sources')).toBeNull();
+    expect(target.querySelector('#section-slicing-epub')).toBeNull();
+  });
 });
