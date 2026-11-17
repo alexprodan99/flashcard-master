@@ -53,7 +53,7 @@ export interface LocalWhisperAvailability {
 
 const BRACKET_TIMESTAMP_LINE_RE = /^\[([0-9:.,]+)\s*-->\s*([0-9:.,]+)\]\s*(.+)$/;
 
-interface WhisperBinaryAssetSpec {
+export interface WhisperBinaryAssetSpec {
   archiveType: "zip" | "tar.gz";
   url: string;
   binaryNames: string[];
@@ -159,7 +159,7 @@ function readTarString(slice: Uint8Array): string {
   return Buffer.from(slice).toString("utf8").replace(/\0.*$/, "").trim();
 }
 
-async function extractWhisperArchive(options: {
+export async function extractWhisperArchive(options: {
   archiveBuffer: Buffer;
   binDir: string;
   spec: WhisperBinaryAssetSpec;
@@ -172,10 +172,12 @@ async function extractWhisperArchive(options: {
 
   if (spec.archiveType === "zip") {
     const zip = await JSZip.loadAsync(archiveBuffer);
+    const resolvedBinDir = path.resolve(binDir);
     for (const [entryName, entry] of Object.entries(zip.files)) {
       if (entry.dir) continue;
-      const baseName = path.posix.basename(entryName);
-      if (!baseName) continue;
+      const normalizedEntry = entryName.replace(/\\/g, "/");
+      const baseName = path.posix.basename(normalizedEntry);
+      if (!baseName || baseName === "." || baseName === "..") continue;
       const { keep, isTargetBinary } = shouldKeepArchiveEntry(baseName, spec);
       if (!keep) continue;
 
@@ -185,7 +187,10 @@ async function extractWhisperArchive(options: {
       }
 
       const destName = isTargetBinary ? targetBinaryName : baseName;
-      const destPath = path.join(binDir, destName);
+      const destPath = path.resolve(resolvedBinDir, destName);
+      if (!destPath.startsWith(resolvedBinDir + path.sep)) {
+        throw new Error(`Unsafe archive entry path outside target directory: ${entryName}`);
+      }
       const data = await entry.async("nodebuffer");
       await fs.writeFile(destPath, data);
       if (isTargetBinary && !targetBinaryName.endsWith(".exe")) {
@@ -773,8 +778,13 @@ export class LocalWhisperSttAdapter implements SpeechToTextPort {
 
       let audioFilePath = input.audioPath;
       if (!audioFilePath && input.audioBuffer) {
-        const safeName = input.filename?.trim() || "audio.wav";
-        audioFilePath = path.join(workDir, safeName);
+        const rawBase = path.basename((input.filename ?? "").replace(/\\/g, "/").trim());
+        const safeName = rawBase && rawBase !== "." && rawBase !== ".." ? rawBase : "audio.wav";
+        const resolvedWorkDir = path.resolve(workDir);
+        audioFilePath = path.resolve(resolvedWorkDir, safeName);
+        if (!audioFilePath.startsWith(resolvedWorkDir + path.sep)) {
+          audioFilePath = path.join(resolvedWorkDir, "audio.wav");
+        }
         await fs.writeFile(audioFilePath, input.audioBuffer);
       }
 
@@ -785,7 +795,9 @@ export class LocalWhisperSttAdapter implements SpeechToTextPort {
       const isWhisperCpp =
         this.autoDownload ||
         binaryBase.startsWith("whisper-cli") ||
-        binaryBase.startsWith("whisper-cpp");
+        binaryBase.startsWith("whisper-cpp") ||
+        binaryBase === "main" ||
+        binaryBase === "main.exe";
 
       let args: string[];
       if (isWhisperCpp) {

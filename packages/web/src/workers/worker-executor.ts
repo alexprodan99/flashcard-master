@@ -268,6 +268,7 @@ export class WorkerExecutor {
             } else if (msg.type === "COMMIT_SYNC_RESULT") {
               let newCount = 0;
               let totalFetched = 0;
+              let syncError: string | undefined;
 
               if (Array.isArray(msg.documents) && msg.documents.length > 0) {
                 try {
@@ -338,12 +339,23 @@ export class WorkerExecutor {
                   });
                   newCount = syncResult?.newCount || 0;
                   totalFetched = syncResult?.totalFetched || 0;
+                  if (syncResult?.error) {
+                    syncError = syncResult.error;
+                    ctx.log(
+                      msg.stepNumber || 0,
+                      "Sync Error",
+                      "error",
+                      `Sync failed for source ${msg.sourceId}: ${syncResult.error}`,
+                      { error: syncResult.error }
+                    );
+                  }
                 } catch (syncErr: any) {
+                  syncError = syncErr.message || String(syncErr);
                   ctx.log(
                     msg.stepNumber || 0,
                     "Sync Error",
-                    "warn",
-                    `Custodial sync failed for source ${msg.sourceId}: ${syncErr.message}`
+                    "error",
+                    `Custodial sync failed for source ${msg.sourceId}: ${syncError}`
                   );
                 }
               } else if (this.options.syncRepo && Array.isArray(msg.documents)) {
@@ -360,6 +372,7 @@ export class WorkerExecutor {
                 sourceId: msg.sourceId,
                 newCount,
                 totalFetched,
+                ...(syncError ? { error: syncError } : {}),
               };
               worker.postMessage(ackMsg);
             } else if (msg.type === "TASK_COMPLETE") {

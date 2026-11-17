@@ -1708,14 +1708,36 @@ export class WebServer {
     });
   }
 
-  private readRequestBodyBuffer(req: http.IncomingMessage): Promise<Buffer> {
+  private readRequestBodyBuffer(
+    req: http.IncomingMessage,
+    maxBytes: number = Number(process.env.MAX_UPLOAD_BYTES) || 100 * 1024 * 1024
+  ): Promise<Buffer> {
     return new Promise((resolve, reject) => {
       const chunks: Buffer[] = [];
+      let totalBytes = 0;
+      let rejected = false;
       req.on("data", (chunk) => {
-        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        if (rejected) return;
+        const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        totalBytes += buf.length;
+        if (maxBytes > 0 && totalBytes > maxBytes) {
+          rejected = true;
+          const err = new Error(`Upload payload exceeds maximum allowed size (${maxBytes} bytes)`) as Error & {
+            statusCode?: number;
+          };
+          err.statusCode = 413;
+          req.pause();
+          reject(err);
+          return;
+        }
+        chunks.push(buf);
       });
-      req.on("end", () => resolve(Buffer.concat(chunks)));
-      req.on("error", reject);
+      req.on("end", () => {
+        if (!rejected) resolve(Buffer.concat(chunks));
+      });
+      req.on("error", (err) => {
+        if (!rejected) reject(err);
+      });
     });
   }
 
@@ -3654,7 +3676,8 @@ export class WebServer {
           // Fallback 404
           this.sendJson(res, 404, { error: "Not Found", path: pathname });
         } catch (err: any) {
-          this.sendJson(res, 500, { error: err.message || "Internal Server Error" });
+          const status = typeof err?.statusCode === "number" ? err.statusCode : 500;
+          this.sendJson(res, status, { error: err.message || "Internal Server Error" });
         }
       });
 

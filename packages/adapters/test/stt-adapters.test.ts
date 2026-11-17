@@ -8,7 +8,7 @@ import { SettingsService, type SettingsRepository } from "@flashcard-master/core
 import { AudioTrimmer } from "../src/media/audio-trimmer.js";
 import { OpenAiSttAdapter } from "../src/stt/openai-stt-adapter.js";
 import { GeminiSttAdapter } from "../src/stt/gemini-stt-adapter.js";
-import { LocalWhisperSttAdapter } from "../src/stt/local-whisper-stt-adapter.js";
+import { LocalWhisperSttAdapter, extractWhisperArchive } from "../src/stt/local-whisper-stt-adapter.js";
 import { createSttAdapter, createSttAdapterFromSettings } from "../src/stt/stt-factory.js";
 
 function createMemorySettingsRepo(initial: Record<string, string> = {}): SettingsRepository {
@@ -769,6 +769,76 @@ describe("STT Adapters", () => {
       const adapter = createSttAdapterFromSettings(undefined, settingsService, {}, {});
       expect(adapter).toBeInstanceOf(GeminiSttAdapter);
       expect(adapter.provider).toBe("gemini");
+    });
+  });
+
+  describe("security & binary classification hardening", () => {
+    it("sanitizes path traversal filenames in transcribeViaCli and classifies main/main.exe as whisper.cpp", async () => {
+      const workBase = await fs.mkdtemp(path.join(os.tmpdir(), "fc-whisper-sec-"));
+      try {
+        const seenArgs: string[][] = [];
+        const adapter = new LocalWhisperSttAdapter({
+          binaryPath: "/opt/whisper/main.exe",
+          model: "/opt/whisper/ggml-base.bin",
+          commandRunner: async (_cmd, args) => {
+            seenArgs.push(args);
+            const outIdx = args.indexOf("-of");
+            const outPrefix = outIdx >= 0 ? args[outIdx + 1] : "";
+            await fs.writeFile(
+              `${outPrefix}.json`,
+              JSON.stringify({
+                transcription: [{ offsets: { from: 0, to: 1000 }, text: "Safe path." }],
+              })
+            );
+            return { stdout: "", stderr: "", exitCode: 0 };
+          },
+        });
+
+        const res = await adapter.transcribe({
+          audioBuffer: Buffer.from("RIFFDATA"),
+          filename: "../../outside-traversal.wav",
+        });
+
+        expect(res.text).toBe("Safe path.");
+        const transcribeArgs = seenArgs.find((a) => a.includes("-f"));
+        expect(transcribeArgs).toBeDefined();
+        const fIdx = transcribeArgs!.indexOf("-f");
+        const passedAudioPath = transcribeArgs![fIdx + 1];
+        expect(path.basename(passedAudioPath)).toBe("outside-traversal.wav");
+        expect(passedAudioPath).not.toContain("..");
+        await expect(fs.stat(path.resolve(workBase, "outside-traversal.wav"))).rejects.toThrow();
+      } finally {
+        await fs.rm(workBase, { recursive: true, force: true });
+      }
+    });
+
+    it("strips Windows backslash zip-slip paths when extracting whisper.cpp archive", async () => {
+      const cacheDir = await fs.mkdtemp(path.join(os.tmpdir(), "fc-whisper-zip-"));
+      const binDir = path.join(cacheDir, "bin");
+      try {
+        const zip = new JSZip();
+        zip.file("Release/whisper-cli.exe", Buffer.from("binary-bytes"));
+        zip.file("..\\..\\evil.dll", Buffer.from("evil-dll-bytes"));
+        const archiveBuffer = await zip.generateAsync({ type: "nodebuffer" });
+
+        await extractWhisperArchive({
+          archiveBuffer,
+          binDir,
+          targetBinaryName: "whisper-cli.exe",
+          spec: {
+            url: "https://example.com/whisper-bin-x64.zip",
+            archiveType: "zip",
+            binaryNames: ["whisper-cli.exe"],
+          },
+        });
+
+        await expect(fs.stat(path.join(binDir, "whisper-cli.exe"))).resolves.toBeDefined();
+        await expect(fs.stat(path.join(binDir, "evil.dll"))).resolves.toBeDefined();
+        await expect(fs.stat(path.join(cacheDir, "evil.dll"))).rejects.toThrow();
+        await expect(fs.stat(path.resolve(binDir, "..", "..", "evil.dll"))).rejects.toThrow();
+      } finally {
+        await fs.rm(cacheDir, { recursive: true, force: true });
+      }
     });
   });
 });

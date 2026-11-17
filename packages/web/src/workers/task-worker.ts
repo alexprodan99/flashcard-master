@@ -586,6 +586,9 @@ if (parentPort) {
           });
 
           const ack = await ackPromise;
+          if (ack.error) {
+            throw new Error(ack.error);
+          }
           totalNewDocs += ack.newCount || 0;
           totalFetchedDocs += ack.totalFetched || 0;
 
@@ -608,9 +611,12 @@ if (parentPort) {
           jobId,
           stepNumber,
           stepTitle,
-          level: "warn",
+          level: "error",
           message: `Failed to sync "${source.name}": ${err.message}`,
         });
+        if (totalSources <= 1) {
+          throw err;
+        }
       }
     }
 

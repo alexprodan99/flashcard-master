@@ -782,5 +782,41 @@ describe("YouTubeIngestionStrategy (Story 21.4)", () => {
       "Large Language Models explained briefly - Transformer architecture [04:42 - 07:58]",
     ]);
   });
+
+  it("ignores out-of-range numeric HTML entities in captions without throwing RangeError", async () => {
+    const playerResponse = {
+      playabilityStatus: { status: "OK" },
+      videoDetails: {
+        videoId: "EntityGrd01",
+        title: "Entity &#9999999; Test",
+        lengthSeconds: "60",
+      },
+      captions: {
+        playerCaptionsTracklistRenderer: {
+          captionTracks: [{ baseUrl: "https://captions.example/entity-guard", languageCode: "en" }],
+        },
+      },
+    };
+
+    const customFetch = (async (url: string | URL | Request) => {
+      const u = String(url);
+      if (u.startsWith("https://www.youtube.com/watch?v=EntityGrd01")) {
+        return new Response(buildWatchHtml(playerResponse), { status: 200 });
+      }
+      if (u === "https://captions.example/entity-guard") {
+        return new Response(
+          '<transcript><text start="1.0" dur="4.0">Valid &#65; and invalid &#9999999; &#x110000; entities.</text></transcript>',
+          { status: 200 }
+        );
+      }
+      return new Response("Not Found", { status: 404 });
+    }) as typeof fetch;
+
+    const strategy = new YouTubeIngestionStrategy({ customFetch });
+    const rawDocs = await strategy.fetch(makeYouTubeSource("https://www.youtube.com/watch?v=EntityGrd01"));
+    expect(rawDocs).toHaveLength(1);
+    const clean = strategy.extractCleanText(rawDocs[0]);
+    expect(clean.textContent).toContain("Valid A and invalid &#9999999; &#x110000; entities.");
+  });
 });
 

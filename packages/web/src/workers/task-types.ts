@@ -92,6 +92,7 @@ export type WorkerInboundMessage =
       sourceId: string;
       newCount: number;
       totalFetched: number;
+      error?: string;
     };
 
 // =======================================================
