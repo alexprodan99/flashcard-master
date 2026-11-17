@@ -421,7 +421,9 @@
                   const val = (e.target as HTMLSelectElement).value as MediaSlicingOverride;
                   updateItem(idx, {
                     slicingMode: val === 'inherit' ? undefined : val,
-                    ...(val === 'inherit' || val === 'none' ? { intervalMinutes: undefined } : {}),
+                    ...(val === 'inherit' || val === 'none'
+                      ? { intervalMinutes: undefined }
+                      : { intervalMinutes: item.intervalMinutes ?? 10 }),
                   });
                 }}
                 disabled={disabled}
@@ -443,11 +445,11 @@
                   type="number"
                   min="1"
                   max="240"
-                  placeholder="Default"
-                  value={item.intervalMinutes ?? ''}
+                  placeholder="10"
+                  value={item.intervalMinutes ?? 10}
                   oninput={(e) => {
                     const raw = (e.target as HTMLInputElement).value.trim();
-                    const parsed = raw ? Math.max(1, Math.min(240, parseInt(raw, 10) || 10)) : undefined;
+                    const parsed = raw ? Math.max(1, Math.min(240, parseInt(raw, 10) || 10)) : 10;
                     updateItem(idx, { intervalMinutes: parsed });
                   }}
                   disabled={disabled}
