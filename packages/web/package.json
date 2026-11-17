@@ -1,6 +1,6 @@
 {
   "name": "@flashcard-master/web",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Local Web UI Dashboard and REST API Server for Flashcard Master",
   "license": "AGPL-3.0",
   "author": "Ionut-Alexandru Prodan <prodanalexandru580@gmail.com>",
@@ -41,8 +41,8 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "@flashcard-master/adapters": "1.1.0",
-    "@flashcard-master/core": "1.1.0"
+    "@flashcard-master/adapters": "1.1.1",
+    "@flashcard-master/core": "1.1.1"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
