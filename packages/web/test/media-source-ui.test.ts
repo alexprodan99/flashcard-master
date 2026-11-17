@@ -537,6 +537,54 @@ describe('Story 21.6: Web UI Media Source Helpers, API & Worker Progress', () =>
         db.close();
       }
     });
+
+    it('persists defaultSlicingMode and per-item slicingMode overrides via POST/PUT /api/sources', async () => {
+      const db = createDatabaseClient({ inMemory: true });
+      const server = createWebServer({
+        port: 0,
+        sourceRepo: new DataSourceRepository(db),
+        syncRepo: new SyncStateRepository(db),
+        cardRepo: new FlashcardRepository(db),
+      });
+
+      const { url } = await server.listen(0);
+      try {
+        const createRes = await fetch(`${url}/api/sources`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: 'Mixed YouTube Course',
+            type: 'youtube',
+            uri: JSON.stringify([
+              { uri: 'https://www.youtube.com/watch?v=LPZh9BOjkQs', extractionMode: 'auto' },
+              { uri: 'https://youtu.be/dQw4w9WgXcQ', extractionMode: 'auto', slicingMode: 'none' },
+            ]),
+            defaultSlicingMode: 'chapters',
+            defaultIntervalMinutes: 10,
+          }),
+        });
+        expect(createRes.status).toBe(201);
+        const created = (await createRes.json()) as any;
+        expect(created.defaultSlicingMode).toBe('chapters');
+        expect(created.defaultIntervalMinutes).toBe(10);
+
+        const updateRes = await fetch(`${url}/api/sources/${created.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            defaultSlicingMode: 'timestamps',
+            defaultIntervalMinutes: 5,
+          }),
+        });
+        expect(updateRes.status).toBe(200);
+        const updated = (await updateRes.json()) as any;
+        expect(updated.defaultSlicingMode).toBe('timestamps');
+        expect(updated.defaultIntervalMinutes).toBe(5);
+      } finally {
+        await server.close();
+        db.close();
+      }
+    });
   });
 });
 

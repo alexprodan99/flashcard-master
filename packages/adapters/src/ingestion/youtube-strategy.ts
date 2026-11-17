@@ -1194,6 +1194,10 @@ export class YouTubeIngestionStrategy implements IngestionStrategy {
       .digest("hex")
       .slice(0, 32);
 
+    const hasSlicingHint =
+      (item.slicingMode && item.slicingMode !== "inherit") ||
+      item.intervalMinutes !== undefined;
+
     return {
       id: docId,
       sourceId,
@@ -1203,6 +1207,18 @@ export class YouTubeIngestionStrategy implements IngestionStrategy {
       guid: `${metadata.canonicalUrl}#cfg=${configHash}`,
       startSeconds,
       endSeconds,
+      ...(hasSlicingHint
+        ? {
+            slicingHint: {
+              ...(item.slicingMode && item.slicingMode !== "inherit"
+                ? { mode: item.slicingMode }
+                : {}),
+              ...(item.intervalMinutes !== undefined
+                ? { minutesPerChunk: item.intervalMinutes }
+                : {}),
+            },
+          }
+        : {}),
     };
   }
 

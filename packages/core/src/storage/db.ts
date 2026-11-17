@@ -665,6 +665,16 @@ export function runMigrations(db: Database.Database): void {
       }
     }
   }
+
+  // 9. Add persisted default slicing preferences to data_sources (Epic 21 retro item 1)
+  const dsColsAfter = db.prepare("PRAGMA table_info(data_sources)").all() as Array<{ name: string }>;
+  const dsColNames = new Set(dsColsAfter.map((c) => c.name.toLowerCase()));
+  if (!dsColNames.has("default_slicing_mode")) {
+    db.exec("ALTER TABLE data_sources ADD COLUMN default_slicing_mode TEXT DEFAULT NULL;");
+  }
+  if (!dsColNames.has("default_interval_minutes")) {
+    db.exec("ALTER TABLE data_sources ADD COLUMN default_interval_minutes INTEGER DEFAULT NULL;");
+  }
 }
 
 

@@ -19,6 +19,12 @@ export type SttProvider = z.infer<typeof SttProviderSchema>;
 export const MediaExtractionModeSchema = z.enum(["subtitles", "stt", "auto"]);
 export type MediaExtractionMode = z.infer<typeof MediaExtractionModeSchema>;
 
+export const MediaSlicingOverrideSchema = z.enum(["inherit", "chapters", "timestamps", "none"]);
+export type MediaSlicingOverride = z.infer<typeof MediaSlicingOverrideSchema>;
+
+export const SourceSlicingModeSchema = z.enum(["outline", "budget", "timestamps", "chapters", "none"]);
+export type SourceSlicingMode = z.infer<typeof SourceSlicingModeSchema>;
+
 export const TimestampRangeSchema = z.object({
   start: z.string().trim().min(1),
   end: z.string().trim().min(1),
@@ -33,6 +39,8 @@ export const MediaSourceItemSchema = z.object({
   subtitlePath: z.string().trim().optional(),
   sttProvider: SttProviderSchema.optional(),
   timestampRanges: z.array(TimestampRangeSchema).optional(),
+  slicingMode: MediaSlicingOverrideSchema.optional(),
+  intervalMinutes: z.number().int().min(1).max(240).optional(),
 });
 export type MediaSourceItem = z.output<typeof MediaSourceItemSchema>;
 export type MediaSourceItemInput = z.input<typeof MediaSourceItemSchema>;
@@ -107,6 +115,8 @@ export const DataSourceSchema = z.object({
   uri: z.string().min(1),
   tags: z.array(z.string()).default([]),
   isActive: z.boolean().default(true),
+  defaultSlicingMode: SourceSlicingModeSchema.nullable().optional(),
+  defaultIntervalMinutes: z.number().int().min(1).max(240).nullable().optional(),
   createdAt: z.string().datetime().optional(),
   updatedAt: z.string().datetime().optional(),
 });
@@ -198,6 +208,10 @@ export interface RawDocument {
   guid?: string;
   startSeconds?: number | null;
   endSeconds?: number | null;
+  slicingHint?: {
+    mode?: "chapters" | "timestamps" | "none";
+    minutesPerChunk?: number;
+  };
 }
 
 export interface CleanTextDocument {
@@ -212,6 +226,10 @@ export interface CleanTextDocument {
   endPage?: number | null;
   startSeconds?: number | null;
   endSeconds?: number | null;
+  slicingHint?: {
+    mode?: "chapters" | "timestamps" | "none";
+    minutesPerChunk?: number;
+  };
 }
 
 export const DiscoveredDocumentSchema = z.object({

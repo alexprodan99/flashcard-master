@@ -324,4 +324,42 @@ describe("IngestionService", () => {
     expect(docRepo.listBySourceId(src.id)).toHaveLength(1);
     expect(warnMessages.some((m) => m.includes("preserving existing documents"))).toBe(true);
   });
+
+  it("applies source defaultSlicingMode and honors per-item slicingHint overrides", async () => {
+    const src = sourceRepo.create({
+      name: "Mixed Media Source",
+      type: "rss",
+      uri: "https://example.com/mixed.xml",
+      defaultSlicingMode: "timestamps",
+      defaultIntervalMinutes: 1,
+    });
+
+    mockStrategy.mockItems = [
+      {
+        id: "vid-default",
+        sourceId: src.id,
+        guid: "vid-default",
+        title: "Long Talk",
+        rawContent: "[00:00 - 00:30] First minute.\n\n[01:05 - 01:30] Second minute.",
+        originUrl: "https://example.com/talk",
+      },
+      {
+        id: "vid-override-none",
+        sourceId: src.id,
+        guid: "vid-override-none",
+        title: "Short Intro",
+        rawContent: "[00:00 - 00:30] First short part.\n\n[01:05 - 01:30] Second short part.",
+        originUrl: "https://example.com/intro",
+        slicingHint: { mode: "none" },
+      },
+    ];
+
+    const res = await service.syncSource(src.id);
+    expect(res.error).toBeUndefined();
+    const docs = docRepo.listBySourceId(src.id);
+    // Long Talk is split into 2 1-minute windows; Short Intro stays 1 unsliced document
+    expect(docs).toHaveLength(3);
+    expect(docs.filter((d) => d.title.startsWith("Long Talk"))).toHaveLength(2);
+    expect(docs.filter((d) => d.title === "Short Intro")).toHaveLength(1);
+  });
 });

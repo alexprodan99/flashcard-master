@@ -276,11 +276,20 @@
         )
       );
 
+      const slicingForCreate = isMediaType(type) ? getSlicingOptions() : undefined;
       const source = await createSource({
         name: name.trim(),
         type,
         uri: finalUri,
         tags: cleanTags,
+        ...(isMediaType(type)
+          ? {
+              defaultSlicingMode: slicingMode,
+              ...(slicingForCreate?.minutesPerChunk !== undefined
+                ? { defaultIntervalMinutes: slicingForCreate.minutesPerChunk }
+                : {}),
+            }
+          : {}),
       });
 
       if (syncImmediately) {

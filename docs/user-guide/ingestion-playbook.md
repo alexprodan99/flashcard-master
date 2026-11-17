@@ -131,6 +131,10 @@ Configure your defaults and check `ffmpeg`, `yt-dlp`, and `whisper-local` readin
 - **Slicing Modes**:
   - **Video Chapters (`chapters`)** *(YouTube)*: Splits transcripts along YouTube chapter boundaries (falling back to fixed N-minute windows when no chapters are present).
   - **Time Windows (`timestamps`)**: Splits transcripts into fixed N-minute windows (e.g. `10` minutes) aligned cleanly to cue boundaries.
+  - **None (`none`)**: Keeps the entire transcript as a single document.
+- **Source Defaults & Per-Item Overrides**:
+  - **Data Source Default**: Configure and edit the default slicing strategy (`chapters`, `timestamps`, or `none`) and interval minutes in both **Add Source** and **Edit Source** (with **Save & Re-sync** to re-slice existing documents immediately).
+  - **Per-Item Override**: In multi-item media sources, each audio/video/YouTube row defaults to **Inherit source default**, or can override `slicingMode` (`chapters` | `timestamps` | `none`) and `intervalMinutes` individually (precedence: *Per-item override* &rarr; *Sync/CLI flag* &rarr; *Source default*).
 - **CLI Examples**:
   ```bash
   # Add and sync a YouTube source with chapter slicing

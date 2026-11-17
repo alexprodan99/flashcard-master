@@ -1,6 +1,12 @@
 import type Database from "better-sqlite3";
 import { z } from "zod";
-import { DataSource, DataSourceSchema, DataSourceType, DataSourceTypeSchema } from "../domain/models.js";
+import {
+  DataSource,
+  DataSourceSchema,
+  DataSourceType,
+  DataSourceTypeSchema,
+  SourceSlicingModeSchema,
+} from "../domain/models.js";
 import crypto from "node:crypto";
 
 export const CreateSourceInputSchema = z.object({
@@ -9,6 +15,8 @@ export const CreateSourceInputSchema = z.object({
   uri: z.string().min(1, "URI is required"),
   tags: z.array(z.string()).default([]),
   isActive: z.boolean().default(true),
+  defaultSlicingMode: SourceSlicingModeSchema.nullable().optional(),
+  defaultIntervalMinutes: z.number().int().min(1).max(240).nullable().optional(),
 });
 export type CreateSourceInput = z.input<typeof CreateSourceInputSchema>;
 
@@ -18,6 +26,8 @@ export const UpdateSourceInputSchema = z.object({
   uri: z.string().min(1).optional(),
   tags: z.array(z.string()).optional(),
   isActive: z.boolean().optional(),
+  defaultSlicingMode: SourceSlicingModeSchema.nullable().optional(),
+  defaultIntervalMinutes: z.number().int().min(1).max(240).nullable().optional(),
 });
 export type UpdateSourceInput = z.infer<typeof UpdateSourceInputSchema>;
 
@@ -32,6 +42,9 @@ export class DataSourceRepository {
       uri: row.uri,
       tags: typeof row.tags === "string" ? JSON.parse(row.tags) : row.tags,
       isActive: Boolean(row.is_active),
+      defaultSlicingMode: row.default_slicing_mode ?? null,
+      defaultIntervalMinutes:
+        typeof row.default_interval_minutes === "number" ? row.default_interval_minutes : null,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     });
@@ -44,11 +57,20 @@ export class DataSourceRepository {
     const isActiveInt = input.isActive ? 1 : 0;
 
     const stmt = this.db.prepare(`
-      INSERT INTO data_sources (id, name, type, uri, tags, is_active)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO data_sources (id, name, type, uri, tags, is_active, default_slicing_mode, default_interval_minutes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    stmt.run(id, input.name, input.type, input.uri, tagsJson, isActiveInt);
+    stmt.run(
+      id,
+      input.name,
+      input.type,
+      input.uri,
+      tagsJson,
+      isActiveInt,
+      input.defaultSlicingMode ?? null,
+      input.defaultIntervalMinutes ?? null
+    );
 
     const created = this.getById(id);
     if (!created) {
@@ -114,6 +136,14 @@ export class DataSourceRepository {
     if (input.isActive !== undefined) {
       updates.push("is_active = ?");
       params.push(input.isActive ? 1 : 0);
+    }
+    if (input.defaultSlicingMode !== undefined) {
+      updates.push("default_slicing_mode = ?");
+      params.push(input.defaultSlicingMode ?? null);
+    }
+    if (input.defaultIntervalMinutes !== undefined) {
+      updates.push("default_interval_minutes = ?");
+      params.push(input.defaultIntervalMinutes ?? null);
     }
 
     if (updates.length === 0) {

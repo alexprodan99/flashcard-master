@@ -47,6 +47,8 @@ export async function createSource(payload: {
   type: string;
   uri: string;
   tags?: string[];
+  defaultSlicingMode?: string | null;
+  defaultIntervalMinutes?: number | null;
   config?: Record<string, unknown>;
 }): Promise<DataSource> {
   const res = await fetch('/api/sources', {
@@ -79,6 +81,8 @@ export async function updateSource(
     targetDeck: string;
     tags: string[];
     isActive: boolean;
+    defaultSlicingMode: string | null;
+    defaultIntervalMinutes: number | null;
     config: Record<string, unknown>;
   }>
 ): Promise<DataSource> {

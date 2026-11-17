@@ -1,6 +1,12 @@
 <script lang="ts">
   import { uploadSourceFile } from '../lib/api';
-  import type { MediaExtractionMode, MediaSourceItem, SttProvider, TimestampRange } from '../lib/types';
+  import type {
+    MediaExtractionMode,
+    MediaSlicingOverride,
+    MediaSourceItem,
+    SttProvider,
+    TimestampRange,
+  } from '../lib/types';
   import { settingsStore } from '../stores/index.js';
 
   interface Props {
@@ -406,6 +412,51 @@
               </div>
             {/if}
 
+            <div class="field-cell">
+              <label for={`media-slicing-${idx}`}>Slicing Override</label>
+              <select
+                id={`media-slicing-${idx}`}
+                value={item.slicingMode || 'inherit'}
+                onchange={(e) => {
+                  const val = (e.target as HTMLSelectElement).value as MediaSlicingOverride;
+                  updateItem(idx, {
+                    slicingMode: val === 'inherit' ? undefined : val,
+                    ...(val === 'inherit' || val === 'none'
+                      ? { intervalMinutes: undefined }
+                      : { intervalMinutes: item.intervalMinutes ?? 10 }),
+                  });
+                }}
+                disabled={disabled}
+              >
+                <option value="inherit">Inherit source default</option>
+                {#if sourceType === 'youtube'}
+                  <option value="chapters">Video Chapters</option>
+                {/if}
+                <option value="timestamps">Time Windows</option>
+                <option value="none">None (Single Doc)</option>
+              </select>
+            </div>
+
+            {#if item.slicingMode === 'timestamps' || item.slicingMode === 'chapters'}
+              <div class="field-cell">
+                <label for={`media-interval-${idx}`}>Interval (min)</label>
+                <input
+                  id={`media-interval-${idx}`}
+                  type="number"
+                  min="1"
+                  max="240"
+                  placeholder="10"
+                  value={item.intervalMinutes ?? 10}
+                  oninput={(e) => {
+                    const raw = (e.target as HTMLInputElement).value.trim();
+                    const parsed = raw ? Math.max(1, Math.min(240, parseInt(raw, 10) || 10)) : 10;
+                    updateItem(idx, { intervalMinutes: parsed });
+                  }}
+                  disabled={disabled}
+                />
+              </div>
+            {/if}
+
             {#if sourceType !== 'youtube' && item.extractionMode !== 'stt'}
               <div class="field-cell subtitle-cell">
                 <label for={`media-sub-${idx}`}>Paired Subtitle (.srt / .vtt)</label>
@@ -760,6 +811,7 @@
   }
 
   .field-cell input[type='text'],
+  .field-cell input[type='number'],
   .field-cell select {
     background: #0f172a;
     border: 1px solid #334155;

@@ -275,6 +275,10 @@ export function createCli(providedContext?: AppContext): Command {
           uri: finalUri,
           tags,
           isActive: true,
+          ...(isMedia && slicing?.mode ? { defaultSlicingMode: slicing.mode } : {}),
+          ...(isMedia && slicing?.minutesPerChunk !== undefined
+            ? { defaultIntervalMinutes: slicing.minutesPerChunk }
+            : {}),
         });
 
         console.log(`✅ Successfully added data source: [${source.id}] "${source.name}" (${source.type})`);

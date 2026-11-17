@@ -124,4 +124,26 @@ describe("DataSourceRepository", () => {
     const tags = repo.listAllTags();
     expect(tags).toEqual(["database", "distributed-systems", "networking", "raft"]);
   });
+
+  it("persists and updates defaultSlicingMode and defaultIntervalMinutes", () => {
+    const created = repo.create({
+      name: "YouTube Playlist",
+      type: "youtube",
+      uri: JSON.stringify([
+        { uri: "https://www.youtube.com/watch?v=LPZh9BOjkQs", extractionMode: "auto", slicingMode: "none" },
+      ]),
+      defaultSlicingMode: "chapters",
+      defaultIntervalMinutes: 10,
+    });
+
+    expect(created.defaultSlicingMode).toBe("chapters");
+    expect(created.defaultIntervalMinutes).toBe(10);
+
+    const updated = repo.update(created.id, {
+      defaultSlicingMode: "timestamps",
+      defaultIntervalMinutes: 5,
+    });
+    expect(updated?.defaultSlicingMode).toBe("timestamps");
+    expect(updated?.defaultIntervalMinutes).toBe(5);
+  });
 });
