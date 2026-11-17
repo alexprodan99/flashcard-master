@@ -135,7 +135,7 @@
 
   let hasLoaded = $state(false);
 
-  export type SettingsTab = 'all' | 'sources' | 'providers' | 'anki' | 'general' | 'workers' | 'logging';
+  export type SettingsTab = 'all' | 'sources' | 'providers' | 'anki' | 'general' | 'workers' | 'media' | 'logging';
   let activeTab = $state<SettingsTab>('all');
 
   let keys = $derived(settingsStore.keys);
@@ -482,6 +482,19 @@
       >
         <span class="tab-icon">⚡</span>
         <span class="tab-label">Worker Limits</span>
+      </button>
+
+      <button
+        type="button"
+        role="tab"
+        id="tab-media"
+        aria-selected={activeTab === 'media'}
+        class="tab-btn"
+        class:active={activeTab === 'media'}
+        onclick={() => (activeTab = 'media')}
+      >
+        <span class="tab-icon">🎙️</span>
+        <span class="tab-label">Media &amp; STT</span>
       </button>
 
       <button
@@ -1584,7 +1597,7 @@
     {/if}
 
     <!-- Section 7: Speech-to-Text & Media Diagnostics -->
-    {#if activeTab === 'all' || activeTab === 'general'}
+    {#if activeTab === 'all' || activeTab === 'media'}
       <section class="settings-section" id="section-stt-media">
         <div class="section-header">
           <div class="section-title-wrap">
