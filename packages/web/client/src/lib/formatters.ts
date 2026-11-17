@@ -145,7 +145,20 @@ export function parseMediaItemsSummary(
   };
 }
 
-const TIMESTAMP_PATTERN = /^\d{1,3}:\d{2}(:\d{2})?$/;
+const TIMESTAMP_PATTERN = /^(?:\d+:[0-5]\d:[0-5]\d|\d{1,3}:[0-5]\d)$/;
+
+function parseClientTimestampSeconds(raw: string): number | null {
+  const clean = raw.trim();
+  if (!TIMESTAMP_PATTERN.test(clean)) return null;
+  const parts = clean.split(':').map((p) => Number(p));
+  if (parts.length === 2) {
+    return parts[0] * 60 + parts[1];
+  }
+  if (parts.length === 3) {
+    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  }
+  return null;
+}
 
 /**
  * Validates a list of MediaSourceItem entries and their optional custom timestamp ranges.
@@ -161,8 +174,13 @@ export function validateMediaItems(items: MediaSourceItem[], sourceType: string)
     }
     if (item.timestampRanges) {
       for (const range of item.timestampRanges) {
-        if (!TIMESTAMP_PATTERN.test(range.start.trim()) || !TIMESTAMP_PATTERN.test(range.end.trim())) {
+        const startSec = parseClientTimestampSeconds(range.start);
+        const endSec = parseClientTimestampSeconds(range.end);
+        if (startSec === null || endSec === null) {
           return 'Custom timestamp ranges must use MM:SS or HH:MM:SS format (e.g., 05:00).';
+        }
+        if (endSec <= startSec) {
+          return `Invalid timestamp range ("${range.start}" - "${range.end}"): end must be greater than start.`;
         }
       }
     }

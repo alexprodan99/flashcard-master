@@ -16,6 +16,7 @@ import {
   CardGenerationService,
   SttProviderSchema,
   formatTimestampRange,
+  parseTimestampToSeconds,
 } from "@flashcard-master/core";
 import { createLLMAdapter, DocumentExportService } from "@flashcard-master/adapters";
 import { createWebServer } from "@flashcard-master/web";
@@ -30,7 +31,14 @@ function parseCliTimestampRanges(raw?: string): TimestampRange[] {
     if (parts.length !== 2 || !parts[0].trim() || !parts[1].trim()) {
       throw new Error(`Invalid timestamp range "${clean}". Expected format: "MM:SS-MM:SS" (e.g. "00:00-05:00,10:00-15:00").`);
     }
-    ranges.push({ start: parts[0].trim(), end: parts[1].trim() });
+    const start = parts[0].trim();
+    const end = parts[1].trim();
+    const startSec = parseTimestampToSeconds(start);
+    const endSec = parseTimestampToSeconds(end);
+    if (endSec <= startSec) {
+      throw new Error(`Invalid timestamp range "${clean}": end must be strictly greater than start.`);
+    }
+    ranges.push({ start, end });
   }
   return ranges;
 }
@@ -227,16 +235,32 @@ export function createCli(providedContext?: AppContext): Command {
 
         const parsedRanges = parseCliTimestampRanges(options.timestamps);
         let finalUri = uri;
-        if (isMedia && !uri.trim().startsWith("[") && !uri.trim().startsWith("{")) {
-          finalUri = JSON.stringify([
-            {
-              uri: uri.trim(),
-              extractionMode: options.subtitles ? "subtitles" : "auto",
-              ...(resolvedStt ? { sttProvider: resolvedStt } : {}),
-              ...(options.subtitles ? { subtitlePath: options.subtitles.trim() } : {}),
-              ...(parsedRanges.length > 0 ? { timestampRanges: parsedRanges } : {}),
-            },
-          ]);
+        if (isMedia) {
+          const trimmedUri = uri.trim();
+          if (trimmedUri.startsWith("[") || trimmedUri.startsWith("{")) {
+            const parsedJson = JSON.parse(trimmedUri);
+            const items = Array.isArray(parsedJson) ? parsedJson : [parsedJson];
+            finalUri = JSON.stringify(
+              items.map((item: Record<string, any>) => ({
+                ...item,
+                ...(resolvedStt ? { sttProvider: resolvedStt } : {}),
+                ...(options.subtitles
+                  ? { extractionMode: "subtitles", subtitlePath: options.subtitles.trim() }
+                  : {}),
+                ...(parsedRanges.length > 0 ? { timestampRanges: parsedRanges } : {}),
+              }))
+            );
+          } else {
+            finalUri = JSON.stringify([
+              {
+                uri: trimmedUri,
+                extractionMode: options.subtitles ? "subtitles" : "auto",
+                ...(resolvedStt ? { sttProvider: resolvedStt } : {}),
+                ...(options.subtitles ? { subtitlePath: options.subtitles.trim() } : {}),
+                ...(parsedRanges.length > 0 ? { timestampRanges: parsedRanges } : {}),
+              },
+            ]);
+          }
         }
 
         const tags = options.tags

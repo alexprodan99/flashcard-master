@@ -369,14 +369,14 @@ action_items:
     action: "Fix IngestionService re-sync transitions (sliced -> none cleanup, empty custom-range
       protection, and avoiding redundant upsertBatch/STT work on unchanged media items)"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-21-retro-2026-11-17.md"
   - id: "epic-21-retro-item-5-align-media-validation-across-ui-cli-core"
     epic: 21
     action: "Align timestamp, YouTube URL, and modal type-switch validation across
       MediaItemListEditor.svelte, AddSourceModal.svelte, SubtitleParser, and packages/cli/src/cli.ts"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-21-retro-2026-11-17.md"
   - id: "epic-21-retro-item-6-deferred-hardening-upload-limit-html-entities-ffmpeg"
     epic: 21

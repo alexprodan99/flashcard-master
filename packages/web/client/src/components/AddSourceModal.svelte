@@ -50,7 +50,14 @@
   let minutesPerChunk = $state<number | string>(10);
   let syncImmediately = $state(true);
 
+  let lastSourceType: DataSourceType = 'rss';
+
   $effect(() => {
+    if (type !== lastSourceType) {
+      lastSourceType = type;
+      mediaItems = [];
+      errorMessage = null;
+    }
     if (isMediaType(type)) {
       if (slicingMode !== 'timestamps' && slicingMode !== 'chapters' && slicingMode !== 'none') {
         slicingMode = 'timestamps';

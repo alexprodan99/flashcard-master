@@ -24,7 +24,9 @@
   const AUDIO_EXTS = ['.mp3', '.wav', '.m4a', '.ogg', '.flac'];
   const VIDEO_EXTS = ['.mp4', '.mkv', '.webm', '.mov'];
   const SUBTITLE_EXTS = ['.srt', '.vtt'];
-  const TIMESTAMP_REGEX = /^\d{1,3}:\d{2}(:\d{2})?$/;
+  const TIMESTAMP_REGEX = /^(?:\d+:[0-5]\d:[0-5]\d|\d{1,3}:[0-5]\d)$/;
+  const YOUTUBE_CANDIDATE_REGEX =
+    /^(?:https?:\/\/(?:www\.|m\.|music\.)?(?:youtube\.com|youtube-nocookie\.com|youtu\.be)\/|[A-Za-z0-9_-]{11}$)/i;
 
   let urlInput = $state('');
   let manualPathInput = $state('');
@@ -98,9 +100,7 @@
       .map((s) => s.trim())
       .filter(Boolean);
 
-    const invalid = candidates.filter(
-      (u) => !/^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\//i.test(u)
-    );
+    const invalid = candidates.filter((u) => !YOUTUBE_CANDIDATE_REGEX.test(u));
     if (invalid.length > 0) {
       setError(`Invalid YouTube URL(s): ${invalid.join(', ')}`);
       return;

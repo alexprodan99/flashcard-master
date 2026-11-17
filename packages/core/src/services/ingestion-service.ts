@@ -98,6 +98,24 @@ export class IngestionService {
         );
       }
 
+      const existingDocs =
+        this.docRepo && !isSlicingActive ? this.docRepo.listBySourceId(source.id) : [];
+      const shouldResetToUnsliced =
+        !isSlicingActive &&
+        rawDocs.length > 0 &&
+        (existingDocs.length > rawDocs.length ||
+          (options?.slicing?.mode === "none" &&
+            existingDocs.some((d) =>
+              rawDocs.some(
+                (r) =>
+                  r.title &&
+                  d.title !== r.title &&
+                  (d.title.startsWith(`${r.title} - `) || d.title.startsWith(`${r.title} [`))
+              )
+            )));
+
+      const changedRawDocs = new Set<(typeof rawDocs)[number]>();
+
       // Extract and filter for incremental delta
       for (const raw of rawDocs) {
         const cleanDoc = strategy.extractCleanText(raw);
@@ -110,7 +128,7 @@ export class IngestionService {
           lastSync?.lastGuid && raw.guid && raw.guid === lastSync.lastGuid
         );
 
-        if (!isSlicingActive) {
+        if (!isSlicingActive && !shouldResetToUnsliced) {
           if (isSameContent) {
             continue;
           }
@@ -118,6 +136,7 @@ export class IngestionService {
             continue;
           }
         }
+        changedRawDocs.add(raw);
 
         if (cleanDoc.startPage == null && cleanDoc.textContent) {
           const bounds = extractPageBounds(cleanDoc.textContent);
@@ -171,16 +190,13 @@ export class IngestionService {
 
       // Persist discovered documents into repository
       if (this.docRepo && rawDocs.length > 0) {
-        if (isSlicingActive) {
-          // Purge previously generated subdocuments for this source to prevent orphan/obsolete slices
-          this.docRepo.deleteBySourceId(source.id);
-        }
-
         const docsToPersist: Array<
           Partial<DiscoveredDocument> & { sourceId: string; title: string; textContent: string }
         > = [];
 
-        for (const raw of rawDocs) {
+        const rawDocsForPersistence = isSlicingActive ? rawDocs : Array.from(changedRawDocs);
+
+        for (const raw of rawDocsForPersistence) {
           const cleanDoc = strategy.extractCleanText(raw);
           if (cleanDoc.startPage == null && cleanDoc.textContent) {
             const bounds = extractPageBounds(cleanDoc.textContent);
@@ -254,7 +270,19 @@ export class IngestionService {
           }
         }
 
-        this.docRepo.upsertBatch(docsToPersist);
+        if (isSlicingActive && docsToPersist.length === 0) {
+          options?.onLog?.(
+            "warn",
+            `No document slices matched the configured slicing/timestamp criteria for "${source.name}"; preserving existing documents.`,
+            { sourceId: source.id, stage: "slicing" }
+          );
+        } else if (docsToPersist.length > 0) {
+          if (isSlicingActive || shouldResetToUnsliced) {
+            // Purge previously generated subdocuments for this source to prevent orphan/obsolete slices
+            this.docRepo.deleteBySourceId(source.id);
+          }
+          this.docRepo.upsertBatch(docsToPersist);
+        }
       }
 
       // Update sync state cursor atomically

@@ -254,4 +254,74 @@ describe("IngestionService", () => {
     expect(reslicedDocs.length).toBe(5);
     expect(reslicedDocs.every((d) => d.title.includes("Pages "))).toBe(true);
   });
+
+  it("cleans up stale subdocuments when re-syncing from sliced mode to mode='none'", async () => {
+    const src = sourceRepo.create({
+      name: "Book Source",
+      type: "rss",
+      uri: "https://example.com/book.xml",
+    });
+
+    mockStrategy.mockItems = [
+      {
+        id: "paged-1",
+        sourceId: src.id,
+        guid: "paged-1",
+        title: "Book",
+        rawContent: "<!-- page: 1 -->\n\nAlpha.\n\n<!-- page: 2 -->\n\nBeta.\n\n<!-- page: 3 -->\n\nGamma.",
+        originUrl: "https://example.com/book",
+      },
+    ];
+
+    const slicedRes = await service.syncSource(src.id, {
+      slicing: { mode: "budget", pagesPerChunk: 1 },
+    });
+    expect(slicedRes.newCount).toBe(3);
+    expect(docRepo.listBySourceId(src.id)).toHaveLength(3);
+
+    const unslicedRes = await service.syncSource(src.id, {
+      slicing: { mode: "none" },
+    });
+    expect(unslicedRes.newCount).toBe(1);
+    const remaining = docRepo.listBySourceId(src.id);
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].title).toBe("Book");
+  });
+
+  it("preserves existing documents and logs warning when custom timestampRanges match zero cues", async () => {
+    const src = sourceRepo.create({
+      name: "YT Lecture",
+      type: "rss",
+      uri: "https://example.com/yt.xml",
+    });
+
+    mockStrategy.mockItems = [
+      {
+        id: "vid-1",
+        sourceId: src.id,
+        guid: "vid-1",
+        title: "Lecture",
+        rawContent: "[00:00 - 00:30] Intro content only.",
+        originUrl: "https://www.youtube.com/watch?v=LPZh9BOjkQs",
+      },
+    ];
+
+    await service.syncSource(src.id, { slicing: { mode: "none" } });
+    expect(docRepo.listBySourceId(src.id)).toHaveLength(1);
+
+    const warnMessages: string[] = [];
+    await service.syncSource(src.id, {
+      slicing: {
+        mode: "timestamps",
+        minutesPerChunk: 10,
+        timestampRanges: [{ start: "50:00", end: "55:00" }],
+      },
+      onLog: (level, msg) => {
+        if (level === "warn") warnMessages.push(msg);
+      },
+    });
+
+    expect(docRepo.listBySourceId(src.id)).toHaveLength(1);
+    expect(warnMessages.some((m) => m.includes("preserving existing documents"))).toBe(true);
+  });
 });
