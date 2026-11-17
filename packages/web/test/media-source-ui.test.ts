@@ -60,6 +60,8 @@ describe('Story 21.6: Web UI Media Source Helpers, API & Worker Progress', () =>
           extractionMode: 'stt',
           subtitlePath: '/tmp/lecture-2.srt',
           sttProvider: 'gemini',
+          slicingMode: 'timestamps',
+          intervalMinutes: 15,
         },
       ]);
 
@@ -75,6 +77,8 @@ describe('Story 21.6: Web UI Media Source Helpers, API & Worker Progress', () =>
         extractionMode: 'stt',
         subtitlePath: '/tmp/lecture-2.srt',
         sttProvider: 'gemini',
+        slicingMode: 'timestamps',
+        intervalMinutes: 15,
       });
 
       const multiUrlText =
