@@ -99,6 +99,18 @@ describe('Story 21.6: Web UI Media Source Helpers, API & Worker Progress', () =>
       ).toContain('MM:SS or HH:MM:SS');
       expect(
         validateMediaItems(
+          [{ uri: 'https://youtu.be/xyz', extractionMode: 'auto', timestampRanges: [{ start: '00:99', end: '05:00' }] }],
+          'youtube'
+        )
+      ).toContain('MM:SS or HH:MM:SS');
+      expect(
+        validateMediaItems(
+          [{ uri: 'https://youtu.be/xyz', extractionMode: 'auto', timestampRanges: [{ start: '05:00', end: '03:00' }] }],
+          'youtube'
+        )
+      ).toContain('end must be greater than start');
+      expect(
+        validateMediaItems(
           [
             {
               uri: 'https://youtu.be/xyz',

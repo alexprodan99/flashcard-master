@@ -651,6 +651,70 @@ describe("CLI Application", () => {
 
     expect(logs.some((l) => l.includes("Timestamps: 00:00 - 00:36"))).toBe(true);
   });
+
+  it("rejects invalid timestamp ranges (end <= start) in sources add and sources sync", async () => {
+    const cli = createCli(context);
+    cli.exitOverride();
+
+    errors = [];
+    await cli.parseAsync([
+      "node",
+      "flashcard-master",
+      "sources",
+      "add",
+      "Bad Range",
+      "youtube",
+      "https://www.youtube.com/watch?v=LPZh9BOjkQs",
+      "--timestamps",
+      "10:00-05:00",
+    ]);
+    expect(errors.some((e) => e.includes("end must be strictly greater than start"))).toBe(true);
+    process.exitCode = undefined;
+  });
+
+  it("passes media slicing flags through sources sync", async () => {
+    const source = context.sourceRepo.create({
+      name: "Podcast",
+      type: "audio",
+      uri: "/tmp/pod.mp3",
+    });
+    const syncSpy = vi.spyOn(context.ingestionService, "syncSource").mockResolvedValue({
+      sourceId: source.id,
+      sourceName: source.name,
+      newCount: 1,
+      skippedCount: 0,
+      totalFetched: 1,
+      durationMs: 5,
+      newDocuments: [],
+    });
+
+    const cli = createCli(context);
+    cli.exitOverride();
+    await cli.parseAsync([
+      "node",
+      "flashcard-master",
+      "sources",
+      "sync",
+      source.id,
+      "--slicing-mode",
+      "timestamps",
+      "--interval-minutes",
+      "5",
+      "--timestamps",
+      "01:00-04:00",
+    ]);
+
+    expect(syncSpy).toHaveBeenCalledWith(source.id, {
+      slicing: {
+        mode: "timestamps",
+        pagesPerChunk: undefined,
+        wordsPerChunk: undefined,
+        minChunkWords: undefined,
+        minutesPerChunk: 5,
+        timestampRanges: [{ start: "01:00", end: "04:00" }],
+      },
+    });
+  });
 });
 
 

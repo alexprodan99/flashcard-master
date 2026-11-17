@@ -233,5 +233,11 @@ where we study B-trees.
     expect(res.startSeconds).toBeNull();
     expect(res.endSeconds).toBeNull();
   });
+
+  it("rejects empty colon segments in parseTimestampToSeconds", () => {
+    expect(() => parseTimestampToSeconds(":30")).toThrow();
+    expect(() => parseTimestampToSeconds("::")).toThrow();
+    expect(() => parseTimestampToSeconds("1::30")).toThrow();
+  });
 });
 

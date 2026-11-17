@@ -61,6 +61,9 @@ export function parseTimestampToSeconds(raw: string): number {
   if (parts.length !== 2 && parts.length !== 3) {
     throw new Error(`Invalid timestamp format: "${raw}"`);
   }
+  if (parts.some((p) => p.trim().length === 0 || !/^\d+(?:\.\d+)?$/.test(p.trim()))) {
+    throw new Error(`Invalid timestamp component in "${raw}"`);
+  }
 
   const nums = parts.map((p) => Number(p));
   if (nums.some((n) => !Number.isFinite(n) || n < 0)) {
