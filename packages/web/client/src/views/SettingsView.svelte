@@ -1866,25 +1866,29 @@
   /* Interactive Tab Navigation */
   .settings-tabs-nav {
     display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
+    flex-wrap: nowrap;
+    gap: 4px;
     padding: 6px;
     background: #0f172a;
     border: 1px solid #1e293b;
     border-radius: 12px;
+    overflow-x: auto;
+    scrollbar-width: thin;
   }
 
   .tab-btn {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 16px;
+    gap: 6px;
+    padding: 8px 12px;
     background: transparent;
     border: 1px solid transparent;
     border-radius: 8px;
     color: #94a3b8;
     font-size: 13px;
     font-weight: 500;
+    white-space: nowrap;
+    flex-shrink: 0;
     cursor: pointer;
     transition: all 0.15s ease;
   }
