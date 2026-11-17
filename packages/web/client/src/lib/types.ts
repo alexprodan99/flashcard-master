@@ -6,6 +6,7 @@ export type DocumentExportFormat = 'markdown' | 'html' | 'txt' | 'json' | 'epub'
 
 export type SttProvider = 'openai' | 'gemini' | 'whisper-local';
 export type MediaExtractionMode = 'subtitles' | 'stt' | 'auto';
+export type MediaSlicingOverride = 'inherit' | 'chapters' | 'timestamps' | 'none';
 
 export interface TimestampRange {
   start: string;
@@ -20,6 +21,8 @@ export interface MediaSourceItem {
   subtitlePath?: string;
   sttProvider?: SttProvider;
   timestampRanges?: TimestampRange[];
+  slicingMode?: MediaSlicingOverride;
+  intervalMinutes?: number;
 }
 
 export interface DataSource {
@@ -29,6 +32,8 @@ export interface DataSource {
   uri: string;
   tags: string[];
   isActive: boolean;
+  defaultSlicingMode?: SlicingMode | null;
+  defaultIntervalMinutes?: number | null;
   createdAt: string;
   updatedAt: string;
 }

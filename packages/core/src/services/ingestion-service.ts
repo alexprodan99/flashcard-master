@@ -4,7 +4,7 @@ import type { SyncStateRepository } from "../storage/sync-state-repository.js";
 import type { DocumentRepository } from "../storage/document-repository.js";
 import type { StrategyRegistry } from "./strategy-registry.js";
 import type { IngestionOptions } from "../ports/index.js";
-import { DocumentSlicingEngine } from "./document-slicing-engine.js";
+import { DocumentSlicingEngine, type DocumentSlicingOptions } from "./document-slicing-engine.js";
 import crypto from "node:crypto";
 
 export interface SyncResult {
@@ -30,6 +30,26 @@ function extractPageBounds(text: string): { startPage: number | null; endPage: n
     }
   }
   return { startPage: null, endPage: null };
+}
+
+function resolveSlicingForRaw(
+  raw: { slicingHint?: { mode?: "chapters" | "timestamps" | "none"; minutesPerChunk?: number } },
+  baseSlicing?: DocumentSlicingOptions
+): DocumentSlicingOptions | undefined {
+  const hint = raw.slicingHint;
+  if (!hint || (!hint.mode && hint.minutesPerChunk === undefined)) {
+    return baseSlicing;
+  }
+  const mergedMode = hint.mode ?? baseSlicing?.mode;
+  const mergedMinutes = hint.minutesPerChunk ?? baseSlicing?.minutesPerChunk;
+  if (!mergedMode && mergedMinutes === undefined) {
+    return baseSlicing;
+  }
+  return {
+    ...baseSlicing,
+    ...(mergedMode ? { mode: mergedMode } : {}),
+    ...(mergedMinutes !== undefined ? { minutesPerChunk: mergedMinutes } : {}),
+  };
 }
 
 export class IngestionService {
@@ -88,12 +108,26 @@ export class IngestionService {
       let latestGuid = lastSync?.lastGuid ?? null;
       let latestContentHash = lastSync?.contentHash ?? null;
 
-      const isSlicingActive = Boolean(options?.slicing && options.slicing.mode !== "none");
+      const baseSlicing: DocumentSlicingOptions | undefined =
+        options?.slicing ??
+        (source.defaultSlicingMode
+          ? {
+              mode: source.defaultSlicingMode,
+              ...(source.defaultIntervalMinutes != null
+                ? { minutesPerChunk: source.defaultIntervalMinutes }
+                : {}),
+            }
+          : undefined);
+
+      const isSlicingActive = rawDocs.some((raw) => {
+        const eff = resolveSlicingForRaw(raw, baseSlicing);
+        return Boolean(eff && eff.mode !== "none");
+      });
 
       if (isSlicingActive && rawDocs.length > 0) {
         options?.onLog?.(
           "info",
-          `Slicing transcript/documents (${options?.slicing?.mode}) for "${source.name}"...`,
+          `Slicing transcript/documents (${baseSlicing?.mode || "per-item"}) for "${source.name}"...`,
           { sourceId: source.id, stage: "slicing" }
         );
       }
@@ -104,7 +138,7 @@ export class IngestionService {
         !isSlicingActive &&
         rawDocs.length > 0 &&
         (existingDocs.length > rawDocs.length ||
-          (options?.slicing?.mode === "none" &&
+          (baseSlicing?.mode === "none" &&
             existingDocs.some((d) =>
               rawDocs.some(
                 (r) =>
@@ -146,7 +180,10 @@ export class IngestionService {
           }
         }
 
-        if (isSlicingActive) {
+        const effectiveSlicing = resolveSlicingForRaw(raw, baseSlicing);
+        const isRawSlicingActive = Boolean(effectiveSlicing && effectiveSlicing.mode !== "none");
+
+        if (isRawSlicingActive) {
           const docUrl =
             cleanDoc.originUrl ||
             raw.originUrl ||
@@ -162,7 +199,7 @@ export class IngestionService {
               startSeconds: cleanDoc.startSeconds ?? null,
               endSeconds: cleanDoc.endSeconds ?? null,
             },
-            options!.slicing
+            effectiveSlicing
           );
           for (const slice of slices) {
             newDocuments.push({
@@ -210,7 +247,10 @@ export class IngestionService {
             raw.originUrl ||
             (source.type === "web" ? source.uri : null);
 
-          if (isSlicingActive) {
+          const effectiveSlicing = resolveSlicingForRaw(raw, baseSlicing);
+          const isRawSlicingActive = Boolean(effectiveSlicing && effectiveSlicing.mode !== "none");
+
+          if (isRawSlicingActive) {
             const slices = this.slicingEngine.slice(
               {
                 sourceId: source.id,
@@ -222,7 +262,7 @@ export class IngestionService {
                 startSeconds: cleanDoc.startSeconds ?? null,
                 endSeconds: cleanDoc.endSeconds ?? null,
               },
-              options!.slicing
+              effectiveSlicing
             );
 
             for (const slice of slices) {

@@ -1,8 +1,14 @@
 <script lang="ts">
-  import { updateSource, uploadSourceFile } from '../lib/api';
-  import type { DataSource, DataSourceType, MediaSourceItem } from '../lib/types';
+  import { updateSource, uploadSourceFile, syncSource } from '../lib/api';
+  import type {
+    DataSource,
+    DataSourceType,
+    DocumentSlicingOptions,
+    MediaSourceItem,
+    SlicingMode,
+  } from '../lib/types';
   import { parseMediaItemsSummary, validateMediaItems } from '../lib/formatters.js';
-  import { settingsStore } from '../stores/index.js';
+  import { settingsStore, toastStore } from '../stores/index.js';
   import { buildNotionUri, parseNotionUri, isValidNotionInput } from '../lib/notion-uri.js';
   import UrlListManager from './UrlListManager.svelte';
   import MediaItemListEditor from './MediaItemListEditor.svelte';
@@ -28,6 +34,8 @@
   let errorMessage = $state<string | null>(null);
   let isUploadingFile = $state(false);
   let fileInputRef = $state<HTMLInputElement | null>(null);
+  let slicingMode = $state<SlicingMode>('timestamps');
+  let minutesPerChunk = $state<number | string>(10);
 
   const isMediaType = (t: DataSourceType): t is 'audio' | 'video' | 'youtube' =>
     t === 'audio' || t === 'video' || t === 'youtube';
@@ -96,6 +104,16 @@
         }
       } else if (isMediaType(source.type)) {
         mediaItems = parseMediaItemsSummary(source.uri || '', source.type).items;
+        const fallbackMode: SlicingMode = source.type === 'youtube' ? 'chapters' : 'timestamps';
+        const savedMode = source.defaultSlicingMode;
+        slicingMode =
+          savedMode === 'chapters' || savedMode === 'timestamps' || savedMode === 'none'
+            ? savedMode
+            : fallbackMode;
+        if (source.type !== 'youtube' && slicingMode === 'chapters') {
+          slicingMode = 'timestamps';
+        }
+        minutesPerChunk = source.defaultIntervalMinutes ?? 10;
       } else if (source.type === 'notion') {
         const parsed = parseNotionUri(source.uri || '', source.tags || []);
         notionRecursive = parsed.isRecursive;
@@ -106,8 +124,18 @@
     }
   });
 
-  async function handleSubmit(e: Event) {
-    e.preventDefault();
+  function getMediaSlicingOptions(): DocumentSlicingOptions {
+    const mins = Math.max(1, Math.min(240, parseInt(String(minutesPerChunk), 10) || 10));
+    if (slicingMode === 'chapters' && source?.type === 'youtube') {
+      return { mode: 'chapters', minutesPerChunk: mins };
+    }
+    if (slicingMode === 'timestamps') {
+      return { mode: 'timestamps', minutesPerChunk: mins };
+    }
+    return { mode: 'none' };
+  }
+
+  async function saveChanges(resyncAfter: boolean) {
     if (!source || isSubmitting) return;
 
     let finalUri = '';
@@ -161,19 +189,47 @@
         cleanTags = cleanTags.filter((t) => t.toLowerCase() !== 'recursive');
       }
 
+      const mediaSlicing = isMediaType(source.type) ? getMediaSlicingOptions() : undefined;
       const updated = await updateSource(source.id, {
         name: name.trim(),
         uri: finalUri,
         tags: cleanTags,
+        ...(isMediaType(source.type) && mediaSlicing
+          ? {
+              defaultSlicingMode: mediaSlicing.mode,
+              defaultIntervalMinutes:
+                mediaSlicing.mode === 'none' ? null : (mediaSlicing.minutesPerChunk ?? 10),
+            }
+          : {}),
       });
 
       onSourceUpdated(updated);
+      if (resyncAfter) {
+        try {
+          const res: any = await syncSource(
+            updated.id,
+            mediaSlicing ? { slicing: mediaSlicing } : undefined
+          );
+          if (res?.jobId) {
+            toastStore.info(`Saved and queued re-sync (#${res.jobId.slice(0, 8)}).`);
+          } else {
+            toastStore.success('Saved and re-synced data source.');
+          }
+        } catch (syncErr: any) {
+          toastStore.warn(`Saved changes, but re-sync failed: ${syncErr?.message || 'Sync error'}`);
+        }
+      }
       onClose();
     } catch (err: any) {
       errorMessage = err.message || 'Failed to update data source';
     } finally {
       isSubmitting = false;
     }
+  }
+
+  async function handleSubmit(e: Event) {
+    e.preventDefault();
+    await saveChanges(false);
   }
 </script>
 
@@ -304,6 +360,34 @@
               onError={(msg) => (errorMessage = msg)}
             />
           </div>
+
+          <div class="form-group">
+            <label for="edit-media-slicing">⏱️ Default Media Transcript Slicing Strategy</label>
+            <select id="edit-media-slicing" bind:value={slicingMode} disabled={isSubmitting}>
+              {#if source.type === 'youtube'}
+                <option value="chapters">Video Chapters (auto-fallback to Time Windows)</option>
+              {/if}
+              <option value="timestamps">Time Windows (fixed N-minute chunks)</option>
+              <option value="none">None (Keep as single document)</option>
+            </select>
+            {#if slicingMode === 'timestamps' || slicingMode === 'chapters'}
+              <div style="margin-top: 8px; display: flex; align-items: center; gap: 10px;">
+                <label for="edit-media-interval" style="margin: 0; font-size: 12px; color: #94a3b8;">
+                  Minutes per segment:
+                </label>
+                <input
+                  id="edit-media-interval"
+                  type="number"
+                  min="1"
+                  max="240"
+                  bind:value={minutesPerChunk}
+                  style="width: 90px;"
+                  disabled={isSubmitting}
+                />
+              </div>
+            {/if}
+            <small class="hint-text">Applied to all items unless overridden per item above. Click "Save &amp; Re-sync" to re-slice existing documents immediately.</small>
+          </div>
         {:else}
           <div class="form-group">
             <label for="edit-src-uri">
@@ -331,6 +415,16 @@
           <button type="button" class="btn btn-secondary" onclick={onClose} disabled={isSubmitting}>
             Cancel
           </button>
+          {#if isMediaType(source.type)}
+            <button
+              type="button"
+              class="btn btn-secondary"
+              onclick={() => saveChanges(true)}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? 'Saving...' : 'Save & Re-sync'}
+            </button>
+          {/if}
           <button type="submit" class="btn btn-primary" disabled={isSubmitting}>
             {isSubmitting ? 'Saving Changes...' : 'Save Changes'}
           </button>

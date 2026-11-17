@@ -6,6 +6,8 @@ CREATE TABLE IF NOT EXISTS data_sources (
     uri TEXT NOT NULL,
     tags TEXT NOT NULL DEFAULT '[]',
     is_active INTEGER NOT NULL DEFAULT 1,
+    default_slicing_mode TEXT DEFAULT NULL,
+    default_interval_minutes INTEGER DEFAULT NULL,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );

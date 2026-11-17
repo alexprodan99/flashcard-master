@@ -468,6 +468,10 @@ export class MediaTranscriptResolver {
       .digest("hex")
       .slice(0, 32);
 
+    const hasSlicingHint =
+      (options.item.slicingMode && options.item.slicingMode !== "inherit") ||
+      options.item.intervalMinutes !== undefined;
+
     return {
       id: docId,
       sourceId: options.sourceId,
@@ -478,6 +482,18 @@ export class MediaTranscriptResolver {
       guid: `${normalizedPath}#cfg=${configHash}`,
       startSeconds,
       endSeconds,
+      ...(hasSlicingHint
+        ? {
+            slicingHint: {
+              ...(options.item.slicingMode && options.item.slicingMode !== "inherit"
+                ? { mode: options.item.slicingMode }
+                : {}),
+              ...(options.item.intervalMinutes !== undefined
+                ? { minutesPerChunk: options.item.intervalMinutes }
+                : {}),
+            },
+          }
+        : {}),
     };
   }
 

@@ -348,7 +348,7 @@ action_items:
       overrides (inherit | chapters | timestamps | none) in MediaSourceItemSchema, Web UI
       Add/Edit modals, CLI, and IngestionService (with Save & Re-sync / slicing-change detection)"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-21-retro-2026-11-17.md"
   - id: "epic-21-retro-item-2-local-whisper-path-traversal-and-zip-slip"
     epic: 21
@@ -392,5 +392,5 @@ action_items:
       timestamps -> none transitions, LocalWhisperSttAdapter path-traversal/zip-slip guards,
       and CLI sources sync media flags"
     owner: "qa"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-21-retro-2026-11-17.md"
