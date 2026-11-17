@@ -210,7 +210,7 @@ development_status:
   20-7-electron-desktop-packaging-and-multi-os-release-pipeline: done
   epic-20-retrospective: done
 
-  epic-21: in-progress
+  epic-21: done
   21-1-media-domain-schema-and-subtitle-parser: done
   21-2-speech-to-text-port-audio-trimming-and-adapters: done
   21-3-local-audio-and-video-ingestion-strategies: done
@@ -218,7 +218,7 @@ development_status:
   21-5-timestamp-slicing-citations-and-grounding-guard: done
   21-6-web-ui-media-sources-timestamp-controls-and-inspector: done
   21-7-settings-stt-defaults-cli-media-flags-and-verification: done
-  epic-21-retrospective: optional
+  epic-21-retrospective: done
 action_items:
   - id: "epic-14-retro-item-1-add-progressive-exponential-backoff-and"
     epic: 14
@@ -342,3 +342,55 @@ action_items:
     owner: "dev"
     status: done
     ref: "_bmad-output/implementation-artifacts/epic-20-retro-2026-10-27.md"
+  - id: "epic-21-retro-item-1-per-item-media-slicing-and-source-defaults"
+    epic: 21
+    action: "Support editable data-source slicing defaults and optional per-item slicing
+      overrides (inherit | chapters | timestamps | none) in MediaSourceItemSchema, Web UI
+      Add/Edit modals, CLI, and IngestionService (with Save & Re-sync / slicing-change detection)"
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-21-retro-2026-11-17.md"
+  - id: "epic-21-retro-item-2-local-whisper-path-traversal-and-zip-slip"
+    epic: 21
+    action: "Sanitize input.filename via path.basename + containment check in LocalWhisperSttAdapter.transcribeViaCli
+      and normalize Windows backslashes against zip-slip in extractWhisperArchive"
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-21-retro-2026-11-17.md"
+  - id: "epic-21-retro-item-3-worker-executor-sync-error-propagation"
+    epic: 21
+    action: "Propagate syncResult.error in WorkerExecutor so failed audio/video/youtube
+      background syncs surface as failed or completed_with_warnings in Task Center"
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-21-retro-2026-11-17.md"
+  - id: "epic-21-retro-item-4-ingestion-service-resync-and-dedup-fixes"
+    epic: 21
+    action: "Fix IngestionService re-sync transitions (sliced -> none cleanup, empty custom-range
+      protection, and avoiding redundant upsertBatch/STT work on unchanged media items)"
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-21-retro-2026-11-17.md"
+  - id: "epic-21-retro-item-5-align-media-validation-across-ui-cli-core"
+    epic: 21
+    action: "Align timestamp, YouTube URL, and modal type-switch validation across
+      MediaItemListEditor.svelte, AddSourceModal.svelte, SubtitleParser, and packages/cli/src/cli.ts"
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-21-retro-2026-11-17.md"
+  - id: "epic-21-retro-item-6-deferred-hardening-upload-limit-html-entities-ffmpeg"
+    epic: 21
+    action: "Add max upload byte limit in WebServer.readRequestBodyBuffer, code-point range guard
+      in decodeHtmlEntitiesOnce, main/main.exe binary classification in LocalWhisperSttAdapter, and
+      default ffmpeg timeout in AudioTrimmer"
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-21-retro-2026-11-17.md"
+  - id: "epic-21-retro-item-7-close-media-verification-gaps"
+    epic: 21
+    action: "Add automated tests for WorkerExecutor syncResult.error, IngestionService
+      timestamps -> none transitions, LocalWhisperSttAdapter path-traversal/zip-slip guards,
+      and CLI sources sync media flags"
+    owner: "qa"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-21-retro-2026-11-17.md"
