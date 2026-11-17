@@ -186,8 +186,14 @@ function decodeHtmlEntitiesOnce(input: string): string {
     .replace(/&quot;/g, '"')
     .replace(/&#39;|&apos;|&#x27;/gi, "'")
     .replace(/&nbsp;/gi, " ")
-    .replace(/&#(\d+);/g, (_m, code) => String.fromCodePoint(Number(code)))
-    .replace(/&#x([0-9a-f]+);/gi, (_m, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (m, code) => {
+      const cp = Number(code);
+      return Number.isInteger(cp) && cp >= 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : m;
+    })
+    .replace(/&#x([0-9a-f]+);/gi, (m, hex) => {
+      const cp = parseInt(hex, 16);
+      return Number.isInteger(cp) && cp >= 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : m;
+    })
     .replace(/&amp;/g, "&");
 }
 

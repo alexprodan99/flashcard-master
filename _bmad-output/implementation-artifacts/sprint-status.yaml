@@ -355,14 +355,14 @@ action_items:
     action: "Sanitize input.filename via path.basename + containment check in LocalWhisperSttAdapter.transcribeViaCli
       and normalize Windows backslashes against zip-slip in extractWhisperArchive"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-21-retro-2026-11-17.md"
   - id: "epic-21-retro-item-3-worker-executor-sync-error-propagation"
     epic: 21
     action: "Propagate syncResult.error in WorkerExecutor so failed audio/video/youtube
       background syncs surface as failed or completed_with_warnings in Task Center"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-21-retro-2026-11-17.md"
   - id: "epic-21-retro-item-4-ingestion-service-resync-and-dedup-fixes"
     epic: 21
@@ -384,7 +384,7 @@ action_items:
       in decodeHtmlEntitiesOnce, main/main.exe binary classification in LocalWhisperSttAdapter, and
       default ffmpeg timeout in AudioTrimmer"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-21-retro-2026-11-17.md"
   - id: "epic-21-retro-item-7-close-media-verification-gaps"
     epic: 21

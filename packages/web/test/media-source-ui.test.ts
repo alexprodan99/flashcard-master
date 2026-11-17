@@ -426,6 +426,105 @@ describe('Story 21.6: Web UI Media Source Helpers, API & Worker Progress', () =>
         db.close();
       }
     });
+
+    it('propagates syncResult.error in WorkerExecutor instead of silently succeeding', async () => {
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fc-worker-err-'));
+      const mockWorkerPath = path.join(tempDir, 'mock-err-worker.js');
+      fs.writeFileSync(
+        mockWorkerPath,
+        `
+        import { parentPort } from 'node:worker_threads';
+        parentPort.on('message', (msg) => {
+          if (msg.action === 'START_TASK') {
+            parentPort.postMessage({
+              type: 'COMMIT_SYNC_RESULT',
+              jobId: msg.jobId,
+              sourceId: msg.task.payload.sources[0].id,
+              stepNumber: 1,
+              stepTitle: 'Sync 1/1: Broken YouTube',
+              documents: undefined,
+            });
+          } else if (msg.action === 'COMMIT_SYNC_ACK') {
+            if (msg.error) {
+              parentPort.postMessage({ type: 'TASK_ERROR', jobId: msg.jobId, error: msg.error });
+            } else {
+              parentPort.postMessage({ type: 'TASK_COMPLETE', jobId: msg.jobId, resultSummary: { newCount: 0 } });
+            }
+          }
+        });
+        `,
+        'utf-8'
+      );
+
+      const executor = new WorkerExecutor({
+        ingestionService: {
+          syncSource: async () => ({ newCount: 0, totalFetched: 0, error: 'YouTube video unavailable' }),
+        } as unknown as IngestionService,
+        workerScriptPath: mockWorkerPath,
+      });
+
+      const loggedErrors: string[] = [];
+      const mockCtx: JobExecutionContext = {
+        jobId: 'media-err-job',
+        signal: new AbortController().signal,
+        updateProgress: () => {},
+        log: (_s, _t, level, message) => {
+          if (level === 'error') loggedErrors.push(message);
+          return {} as any;
+        },
+        setResultSummary: () => {},
+      };
+
+      try {
+        await expect(
+          executor.executeTask(
+            {
+              type: 'sync_source',
+              payload: {
+                sources: [{ id: 'src-err-1', name: 'Broken YouTube', type: 'youtube', uri: 'https://youtu.be/bad', tags: [], isActive: true }],
+              },
+            },
+            mockCtx
+          )
+        ).rejects.toThrow('YouTube video unavailable');
+        expect(loggedErrors.some((m) => m.includes('YouTube video unavailable'))).toBe(true);
+      } finally {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      }
+    });
+
+    it('rejects oversized POST /api/sources/upload payloads with HTTP 413', async () => {
+      const prevMax = process.env.MAX_UPLOAD_BYTES;
+      process.env.MAX_UPLOAD_BYTES = '64';
+      const db = createDatabaseClient({ inMemory: true });
+      const server = createWebServer({
+        port: 0,
+        sourceRepo: new DataSourceRepository(db),
+        syncRepo: new SyncStateRepository(db),
+        cardRepo: new FlashcardRepository(db),
+      });
+
+      const { url } = await server.listen(0);
+      try {
+        const res = await fetch(`${url}/api/sources/upload`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'X-Filename': 'large.mp3',
+          },
+          body: Buffer.alloc(128, 65),
+        });
+        expect(res.status).toBe(413);
+      } finally {
+        if (prevMax === undefined) {
+          delete process.env.MAX_UPLOAD_BYTES;
+        } else {
+          process.env.MAX_UPLOAD_BYTES = prevMax;
+        }
+        await server.close();
+        db.close();
+      }
+    });
   });
 });
 

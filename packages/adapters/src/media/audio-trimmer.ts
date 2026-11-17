@@ -521,7 +521,10 @@ export class AudioTrimmer {
   private async runFfmpeg(args: string[], signal?: AbortSignal): Promise<void> {
     let result: CommandExecutionResult;
     try {
-      result = await this.commandRunner(this.ffmpegPath, args, { signal });
+      result = await this.commandRunner(this.ffmpegPath, args, {
+        timeoutMs: 5 * 60 * 1000,
+        signal,
+      });
     } catch (err) {
       if (isCommandNotFoundError(err)) {
         throw new Error(
