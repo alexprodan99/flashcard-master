@@ -809,6 +809,7 @@
   }
 
   .field-cell input[type='text'],
+  .field-cell input[type='number'],
   .field-cell select {
     background: #0f172a;
     border: 1px solid #334155;

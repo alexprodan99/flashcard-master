@@ -576,7 +576,9 @@
     color: #cbd5e1;
   }
 
-  input[type="text"] {
+  input[type="text"],
+  input[type="number"],
+  select {
     background: #0f172a;
     border: 1px solid #334155;
     border-radius: 8px;
@@ -587,8 +589,16 @@
     transition: border-color 0.15s;
   }
 
-  input[type="text"]:focus {
+  input[type="text"]:focus,
+  input[type="number"]:focus,
+  select:focus {
     border-color: #6366f1;
+  }
+
+  .hint-text {
+    font-size: 12px;
+    color: #94a3b8;
+    line-height: 1.4;
   }
 
   .modal-footer {
