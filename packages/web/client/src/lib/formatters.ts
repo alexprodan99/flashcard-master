@@ -97,6 +97,20 @@ export function parseMediaItemsSummary(
                 ...(typeof r.label === 'string' && r.label.trim() ? { label: r.label.trim() } : {}),
               }))
           : undefined,
+        slicingMode:
+          entry.slicingMode === 'inherit' ||
+          entry.slicingMode === 'chapters' ||
+          entry.slicingMode === 'timestamps' ||
+          entry.slicingMode === 'none'
+            ? entry.slicingMode
+            : undefined,
+        intervalMinutes:
+          typeof entry.intervalMinutes === 'number' &&
+          Number.isInteger(entry.intervalMinutes) &&
+          entry.intervalMinutes >= 1 &&
+          entry.intervalMinutes <= 240
+            ? entry.intervalMinutes
+            : undefined,
       };
     }
     return null;
