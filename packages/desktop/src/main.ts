@@ -289,6 +289,15 @@ export function setupAutoUpdater(win?: BrowserWindow | null): void {
   });
 
   setTimeout(() => {
+    const updateConfigPath = process.resourcesPath
+      ? path.join(process.resourcesPath, "app-update.yml")
+      : null;
+    if (
+      process.env.ELECTRON_FORCE_UPDATE_CHECK !== "true" &&
+      (!updateConfigPath || !fs.existsSync(updateConfigPath))
+    ) {
+      return;
+    }
     autoUpdater.checkForUpdates().catch((err) => {
       console.warn("[AutoUpdater] Check for updates failed:", err.message);
     });
