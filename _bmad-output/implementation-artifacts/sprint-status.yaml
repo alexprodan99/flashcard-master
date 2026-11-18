@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 08-30-2026 20:47
-last_updated: 11-15-2026 08:52
+last_updated: 11-18-2026 08:10
 project: flashcard-master
 project_key: NOKEY
 tracking_system: file-system
@@ -219,6 +219,14 @@ development_status:
   21-6-web-ui-media-sources-timestamp-controls-and-inspector: done
   21-7-settings-stt-defaults-cli-media-flags-and-verification: done
   epic-21-retrospective: done
+
+  epic-22: backlog
+  22-1-unified-desktop-web-directory: ready-for-dev
+  22-2-incremental-new-only-sync-engine: ready-for-dev
+  22-3-youtube-metadata-identity-and-dedup: ready-for-dev
+  22-4-ui-split-sync-and-item-status: ready-for-dev
+  22-5-cli-full-flag-docs-and-e2e: ready-for-dev
+  epic-22-retrospective: optional
 action_items:
   - id: "epic-14-retro-item-1-add-progressive-exponential-backoff-and"
     epic: 14

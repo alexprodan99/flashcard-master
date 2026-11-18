@@ -1575,6 +1575,57 @@ All tests enforce a strict 3-second timeout and return `{ success: boolean, mess
 - User Guide documentation covers Audio, Video, and YouTube ingestion workflows, subtitle pairing, and local/cloud STT configuration.
 - Full monorepo test suite, TypeScript typecheck, lint, and production build pass with zero regressions.
 
+---
+
+## Epic 22: Unified Desktop/Web Data Directory, Incremental "Sync New Only" Ingestion & YouTube Metadata Identity
+
+**Goal:** Eliminate data fragmentation between the Electron Desktop app, local Web UI, and CLI by unifying all storage (`data.sqlite`, `media/`, `local-files/`, and tool caches) directly onto `~/.flashcard-master/` (with an optional `--data-dir` CLI override and zero global UI override). Make incremental **Sync New Only** the default sync mode across the Web UI, REST API, background workers, and CLI (exposing `--full` and a split-button **Full Re-sync** option) so already-ingested items are skipped *before* fetching, parsing, or transcribing — matching PDFs/local files strictly by file name/path, web/feeds by canonical URL/`guid` (stripping `#page=`/`#t=`/`#chapter=` slice fragments), and YouTube videos by canonical `videoId` while resolving and persisting YouTube video titles + URLs and surfacing **Synced vs. New** item status across all data sources in Edit Data Source.
+
+### Story 22.1: Unified `~/.flashcard-master/` Data Directory Across Desktop, Web, and CLI
+**ID:** `22-1-unified-desktop-web-directory`
+**Description:** Unify storage paths across `@flashcard-master/core`, `@flashcard-master/web`, `@flashcard-master/cli`, and `@flashcard-master/desktop` onto `~/.flashcard-master/` (`data.sqlite`, `media/`, `local-files/`, `yt-dlp/`, `whisper/`), pointing Desktop directly to `~/.flashcard-master/` without migrating legacy Electron `userData` files and without adding any global directory override UI. Propagate configured `mediaDir` / `localFilesDir` consistently into background worker threads (`task-worker.ts`) so custom test or CLI `--data-dir` overrides never split media across folders. Add an optional `--data-dir <path>` option to `@flashcard-master/cli` and read the CLI `.version(...)` dynamically from `package.json`.
+**Acceptance Criteria:**
+- Electron Desktop (`packages/desktop/src/main.ts`, `bootstrap.ts`, `server-runner.ts`) uses `~/.flashcard-master/` (`getDefaultDatabasePath()`, `getDefaultMediaDirectory()`, and `~/.flashcard-master/local-files`) directly by default without migrating legacy Electron `userData` directories.
+- No global directory override setting is added to Desktop or Web UI; `@flashcard-master/cli` supports an optional `--data-dir <path>` override flag that resolves `data.sqlite`, `media/`, and `local-files/` under the specified directory.
+- `WorkerExecutor` and `task-worker.ts` propagate `mediaDir` (and `localFilesDir` where applicable) so `MediaService` inside worker threads writes to the same canonical directory.
+- `packages/cli/src/cli.ts` reads its CLI version dynamically from `package.json`, and `packages/desktop/test/desktop.test.ts` verifies both unified default paths and explicit override behavior.
+
+### Story 22.2: Core Incremental "Sync New Only" Engine & Pre-Fetch Item Filtering
+**ID:** `22-2-incremental-new-only-sync-engine`
+**Description:** Add `SyncMode = 'new-only' | 'full'` (defaulting to `'new-only'`) across `IngestionOptions`, `IngestionService`, ingestion strategies, `WorkerExecutor`, and `task-worker.ts`. Before strategies execute expensive network fetches, PDF/DOCX/EPUB parsing, or Whisper/OpenAI/Gemini STT transcription, query existing `documents` for the target `sourceId`, normalize away slice URL fragments (`#page=`, `#t=`, `#chapter=`), and skip already-known parent items: normalized file path/filename for `local`/`audio`/`video` (without cross-path PDF content-hash deduplication), canonical URL for `web`/`sitemap`/`llms-txt`, item `guid`/link for `rss`, canonical 11-char `videoId` for `youtube`, and `last_edited_time`/page ID for `notion`. Ensure `SyncResult`, worker logs, and job summaries accurately report newly ingested vs. skipped counts.
+**Acceptance Criteria:**
+- `IngestionOptions` and `SyncTaskPayload` accept `syncMode?: 'new-only' | 'full'` (default `'new-only'`).
+- In `'new-only'` mode, known items (including sliced subdocument parents via fragment-stripped matching) are skipped **before** HTTP fetching, document parsing, or STT transcription across `local`, `web`, `rss`, `sitemap`, `llms-txt`, `notion`, `audio`, `video`, and `youtube`.
+- PDF and local files are matched strictly by normalized file path / filename (no cross-path content-hash deduplication).
+- In `'full'` mode, all items in the source are re-fetched/re-processed as before, and `task-worker.ts` (`local` sources) respects `syncMode` identically to `IngestionService`.
+
+### Story 22.3: YouTube Lightweight Metadata Resolution, Persistence & Duplicate Detection
+**ID:** `22-3-youtube-metadata-identity-and-dedup`
+**Description:** Introduce lightweight YouTube video metadata resolution (`videoId`, normalized `canonicalUrl`, `title`) that runs without downloading full captions or audio streams. Expose a REST endpoint (`POST /api/sources/youtube/resolve`) used by `MediaItemListEditor.svelte` when adding or editing YouTube URLs, and backfill missing `title` / canonical URL entries back into `data_sources.uri` during sync. Enforce duplicate YouTube video detection by canonical `videoId` (catching equivalent URLs such as `youtu.be/<id>` vs. `youtube.com/watch?v=<id>`) across Web UI editors and backend ingestion.
+**Acceptance Criteria:**
+- Lightweight YouTube metadata resolver extracts `{ videoId, canonicalUrl, title }` cleanly and gracefully falls back if YouTube is unreachable or offline.
+- `POST /api/sources/youtube/resolve` resolves one or more YouTube URLs/IDs and returns canonical metadata plus duplicate flags.
+- Adding or syncing YouTube items persists resolved video `title` and canonical `uri` in `data_sources.uri` so users can easily identify videos in Edit Data Source.
+- Duplicate YouTube URLs resolving to the same 11-character `videoId` are flagged and prevented/deduplicated in `MediaItemListEditor.svelte` and during ingestion.
+
+### Story 22.4: Web UI Split-Button Sync Controls & General "Synced vs. New" Item Visibility
+**ID:** `22-4-ui-split-sync-and-item-status`
+**Description:** Update the REST sync endpoints (`POST /api/sync`, `POST /api/sync/:id`) and `packages/web/client/src/lib/api.ts` to accept `syncMode: 'new-only' | 'full'` (defaulting to `'new-only'`). Replace the single `⚡ Sync` and `🔄 Sync All Sources` buttons in `SourcesView.svelte` (and sync actions in `AddSourceModal.svelte` / `EditSourceModal.svelte` / `GenerateStudio.svelte`) with an accessible **Split-Button Dropdown**: the 1-click primary action runs **Sync New Only**, while the chevron menu exposes **Sync New Items Only** and **Full Re-sync (All Items)**. Enhance **Edit Data Source** across all data source types (returning item sync status from backend `GET /api/sources/:id/sync-items` or `documents` lookup) to display **Synced** vs. **New** badges per item — alongside YouTube **Video Title + URL** in `MediaItemListEditor.svelte` — so users can inspect what will be included or skipped before syncing.
+**Acceptance Criteria:**
+- `POST /api/sync` and `POST /api/sync/:id` default to `syncMode: 'new-only'` and support `{ syncMode: 'full' }`.
+- `SourcesView.svelte` renders split-button dropdowns for both per-row `⚡ Sync ▾` and header `🔄 Sync All ▾`, with **Sync New Only** as the 1-click default and **Full Re-sync (All Items)** in the dropdown.
+- `EditSourceModal.svelte` (covering `web`, `local`, `audio`, `video`, `youtube`, `rss`, `sitemap`, `llms-txt`, `notion`) displays **Synced** vs. **New** item visibility badges, and `MediaItemListEditor.svelte` renders YouTube video `title` alongside its URL.
+- UI tests verify split-button interactions, `syncMode` API payloads, item status badges, and YouTube title/URL rendering.
+
+### Story 22.5: CLI `--full` Sync Flag, Documentation & End-to-End Verification Suite
+**ID:** `22-5-cli-full-flag-docs-and-e2e`
+**Description:** Update `@flashcard-master/cli` `sync` and `sources sync` commands so **Sync New Only** is the default behavior and add a `--full` option to force full re-sync of all source items, printing both newly ingested and skipped counts. Update the User Guide (`docs/user-guide/quickstart.md`, `docs/user-guide/ingestion-playbook.md`, and desktop docs as needed) to document the unified `~/.flashcard-master/` directory, `--data-dir`, `--full`, split-button Sync controls, and YouTube metadata/item status visibility. Run full monorepo verification (`npm run typecheck`, `npm run lint`, `npm test`, `npm run build`).
+**Acceptance Criteria:**
+- `flashcard-master sync` and `flashcard-master sources sync` default to `syncMode: 'new-only'` and support `--full` for full re-sync, reporting new and skipped item counts clearly.
+- User Guide documentation accurately explains the unified `~/.flashcard-master/` directory across Desktop/Web/CLI, `--data-dir`, Sync New Only vs. `--full`, and YouTube metadata identification.
+- Full monorepo `npm run typecheck`, `npm run lint`, `npm test`, and `npm run build` pass with zero errors or regressions.
+
+
 
 
 
