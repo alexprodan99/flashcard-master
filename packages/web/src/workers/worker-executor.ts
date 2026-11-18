@@ -31,6 +31,8 @@ export interface WorkerExecutorOptions {
   dedupService?: CardDeduplicationService;
   ingestionService?: IngestionService;
   documentRepo?: DocumentRepository;
+  mediaDir?: string;
+  localFilesDir?: string;
   workerScriptPath?: string;
   maxWorkerHeapMb?: number;
   defaultTimeoutMs?: number;
@@ -411,11 +413,32 @@ export class WorkerExecutor {
           }
         });
 
+        // Propagate configured mediaDir / localFilesDir into worker task payloads
+        let enrichedTask: TaskPayload = task;
+        if (task.type === "sync_all" || task.type === "sync_source") {
+          enrichedTask = {
+            ...task,
+            payload: {
+              ...task.payload,
+              mediaDir: task.payload.mediaDir?.trim() || this.options.mediaDir,
+              localFilesDir: task.payload.localFilesDir?.trim() || this.options.localFilesDir,
+            },
+          };
+        } else if (task.type === "export") {
+          enrichedTask = {
+            ...task,
+            payload: {
+              ...task.payload,
+              mediaDir: task.payload.mediaDir?.trim() || this.options.mediaDir,
+            },
+          };
+        }
+
         // Send start message
         const startMsg: WorkerInboundMessage = {
           action: "START_TASK",
           jobId: ctx.jobId,
-          task,
+          task: enrichedTask,
         };
         worker.postMessage(startMsg);
       } catch (err) {

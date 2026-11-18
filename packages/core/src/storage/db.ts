@@ -237,12 +237,19 @@ export function migrateLegacyDatabaseIfNeeded(
   return false;
 }
 
-export function getDefaultDatabasePath(): string {
+export function getDefaultDataDirectory(): string {
   const home = os.homedir();
   const dir = path.join(home, ".flashcard-master");
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
+  return dir;
+}
+
+export const getDefaultBaseDirectory = getDefaultDataDirectory;
+
+export function getDefaultDatabasePath(): string {
+  const dir = getDefaultDataDirectory();
   const canonicalPath = path.join(dir, "data.sqlite");
   const legacyPath = path.join(dir, "flashcards.db");
 
@@ -252,8 +259,15 @@ export function getDefaultDatabasePath(): string {
 }
 
 export function getDefaultMediaDirectory(): string {
-  const home = os.homedir();
-  const dir = path.join(home, ".flashcard-master", "media");
+  const dir = path.join(getDefaultDataDirectory(), "media");
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+}
+
+export function getDefaultLocalFilesDirectory(): string {
+  const dir = path.join(getDefaultDataDirectory(), "local-files");
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }

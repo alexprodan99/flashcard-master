@@ -356,7 +356,7 @@ if (parentPort) {
     });
 
     const slicingEngine = new DocumentSlicingEngine();
-    const mediaService = new MediaService();
+    const mediaService = new MediaService({ mediaDir: payload.mediaDir });
     const localStrategy = new LocalFileStrategy({ mediaService });
 
     for (let i = 0; i < totalSources; i++) {
@@ -644,7 +644,7 @@ if (parentPort) {
     });
 
     if (payload.exportKind === "documents" && payload.documents && payload.documents.length > 0) {
-      const exportService = new DocumentExportService(new MediaService());
+      const exportService = new DocumentExportService(new MediaService({ mediaDir: payload.mediaDir }));
       const result = await exportService.export(payload.documents, {
         format: payload.format as any,
         mode: payload.mode as any,

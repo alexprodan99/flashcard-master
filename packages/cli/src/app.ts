@@ -4,6 +4,8 @@ import fs from "node:fs";
 import {
   createDatabaseClient,
   getDefaultDatabasePath,
+  getDefaultLocalFilesDirectory,
+  getDefaultMediaDirectory,
   DataSourceRepository,
   SyncStateRepository,
   FlashcardRepository,
@@ -19,7 +21,6 @@ import {
   PromptBuilder,
   GroundingGuard,
   CardDeduplicationService,
-  CardGenerationService,
   ExporterRegistry,
   ExportService,
   MediaService,
@@ -34,7 +35,6 @@ import {
   AudioIngestionStrategy,
   VideoIngestionStrategy,
   YouTubeIngestionStrategy,
-  createLLMAdapter,
   AnkiPackageExporter,
   AnkiConnectAdapter,
   CsvExporter,
@@ -49,6 +49,9 @@ import type Database from "better-sqlite3";
 
 export interface AppContext {
   db: Database.Database;
+  dbPath: string;
+  mediaDir: string;
+  localFilesDir: string;
   sourceRepo: DataSourceRepository;
   syncRepo: SyncStateRepository;
   cardRepo: FlashcardRepository;
@@ -71,9 +74,11 @@ export interface AppContext {
 }
 
 export interface AppOptions {
+  dataDir?: string;
   dbPath?: string;
   inMemory?: boolean;
   mediaDir?: string;
+  localFilesDir?: string;
 }
 
 export function getDefaultDbPath(): string {
@@ -81,9 +86,40 @@ export function getDefaultDbPath(): string {
 }
 
 export function createAppContext(options: AppOptions = {}): AppContext {
+  const trimmedDataDir = options.dataDir?.trim();
+  if (options.dataDir !== undefined && !trimmedDataDir) {
+    throw new Error("dataDir must be a non-empty directory path");
+  }
+  const resolvedBaseDir = trimmedDataDir ? path.resolve(trimmedDataDir) : undefined;
+
+  const dbPath = options.inMemory
+    ? ":memory:"
+    : options.dbPath?.trim() ||
+      (resolvedBaseDir ? path.join(resolvedBaseDir, "data.sqlite") : getDefaultDatabasePath());
+
+  const mediaDir =
+    options.mediaDir?.trim() ||
+    (resolvedBaseDir
+      ? path.join(resolvedBaseDir, "media")
+      : options.inMemory
+        ? path.join(os.tmpdir(), "flashcard-master-inmemory", "media")
+        : getDefaultMediaDirectory());
+
+  const localFilesDir =
+    options.localFilesDir?.trim() ||
+    (resolvedBaseDir
+      ? path.join(resolvedBaseDir, "local-files")
+      : options.inMemory
+        ? path.join(os.tmpdir(), "flashcard-master-inmemory", "local-files")
+        : getDefaultLocalFilesDirectory());
+
+  if (!options.inMemory && !fs.existsSync(localFilesDir)) {
+    fs.mkdirSync(localFilesDir, { recursive: true });
+  }
+
   const db = options.inMemory
     ? createDatabaseClient({ inMemory: true })
-    : createDatabaseClient({ dbPath: options.dbPath || getDefaultDatabasePath() });
+    : createDatabaseClient({ dbPath });
 
   const sourceRepo = new DataSourceRepository(db);
   const syncRepo = new SyncStateRepository(db);
@@ -93,13 +129,13 @@ export function createAppContext(options: AppOptions = {}): AppContext {
   const settingsRepo = new SqliteSettingsRepository(db);
   const settingsService = new SettingsService(settingsRepo);
   const providerVerifier = new ProviderVerifier();
-  const mediaService = new MediaService({ mediaDir: options.mediaDir });
+  const mediaService = new MediaService({ mediaDir });
 
   // Ingestion strategies
   const strategyRegistry = new StrategyRegistry();
   strategyRegistry.register(new RssIngestionStrategy());
   strategyRegistry.register(new WebReaderStrategy({ mediaService }));
-  strategyRegistry.register(new LocalFileStrategy());
+  strategyRegistry.register(new LocalFileStrategy({ mediaService }));
   strategyRegistry.register(new SitemapIngestionStrategy());
   strategyRegistry.register(new LlmsTxtIngestionStrategy({ mediaService }));
   strategyRegistry.register(new NotionStrategy({ settingsService, mediaService }));
@@ -131,6 +167,9 @@ export function createAppContext(options: AppOptions = {}): AppContext {
 
   return {
     db,
+    dbPath,
+    mediaDir,
+    localFilesDir,
     sourceRepo,
     syncRepo,
     cardRepo,
@@ -152,4 +191,3 @@ export function createAppContext(options: AppOptions = {}): AppContext {
     close: () => db.close(),
   };
 }
-

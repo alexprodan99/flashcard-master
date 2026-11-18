@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
@@ -15,6 +15,7 @@ describe("Electron Desktop Packaging & Local Server Bootstrap", () => {
   }
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     if (activeBootstrap) {
       await activeBootstrap.close();
       activeBootstrap = null;
@@ -47,7 +48,28 @@ describe("Electron Desktop Packaging & Local Server Bootstrap", () => {
     expect(stats).toHaveProperty("totalDecks");
   });
 
-  it("should isolate SQLite storage and media in the OS user-data directory", async () => {
+  it("should default to canonical ~/.flashcard-master/ storage without migrating legacy userData", async () => {
+    const fakeHome = createTempDir("fm-test-home-");
+    const legacyUserData = createTempDir("fm-test-legacy-userdata-");
+    fs.writeFileSync(path.join(legacyUserData, "data.sqlite"), "legacy-marker");
+
+    vi.spyOn(os, "homedir").mockReturnValue(fakeHome);
+
+    activeBootstrap = await bootstrapDesktopServer({
+      port: 0,
+    });
+
+    const expectedBase = path.join(fakeHome, ".flashcard-master");
+    expect(activeBootstrap.dbPath).toBe(path.join(expectedBase, "data.sqlite"));
+    expect(activeBootstrap.mediaDir).toBe(path.join(expectedBase, "media"));
+    expect(activeBootstrap.localFilesDir).toBe(path.join(expectedBase, "local-files"));
+    expect(fs.existsSync(activeBootstrap.dbPath)).toBe(true);
+    expect(fs.existsSync(activeBootstrap.mediaDir)).toBe(true);
+    expect(fs.existsSync(activeBootstrap.localFilesDir)).toBe(true);
+    expect(fs.readFileSync(path.join(legacyUserData, "data.sqlite"), "utf8")).toBe("legacy-marker");
+  });
+
+  it("should isolate SQLite storage, media, and local-files when explicit userDataPath override is given", async () => {
     const userDataDir = createTempDir("fm-test-userdata-");
 
     activeBootstrap = await bootstrapDesktopServer({
@@ -57,15 +79,47 @@ describe("Electron Desktop Packaging & Local Server Bootstrap", () => {
 
     const expectedDbPath = path.join(userDataDir, "data.sqlite");
     const expectedMediaDir = path.join(userDataDir, "media");
+    const expectedLocalFilesDir = path.join(userDataDir, "local-files");
 
     expect(activeBootstrap.dbPath).toBe(expectedDbPath);
     expect(activeBootstrap.mediaDir).toBe(expectedMediaDir);
+    expect(activeBootstrap.localFilesDir).toBe(expectedLocalFilesDir);
     expect(fs.existsSync(expectedDbPath)).toBe(true);
     expect(fs.existsSync(expectedMediaDir)).toBe(true);
+    expect(fs.existsSync(expectedLocalFilesDir)).toBe(true);
 
     // Verify database can write and read settings
     activeBootstrap.appContext.settingsService.setVerboseLogging(true);
     expect(activeBootstrap.appContext.settingsService.isVerboseLogging()).toBe(true);
+
+    // Verify WebServer boundary writes uploads to <userDataPath>/local-files
+    const uploadRes = await fetch(`${activeBootstrap.url}/api/sources/upload`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        filename: "desktop-parity-check.md",
+        content: "# Parity Check\nUploaded through desktop WebServer.",
+      }),
+    });
+    expect(uploadRes.status).toBe(200);
+    const uploadData = (await uploadRes.json()) as { path: string };
+    expect(path.dirname(uploadData.path)).toBe(expectedLocalFilesDir);
+    expect(fs.existsSync(path.join(expectedLocalFilesDir, "desktop-parity-check.md"))).toBe(true);
+  });
+
+  it("should ignore whitespace userDataPath and resolve canonical ~/.flashcard-master/ paths", async () => {
+    const fakeHome = createTempDir("fm-test-ws-home-");
+    vi.spyOn(os, "homedir").mockReturnValue(fakeHome);
+
+    activeBootstrap = await bootstrapDesktopServer({
+      userDataPath: "   ",
+      port: 0,
+    });
+
+    const expectedBase = path.join(fakeHome, ".flashcard-master");
+    expect(activeBootstrap.dbPath).toBe(path.join(expectedBase, "data.sqlite"));
+    expect(activeBootstrap.mediaDir).toBe(path.join(expectedBase, "media"));
+    expect(activeBootstrap.localFilesDir).toBe(path.join(expectedBase, "local-files"));
   });
 
   it("should cleanly close server and database connections upon shutdown", async () => {

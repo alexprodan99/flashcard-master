@@ -1,11 +1,12 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { type AppContext, createAppContext, getDefaultDbPath } from "../src/app.js";
+import { createCli } from "../src/cli.js";
 import { getDefaultDatabasePath } from "@flashcard-master/core";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 
-describe("CLI App Context and Canonical Database Resolution (Story 17.1)", () => {
+describe("CLI App Context and Canonical Database Resolution (Story 17.1 & 22.1)", () => {
   let tempDir: string;
   let tempDbPath: string;
   let context: AppContext | null = null;
@@ -79,5 +80,47 @@ describe("CLI App Context and Canonical Database Resolution (Story 17.1)", () =>
   it("createAppContext respects custom dbPath without accessing default live database", () => {
     context = createAppContext({ dbPath: tempDbPath });
     expect(context.db.name).toBe(tempDbPath);
+  });
+
+  it("createAppContext resolves dbPath, mediaDir, and localFilesDir under custom dataDir", () => {
+    const customDataDir = path.join(tempDir, "custom-home");
+    context = createAppContext({ dataDir: customDataDir });
+
+    expect(context.dbPath).toBe(path.join(customDataDir, "data.sqlite"));
+    expect(context.mediaDir).toBe(path.join(customDataDir, "media"));
+    expect(context.localFilesDir).toBe(path.join(customDataDir, "local-files"));
+    expect(fs.existsSync(context.dbPath)).toBe(true);
+    expect(fs.existsSync(context.mediaDir)).toBe(true);
+    expect(fs.existsSync(context.localFilesDir)).toBe(true);
+  });
+
+  it("in-memory AppContext avoids creating directories under ~/.flashcard-master/", () => {
+    const fakeHome = path.join(tempDir, "isolated-home");
+    fs.mkdirSync(fakeHome, { recursive: true });
+    const spy = vi.spyOn(os, "homedir").mockReturnValue(fakeHome);
+    try {
+      context = createAppContext({ inMemory: true });
+      expect(fs.existsSync(path.join(fakeHome, ".flashcard-master"))).toBe(false);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("CLI reads version dynamically from package.json, validates --data-dir, and overrides paths", async () => {
+    const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+    const cli = createCli();
+    expect(cli.version()).toBe(pkg.version);
+
+    const overrideDir = path.join(tempDir, "cli-override");
+    cli.exitOverride();
+    await cli.parseAsync(["node", "flashcard-master", "--data-dir", overrideDir, "stats"]);
+
+    expect(fs.existsSync(path.join(overrideDir, "data.sqlite"))).toBe(true);
+    expect(fs.existsSync(path.join(overrideDir, "media"))).toBe(true);
+    expect(fs.existsSync(path.join(overrideDir, "local-files"))).toBe(true);
+
+    await expect(
+      cli.parseAsync(["node", "flashcard-master", "--data-dir", "   ", "stats"])
+    ).rejects.toThrow("--data-dir must be a non-empty directory path");
   });
 });

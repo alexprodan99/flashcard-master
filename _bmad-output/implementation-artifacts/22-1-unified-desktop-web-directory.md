@@ -2,8 +2,8 @@
 title: 'Story 22.1: Unified ~/.flashcard-master/ Data Directory Across Desktop, Web, and CLI'
 type: 'feature'
 created: '2026-11-18'
-status: 'ready-for-dev'
-baseline_commit: 'main'
+status: 'done'
+baseline_commit: '52407cf2f78232840497ef6731dc2c5a61e32ce6'
 review_loop_iteration: 0
 context:
   - '_bmad-output/implementation-artifacts/epic-22-context.md'
@@ -44,11 +44,11 @@ Currently, the Electron Desktop app (`packages/desktop`) points `dbPath` and `me
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `packages/core/src/storage/db.ts` -- Export canonical `getDefaultDataDirectory()` and `getDefaultLocalFilesDirectory()` helpers alongside `getDefaultDatabasePath()` and `getDefaultMediaDirectory()`.
-- [ ] `packages/desktop/src/main.ts`, `bootstrap.ts`, `server-runner.ts` -- Use canonical `~/.flashcard-master/` paths by default (db, media, local-files) without reading `app.getPath("userData")` as the default data root or migrating legacy `userData`.
-- [ ] `packages/web/src/server.ts`, `workers/task-types.ts`, `workers/worker-executor.ts`, `workers/task-worker.ts` -- Propagate `mediaDir` and `localFilesDir` consistently across `WebServer` and background worker threads.
-- [ ] `packages/cli/src/cli.ts`, `app.ts` -- Add optional `--data-dir <path>` CLI override and read CLI version dynamically from `package.json`.
-- [ ] `packages/desktop/test/desktop.test.ts` & `packages/cli/test/app.test.ts` -- Add tests verifying unified `~/.flashcard-master/` defaults, no legacy `userData` migration, and CLI `--data-dir` override.
+- [x] `packages/core/src/storage/db.ts` -- Export canonical `getDefaultDataDirectory()` and `getDefaultLocalFilesDirectory()` helpers alongside `getDefaultDatabasePath()` and `getDefaultMediaDirectory()`.
+- [x] `packages/desktop/src/main.ts`, `bootstrap.ts`, `server-runner.ts` -- Use canonical `~/.flashcard-master/` paths by default (db, media, local-files) without reading `app.getPath("userData")` as the default data root or migrating legacy `userData`.
+- [x] `packages/web/src/server.ts`, `workers/task-types.ts`, `workers/worker-executor.ts`, `workers/task-worker.ts` -- Propagate `mediaDir` and `localFilesDir` consistently across `WebServer` and background worker threads.
+- [x] `packages/cli/src/cli.ts`, `app.ts` -- Add optional `--data-dir <path>` CLI override and read CLI version dynamically from `package.json`.
+- [x] `packages/desktop/test/desktop.test.ts` & `packages/cli/test/app.test.ts` -- Add tests verifying unified `~/.flashcard-master/` defaults, no legacy `userData` migration, and CLI `--data-dir` override.
 
 **Acceptance Criteria:**
 - Electron Desktop (`packages/desktop/src/main.ts`, `bootstrap.ts`, `server-runner.ts`) uses `~/.flashcard-master/` (`getDefaultDatabasePath()`, `getDefaultMediaDirectory()`, and `~/.flashcard-master/local-files`) directly by default without migrating legacy Electron `userData` directories.
@@ -61,3 +61,49 @@ Currently, the Electron Desktop app (`packages/desktop`) points `dbPath` and `me
 **Commands:**
 - `npm run typecheck` -- expected: 0 TypeScript errors across all workspaces.
 - `npm test -w @flashcard-master/core && npm test -w @flashcard-master/cli && npm test -w @flashcard-master/desktop && npm test -w @flashcard-master/web` -- expected: all tests pass.
+
+## Suggested Review Order
+
+**Canonical Storage & Desktop Parity**
+
+- Canonical `~/.flashcard-master/` base, media, and local-files directory helpers
+  [`db.ts:240`](../../packages/core/src/storage/db.ts#L240)
+
+- Desktop server bootstrap defaults to canonical storage without migrating legacy `userData`
+  [`bootstrap.ts:29`](../../packages/desktop/src/bootstrap.ts#L29)
+
+- Desktop main entrypoint omits `app.getPath("userData")` and avoids concurrent legacy DB migration
+  [`main.ts:298`](../../packages/desktop/src/main.ts#L298)
+
+- Blank-safe userData normalization in dev server runner
+  [`server-runner.ts:4`](../../packages/desktop/src/server-runner.ts#L4)
+
+**Worker Media & Local-Files Propagation**
+
+- `WebServer` reconciles `mediaDir` and forwards directories to `WorkerExecutor` and sync/export tasks
+  [`server.ts:111`](../../packages/web/src/server.ts#L111)
+
+- `WorkerExecutor` enriches `sync_all`, `sync_source`, and `export` payloads with configured directories
+  [`worker-executor.ts:416`](../../packages/web/src/workers/worker-executor.ts#L416)
+
+- Background worker instantiates `MediaService` with `payload.mediaDir` for sync and export
+  [`task-worker.ts:359`](../../packages/web/src/workers/task-worker.ts#L359)
+
+**CLI `--data-dir` Override & Dynamic Versioning**
+
+- `createAppContext` resolves `dataDir`, isolates `inMemory` runs, and wires `mediaService` to `LocalFileStrategy`
+  [`app.ts:88`](../../packages/cli/src/app.ts#L88)
+
+- CLI reads version from `package.json`, adds `--data-dir`, and forwards directories in `serve`
+  [`cli.ts:97`](../../packages/cli/src/cli.ts#L97)
+
+**Verification & Tests**
+
+- Canonical directory, desktop upload boundary, and blank-path tests
+  [`desktop.test.ts:50`](../../packages/desktop/test/desktop.test.ts#L50)
+
+- CLI `--data-dir`, dynamic version, and `inMemory` isolation tests
+  [`app.test.ts:85`](../../packages/cli/test/app.test.ts#L85)
+
+- Real `task-worker` custom `mediaDir` export and payload propagation tests
+  [`worker-executor.test.ts:654`](../../packages/web/test/worker-executor.test.ts#L654)

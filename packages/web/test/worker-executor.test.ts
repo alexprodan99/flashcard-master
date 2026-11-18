@@ -11,6 +11,7 @@ import {
   DocumentRepository,
   SyncStateRepository,
   DataSourceRepository,
+  MediaService,
 } from "@flashcard-master/core";
 
 describe("WorkerExecutor", () => {
@@ -649,5 +650,110 @@ Beta details on page 5.
     const docs = documentRepo.listBySourceId(source.id);
     expect(docs.length).toBeGreaterThanOrEqual(1);
     expect(docs[0].startPage).toBeDefined();
+  }, 30000);
+
+  it("propagates mediaDir and localFilesDir into worker START_TASK payloads", async () => {
+    const mockDirWorker = path.join(tmpDir, "mock-dir-worker.js");
+    fs.writeFileSync(
+      mockDirWorker,
+      `
+      import { parentPort } from "node:worker_threads";
+      parentPort.on("message", (msg) => {
+        if (msg.action === "START_TASK") {
+          parentPort.postMessage({
+            type: "TASK_COMPLETE",
+            jobId: msg.jobId,
+            resultSummary: {
+              mediaDir: msg.task.payload.mediaDir,
+              localFilesDir: msg.task.payload.localFilesDir,
+            },
+          });
+        }
+      });
+    `,
+      "utf8"
+    );
+
+    const customMediaDir = path.join(tmpDir, "custom-media");
+    const customLocalFilesDir = path.join(tmpDir, "custom-local-files");
+    const executor = new WorkerExecutor({
+      mediaDir: customMediaDir,
+      localFilesDir: customLocalFilesDir,
+      workerScriptPath: mockDirWorker,
+    });
+
+    const mockCtx: JobExecutionContext = {
+      jobId: "worker-dir-propagation-1",
+      signal: new AbortController().signal,
+      updateProgress: () => {},
+      log: () => ({}) as any,
+      setResultSummary: () => {},
+    };
+
+    const summary = await executor.executeTask(
+      {
+        type: "sync_source",
+        payload: { sources: [] },
+      },
+      mockCtx
+    );
+
+    expect(summary.mediaDir).toBe(customMediaDir);
+    expect(summary.localFilesDir).toBe(customLocalFilesDir);
+  });
+
+  it("reads localized media assets from custom mediaDir inside real task-worker during export", async () => {
+    const customMediaDir = path.join(tmpDir, "worker-export-media");
+    const mediaService = new MediaService({ mediaDir: customMediaDir });
+    const svgMarker = "story-22-1-custom-media-marker";
+    const asset = await mediaService.saveMedia(
+      Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg"><text>${svgMarker}</text></svg>`),
+      "image/svg+xml"
+    );
+
+    const outputHtml = path.join(tmpDir, "exported-with-media.html");
+    const executor = new WorkerExecutor({
+      mediaDir: customMediaDir,
+      workerScriptPath: resolveDefaultWorkerScriptPath(),
+    });
+
+    const mockCtx: JobExecutionContext = {
+      jobId: "real-worker-export-media-1",
+      signal: new AbortController().signal,
+      updateProgress: () => {},
+      log: () => ({}) as any,
+      setResultSummary: () => {},
+    };
+
+    const result = await executor.executeTask(
+      {
+        type: "export",
+        payload: {
+          exportKind: "documents",
+          format: "html",
+          mode: "merged",
+          sourceName: "Media Export Test",
+          outputPath: outputHtml,
+          documents: [
+            {
+              id: "doc-media-1",
+              sourceId: "src-media-1",
+              title: "Diagram Note",
+              textContent: `Architecture diagram:\n\n![Diagram](${asset.url})`,
+              wordCount: 3,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            } as any,
+          ],
+        },
+      },
+      mockCtx
+    );
+
+    expect(result.documentCount).toBe(1);
+    expect(fs.existsSync(outputHtml)).toBe(true);
+    const htmlContent = fs.readFileSync(outputHtml, "utf8");
+    const expectedBase64 = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg"><text>${svgMarker}</text></svg>`).toString("base64");
+    expect(htmlContent).toContain(expectedBase64);
   }, 30000);
 });

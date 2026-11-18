@@ -7,3 +7,10 @@
 - source_spec: `_bmad-output/implementation-artifacts/17-6-ui-and-cli-slicing-controls-and-monorepo-test-suite.md`
   summary: Index subdocument page coordinates (startPage, endPage) in Generate Studio text search filter.
   evidence: `matchesDocQuery` currently filters by document title, URL, and text snippet but ignores page numbers when filtering subdocument choices.
+
+- source_spec: `_bmad-output/implementation-artifacts/22-1-unified-desktop-web-directory.md`
+  summary: Forward coverImage, includeTableOfContents, includeCitations, imageQuality, and grayscale in task-worker executeExport and implement async card exports.
+  evidence: Pre-existing in `packages/web/src/workers/task-worker.ts:648-655` where `DocumentExportService.export` omits `coverImage` and other options passed in `ExportTaskPayload`.
+- source_spec: `_bmad-output/implementation-artifacts/22-1-unified-desktop-web-directory.md`
+  summary: Enforce trailing path.sep or path.relative containment check in POST /api/sources/upload when verifying targetFilePath stays inside localFilesDir.
+  evidence: Pre-existing in `packages/web/src/server.ts:2777` where `targetFilePath.startsWith(resolvedDir)` lacks a trailing separator boundary check.

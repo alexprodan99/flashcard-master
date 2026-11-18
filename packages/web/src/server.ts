@@ -27,6 +27,7 @@ import {
   SettingsService,
   SUPPORTED_PROVIDERS,
   createDatabaseClient,
+  getDefaultLocalFilesDirectory,
   MediaService,
   CardGenerationService,
   type DocumentSlicingOptions,
@@ -76,6 +77,7 @@ export interface WebServerOptions {
   groundingGuard?: GroundingGuard;
   dedupService?: CardDeduplicationService;
   mediaService?: MediaService;
+  mediaDir?: string;
   localFilesDir?: string;
   createLLMAdapterFn?: (config: any) => any;
   defaultTaskTimeoutMs?: number;
@@ -91,6 +93,7 @@ export class WebServer {
   private readonly port: number;
   private readonly host: string;
   private readonly mediaService: MediaService;
+  private readonly mediaDir: string;
   private readonly localFilesDir: string;
   public readonly jobManager: JobManager | null;
   private readonly workerExecutor: WorkerExecutor;
@@ -105,8 +108,11 @@ export class WebServer {
   constructor(private readonly options: WebServerOptions) {
     this.port = options.port !== undefined ? options.port : 3000;
     this.host = options.host || "127.0.0.1";
-    this.mediaService = options.mediaService || new MediaService();
-    this.localFilesDir = options.localFilesDir || path.join(os.homedir(), ".flashcard-master", "local-files");
+    this.mediaService = options.mediaService || new MediaService({ mediaDir: options.mediaDir?.trim() || undefined });
+    this.mediaDir = options.mediaService
+      ? this.mediaService.getMediaDirectory()
+      : (options.mediaDir?.trim() || this.mediaService.getMediaDirectory());
+    this.localFilesDir = options.localFilesDir?.trim() || getDefaultLocalFilesDirectory();
 
     if (options.settingsService) {
       this.settingsService = options.settingsService;
@@ -181,6 +187,8 @@ export class WebServer {
         dedupService: options.dedupService,
         ingestionService: options.ingestionService,
         documentRepo: options.documentRepo,
+        mediaDir: this.mediaDir,
+        localFilesDir: this.localFilesDir,
         defaultTimeoutMs: options.defaultTaskTimeoutMs,
         maxWorkerHeapMb: options.maxWorkerHeapMb,
       });
@@ -2220,7 +2228,13 @@ export class WebServer {
                   return await this.workerExecutor.executeTask(
                     {
                       type: "sync_source",
-                      payload: { sources: [source], slicing, timeoutMs: syncTimeoutMs },
+                      payload: {
+                        sources: [source],
+                        slicing,
+                        timeoutMs: syncTimeoutMs,
+                        mediaDir: this.mediaDir,
+                        localFilesDir: this.localFilesDir,
+                      },
                     },
                     ctx
                   );
@@ -2281,7 +2295,13 @@ export class WebServer {
                   return await this.workerExecutor.executeTask(
                     {
                       type: "sync_all",
-                      payload: { sources: activeSources, slicing, timeoutMs: syncTimeoutMs },
+                      payload: {
+                        sources: activeSources,
+                        slicing,
+                        timeoutMs: syncTimeoutMs,
+                        mediaDir: this.mediaDir,
+                        localFilesDir: this.localFilesDir,
+                      },
                     },
                     ctx
                   );
@@ -2948,6 +2968,7 @@ export class WebServer {
                         mode: mode as any,
                         sourceName,
                         documents: targetDocs,
+                        mediaDir: this.mediaDir,
                         coverImage,
                       },
                     },

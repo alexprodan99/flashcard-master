@@ -5,6 +5,11 @@ import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { spawn, type ChildProcess } from "node:child_process";
+import { getDefaultDataDirectory } from "@flashcard-master/core";
+
+
+
+
 import type { DesktopBootstrapResult } from "./bootstrap.js";
 
 const autoUpdater: AppUpdater =
@@ -32,7 +37,7 @@ export function killDevServer(): void {
   }
 }
 
-export async function startDevServer(userDataPath: string): Promise<DesktopBootstrapResult> {
+export async function startDevServer(userDataPath?: string): Promise<DesktopBootstrapResult> {
   const runnerPath = path.join(__dirname, "server-runner.js");
   if (!fs.existsSync(runnerPath)) {
     throw new Error(`Development server runner not found at ${runnerPath}. Run 'npm run build' first.`);
@@ -40,12 +45,17 @@ export async function startDevServer(userDataPath: string): Promise<DesktopBoots
 
   const nodeBinary = process.platform === "win32" ? "node.exe" : "node";
 
+  const normalizedUserData = userDataPath?.trim() || undefined;
   return new Promise((resolve, reject) => {
-    const child = spawn(nodeBinary, [runnerPath, userDataPath], {
-      env: {
-        ...process.env,
-        FLASHCARD_DESKTOP_USER_DATA: userDataPath,
-      },
+    const args = normalizedUserData ? [runnerPath, normalizedUserData] : [runnerPath];
+    const spawnEnv: NodeJS.ProcessEnv = { ...process.env };
+    if (normalizedUserData) {
+      spawnEnv.FLASHCARD_DESKTOP_USER_DATA = normalizedUserData;
+    } else {
+      delete spawnEnv.FLASHCARD_DESKTOP_USER_DATA;
+    }
+    const child = spawn(nodeBinary, args, {
+      env: spawnEnv,
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
     });
@@ -58,7 +68,7 @@ export async function startDevServer(userDataPath: string): Promise<DesktopBoots
       const text = data.toString();
       stdoutBuffer += text;
 
-      const match = text.match(/FLASHCARD_MASTER_SERVER_READY:(https?:\/\/[^\s\r\n]+)/);
+      const match = stdoutBuffer.match(/FLASHCARD_MASTER_SERVER_READY:(https?:\/\/[^\s\r\n]+)/);
       if (match && !resolved) {
         resolved = true;
         const url = match[1].trim();
@@ -67,8 +77,9 @@ export async function startDevServer(userDataPath: string): Promise<DesktopBoots
           server: null as any,
           port: new URL(url).port ? parseInt(new URL(url).port, 10) : 0,
           url,
-          dbPath: path.join(userDataPath, "data.sqlite"),
-          mediaDir: path.join(userDataPath, "media"),
+          dbPath: path.join(normalizedUserData || getDefaultDataDirectory(), "data.sqlite"),
+          mediaDir: path.join(normalizedUserData || getDefaultDataDirectory(), "media"),
+          localFilesDir: path.join(normalizedUserData || getDefaultDataDirectory(), "local-files"),
           close: async () => {
             killDevServer();
           },
@@ -97,7 +108,7 @@ export async function startDevServer(userDataPath: string): Promise<DesktopBoots
   });
 }
 
-export async function startDesktopServer(userDataPath: string): Promise<DesktopBootstrapResult> {
+export async function startDesktopServer(userDataPath?: string): Promise<DesktopBootstrapResult> {
   if (!app.isPackaged && process.env.ELECTRON_FORCE_IN_PROCESS !== "1") {
     return startDevServer(userDataPath);
   }
@@ -286,8 +297,8 @@ export function setupAutoUpdater(win?: BrowserWindow | null): void {
 
 async function startApplication(): Promise<void> {
   try {
-    const userDataPath = app.getPath("userData");
-    bootstrapResult = await startDesktopServer(userDataPath);
+    bootstrapResult = await startDesktopServer();
+
 
     mainWindow = createDesktopWindow(bootstrapResult.url);
     tray = setupSystemTray(mainWindow);
