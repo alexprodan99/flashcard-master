@@ -18,10 +18,10 @@
   "scripts": {
     "build": "tsc",
     "start": "electron .",
-    "dist": "node ./scripts/electron-build.mjs",
-    "dist:win": "node ./scripts/electron-build.mjs --win",
-    "dist:mac": "node ./scripts/electron-build.mjs --mac",
-    "dist:linux": "node ./scripts/electron-build.mjs --linux",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist:linux": "electron-builder --linux",
     "dist:dir": "node ./scripts/electron-build.mjs --dir",
     "test": "vitest run",
     "clean": "rimraf dist"
