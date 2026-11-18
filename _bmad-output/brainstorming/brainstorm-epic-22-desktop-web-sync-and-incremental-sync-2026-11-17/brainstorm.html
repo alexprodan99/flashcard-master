@@ -1,0 +1,1898 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Epic 22 Keepsake — Unified ~/.flashcard-master/ &amp; Incremental Sync New Only</title>
+  <style>
+    :root {
+      --bg-void: #070b12;
+      --bg-surface: #0e1420;
+      --bg-elevated: #141c2b;
+      --bg-panel: #101724;
+      --border-subtle: rgba(148, 163, 184, 0.16);
+      --border-strong: rgba(148, 163, 184, 0.3);
+      --text-primary: #f1f5f9;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+
+      --user-color: #fbbf24;
+      --user-bg: rgba(251, 191, 36, 0.12);
+      --user-border: rgba(251, 191, 36, 0.38);
+
+      --coach-color: #22d3ee;
+      --coach-bg: rgba(34, 211, 238, 0.11);
+      --coach-border: rgba(34, 211, 238, 0.36);
+
+      --converge-color: #34d399;
+      --converge-bg: rgba(52, 211, 153, 0.12);
+      --converge-border: rgba(52, 211, 153, 0.42);
+
+      --hazard-color: #fb7185;
+      --hazard-bg: rgba(251, 113, 133, 0.11);
+      --hazard-border: rgba(251, 113, 133, 0.38);
+
+      --violet-color: #a78bfa;
+      --violet-bg: rgba(167, 139, 250, 0.12);
+      --violet-border: rgba(167, 139, 250, 0.36);
+
+      --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      font-family: var(--font-sans);
+      background-color: var(--bg-void);
+      color: var(--text-primary);
+      line-height: 1.6;
+      background-image:
+        radial-gradient(ellipse 80% 50% at 50% -10%, rgba(34, 211, 238, 0.10), transparent),
+        radial-gradient(ellipse 60% 40% at 90% 25%, rgba(251, 191, 36, 0.06), transparent),
+        linear-gradient(rgba(148, 163, 184, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(148, 163, 184, 0.04) 1px, transparent 1px);
+      background-size: 100% 100%, 100% 100%, 36px 36px, 36px 36px;
+      background-attachment: fixed;
+    }
+
+    code, pre, .mono {
+      font-family: var(--font-mono);
+    }
+
+    .container {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 2.5rem 1.5rem 5rem;
+    }
+
+    /* Sticky Top Navigation */
+    .top-rail {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      backdrop-filter: blur(14px);
+      background: rgba(7, 11, 18, 0.86);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .top-rail-inner {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 0.7rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .rail-brand {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      color: var(--text-primary);
+      letter-spacing: 0.03em;
+    }
+
+    .rail-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--converge-color);
+      box-shadow: 0 0 10px var(--converge-color);
+    }
+
+    .rail-links {
+      display: flex;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+    }
+
+    .rail-links a {
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 0.78rem;
+      font-family: var(--font-mono);
+      padding: 0.28rem 0.65rem;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      transition: all 0.2s ease;
+    }
+
+    .rail-links a:hover {
+      color: var(--text-primary);
+      border-color: var(--border-strong);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    /* Attribution Pills */
+    .attr-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      padding: 0.2rem 0.55rem;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+
+    .attr-user {
+      color: var(--user-color);
+      background: var(--user-bg);
+      border: 1px solid var(--user-border);
+    }
+
+    .attr-coach {
+      color: var(--coach-color);
+      background: var(--coach-bg);
+      border: 1px solid var(--coach-border);
+    }
+
+    .attr-converge {
+      color: var(--converge-color);
+      background: var(--converge-bg);
+      border: 1px solid var(--converge-border);
+    }
+
+    .attr-hazard {
+      color: var(--hazard-color);
+      background: var(--hazard-bg);
+      border: 1px solid var(--hazard-border);
+    }
+
+    /* Hero Section */
+    .hero {
+      padding: 2.5rem 2.25rem;
+      border-radius: 18px;
+      background: linear-gradient(155deg, rgba(16, 23, 36, 0.96), rgba(10, 14, 23, 0.98));
+      border: 1px solid var(--border-strong);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+      position: relative;
+      overflow: hidden;
+      margin-bottom: 3rem;
+    }
+
+    .hero::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--user-color), var(--coach-color), var(--converge-color));
+    }
+
+    .hero-meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 1.2rem;
+    }
+
+    .meta-chip {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      padding: 0.28rem 0.7rem;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
+    }
+
+    .meta-chip strong {
+      color: var(--text-primary);
+    }
+
+    .hero h1 {
+      margin: 0 0 0.85rem;
+      font-size: clamp(1.8rem, 3.4vw, 2.75rem);
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      background: linear-gradient(120deg, #ffffff 30%, #cbd5e1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero-goal {
+      font-size: 1.05rem;
+      color: var(--text-secondary);
+      max-width: 78ch;
+      margin: 0 0 1.6rem;
+    }
+
+    .hero-goal code {
+      color: var(--converge-color);
+      background: var(--converge-bg);
+      padding: 0.12rem 0.42rem;
+      border-radius: 4px;
+      font-size: 0.92em;
+    }
+
+    .legend-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 1rem;
+      padding-top: 1.1rem;
+      border-top: 1px solid var(--border-subtle);
+      font-size: 0.84rem;
+      color: var(--text-secondary);
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+
+    /* Section Frames */
+    .chapter {
+      margin-bottom: 3.5rem;
+    }
+
+    .chapter-header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-bottom: 1.25rem;
+    }
+
+    .chapter-kicker {
+      font-family: var(--font-mono);
+      font-size: 0.74rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--text-muted);
+      margin-bottom: 0.25rem;
+    }
+
+    .chapter-title {
+      margin: 0;
+      font-size: 1.55rem;
+      letter-spacing: -0.015em;
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+    }
+
+    .chapter-subtitle {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      margin: 0.2rem 0 0;
+    }
+
+    /* ============================================================
+       SECTION 1: UNIFIED DIRECTORY SCHEMATIC (LOCKED DECISIONS)
+       ============================================================ */
+    .dir-schematic {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-strong);
+      border-radius: 16px;
+      padding: 1.75rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .dir-grid {
+      display: grid;
+      grid-template-columns: 1fr auto 1.15fr;
+      gap: 1.5rem;
+      align-items: center;
+    }
+
+    @media (max-width: 880px) {
+      .dir-grid {
+        grid-template-columns: 1fr;
+      }
+      .convergence-bridge {
+        transform: rotate(90deg);
+        margin: 0.5rem auto;
+      }
+    }
+
+    .surface-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+    }
+
+    .surface-card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 1rem 1.1rem;
+      cursor: pointer;
+      transition: all 0.22s ease;
+      text-align: left;
+      color: inherit;
+      width: 100%;
+    }
+
+    .surface-card:hover,
+    .surface-card.active {
+      border-color: var(--user-color);
+      background: rgba(251, 191, 36, 0.06);
+      transform: translateX(4px);
+    }
+
+    .surface-card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.35rem;
+    }
+
+    .surface-name {
+      font-weight: 700;
+      font-size: 0.98rem;
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+
+    .surface-rule {
+      font-size: 0.83rem;
+      color: var(--text-secondary);
+      margin: 0;
+    }
+
+    .convergence-bridge {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      padding: 0 0.4rem;
+    }
+
+    .bridge-pill {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      padding: 0.3rem 0.65rem;
+      border-radius: 999px;
+      background: var(--converge-bg);
+      border: 1px solid var(--converge-border);
+      color: var(--converge-color);
+      white-space: nowrap;
+    }
+
+    .bridge-arrows {
+      font-family: var(--font-mono);
+      font-size: 1.35rem;
+      color: var(--converge-color);
+      letter-spacing: 0.1em;
+    }
+
+    .canonical-vault {
+      background: linear-gradient(160deg, rgba(16, 36, 32, 0.55), rgba(14, 20, 32, 0.95));
+      border: 1px solid var(--converge-border);
+      border-radius: 14px;
+      padding: 1.35rem;
+      box-shadow: inset 0 0 32px rgba(52, 211, 153, 0.06);
+    }
+
+    .vault-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+
+    .vault-path {
+      font-family: var(--font-mono);
+      font-size: 1.12rem;
+      font-weight: 700;
+      color: var(--converge-color);
+    }
+
+    .vault-tree {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.65rem;
+      margin-bottom: 1rem;
+    }
+
+    @media (max-width: 520px) {
+      .vault-tree {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .vault-item {
+      background: rgba(7, 11, 18, 0.72);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 0.65rem 0.8rem;
+    }
+
+    .vault-item code {
+      color: #e2e8f0;
+      font-weight: 600;
+      font-size: 0.88rem;
+      display: block;
+    }
+
+    .vault-item span {
+      font-size: 0.77rem;
+      color: var(--text-muted);
+    }
+
+    .surface-inspector {
+      background: rgba(7, 11, 18, 0.75);
+      border: 1px dashed var(--user-border);
+      border-radius: 8px;
+      padding: 0.75rem 0.9rem;
+      font-size: 0.84rem;
+      color: var(--text-secondary);
+    }
+
+    .surface-inspector strong {
+      color: var(--user-color);
+    }
+
+    .evolution-strip {
+      margin-top: 1.25rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border-subtle);
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 0.85rem;
+    }
+
+    .evo-step {
+      background: rgba(255, 255, 255, 0.025);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 0.75rem 0.95rem;
+      font-size: 0.83rem;
+    }
+
+    .evo-step .evo-label {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      margin-bottom: 0.3rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    /* ============================================================
+       SECTION 2: TECHNIQUE 1 — JOB TO BE DONE (JTBD)
+       ============================================================ */
+    .jtbd-stage {
+      background: linear-gradient(135deg, rgba(14, 28, 40, 0.92), rgba(14, 20, 32, 0.98));
+      border: 1px solid var(--coach-border);
+      border-radius: 16px;
+      padding: 1.75rem;
+    }
+
+    .jtbd-controls {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 1.35rem;
+    }
+
+    .jtbd-quote {
+      font-size: 1.05rem;
+      font-weight: 500;
+      color: var(--text-primary);
+      max-width: 68ch;
+      margin: 0;
+    }
+
+    .mode-switch {
+      display: inline-flex;
+      background: var(--bg-void);
+      border: 1px solid var(--border-strong);
+      border-radius: 999px;
+      padding: 0.22rem;
+    }
+
+    .mode-switch button {
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+      padding: 0.42rem 0.9rem;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .mode-switch button.active {
+      background: var(--coach-color);
+      color: #05131a;
+      font-weight: 700;
+    }
+
+    .jtbd-flow {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.35rem;
+    }
+
+    @media (max-width: 780px) {
+      .jtbd-flow {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .jtbd-hop {
+      background: rgba(7, 11, 18, 0.78);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 1.05rem;
+      position: relative;
+      transition: border-color 0.25s ease;
+    }
+
+    .jtbd-hop.state-after {
+      border-color: rgba(34, 211, 238, 0.35);
+    }
+
+    .jtbd-hop.state-before {
+      border-color: rgba(251, 113, 133, 0.35);
+    }
+
+    .hop-step {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      margin-bottom: 0.35rem;
+    }
+
+    .hop-title {
+      font-weight: 700;
+      margin-bottom: 0.4rem;
+      font-size: 0.98rem;
+    }
+
+    .hop-detail {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      margin: 0;
+    }
+
+    .questions-strip {
+      border-top: 1px solid var(--border-subtle);
+      padding-top: 1.1rem;
+    }
+
+    .questions-strip-title {
+      font-family: var(--font-mono);
+      font-size: 0.74rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--user-color);
+      margin-bottom: 0.7rem;
+    }
+
+    .q-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 0.75rem;
+    }
+
+    .q-card {
+      background: rgba(251, 191, 36, 0.05);
+      border: 1px solid rgba(251, 191, 36, 0.22);
+      border-radius: 10px;
+      padding: 0.8rem 0.95rem;
+      font-size: 0.84rem;
+    }
+
+    .q-card .q-ask {
+      color: var(--text-primary);
+      font-weight: 600;
+      margin-bottom: 0.35rem;
+    }
+
+    .q-card .q-ans {
+      color: var(--text-secondary);
+      font-size: 0.8rem;
+    }
+
+    /* ============================================================
+       SECTION 3: TECHNIQUE 2 — FAILURE ANALYSIS (HAZARD BOARD)
+       ============================================================ */
+    .hazard-board {
+      background: var(--bg-surface);
+      border: 1px solid var(--hazard-border);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    .hazard-banner {
+      padding: 0.75rem 1.5rem;
+      background: repeating-linear-gradient(
+        -45deg,
+        rgba(251, 113, 133, 0.14),
+        rgba(251, 113, 133, 0.14) 12px,
+        rgba(7, 11, 18, 0.8) 12px,
+        rgba(7, 11, 18, 0.8) 24px
+      );
+      border-bottom: 1px solid var(--hazard-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: #fecdd3;
+    }
+
+    .trap-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.15rem;
+      padding: 1.5rem;
+    }
+
+    .trap-card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-top: 3px solid var(--hazard-color);
+      border-radius: 12px;
+      padding: 1.15rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 0.9rem;
+    }
+
+    .trap-card.user-trap {
+      border-top-color: var(--user-color);
+    }
+
+    .trap-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 0.6rem;
+    }
+
+    .trap-title {
+      font-weight: 700;
+      font-size: 1rem;
+      margin: 0;
+    }
+
+    .trap-symptom {
+      font-size: 0.86rem;
+      color: var(--text-secondary);
+      margin: 0.5rem 0 0;
+    }
+
+    .trap-mitigation {
+      background: rgba(52, 211, 153, 0.08);
+      border: 1px solid rgba(52, 211, 153, 0.28);
+      border-radius: 8px;
+      padding: 0.7rem 0.85rem;
+      font-size: 0.82rem;
+      color: #d1fae5;
+    }
+
+    .trap-mitigation strong {
+      color: var(--converge-color);
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      display: block;
+      margin-bottom: 0.2rem;
+    }
+
+    /* ============================================================
+       SECTION 4: TECHNIQUE 3 — MORPHOLOGICAL ANALYSIS & SIMULATOR
+       ============================================================ */
+    .morph-shell {
+      background: var(--bg-surface);
+      border: 1px solid var(--violet-border);
+      border-radius: 16px;
+      padding: 1.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.75rem;
+    }
+
+    .morph-table-wrap {
+      overflow-x: auto;
+    }
+
+    .morph-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.86rem;
+    }
+
+    .morph-table th,
+    .morph-table td {
+      padding: 0.75rem 0.9rem;
+      border-bottom: 1px solid var(--border-subtle);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .morph-table th {
+      font-family: var(--font-mono);
+      font-size: 0.73rem;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--text-muted);
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .morph-dim {
+      font-weight: 700;
+      color: var(--text-primary);
+      white-space: nowrap;
+    }
+
+    .morph-selected {
+      color: var(--converge-color);
+      font-weight: 600;
+    }
+
+    .morph-alt {
+      color: var(--text-muted);
+      font-size: 0.82rem;
+    }
+
+    /* Interactive Sync & Dedup Lab */
+    .sim-lab {
+      background: var(--bg-void);
+      border: 1px solid var(--border-strong);
+      border-radius: 14px;
+      padding: 1.35rem;
+    }
+
+    .sim-topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 1.2rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .source-tabs {
+      display: flex;
+      gap: 0.45rem;
+      flex-wrap: wrap;
+    }
+
+    .source-tab {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
+      padding: 0.45rem 0.85rem;
+      border-radius: 8px;
+      font-size: 0.83rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .source-tab.active {
+      background: var(--violet-bg);
+      border-color: var(--violet-color);
+      color: #ede9fe;
+    }
+
+    /* Split Button Mockup */
+    .split-btn-wrap {
+      position: relative;
+      display: inline-flex;
+      align-items: stretch;
+    }
+
+    .split-main {
+      background: var(--converge-color);
+      color: #041d15;
+      border: none;
+      font-weight: 700;
+      font-size: 0.83rem;
+      padding: 0.48rem 0.9rem;
+      border-radius: 8px 0 0 8px;
+      cursor: pointer;
+    }
+
+    .split-main.full-mode {
+      background: var(--user-color);
+      color: #1c1202;
+    }
+
+    .split-caret {
+      background: rgba(52, 211, 153, 0.82);
+      color: #041d15;
+      border: none;
+      border-left: 1px solid rgba(0, 0, 0, 0.2);
+      padding: 0.48rem 0.6rem;
+      border-radius: 0 8px 8px 0;
+      cursor: pointer;
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+
+    .split-caret.full-mode {
+      background: rgba(251, 191, 36, 0.85);
+      color: #1c1202;
+    }
+
+    .split-menu {
+      position: absolute;
+      right: 0;
+      top: calc(100% + 6px);
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-strong);
+      border-radius: 8px;
+      min-width: 210px;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55);
+      display: none;
+      z-index: 20;
+      overflow: hidden;
+    }
+
+    .split-menu.open {
+      display: block;
+    }
+
+    .split-menu button {
+      display: block;
+      width: 100%;
+      text-align: left;
+      background: transparent;
+      border: none;
+      color: var(--text-primary);
+      padding: 0.6rem 0.85rem;
+      font-size: 0.82rem;
+      cursor: pointer;
+    }
+
+    .split-menu button:hover {
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .cli-bar {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      background: #05080f;
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 0.55rem 0.9rem;
+      color: var(--coach-color);
+      margin-bottom: 1.15rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .sim-body {
+      display: grid;
+      grid-template-columns: 1.05fr 1fr;
+      gap: 1.15rem;
+    }
+
+    @media (max-width: 820px) {
+      .sim-body {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .sim-panel {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 1rem;
+    }
+
+    .sim-panel-title {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      margin-bottom: 0.75rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .pipeline-steps {
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+    }
+
+    .pipe-node {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 0.6rem 0.75rem;
+      font-size: 0.83rem;
+    }
+
+    .pipe-node code {
+      color: var(--violet-color);
+      font-size: 0.82em;
+    }
+
+    .edit-source-modal {
+      background: #0a0f1a;
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      padding: 0.9rem;
+    }
+
+    .item-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.55rem 0.65rem;
+      border-radius: 7px;
+      background: rgba(255, 255, 255, 0.025);
+      margin-bottom: 0.5rem;
+      font-size: 0.82rem;
+    }
+
+    .item-row:last-child {
+      margin-bottom: 0;
+    }
+
+    .item-meta {
+      min-width: 0;
+    }
+
+    .item-title {
+      font-weight: 600;
+      color: var(--text-primary);
+      word-break: break-word;
+    }
+
+    .item-sub {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      word-break: break-all;
+    }
+
+    .status-pill {
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      font-weight: 700;
+      padding: 0.2rem 0.5rem;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+
+    .status-synced {
+      color: #94a3b8;
+      background: rgba(148, 163, 184, 0.14);
+      border: 1px solid rgba(148, 163, 184, 0.3);
+    }
+
+    .status-new {
+      color: var(--converge-color);
+      background: var(--converge-bg);
+      border: 1px solid var(--converge-border);
+    }
+
+    .status-resync {
+      color: var(--user-color);
+      background: var(--user-bg);
+      border: 1px solid var(--user-border);
+    }
+
+    /* ============================================================
+       SECTION 5: CLIMAX — CONVERGED EPIC 22 (v1.3.0)
+       ============================================================ */
+    .climax-box {
+      background: radial-gradient(circle at top right, rgba(52, 211, 153, 0.14), transparent 55%),
+                  linear-gradient(160deg, #0d1a19 0%, #0d1320 65%, #111626 100%);
+      border: 1px solid var(--converge-border);
+      border-radius: 18px;
+      padding: 2rem;
+      box-shadow: 0 28px 70px rgba(0, 0, 0, 0.55);
+    }
+
+    .pillars-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1.1rem;
+      margin: 1.4rem 0 1.8rem;
+    }
+
+    @media (max-width: 860px) {
+      .pillars-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .pillar-card {
+      background: rgba(7, 11, 18, 0.78);
+      border: 1px solid rgba(52, 211, 153, 0.28);
+      border-radius: 12px;
+      padding: 1.2rem;
+    }
+
+    .pillar-num {
+      font-family: var(--font-mono);
+      font-size: 0.74rem;
+      color: var(--converge-color);
+      margin-bottom: 0.4rem;
+    }
+
+    .pillar-card h3 {
+      margin: 0 0 0.5rem;
+      font-size: 1.05rem;
+    }
+
+    .pillar-card p {
+      margin: 0;
+      font-size: 0.87rem;
+      color: var(--text-secondary);
+    }
+
+    .release-train {
+      background: rgba(7, 11, 18, 0.82);
+      border: 1px solid var(--user-border);
+      border-radius: 12px;
+      padding: 1.2rem 1.35rem;
+    }
+
+    .release-train-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+
+    .train-steps {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 0.85rem;
+    }
+
+    .train-node {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-subtle);
+      border-radius: 9px;
+      padding: 0.8rem;
+      font-size: 0.84rem;
+    }
+
+    .train-node code {
+      color: var(--user-color);
+    }
+
+    /* Ledger */
+    .ledger-details {
+      margin-top: 2rem;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 1rem 1.35rem;
+    }
+
+    .ledger-details summary {
+      cursor: pointer;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      padding: 0.3rem 0;
+    }
+
+    .ledger-list {
+      margin: 1rem 0 0.4rem;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 0.55rem;
+    }
+
+    .ledger-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.7rem;
+      font-size: 0.84rem;
+      color: var(--text-secondary);
+      padding: 0.5rem 0.65rem;
+      background: rgba(255, 255, 255, 0.02);
+      border-radius: 8px;
+    }
+
+    footer {
+      margin-top: 3rem;
+      text-align: center;
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+
+  <nav class="top-rail" aria-label="Session Sections">
+    <div class="top-rail-inner">
+      <div class="rail-brand">
+        <span class="rail-dot" aria-hidden="true"></span>
+        <span>EPIC 22 BRAINSTORM // v1.3.0</span>
+      </div>
+      <div class="rail-links">
+        <a href="#directory-map">01 Directory Map</a>
+        <a href="#jtbd">02 Job to Be Done</a>
+        <a href="#failure-analysis">03 Failure Analysis</a>
+        <a href="#morphological">04 Morphological Lab</a>
+        <a href="#epic22-climax">05 Epic 22 Climax</a>
+        <a href="#ledger">Ledger</a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="container">
+
+    <!-- HERO -->
+    <header class="hero">
+      <div class="hero-meta-row">
+        <span class="meta-chip">Mode: <strong>Partner</strong></span>
+        <span class="meta-chip">Status: <strong>Complete</strong></span>
+        <span class="meta-chip">Updated: <strong>2026-11-18 08:00</strong></span>
+        <span class="meta-chip">Target Release: <strong>Epic 22 · v1.3.0</strong></span>
+      </div>
+      <h1>Desktop &amp; Web Shared Directory Sync + Sync New Data Only</h1>
+      <p class="hero-goal">
+        Unify Desktop and Web/CLI data &amp; source directories into <code>~/.flashcard-master/</code>
+        and establish <code>Sync New Only</code> as the explicit default mode across UI, API, CLI, and ingestion strategies.
+      </p>
+      <div class="legend-bar">
+        <span>Attribution Key:</span>
+        <span class="legend-item"><span class="attr-badge attr-user">User</span> Decisions, ideas &amp; catalyzing questions</span>
+        <span class="legend-item"><span class="attr-badge attr-coach">Coach</span> Ideas, failure probes &amp; synthesis</span>
+        <span class="legend-item"><span class="attr-badge attr-converge">Epic 22</span> Locked &amp; converged scope</span>
+      </div>
+    </header>
+
+    <!-- SECTION 1: UNIFIED DIRECTORY MAP -->
+    <section id="directory-map" class="chapter">
+      <div class="chapter-header">
+        <div>
+          <div class="chapter-kicker">Foundation Architecture · Locked Decisions</div>
+          <h2 class="chapter-title">01. Unified Local-First Directory Map</h2>
+          <p class="chapter-subtitle">Click any runtime surface on the left to inspect its exact path binding and migration stance.</p>
+        </div>
+        <span class="attr-badge attr-user">User Decisions</span>
+      </div>
+
+      <div class="dir-schematic">
+        <div class="dir-grid">
+          <div class="surface-stack" role="tablist" aria-label="Runtime Surfaces">
+            <button type="button" class="surface-card active" data-surface="desktop">
+              <div class="surface-card-top">
+                <span class="surface-name">Desktop (Electron)</span>
+                <span class="attr-badge attr-user">User Decision</span>
+              </div>
+              <p class="surface-rule">Points directly to <code>~/.flashcard-master/</code> — no migration of existing Electron <code>userData</code> files.</p>
+            </button>
+
+            <button type="button" class="surface-card" data-surface="web">
+              <div class="surface-card-top">
+                <span class="surface-name">Web App &amp; API Server</span>
+                <span class="attr-badge attr-user">User Decision</span>
+              </div>
+              <p class="surface-rule">Reads &amp; writes the identical default <code>~/.flashcard-master/</code> store with zero custom global directory override UI.</p>
+            </button>
+
+            <button type="button" class="surface-card" data-surface="cli">
+              <div class="surface-card-top">
+                <span class="surface-name">CLI Ingestion Runner</span>
+                <span class="attr-badge attr-user">User Decision</span>
+              </div>
+              <p class="surface-rule">Defaults to <code>~/.flashcard-master/</code>; retains existing <code>--data-dir</code> CLI flag if present.</p>
+            </button>
+          </div>
+
+          <div class="convergence-bridge" aria-hidden="true">
+            <span class="bridge-pill">1 Canonical Home</span>
+            <span class="bridge-arrows">===&gt;</span>
+          </div>
+
+          <div class="canonical-vault">
+            <div class="vault-header">
+              <span class="vault-path">~/.flashcard-master/</span>
+              <span class="attr-badge attr-converge">Shared Root</span>
+            </div>
+            <div class="vault-tree">
+              <div class="vault-item">
+                <code>data.sqlite</code>
+                <span>Unified source &amp; card database</span>
+              </div>
+              <div class="vault-item">
+                <code>media/</code>
+                <span>Audio, transcripts &amp; media assets</span>
+              </div>
+              <div class="vault-item">
+                <code>local-files/</code>
+                <span>Ingested PDFs &amp; local documents</span>
+              </div>
+              <div class="vault-item">
+                <code>caches</code>
+                <span>Shared extraction &amp; fetch caches</span>
+              </div>
+            </div>
+            <div class="surface-inspector" id="surface-inspector">
+              <strong>Desktop (Electron):</strong> Bypasses OS-specific Electron <code>userData</code> migration entirely and mounts <code>~/.flashcard-master/</code> directly. No custom directory override controls in UI/options.
+            </div>
+          </div>
+        </div>
+
+        <div class="evolution-strip">
+          <div class="evo-step">
+            <div class="evo-label">
+              <span>Initial Question</span>
+              <span class="attr-badge attr-user">User</span>
+            </div>
+            Should the shared directory live in <code>~/.flashcard-master/</code> or OS AppData? What is best practice?
+          </div>
+          <div class="evo-step">
+            <div class="evo-label">
+              <span>Early Exploration</span>
+              <span class="attr-badge attr-user">User</span>
+            </div>
+            Considered unifying into <code>~/.flashcard-master/</code> with a configurable global override across surfaces.
+          </div>
+          <div class="evo-step">
+            <div class="evo-label">
+              <span>Locked Refinement</span>
+              <span class="attr-badge attr-user">User</span>
+            </div>
+            <strong>No custom global directory overriding UI/options</strong> — Desktop, Web, and CLI all point to <code>~/.flashcard-master/</code> (keeping CLI <code>--data-dir</code> only).
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 2: TECHNIQUE 1 — JOB TO BE DONE -->
+    <section id="jtbd" class="chapter">
+      <div class="chapter-header">
+        <div>
+          <div class="chapter-kicker">Technique 01 · User &amp; Workflow Framing</div>
+          <h2 class="chapter-title">02. Job to Be Done (JTBD)</h2>
+          <p class="chapter-subtitle">Framing why directory unification and incremental sync belong together as one seamless workflow.</p>
+        </div>
+        <span class="attr-badge attr-coach">Coach Idea</span>
+      </div>
+
+      <div class="jtbd-stage">
+        <div class="jtbd-controls">
+          <p class="jtbd-quote">
+            “Zero-friction context switching across CLI / Web / Desktop without re-scraping or re-transcribing existing items.”
+          </p>
+          <div class="mode-switch" role="group" aria-label="Workflow comparison">
+            <button type="button" id="jtbd-after" class="active">After (Unified + Incremental)</button>
+            <button type="button" id="jtbd-before">Before (Fragmented)</button>
+          </div>
+        </div>
+
+        <div class="jtbd-flow" id="jtbd-flow">
+          <div class="jtbd-hop state-after">
+            <div class="hop-step">SURFACE 01 · CLI</div>
+            <div class="hop-title">Add &amp; Ingest via Terminal</div>
+            <p class="hop-detail">CLI writes to <code>~/.flashcard-master/</code> (<code>data.sqlite</code>, <code>media/</code>, <code>local-files/</code>, <code>caches</code>).</p>
+          </div>
+          <div class="jtbd-hop state-after">
+            <div class="hop-step">SURFACE 02 · WEB</div>
+            <div class="hop-title">Open Web UI &amp; Edit Source</div>
+            <p class="hop-detail">Same sources and <code>Synced</code> vs <code>New</code> item status appear immediately — zero import or copy step.</p>
+          </div>
+          <div class="jtbd-hop state-after">
+            <div class="hop-step">SURFACE 03 · DESKTOP</div>
+            <div class="hop-title">1-Click Sync New Only</div>
+            <p class="hop-detail">Desktop skips already-ingested URLs, paths, GUIDs, and YouTube <code>videoId</code>s before fetching or transcribing.</p>
+          </div>
+        </div>
+
+        <div class="questions-strip">
+          <div class="questions-strip-title">Catalyzing User Questions &amp; Resolved Outcomes</div>
+          <div class="q-grid">
+            <div class="q-card">
+              <div class="q-ask"><span class="attr-badge attr-user">User Question</span> Directory location?</div>
+              <div class="q-ans"><code>~/.flashcard-master/</code> vs OS AppData &rarr; Locked on canonical <code>~/.flashcard-master/</code> across Desktop, Web &amp; CLI.</div>
+            </div>
+            <div class="q-card">
+              <div class="q-ask"><span class="attr-badge attr-user">User Question</span> Sync New Only UI control?</div>
+              <div class="q-ans">Dropdown/split-button vs single checkbox &rarr; Split-button with <strong>Sync New Only</strong> as 1-click default &amp; <strong>Full Re-sync</strong> in dropdown.</div>
+            </div>
+            <div class="q-card">
+              <div class="q-ask"><span class="attr-badge attr-user">User Question</span> PRs, versions &amp; release order?</div>
+              <div class="q-ans">Combined into <strong>Epic 22</strong>, per-story feature branch &amp; PR via <code>gh:pr</code>, then lockstep SemVer bump PR to <strong>v1.3.0</strong> across all 5 packages.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 3: TECHNIQUE 2 — FAILURE ANALYSIS -->
+    <section id="failure-analysis" class="chapter">
+      <div class="chapter-header">
+        <div>
+          <div class="chapter-kicker">Technique 02 · Pre-Mortem &amp; Edge Cases</div>
+          <h2 class="chapter-title">03. Failure Analysis: Trap Matrix</h2>
+          <p class="chapter-subtitle">Three subtle failure modes caught before implementation — two structural traps by Coach, one UX trap by User.</p>
+        </div>
+        <span class="attr-badge attr-hazard">Risk Guardrails</span>
+      </div>
+
+      <div class="hazard-board">
+        <div class="hazard-banner">
+          <span>[DIAGNOSTIC BOARD] SILENT RE-INGESTION, PATH DRIFT &amp; COUNTER-INTUITIVE DEDUP TRAPS</span>
+          <span>STATUS: MITIGATED IN DESIGN</span>
+        </div>
+
+        <div class="trap-grid">
+          <article class="trap-card">
+            <div>
+              <div class="trap-head">
+                <h3 class="trap-title">Sliced Subdocument URL Suffixes</h3>
+                <span class="attr-badge attr-coach">Coach Idea</span>
+              </div>
+              <p class="trap-symptom">
+                Timestamp and page fragment suffixes like <code>#t=</code> or <code>#page=</code> mask the underlying parent document or video identity, tricking incremental sync into thinking an already-ingested item is new.
+              </p>
+            </div>
+            <div class="trap-mitigation">
+              <strong>Guardrail</strong>
+              Match canonical parent identity (path / URL / GUID / YouTube <code>videoId</code>) before fetching or transcribing.
+            </div>
+          </article>
+
+          <article class="trap-card">
+            <div>
+              <div class="trap-head">
+                <h3 class="trap-title">Worker Thread MediaService Path Drift</h3>
+                <span class="attr-badge attr-coach">Coach Idea</span>
+              </div>
+              <p class="trap-symptom">
+                Background worker threads running <code>MediaService</code> can resolve relative or default Electron/OS data directories differently from the main process, splitting <code>media/</code> and <code>caches</code>.
+              </p>
+            </div>
+            <div class="trap-mitigation">
+              <strong>Guardrail</strong>
+              Lock Desktop, Web, CLI, and worker threads onto the single canonical <code>~/.flashcard-master/</code> root (with CLI <code>--data-dir</code> only).
+            </div>
+          </article>
+
+          <article class="trap-card user-trap">
+            <div>
+              <div class="trap-head">
+                <h3 class="trap-title">Counter-Intuitive PDF Content Dedup</h3>
+                <span class="attr-badge attr-user">User Idea</span>
+              </div>
+              <p class="trap-symptom">
+                Hashing PDF contents across different paths to deduplicate feels counter-intuitive and removes user agency over what <code>Sync New Only</code> includes — whereas YouTube videos have real metadata identity.
+              </p>
+            </div>
+            <div class="trap-mitigation">
+              <strong>Guardrail</strong>
+              Match PDFs &amp; local files strictly by <strong>file name/path</strong> (no cross-path content hash dedup). For YouTube, resolve metadata &amp; deduplicate by <code>videoId</code>.
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 4: TECHNIQUE 3 — MORPHOLOGICAL ANALYSIS & INTERACTIVE LAB -->
+    <section id="morphological" class="chapter">
+      <div class="chapter-header">
+        <div>
+          <div class="chapter-kicker">Technique 03 · Combinatorial Design Space</div>
+          <h2 class="chapter-title">04. Morphological Analysis &amp; Sync Lab</h2>
+          <p class="chapter-subtitle">Design parameters locked across the system, paired with an interactive source-type &amp; YouTube <code>videoId</code> simulator.</p>
+        </div>
+        <span class="attr-badge attr-coach">Coach + User Synthesis</span>
+      </div>
+
+      <div class="morph-shell">
+        <div class="morph-table-wrap">
+          <table class="morph-table">
+            <thead>
+              <tr>
+                <th>Dimension</th>
+                <th>Locked Choice</th>
+                <th>Rejected / Superseded Alternative</th>
+                <th>Attribution</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="morph-dim">Directory Override</td>
+                <td class="morph-selected"><code>~/.flashcard-master/</code> fixed default; CLI <code>--data-dir</code> only</td>
+                <td class="morph-alt">Custom global directory override UI/options; Electron <code>userData</code> migration</td>
+                <td><span class="attr-badge attr-user">User Decision</span></td>
+              </tr>
+              <tr>
+                <td class="morph-dim">Sync Default &amp; CLI Flag</td>
+                <td class="morph-selected"><code>Sync New Only</code> default everywhere; <code>--full</code> CLI &amp; <code>Full Re-sync</code> dropdown</td>
+                <td class="morph-alt">Full sync default with opt-in <code>--only-new</code> flag or checkbox</td>
+                <td><span class="attr-badge attr-user">User Decision</span></td>
+              </tr>
+              <tr>
+                <td class="morph-dim">YouTube Identity</td>
+                <td class="morph-selected">Resolve <code>videoId</code>, canonical URL &amp; title on add/edit/sync; persist in source URI JSON; dedup by <code>videoId</code></td>
+                <td class="morph-alt">Raw URL string matching susceptible to <code>#t=</code> or share-link variants</td>
+                <td><span class="attr-badge attr-coach">Coach</span> + <span class="attr-badge attr-user">User</span></td>
+              </tr>
+              <tr>
+                <td class="morph-dim">PDF / Local File Identity</td>
+                <td class="morph-selected">Match only by file name / path</td>
+                <td class="morph-alt">Cross-path content hash deduplication</td>
+                <td><span class="attr-badge attr-user">User Decision</span></td>
+              </tr>
+              <tr>
+                <td class="morph-dim">Edit Data Source UI</td>
+                <td class="morph-selected">Show <code>Synced</code> vs <code>New</code> item visibility across <strong>all</strong> data sources + YouTube video name &amp; URL</td>
+                <td class="morph-alt">YouTube-only status visibility or opaque source lists</td>
+                <td><span class="attr-badge attr-user">User Decision</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- INTERACTIVE LAB -->
+        <div class="sim-lab" aria-label="Interactive Sync & Deduplication Simulator">
+          <div class="sim-topbar">
+            <div class="source-tabs" role="tablist" aria-label="Source Types">
+              <button type="button" class="source-tab active" data-source="youtube">YouTube (videoId + Metadata)</button>
+              <button type="button" class="source-tab" data-source="pdf">PDF / Local File (Name / Path)</button>
+              <button type="button" class="source-tab" data-source="web">Web / Feed (Canonical URL / GUID)</button>
+            </div>
+
+            <div class="split-btn-wrap">
+              <button type="button" id="split-main-btn" class="split-main">Sync New Only</button>
+              <button type="button" id="split-caret-btn" class="split-caret" aria-haspopup="true" aria-expanded="false" title="Toggle Sync Mode">v</button>
+              <div id="split-menu" class="split-menu" role="menu">
+                <button type="button" data-syncmode="new">Sync New Only (1-click default)</button>
+                <button type="button" data-syncmode="full">Full Re-sync (re-sync all items)</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="cli-bar">
+            <span id="cli-preview">$ flashcard-master sync  # default: Sync New Only (skips known items pre-fetch)</span>
+            <span class="attr-badge attr-user">Split-Button &amp; CLI Parity</span>
+          </div>
+
+          <div class="sim-body">
+            <div class="sim-panel">
+              <div class="sim-panel-title">
+                <span id="pipeline-heading">YouTube Metadata &amp; Pre-Fetch Dedup Flow</span>
+                <span class="attr-badge attr-coach" id="pipeline-attr">Coach Idea</span>
+              </div>
+              <div class="pipeline-steps" id="pipeline-steps"></div>
+            </div>
+
+            <div class="sim-panel">
+              <div class="sim-panel-title">
+                <span>Edit Data Source — Synced vs New Visibility</span>
+                <span class="attr-badge attr-user">User Decision</span>
+              </div>
+              <div class="edit-source-modal" id="edit-source-modal"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 5: CLIMAX — CONVERGED EPIC 22 -->
+    <section id="epic22-climax" class="chapter">
+      <div class="chapter-header">
+        <div>
+          <div class="chapter-kicker">Synthesis &amp; Converged Direction</div>
+          <h2 class="chapter-title">05. Epic 22 Climax — v1.3.0 Blueprint</h2>
+          <p class="chapter-subtitle">All three tracks converged into a single cohesive release train.</p>
+        </div>
+        <span class="attr-badge attr-coach">Coach Insight</span>
+      </div>
+
+      <div class="climax-box">
+        <div class="pillars-grid">
+          <div class="pillar-card">
+            <div class="pillar-num">PILLAR 01 · UNIFIED STORAGE</div>
+            <h3>Canonical <code>~/.flashcard-master/</code></h3>
+            <p>
+              Lock Desktop, Web, and CLI onto <code>~/.flashcard-master/</code> (<code>data.sqlite</code>, <code>media/</code>, <code>local-files/</code>, <code>caches</code>) with CLI <code>--data-dir</code> only — no global override UI and no Electron <code>userData</code> migration.
+            </p>
+          </div>
+
+          <div class="pillar-card">
+            <div class="pillar-num">PILLAR 02 · INCREMENTAL INGESTION</div>
+            <h3>Default <code>Sync New Only</code></h3>
+            <p>
+              Default across UI split-button, API, and CLI (<code>--full</code> &amp; <code>Full Re-sync</code> to override). Skips known items pre-fetch by path / URL / GUID / <code>videoId</code> without cross-path PDF hash dedup.
+            </p>
+          </div>
+
+          <div class="pillar-card">
+            <div class="pillar-num">PILLAR 03 · SOURCE IDENTITY &amp; UI</div>
+            <h3>Metadata &amp; Visibility</h3>
+            <p>
+              Resolve &amp; persist YouTube video title + canonical URL in source URI JSON with <code>videoId</code> deduplication, and surface <code>Synced</code> vs <code>New</code> item visibility across all data sources in Edit Data Source.
+            </p>
+          </div>
+        </div>
+
+        <div class="release-train">
+          <div class="release-train-head">
+            <div>
+              <strong style="font-size: 1rem;">Epic 22 Versioning &amp; PR Release Train</strong>
+              <span style="color: var(--text-secondary); font-size: 0.85rem; display: block;">Both tracks combined into a single Epic 22 releasing as <code>v1.3.0</code></span>
+            </div>
+            <span class="attr-badge attr-user">User Decisions</span>
+          </div>
+          <div class="train-steps">
+            <div class="train-node">
+              <strong>1. Per-Story Feature Branches</strong>
+              <div style="color: var(--text-secondary); margin-top: 0.25rem;">
+                1 feature branch &amp; 1 PR per Story submitted via <code>gh:pr</code>.
+              </div>
+            </div>
+            <div class="train-node">
+              <strong>2. Lockstep SemVer Bump PR</strong>
+              <div style="color: var(--text-secondary); margin-top: 0.25rem;">
+                Followed by a single release PR bumping all <strong>5 packages</strong> in lockstep to <code>1.3.0</code>.
+              </div>
+            </div>
+            <div class="train-node">
+              <strong>3. Shipped Outcome</strong>
+              <div style="color: var(--text-secondary); margin-top: 0.25rem;">
+                Desktop, Web, and CLI share one local-first brain with fast incremental sync.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- COMPLETE ATTRIBUTION LEDGER -->
+      <details id="ledger" class="ledger-details">
+        <summary>Session Attribution Ledger (Exact Memlog Provenance)</summary>
+        <ul class="ledger-list">
+          <li><span class="attr-badge attr-user">User Decision</span> Unify Desktop &amp; Web/CLI data (<code>data.sqlite</code>, <code>media/</code>, <code>local-files/</code>, <code>caches</code>) into <code>~/.flashcard-master/</code>; later locked with no custom global directory overriding UI/options (CLI <code>--data-dir</code> only).</li>
+          <li><span class="attr-badge attr-user">User Decision</span> Point Desktop directly to <code>~/.flashcard-master/</code> without migrating existing Electron <code>userData</code> files.</li>
+          <li><span class="attr-badge attr-user">User Decision</span> Make <code>Sync New Only</code> the explicit default across CLI, API, and UI split-button (1-click default), with <code>--full</code> CLI flag and <code>Full Re-sync</code> dropdown option (refined from initial <code>--only-new</code> exploration).</li>
+          <li><span class="attr-badge attr-user">User Decision</span> Combine both tracks into Epic 22, releasing as <code>v1.3.0</code> with 1 feature branch &amp; PR per Story via <code>gh:pr</code> and lockstep SemVer across all 5 packages in a release bump PR.</li>
+          <li><span class="attr-badge attr-user">User Questions</span> Asked about <code>~/.flashcard-master/</code> vs OS AppData, dropdown/split-button vs checkbox for Sync UI, and exact PRs, versions &amp; release order.</li>
+          <li><span class="attr-badge attr-coach">Coach Idea (JTBD)</span> Zero-friction context switching across CLI/Web/Desktop without re-scraping or re-transcribing existing items.</li>
+          <li><span class="attr-badge attr-coach">Coach Idea (Failure Analysis)</span> Sliced subdocument URL suffixes (<code>#t=</code>/<code>#page=</code>) hiding parent identity, and worker thread <code>MediaService</code> path drift.</li>
+          <li><span class="attr-badge attr-user">User Idea</span> Let the user decide what <code>Sync New Only</code> includes; PDF deduplication is counter-intuitive, whereas YouTube metadata enables duplicate detection and saves video name + URL in Edit Data Source.</li>
+          <li><span class="attr-badge attr-coach">Coach Idea (Morphological)</span> Resolve YouTube lightweight metadata (<code>videoId</code>, canonical URL, title) on add/edit/sync, persist in source URI JSON, and deduplicate by <code>videoId</code>.</li>
+          <li><span class="attr-badge attr-user">User Decision</span> Agreed on YouTube metadata persistence/UI display &amp; <code>videoId</code> duplicate detection; PDFs/local files match only by file name/path (no cross-path content deduplication); <code>Synced</code> vs <code>New</code> item visibility in Edit Data Source across all data sources.</li>
+          <li><span class="attr-badge attr-coach">Coach Insight</span> Converged Epic 22 scope (<code>v1.3.0</code>) across all three pillars.</li>
+        </ul>
+      </details>
+    </section>
+
+    <footer>
+      Generated strictly from session memlog · Topic: Desktop &amp; Web Shared Directory Sync + Sync New Data Only · Epic 22 (v1.3.0)
+    </footer>
+
+  </main>
+
+  <script>
+    (function () {
+      // 1. Directory Map Surface Inspector
+      const surfaceDetails = {
+        desktop:
+          '<strong>Desktop (Electron):</strong> Points directly to <code>~/.flashcard-master/</code> with <em>zero migration</em> of existing Electron <code>userData</code> files. Shares <code>data.sqlite</code>, <code>media/</code>, <code>local-files/</code>, and <code>caches</code> cleanly with worker threads.',
+        web:
+          '<strong>Web App &amp; API Server:</strong> Uses the same <code>~/.flashcard-master/</code> destination and defaults API sync requests to <code>Sync New Only</code>. No custom global directory override UI/options.',
+        cli:
+          '<strong>CLI Ingestion Runner:</strong> Points to <code>~/.flashcard-master/</code> by default while keeping the existing <code>--data-dir</code> CLI flag if present. Defaults to <code>Sync New Only</code> with <code>--full</code> to re-sync all items.'
+      };
+
+      const surfaceCards = document.querySelectorAll('.surface-card');
+      const inspector = document.getElementById('surface-inspector');
+      surfaceCards.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          surfaceCards.forEach((c) => c.classList.remove('active'));
+          btn.classList.add('active');
+          inspector.innerHTML = surfaceDetails[btn.dataset.surface];
+        });
+      });
+
+      // 2. JTBD Before / After Toggle
+      const jtbdFlow = document.getElementById('jtbd-flow');
+      const btnAfter = document.getElementById('jtbd-after');
+      const btnBefore = document.getElementById('jtbd-before');
+
+      const jtbdViews = {
+        after: [
+          {
+            cls: 'state-after',
+            step: 'SURFACE 01 · CLI',
+            title: 'Add & Ingest via Terminal',
+            detail: 'CLI writes to <code>~/.flashcard-master/</code> (<code>data.sqlite</code>, <code>media/</code>, <code>local-files/</code>, <code>caches</code>).'
+          },
+          {
+            cls: 'state-after',
+            step: 'SURFACE 02 · WEB',
+            title: 'Open Web UI &amp; Edit Source',
+            detail: 'Same sources and <code>Synced</code> vs <code>New</code> item status appear immediately — zero import or copy step.'
+          },
+          {
+            cls: 'state-after',
+            step: 'SURFACE 03 · DESKTOP',
+            title: '1-Click Sync New Only',
+            detail: 'Desktop skips already-ingested URLs, paths, GUIDs, and YouTube <code>videoId</code>s before fetching or transcribing.'
+          }
+        ],
+        before: [
+          {
+            cls: 'state-before',
+            step: 'SURFACE 01 · CLI',
+            title: 'Isolated CLI Data Directory',
+            detail: 'Items ingested from CLI stay isolated from Electron <code>userData</code>, breaking cross-surface continuity.'
+          },
+          {
+            cls: 'state-before',
+            step: 'SURFACE 02 · WEB',
+            title: 'Opaque Item Status',
+            detail: 'Without <code>Synced</code> vs <code>New</code> visibility or YouTube title/URL metadata, users cannot see what is already ingested.'
+          },
+          {
+            cls: 'state-before',
+            step: 'SURFACE 03 · DESKTOP',
+            title: 'Wasteful Re-Scrape / Drift',
+            detail: 'Full re-syncs re-fetch &amp; re-transcribe known sources, while <code>#t=</code>/<code>#page=</code> suffixes and worker paths cause duplicates.'
+          }
+        ]
+      };
+
+      function renderJtbd(mode) {
+        btnAfter.classList.toggle('active', mode === 'after');
+        btnBefore.classList.toggle('active', mode === 'before');
+        jtbdFlow.innerHTML = jtbdViews[mode]
+          .map(
+            (h) => `
+            <div class="jtbd-hop ${h.cls}">
+              <div class="hop-step">${h.step}</div>
+              <div class="hop-title">${h.title}</div>
+              <p class="hop-detail">${h.detail}</p>
+            </div>`
+          )
+          .join('');
+      }
+
+      btnAfter.addEventListener('click', () => renderJtbd('after'));
+      btnBefore.addEventListener('click', () => renderJtbd('before'));
+
+      // 3. Morphological Sync & Dedup Simulator
+      let currentSource = 'youtube';
+      let currentSyncMode = 'new'; // 'new' | 'full'
+
+      const sourceTabs = document.querySelectorAll('.source-tab');
+      const splitMainBtn = document.getElementById('split-main-btn');
+      const splitCaretBtn = document.getElementById('split-caret-btn');
+      const splitMenu = document.getElementById('split-menu');
+      const cliPreview = document.getElementById('cli-preview');
+      const pipelineHeading = document.getElementById('pipeline-heading');
+      const pipelineAttr = document.getElementById('pipeline-attr');
+      const pipelineSteps = document.getElementById('pipeline-steps');
+      const editSourceModal = document.getElementById('edit-source-modal');
+
+      const sourceData = {
+        youtube: {
+          heading: 'YouTube Metadata & videoId Dedup Flow',
+          attr: 'Coach Idea + User Decision',
+          attrClass: 'attr-coach',
+          steps: (isFull) => [
+            '1. On <strong>add / edit / sync</strong>: resolve lightweight YouTube metadata (<code>videoId</code>, canonical URL, title).',
+            '2. Persist metadata inside <strong>source URI JSON</strong> so Edit Data Source displays readable video name + URL.',
+            '3. Normalize timestamp suffixes (strip <code>#t=</code>) and extract canonical <code>videoId</code>.',
+            isFull
+              ? '4. <strong>Full Re-sync (<code>--full</code>):</strong> bypass skip guard and re-ingest / re-transcribe all videos.'
+              : '4. <strong>Sync New Only (default):</strong> check <code>videoId</code> against known items pre-fetch — skip already synced videos before downloading or transcribing.'
+          ],
+          items: [
+            {
+              title: 'Local-First SQLite Patterns (Video)',
+              sub: 'videoId: dQw4w9WgXcQ · https://youtube.com/watch?v=dQw4w9WgXcQ',
+              synced: true
+            },
+            {
+              title: 'Electron Worker Thread Isolation (Video)',
+              sub: 'videoId: xYz987AbCdE · https://youtube.com/watch?v=xYz987AbCdE (matched despite #t=142)',
+              synced: true
+            },
+            {
+              title: 'Incremental Ingestion Architecture (Video)',
+              sub: 'videoId: newVid2026X · https://youtube.com/watch?v=newVid2026X',
+              synced: false
+            }
+          ]
+        },
+        pdf: {
+          heading: 'PDF / Local File Name & Path Match Flow',
+          attr: 'User Decision (No Hash Dedup)',
+          attrClass: 'attr-user',
+          steps: (isFull) => [
+            '1. Inspect local file entry inside <code>~/.flashcard-master/local-files/</code>.',
+            '2. Match strictly by <strong>file name / path</strong> — explicitly <em>no cross-path content hash deduplication</em>.',
+            '3. Ignore subdocument page anchors (<code>#page=</code>) when identifying parent document path.',
+            isFull
+              ? '4. <strong>Full Re-sync (<code>--full</code>):</strong> re-parse all configured PDF / local file entries.'
+              : '4. <strong>Sync New Only (default):</strong> skip already-synced paths pre-fetch; ingest only newly added paths/filenames.'
+          ],
+          items: [
+            {
+              title: 'systems-design-notes.pdf',
+              sub: '~/.flashcard-master/local-files/systems-design-notes.pdf',
+              synced: true
+            },
+            {
+              title: 'archive/systems-design-notes.pdf',
+              sub: '~/.flashcard-master/local-files/archive/systems-design-notes.pdf (distinct path = treated independently)',
+              synced: false
+            }
+          ]
+        },
+        web: {
+          heading: 'Web URL / Feed GUID Pre-Fetch Skip Flow',
+          attr: 'Converged Strategy',
+          attrClass: 'attr-converge',
+          steps: (isFull) => [
+            '1. Normalize URL / feed GUID before issuing any network fetch.',
+            '2. Compare normalized URL / GUID against known records in <code>~/.flashcard-master/data.sqlite</code>.',
+            isFull
+              ? '3. <strong>Full Re-sync (<code>--full</code>):</strong> re-scrape every URL/GUID in the source.'
+              : '3. <strong>Sync New Only (default):</strong> skip known URLs and GUIDs pre-fetch; scrape only new entries.'
+          ],
+          items: [
+            {
+              title: 'SQLite WAL Mode Deep Dive',
+              sub: 'guid: post-2026-wal · https://example.org/sqlite-wal',
+              synced: true
+            },
+            {
+              title: 'Shared Desktop &amp; CLI Storage Notes',
+              sub: 'guid: post-2026-sync · https://example.org/shared-storage',
+              synced: false
+            }
+          ]
+        }
+      };
+
+      function renderSimulator() {
+        const isFull = currentSyncMode === 'full';
+        const spec = sourceData[currentSource];
+
+        splitMainBtn.textContent = isFull ? 'Full Re-sync' : 'Sync New Only';
+        splitMainBtn.classList.toggle('full-mode', isFull);
+        splitCaretBtn.classList.toggle('full-mode', isFull);
+
+        cliPreview.textContent = isFull
+          ? '$ flashcard-master sync --full  # overrides default to re-sync all items'
+          : '$ flashcard-master sync  # default: Sync New Only (skips known items pre-fetch)';
+
+        pipelineHeading.textContent = spec.heading;
+        pipelineAttr.textContent = spec.attr;
+        pipelineAttr.className = 'attr-badge ' + spec.attrClass;
+
+        pipelineSteps.innerHTML = spec
+          .steps(isFull)
+          .map((s) => `<div class="pipe-node">${s}</div>`)
+          .join('');
+
+        editSourceModal.innerHTML = spec.items
+          .map((item) => {
+            let badgeCls = 'status-new';
+            let badgeTxt = 'NEW · WILL SYNC';
+            if (item.synced && !isFull) {
+              badgeCls = 'status-synced';
+              badgeTxt = 'SYNCED · SKIPPED';
+            } else if (item.synced && isFull) {
+              badgeCls = 'status-resync';
+              badgeTxt = 'SYNCED · RE-SYNC';
+            }
+            return `
+              <div class="item-row">
+                <div class="item-meta">
+                  <div class="item-title">${item.title}</div>
+                  <div class="item-sub">${item.sub}</div>
+                </div>
+                <span class="status-pill ${badgeCls}">${badgeTxt}</span>
+              </div>`;
+          })
+          .join('');
+      }
+
+      sourceTabs.forEach((tab) => {
+        tab.addEventListener('click', () => {
+          sourceTabs.forEach((t) => t.classList.remove('active'));
+          tab.classList.add('active');
+          currentSource = tab.dataset.source;
+          renderSimulator();
+        });
+      });
+
+      splitCaretBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const open = splitMenu.classList.toggle('open');
+        splitCaretBtn.setAttribute('aria-expanded', String(open));
+      });
+
+      splitMainBtn.addEventListener('click', () => {
+        currentSyncMode = currentSyncMode === 'new' ? 'full' : 'new';
+        renderSimulator();
+      });
+
+      splitMenu.querySelectorAll('button').forEach((opt) => {
+        opt.addEventListener('click', () => {
+          currentSyncMode = opt.dataset.syncmode;
+          splitMenu.classList.remove('open');
+          splitCaretBtn.setAttribute('aria-expanded', 'false');
+          renderSimulator();
+        });
+      });
+
+      document.addEventListener('click', () => {
+        splitMenu.classList.remove('open');
+        splitCaretBtn.setAttribute('aria-expanded', 'false');
+      });
+
+      renderSimulator();
+    })();
+  </script>
+</body>
+</html>
