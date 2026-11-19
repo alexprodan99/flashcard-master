@@ -46,6 +46,8 @@ export interface SyncTaskPayload {
   sources: DataSource[];
   slicing?: DocumentSlicingOptions;
   timeoutMs?: number;
+  mediaDir?: string;
+  localFilesDir?: string;
 }
 
 export interface ExportTaskPayload {
@@ -57,6 +59,7 @@ export interface ExportTaskPayload {
   cards?: Flashcard[];
   outputPath?: string;
   coverImage?: string;
+  mediaDir?: string;
 }
 
 export type TaskPayload =

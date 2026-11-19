@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import fs from "node:fs";
 import readline from "node:readline";
 import {
   type AppContext,
@@ -93,14 +94,56 @@ function buildCliSlicingOptions(options: {
   };
 }
 
+function getCliVersion(): string {
+  try {
+    const raw = fs.readFileSync(new URL("../package.json", import.meta.url), "utf8");
+    const parsed = JSON.parse(raw) as { version?: string };
+    if (parsed?.version) {
+      return parsed.version;
+    }
+  } catch {
+    // Fallback if package.json is unavailable
+  }
+  return "1.2.0";
+}
+
 export function createCli(providedContext?: AppContext): Command {
   const program = new Command();
-  const context = providedContext || createAppContext();
+  let context = providedContext as AppContext;
 
   program
     .name("flashcard-master")
     .description("Multi-source text ingestion and grounded flashcard generator for Anki, Markdown, CSV and PDF")
-    .version("1.0.0");
+    .version(getCliVersion())
+    .option("--data-dir <path>", "Override base data directory (default: ~/.flashcard-master)")
+    .hook("preAction", () => {
+      const opts = program.opts<{ dataDir?: string }>();
+      if (opts.dataDir !== undefined && !opts.dataDir.trim()) {
+        throw new Error("--data-dir must be a non-empty directory path");
+      }
+      if (providedContext) {
+        if (opts.dataDir !== undefined) {
+          throw new Error("Cannot combine --data-dir with a pre-bound AppContext");
+        }
+        return;
+      }
+      if (!providedContext) {
+        if (context) {
+          try {
+            context.close();
+          } catch {}
+        }
+        context = createAppContext(opts.dataDir ? { dataDir: opts.dataDir.trim() } : {});
+      }
+    })
+    .hook("postAction", (_thisCommand, actionCommand) => {
+      if (!providedContext && context && actionCommand.name() !== "serve") {
+        try {
+          context.close();
+        } catch {}
+        context = undefined as unknown as AppContext;
+      }
+    });
 
   // ==========================================
   // SERVE COMMAND (LOCAL WEB UI)
@@ -154,6 +197,9 @@ export function createCli(providedContext?: AppContext): Command {
           settingsRepo: context.settingsRepo,
           settingsService: context.settingsService,
           providerVerifier: context.providerVerifier,
+          mediaService: context.mediaService,
+          mediaDir: context.mediaDir,
+          localFilesDir: context.localFilesDir,
           concurrency: {
             ...(maxGenerationWorkers !== undefined ? { maxGenerationWorkers } : {}),
             ...(maxSyncWorkers !== undefined ? { maxSyncWorkers } : {}),

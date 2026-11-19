@@ -22,7 +22,7 @@
     "dist:win": "electron-builder --win",
     "dist:mac": "electron-builder --mac",
     "dist:linux": "electron-builder --linux",
-    "dist:dir": "electron-builder --dir",
+    "dist:dir": "node ./scripts/electron-build.mjs --dir",
     "test": "vitest run",
     "clean": "rimraf dist"
   },

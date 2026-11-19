@@ -1,7 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   createDatabaseClient,
+  getDefaultBaseDirectory,
+  getDefaultDataDirectory,
   getDefaultDatabasePath,
+  getDefaultLocalFilesDirectory,
+  getDefaultMediaDirectory,
   migrateLegacyDatabaseIfNeeded,
 } from "../src/storage/db.js";
 import { DataSourceSchema } from "../src/domain/models.js";
@@ -246,6 +250,28 @@ describe("SQLite Database Client", () => {
   it("resolves canonical database path pointing to ~/.flashcard-master/data.sqlite", () => {
     const canonical = getDefaultDatabasePath();
     expect(canonical.endsWith(path.join(".flashcard-master", "data.sqlite"))).toBe(true);
+  });
+
+  it("resolves canonical data, media, and local-files directories under ~/.flashcard-master/", () => {
+    const spy = vi.spyOn(os, "homedir").mockReturnValue(tempDir);
+    try {
+      const dataDir = getDefaultDataDirectory();
+      const baseDir = getDefaultBaseDirectory();
+      const mediaDir = getDefaultMediaDirectory();
+      const localFilesDir = getDefaultLocalFilesDirectory();
+      const dbPath = getDefaultDatabasePath();
+
+      expect(dataDir).toBe(path.join(tempDir, ".flashcard-master"));
+      expect(baseDir).toBe(dataDir);
+      expect(mediaDir).toBe(path.join(dataDir, "media"));
+      expect(localFilesDir).toBe(path.join(dataDir, "local-files"));
+      expect(dbPath).toBe(path.join(dataDir, "data.sqlite"));
+      expect(fs.existsSync(dataDir)).toBe(true);
+      expect(fs.existsSync(mediaDir)).toBe(true);
+      expect(fs.existsSync(localFilesDir)).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("migrates legacy flashcards.db to data.sqlite non-destructively preserving all records", () => {

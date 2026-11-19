@@ -1,7 +1,9 @@
 import { bootstrapDesktopServer } from "./bootstrap.js";
 
 async function run(): Promise<void> {
-  const userDataPath = process.env.FLASHCARD_DESKTOP_USER_DATA || process.argv[2];
+  const envUserData = process.env.FLASHCARD_DESKTOP_USER_DATA?.trim();
+  const argUserData = process.argv[2]?.trim();
+  const userDataPath = envUserData || argUserData || undefined;
   const port = process.env.FLASHCARD_DESKTOP_PORT ? parseInt(process.env.FLASHCARD_DESKTOP_PORT, 10) : 0;
 
   try {
