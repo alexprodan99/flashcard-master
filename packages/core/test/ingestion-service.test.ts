@@ -4,7 +4,7 @@ import { DataSourceRepository } from "../src/storage/source-repository.js";
 import { SyncStateRepository } from "../src/storage/sync-state-repository.js";
 import { StrategyRegistry } from "../src/services/strategy-registry.js";
 import { IngestionService } from "../src/services/ingestion-service.js";
-import type { IngestionStrategy } from "../src/ports/index.js";
+import type { IngestionStrategy, IngestionOptions } from "../src/ports/index.js";
 import type { DataSource, RawDocument, CleanTextDocument } from "../src/domain/models.js";
 
 class MockFeedStrategy implements IngestionStrategy {
@@ -247,6 +247,7 @@ describe("IngestionService", () => {
     ];
 
     await service.syncSource(source.id, {
+      syncMode: "full",
       slicing: { mode: "budget", pagesPerChunk: 2 },
     });
 
@@ -280,6 +281,7 @@ describe("IngestionService", () => {
     expect(docRepo.listBySourceId(src.id)).toHaveLength(3);
 
     const unslicedRes = await service.syncSource(src.id, {
+      syncMode: "full",
       slicing: { mode: "none" },
     });
     expect(unslicedRes.newCount).toBe(1);
@@ -306,11 +308,13 @@ describe("IngestionService", () => {
       },
     ];
 
-    await service.syncSource(src.id, { slicing: { mode: "none" } });
+    await service.syncSource(src.id, {
+      syncMode: "full", slicing: { mode: "none" } });
     expect(docRepo.listBySourceId(src.id)).toHaveLength(1);
 
     const warnMessages: string[] = [];
     await service.syncSource(src.id, {
+      syncMode: "full",
       slicing: {
         mode: "timestamps",
         minutesPerChunk: 10,
@@ -361,5 +365,241 @@ describe("IngestionService", () => {
     expect(docs).toHaveLength(3);
     expect(docs.filter((d) => d.title.startsWith("Long Talk"))).toHaveLength(2);
     expect(docs.filter((d) => d.title === "Short Intro")).toHaveLength(1);
+  });
+
+  it("defaults syncMode to 'new-only', preserves existing sliced documents, and counts pre-fetch skips", async () => {
+    const source = sourceRepo.create({
+      name: "Books Collection",
+      type: "web",
+      uri: "https://books.example.com/calculus",
+      defaultSlicingMode: "budget",
+    });
+
+    class WebMockStrategy implements IngestionStrategy {
+      readonly type = "web" as const;
+      public items: RawDocument[] = [];
+      public fetchCalls: Array<IngestionOptions | undefined> = [];
+
+      async fetch(_source: DataSource, _lastSync?: any, options?: IngestionOptions): Promise<RawDocument[]> {
+        this.fetchCalls.push(options);
+        if (options?.syncMode !== "full" && options?.knownItemKeys?.size) {
+          return this.items.filter((item) => {
+            if (item.originUrl && options.knownItemKeys!.has(item.originUrl)) {
+              options.onItemSkipped?.(item.originUrl);
+              return false;
+            }
+            return true;
+          });
+        }
+        return this.items;
+      }
+
+      extractCleanText(raw: RawDocument): CleanTextDocument {
+        return {
+          id: raw.id,
+          sourceId: raw.sourceId,
+          title: raw.title,
+          textContent: raw.rawContent,
+          originUrl: raw.originUrl,
+          contentHash: `hash-${raw.id}`,
+        };
+      }
+    }
+
+    const webStrategy = new WebMockStrategy();
+    strategyRegistry.register(webStrategy);
+
+    const book1Pages = Array.from({ length: 6 }, (_, i) => `<!-- page: ${i + 1} -->\n\nBook 1 page ${i + 1}`).join("\n\n");
+    const book2Pages = Array.from({ length: 6 }, (_, i) => `<!-- page: ${i + 1} -->\n\nBook 2 page ${i + 1}`).join("\n\n");
+
+    webStrategy.items = [
+      {
+        id: "b1",
+        sourceId: source.id,
+        title: "Book 1",
+        rawContent: book1Pages,
+        originUrl: "https://books.example.com/book1",
+      },
+    ];
+
+    const first = await service.syncSource(source.id, {
+      slicing: { mode: "budget", pagesPerChunk: 3 },
+    });
+    expect(first.newCount).toBe(2);
+    expect(first.skippedCount).toBe(0);
+    expect(docRepo.listBySourceId(source.id)).toHaveLength(2);
+
+    webStrategy.items = [
+      ...webStrategy.items,
+      {
+        id: "b2",
+        sourceId: source.id,
+        title: "Book 2",
+        rawContent: book2Pages,
+        originUrl: "https://books.example.com/book2",
+      },
+    ];
+
+    const second = await service.syncSource(source.id, {
+      slicing: { mode: "budget", pagesPerChunk: 3 },
+    });
+    expect(webStrategy.fetchCalls[1]?.syncMode).toBe("new-only");
+    expect(webStrategy.fetchCalls[1]?.knownItemKeys?.has("https://books.example.com/book1")).toBe(true);
+    expect(second.totalFetched).toBe(1);
+    expect(second.newCount).toBe(2);
+    expect(second.skippedCount).toBe(1);
+    expect(docRepo.listBySourceId(source.id)).toHaveLength(4);
+
+    const third = await service.syncSource(source.id, {
+      syncMode: "full",
+      slicing: { mode: "budget", pagesPerChunk: 3 },
+    });
+    expect(webStrategy.fetchCalls[2]?.syncMode).toBe("full");
+    expect(webStrategy.fetchCalls[2]?.knownItemKeys).toBeUndefined();
+    expect(third.totalFetched).toBe(2);
+    expect(third.newCount).toBe(4);
+    expect(third.skippedCount).toBe(0);
+    expect(docRepo.listBySourceId(source.id)).toHaveLength(4);
+  });
+
+  it("matches local PDFs strictly by normalized path without cross-path content-hash deduplication", async () => {
+    const source = sourceRepo.create({
+      name: "Local PDFs",
+      type: "local",
+      uri: "/books",
+    });
+
+    const receivedKnownSets: Array<Set<string> | undefined> = [];
+    class LocalMockStrategy implements IngestionStrategy {
+      readonly type = "local" as const;
+      public items: RawDocument[] = [];
+
+      async fetch(_source: DataSource, _lastSync?: any, options?: IngestionOptions): Promise<RawDocument[]> {
+        receivedKnownSets.push(options?.knownItemKeys);
+        if (options?.syncMode !== "full" && options?.knownItemKeys?.size) {
+          return this.items.filter((item) => {
+            if (item.originUrl && options.knownItemKeys!.has(item.originUrl)) {
+              options.onItemSkipped?.(item.originUrl);
+              return false;
+            }
+            return true;
+          });
+        }
+        return this.items;
+      }
+
+      extractCleanText(raw: RawDocument): CleanTextDocument {
+        return {
+          id: raw.id,
+          sourceId: raw.sourceId,
+          title: raw.title,
+          textContent: raw.rawContent,
+          originUrl: raw.originUrl,
+          contentHash: "identical-pdf-content-hash",
+        };
+      }
+    }
+
+    const localMock = new LocalMockStrategy();
+    strategyRegistry.register(localMock);
+
+    localMock.items = [
+      {
+        id: "pdf-dir-a",
+        sourceId: source.id,
+        title: "report.pdf",
+        rawContent: "Identical bytes content",
+        originUrl: "file:///books/dirA/report.pdf",
+      },
+    ];
+    await service.syncSource(source.id);
+
+    localMock.items = [
+      ...localMock.items,
+      {
+        id: "pdf-dir-b",
+        sourceId: source.id,
+        title: "report.pdf",
+        rawContent: "Identical bytes content",
+        originUrl: "file:///books/dirB/report.pdf",
+      },
+    ];
+    const second = await service.syncSource(source.id, {
+      slicing: { mode: "none" },
+    });
+    expect(receivedKnownSets[1]?.has("/books/dirA/report.pdf")).toBe(true);
+    expect(receivedKnownSets[1]?.has("/books/dirB/report.pdf")).toBe(false);
+    expect(second.skippedCount).toBe(1);
+    expect(second.newCount).toBe(1);
+    expect(docRepo.listBySourceId(source.id)).toHaveLength(2);
+  });
+
+  it("enforces post-fetch isRawDocKnown safety net, preserves edited Notion pages in 'new-only' mode, and strips knownItemKeys in 'full' mode", async () => {
+    const notionPageId = "12345678-90ab-cdef-1234-567890abcdef";
+    const notionSource = sourceRepo.create({
+      name: "Notion Docs",
+      type: "notion",
+      uri: notionPageId,
+    });
+
+    const seenFullKnownSets: Array<Set<string> | undefined> = [];
+    let notionEditedAt = "2026-09-01T00:00:00.000Z";
+    let notionContent = "Initial Notion content";
+
+    // Strategy intentionally ignores options.knownItemKeys to verify IngestionService post-fetch safety net
+    class IgnorantNotionStrategy implements IngestionStrategy {
+      readonly type = "notion" as const;
+
+      async fetch(source: DataSource, _lastSync?: any, options?: IngestionOptions): Promise<RawDocument[]> {
+        seenFullKnownSets.push(options?.knownItemKeys);
+        return [
+          {
+            id: "notion-doc-1",
+            sourceId: source.id,
+            title: "Notion Page",
+            rawContent: notionContent,
+            originUrl: `https://www.notion.so/Page-${notionPageId.replace(/-/g, "")}`,
+            guid: notionPageId,
+            publishedAt: notionEditedAt,
+          },
+        ];
+      }
+
+      extractCleanText(raw: RawDocument): CleanTextDocument {
+        return {
+          id: raw.id,
+          sourceId: raw.sourceId,
+          title: raw.title,
+          textContent: raw.rawContent,
+          originUrl: raw.originUrl,
+          contentHash: `hash-${raw.rawContent}`,
+        };
+      }
+    }
+
+    strategyRegistry.register(new IgnorantNotionStrategy());
+
+    const first = await service.syncSource(notionSource.id);
+    expect(first.newCount).toBe(1);
+
+    // Same publishedAt <= lastSyncedAt -> skipped cleanly by post-fetch fallback
+    const unchanged = await service.syncSource(notionSource.id);
+    expect(unchanged.newCount).toBe(0);
+    expect(unchanged.skippedCount).toBe(1);
+
+    // Edited after lastSyncedAt -> must NOT be dropped post-fetch!
+    notionEditedAt = new Date(Date.now() + 60_000).toISOString();
+    notionContent = "Updated Notion body";
+    const updated = await service.syncSource(notionSource.id);
+    expect(updated.newCount).toBe(1);
+    expect(updated.skippedCount).toBe(0);
+    expect(docRepo.listBySourceId(notionSource.id)[0].textContent).toBe("Updated Notion body");
+
+    // Caller-supplied knownItemKeys must NOT leak into strategy in 'full' mode
+    await service.syncSource(notionSource.id, {
+      syncMode: "full",
+      knownItemKeys: new Set(["should-not-leak"]),
+    });
+    expect(seenFullKnownSets[seenFullKnownSets.length - 1]).toBeUndefined();
   });
 });

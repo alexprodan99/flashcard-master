@@ -2,14 +2,16 @@ import { Worker } from "node:worker_threads";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import type {
-  Flashcard,
-  FlashcardRepository,
-  DataSourceRepository,
-  SyncStateRepository,
-  CardDeduplicationService,
-  IngestionService,
-  DocumentRepository,
+import {
+  buildKnownItemKeysForSource,
+  type Flashcard,
+  type FlashcardRepository,
+  type DataSourceRepository,
+  type SyncStateRepository,
+  type CardDeduplicationService,
+  type IngestionService,
+  type DocumentRepository,
+  type SyncMode,
 } from "@flashcard-master/core";
 import type { JobExecutionContext } from "../jobs/job-manager.js";
 import type {
@@ -157,6 +159,21 @@ export class WorkerExecutor {
         });
 
         const committedCards: Flashcard[] = [];
+        let resolvedKnownKeysBySource: Record<string, string[]> | undefined =
+          task.type === "sync_all" || task.type === "sync_source"
+            ? task.payload.knownItemKeysBySource
+            : undefined;
+        const persistLocalSyncState = (sourceId: string, itemCount: number) => {
+          if (!this.options.syncRepo) return;
+          const prev = this.options.syncRepo.get(sourceId);
+          this.options.syncRepo.upsert({
+            sourceId,
+            lastSyncedAt: new Date().toISOString(),
+            lastGuid: prev?.lastGuid ?? null,
+            contentHash: prev?.contentHash ?? null,
+            itemCount,
+          });
+        };
 
         // Listen for IPC messages from worker
         worker.on("message", async (msg: WorkerOutboundMessage) => {
@@ -270,13 +287,14 @@ export class WorkerExecutor {
             } else if (msg.type === "COMMIT_SYNC_RESULT") {
               let newCount = 0;
               let totalFetched = 0;
+              let skippedCount = msg.skippedCount ?? 0;
               let syncError: string | undefined;
 
               if (Array.isArray(msg.documents) && msg.documents.length > 0) {
                 try {
                   if (this.options.documentRepo) {
-                    if (msg.slicing && msg.slicing.mode !== "none") {
-                      // Purge previously generated subdocuments for this source to prevent orphan/obsolete slices
+                    if ((msg.syncMode ?? "new-only") === "full") {
+                      // Purge previously generated subdocuments/slices in full mode (handles re-slice & reset-to-none)
                       this.options.documentRepo.deleteBySourceId(msg.sourceId);
                     }
                     this.options.documentRepo.upsertBatch(msg.documents as any);
@@ -291,13 +309,7 @@ export class WorkerExecutor {
                   newCount = msg.documents.length;
                   totalFetched = msg.documents.length;
 
-                  if (this.options.syncRepo) {
-                    this.options.syncRepo.upsert({
-                      sourceId: msg.sourceId,
-                      lastSyncedAt: new Date().toISOString(),
-                      itemCount: newCount,
-                    });
-                  }
+                  persistLocalSyncState(msg.sourceId, newCount);
                 } catch (dbErr: any) {
                   ctx.log(
                     msg.stepNumber || 0,
@@ -310,7 +322,8 @@ export class WorkerExecutor {
                 }
               } else if (
                 this.options.ingestionService &&
-                (msg.documents === undefined || !this.options.documentRepo)
+                (msg.documents === undefined ||
+                  (!this.options.documentRepo && msg.skippedCount === undefined))
               ) {
                 try {
                   const STAGE_STEP_MAP: Record<string, number> = {
@@ -322,8 +335,15 @@ export class WorkerExecutor {
                     slicing: 4,
                   };
 
+                  const custodialSyncMode = msg.syncMode ?? "new-only";
+                  const custodialKeys =
+                    custodialSyncMode !== "full" && resolvedKnownKeysBySource?.[msg.sourceId]?.length
+                      ? new Set(resolvedKnownKeysBySource[msg.sourceId])
+                      : undefined;
                   const syncResult = await this.options.ingestionService.syncSource(msg.sourceId, {
                     slicing: msg.slicing,
+                    syncMode: custodialSyncMode,
+                    ...(custodialKeys ? { knownItemKeys: custodialKeys } : {}),
                     onLog: (level, message, details) => {
                       ctx.log(msg.stepNumber || 0, msg.stepTitle || "Source Sync", level, message, details);
                       if (details && typeof details === "object" && typeof details.stage === "string") {
@@ -341,6 +361,7 @@ export class WorkerExecutor {
                   });
                   newCount = syncResult?.newCount || 0;
                   totalFetched = syncResult?.totalFetched || 0;
+                  skippedCount = syncResult?.skippedCount ?? 0;
                   if (syncResult?.error) {
                     syncError = syncResult.error;
                     ctx.log(
@@ -361,11 +382,7 @@ export class WorkerExecutor {
                   );
                 }
               } else if (this.options.syncRepo && Array.isArray(msg.documents)) {
-                this.options.syncRepo.upsert({
-                  sourceId: msg.sourceId,
-                  lastSyncedAt: new Date().toISOString(),
-                  itemCount: 0,
-                });
+                persistLocalSyncState(msg.sourceId, 0);
               }
 
               const ackMsg: WorkerInboundMessage = {
@@ -374,6 +391,7 @@ export class WorkerExecutor {
                 sourceId: msg.sourceId,
                 newCount,
                 totalFetched,
+                skippedCount,
                 ...(syncError ? { error: syncError } : {}),
               };
               worker.postMessage(ackMsg);
@@ -416,10 +434,28 @@ export class WorkerExecutor {
         // Propagate configured mediaDir / localFilesDir into worker task payloads
         let enrichedTask: TaskPayload = task;
         if (task.type === "sync_all" || task.type === "sync_source") {
+          const syncMode: SyncMode = task.payload.syncMode ?? "new-only";
+          let knownItemKeysBySource = task.payload.knownItemKeysBySource;
+          if (syncMode !== "full" && this.options.documentRepo && Array.isArray(task.payload.sources)) {
+            const merged: Record<string, string[]> = { ...(knownItemKeysBySource || {}) };
+            for (const src of task.payload.sources) {
+              if (!src?.id) continue;
+              const existingDocs = this.options.documentRepo.listBySourceId(src.id);
+              const keys = buildKnownItemKeysForSource(src, existingDocs);
+              if (keys.size > 0) {
+                const prior = Array.isArray(merged[src.id]) ? merged[src.id] : [];
+                merged[src.id] = Array.from(new Set([...prior, ...keys]));
+              }
+            }
+            knownItemKeysBySource = merged;
+          }
+          resolvedKnownKeysBySource = syncMode === "full" ? undefined : knownItemKeysBySource;
           enrichedTask = {
             ...task,
             payload: {
               ...task.payload,
+              syncMode,
+              ...(resolvedKnownKeysBySource ? { knownItemKeysBySource: resolvedKnownKeysBySource } : {}),
               mediaDir: task.payload.mediaDir?.trim() || this.options.mediaDir,
               localFilesDir: task.payload.localFilesDir?.trim() || this.options.localFilesDir,
             },

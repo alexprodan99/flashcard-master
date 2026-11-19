@@ -1,4 +1,4 @@
-import type { IngestionStrategy, DataSource, RawDocument, CleanTextDocument, SyncState } from "@flashcard-master/core";
+import { createKnownItemMatcher, normalizeHttpUrlKey, type IngestionStrategy, type IngestionOptions, type DataSource, type RawDocument, type CleanTextDocument, type SyncState } from "@flashcard-master/core";
 import { XMLParser } from "fast-xml-parser";
 import crypto from "node:crypto";
 import { safeIsoDate } from "../utils/date.js";
@@ -34,7 +34,7 @@ export class RssIngestionStrategy implements IngestionStrategy {
     });
   }
 
-  async fetch(source: DataSource, lastSync?: SyncState): Promise<RawDocument[]> {
+  async fetch(source: DataSource, lastSync?: SyncState, options?: IngestionOptions): Promise<RawDocument[]> {
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -54,7 +54,27 @@ export class RssIngestionStrategy implements IngestionStrategy {
       }
 
       const xmlText = await response.text();
-      return this.parseXml(xmlText, source.id, source.uri);
+      const parsedDocs = this.parseXml(xmlText, source.id, source.uri);
+      const syncMode = options?.syncMode ?? "new-only";
+      const knownMatcher =
+        syncMode !== "full" ? createKnownItemMatcher("rss", options?.knownItemKeys) : null;
+      if (!knownMatcher || knownMatcher.isEmpty) {
+        return parsedDocs;
+      }
+
+      const feedKey = normalizeHttpUrlKey(source.uri);
+      return parsedDocs.filter((doc) => {
+        const isKnownByGuid = Boolean(doc.guid && knownMatcher.hasRaw(doc.guid));
+        const docUrlKey = doc.originUrl ? normalizeHttpUrlKey(doc.originUrl) : "";
+        const isKnownByUrl = Boolean(
+          docUrlKey && docUrlKey !== feedKey && knownMatcher.hasHttpUrl(doc.originUrl!)
+        );
+        if (isKnownByGuid || isKnownByUrl) {
+          options?.onItemSkipped?.(doc.guid || doc.originUrl || doc.title);
+          return false;
+        }
+        return true;
+      });
     } catch (err: any) {
       console.warn(`[RssIngestionStrategy] Network or parse failure for ${source.uri}:`, err.message);
       return [];

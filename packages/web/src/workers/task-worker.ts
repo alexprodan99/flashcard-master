@@ -342,9 +342,11 @@ if (parentPort) {
 
   async function executeSync(jobId: string, payload: SyncTaskPayload) {
     const { sources, slicing } = payload;
+    const syncMode = payload.syncMode ?? "new-only";
     const totalSources = sources.length;
     let totalNewDocs = 0;
     let totalFetchedDocs = 0;
+    let totalSkippedDocs = 0;
 
     postMessage({
       type: "STEP_LOG",
@@ -396,9 +398,32 @@ if (parentPort) {
             message: `Parsing local files for "${source.name}" in background worker...`,
           });
 
+          const knownKeysList = payload.knownItemKeysBySource?.[source.id];
+          const knownItemKeys =
+            syncMode !== "full" && Array.isArray(knownKeysList) && knownKeysList.length > 0
+              ? new Set(knownKeysList)
+              : undefined;
+          let localSkippedCount = 0;
           let rawDocs: RawDocument[] = [];
           try {
-            rawDocs = await localStrategy.fetch(source);
+            rawDocs = await localStrategy.fetch(source, undefined, {
+              syncMode,
+              knownItemKeys,
+              onItemSkipped: () => {
+                localSkippedCount++;
+              },
+              onLog: (level, message, details) => {
+                postMessage({
+                  type: "STEP_LOG",
+                  jobId,
+                  stepNumber,
+                  stepTitle,
+                  level,
+                  message,
+                  details,
+                });
+              },
+            });
           } catch (fetchErr: any) {
             postMessage({
               type: "STEP_LOG",
@@ -412,7 +437,17 @@ if (parentPort) {
             rawDocs = [];
           }
 
-          const isSlicingActive = Boolean(slicing && slicing.mode !== "none");
+          const effectiveSlicing =
+            slicing ??
+            (source.defaultSlicingMode
+              ? {
+                  mode: source.defaultSlicingMode,
+                  ...(source.defaultIntervalMinutes != null
+                    ? { minutesPerChunk: source.defaultIntervalMinutes }
+                    : {}),
+                }
+              : undefined);
+          const isSlicingActive = Boolean(effectiveSlicing && effectiveSlicing.mode !== "none");
           const documentsToCommit: DiscoveredDocument[] = [];
 
           for (let docIdx = 0; docIdx < rawDocs.length; docIdx++) {
@@ -470,7 +505,7 @@ if (parentPort) {
                 stepNumber,
                 stepTitle,
                 level: "info",
-                message: `Applying ${slicing!.mode} slicing to "${cleanDoc.title}"...`,
+                message: `Applying ${effectiveSlicing!.mode} slicing to "${cleanDoc.title}"...`,
               });
 
               let slices: any[] = [];
@@ -484,7 +519,7 @@ if (parentPort) {
                     url: docUrl,
                     originUrl: docUrl,
                   },
-                  slicing
+                  effectiveSlicing
                 );
               } catch (sliceErr: any) {
                 postMessage({
@@ -551,14 +586,18 @@ if (parentPort) {
             stepNumber,
             stepTitle,
             documents: documentsToCommit,
-            slicing,
+            slicing: effectiveSlicing,
+            syncMode,
+            skippedCount: localSkippedCount,
           });
 
           const ack = await ackPromise;
           const newCount = ack.newCount ?? documentsToCommit.length;
           const totalFetched = ack.totalFetched ?? rawDocs.length;
+          const ackSkippedCount = ack.skippedCount ?? localSkippedCount;
           totalNewDocs += newCount;
           totalFetchedDocs += totalFetched;
+          totalSkippedDocs += ackSkippedCount;
 
           postMessage({
             type: "STEP_LOG",
@@ -566,8 +605,8 @@ if (parentPort) {
             stepNumber,
             stepTitle,
             level: "success",
-            message: `Synced "${source.name}": processed ${rawDocs.length} file(s), committed ${documentsToCommit.length} document record(s)`,
-            details: { ...ack, documentsCount: documentsToCommit.length },
+            message: `Synced "${source.name}": processed ${rawDocs.length} file(s), ${ackSkippedCount} skipped, committed ${documentsToCommit.length} document record(s)`,
+            details: { ...ack, skippedCount: ackSkippedCount, documentsCount: documentsToCommit.length },
           });
         } else {
           // For non-local sources (e.g. RSS, web), delegate to custodial ingestion service
@@ -583,6 +622,7 @@ if (parentPort) {
             stepTitle,
             documents: undefined,
             slicing,
+            syncMode,
           });
 
           const ack = await ackPromise;
@@ -591,6 +631,7 @@ if (parentPort) {
           }
           totalNewDocs += ack.newCount || 0;
           totalFetchedDocs += ack.totalFetched || 0;
+          totalSkippedDocs += ack.skippedCount || 0;
 
           postMessage({
             type: "STEP_LOG",
@@ -598,7 +639,7 @@ if (parentPort) {
             stepNumber,
             stepTitle,
             level: "success",
-            message: `Synced "${source.name}": fetched ${ack.totalFetched || 0}, ${ack.newCount || 0} new documents`,
+            message: `Synced "${source.name}": fetched ${ack.totalFetched || 0}, ${ack.newCount || 0} new documents, ${ack.skippedCount || 0} skipped`,
             details: ack,
           });
         }
@@ -624,11 +665,14 @@ if (parentPort) {
       type: "TASK_COMPLETE",
       jobId,
       resultSummary: {
+        syncMode,
         totalSources,
         totalNewDocuments: totalNewDocs,
         totalFetchedDocuments: totalFetchedDocs,
+        totalSkippedDocuments: totalSkippedDocs,
         newCount: totalNewDocs,
         totalFetched: totalFetchedDocs,
+        skippedCount: totalSkippedDocs,
       },
     });
   }

@@ -1,12 +1,14 @@
 import { Client, LogLevel } from "@notionhq/client";
-import type {
-  IngestionStrategy,
-  IngestionOptions,
-  DataSource,
-  RawDocument,
-  CleanTextDocument,
-  SyncState,
-  MediaService,
+import {
+  createKnownItemMatcher,
+  type KnownItemMatcher,
+  type IngestionStrategy,
+  type IngestionOptions,
+  type DataSource,
+  type RawDocument,
+  type CleanTextDocument,
+  type SyncState,
+  type MediaService,
 } from "@flashcard-master/core";
 import crypto from "node:crypto";
 import { safeIsoDate } from "../utils/date.js";
@@ -323,7 +325,7 @@ export class NotionStrategy implements IngestionStrategy {
     const pageTitle = this.extractTitleFromProperties(pageMeta?.properties) || "Untitled Notion Document";
     options?.onLog?.("info", `[Notion] Target root page identified: "${pageTitle}"`);
 
-    return this.fetchPage(client, source, canonicalId, pageMeta, isRecursive, maxDepthLimit, options);
+    return this.fetchPage(client, source, canonicalId, pageMeta, isRecursive, maxDepthLimit, options, lastSync);
   }
 
   /**
@@ -336,8 +338,9 @@ export class NotionStrategy implements IngestionStrategy {
     lastSync?: SyncState,
     options?: IngestionOptions
   ): Promise<RawDocument[]> {
+    const syncMode = options?.syncMode ?? "new-only";
     let filter: any = undefined;
-    if (lastSync?.lastSyncedAt && !isNaN(Date.parse(lastSync.lastSyncedAt))) {
+    if (syncMode !== "full" && lastSync?.lastSyncedAt && !isNaN(Date.parse(lastSync.lastSyncedAt))) {
       filter = {
         timestamp: "last_edited_time",
         last_edited_time: {
@@ -389,6 +392,10 @@ export class NotionStrategy implements IngestionStrategy {
 
     options?.onLog?.("info", `[Notion] Database query returned ${results.length} total item(s)`);
 
+    const knownMatcher =
+      syncMode !== "full" && options?.knownItemKeys?.size
+        ? createKnownItemMatcher("notion", options.knownItemKeys)
+        : undefined;
     const documents: RawDocument[] = [];
 
     for (const page of results) {
@@ -398,6 +405,12 @@ export class NotionStrategy implements IngestionStrategy {
       const tags = extractTagsFromProperties(page.properties);
       const pageUrl = page.url || `https://www.notion.so/${page.id.replace(/-/g, "")}`;
       const publishedAt = safeIsoDate(page.last_edited_time || page.created_time);
+
+      if (this.isPageUnchangedAndKnown(page.id, pageUrl, page.last_edited_time, lastSync, knownMatcher, syncMode)) {
+        options?.onItemSkipped?.(page.id);
+        options?.onLog?.("debug", `[Notion] Skipping unchanged database item: "${title}"`);
+        continue;
+      }
 
       options?.onLog?.("debug", `[Notion] Ingesting database item: "${title}"`);
 
@@ -436,6 +449,33 @@ export class NotionStrategy implements IngestionStrategy {
   /**
    * Fetches a single Notion Page, optionally crawling child pages recursively.
    */
+  private isPageUnchangedAndKnown(
+    pageId: string,
+    pageUrl: string,
+    pageLastEditedTime: string | undefined,
+    lastSync?: SyncState,
+    knownMatcher?: KnownItemMatcher,
+    syncMode: "new-only" | "full" = "new-only"
+  ): boolean {
+    if (syncMode === "full" || !knownMatcher || knownMatcher.isEmpty) {
+      return false;
+    }
+    if (!knownMatcher.hasNotionPage(pageId, pageUrl)) {
+      return false;
+    }
+    if (lastSync?.lastSyncedAt && pageLastEditedTime) {
+      const editedMs = Date.parse(pageLastEditedTime);
+      const syncedMs = Date.parse(lastSync.lastSyncedAt);
+      if (!isNaN(editedMs) && !isNaN(syncedMs) && editedMs > syncedMs) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Fetches a single Notion Page, optionally crawling child pages recursively.
+   */
   private async fetchPage(
     client: Client,
     source: DataSource,
@@ -443,11 +483,17 @@ export class NotionStrategy implements IngestionStrategy {
     pageMeta: any,
     isRecursive: boolean,
     maxDepthLimit?: number,
-    options?: IngestionOptions
+    options?: IngestionOptions,
+    lastSync?: SyncState
   ): Promise<RawDocument[]> {
     const maxDepth = isRecursive ? (maxDepthLimit ?? this.defaultRecursiveDepth) : 0;
     const visited = new Set<string>();
-    return this.crawlPageAndSubpages(client, source, pageId, pageMeta, maxDepth, 0, visited, [], options);
+    const syncMode = options?.syncMode ?? "new-only";
+    const knownMatcher =
+      syncMode !== "full" && options?.knownItemKeys?.size
+        ? createKnownItemMatcher("notion", options.knownItemKeys)
+        : undefined;
+    return this.crawlPageAndSubpages(client, source, pageId, pageMeta, maxDepth, 0, visited, [], options, lastSync, knownMatcher);
   }
 
   private async crawlPageAndSubpages(
@@ -459,7 +505,9 @@ export class NotionStrategy implements IngestionStrategy {
     currentDepth: number,
     visited: Set<string>,
     breadcrumbs: Array<{ title: string; url: string; id: string }> = [],
-    options?: IngestionOptions
+    options?: IngestionOptions,
+    lastSync?: SyncState,
+    knownMatcher?: KnownItemMatcher
   ): Promise<RawDocument[]> {
     if (!pageMeta || typeof pageMeta !== "object") return [];
 
@@ -472,6 +520,21 @@ export class NotionStrategy implements IngestionStrategy {
     const title = this.extractTitleFromProperties(pageMeta.properties) || "Untitled Notion Document";
     const pageUrl = pageMeta.url || `https://www.notion.so/${pageId.replace(/-/g, "")}`;
     const publishedAt = safeIsoDate(pageMeta.last_edited_time || pageMeta.created_time);
+
+    const syncMode = options?.syncMode ?? "new-only";
+    const pageIsKnownAndUnchanged = this.isPageUnchangedAndKnown(
+      pageId,
+      pageUrl,
+      pageMeta.last_edited_time,
+      lastSync,
+      knownMatcher,
+      syncMode
+    );
+    if (pageIsKnownAndUnchanged && currentDepth >= maxDepth) {
+      options?.onItemSkipped?.(pageId);
+      options?.onLog?.("debug", `[Notion] Skipping unchanged page "${title}" (${pageId})`);
+      return [];
+    }
 
     options?.onLog?.("info", `[Notion] Crawling page "${title}" (depth ${currentDepth}/${maxDepth})`);
 
@@ -497,7 +560,12 @@ export class NotionStrategy implements IngestionStrategy {
       .digest("hex")
       .slice(0, 32);
 
-    const docs: RawDocument[] = [
+    if (pageIsKnownAndUnchanged) {
+      options?.onItemSkipped?.(pageId);
+    }
+    const docs: RawDocument[] = pageIsKnownAndUnchanged
+      ? []
+      : [
       {
         id: docId,
         sourceId: source.id,
@@ -529,7 +597,9 @@ export class NotionStrategy implements IngestionStrategy {
               currentDepth + 1,
               visited,
               nextBreadcrumbs,
-              options
+              options,
+              lastSync,
+              knownMatcher
             );
             docs.push(...subDocs);
           } catch {

@@ -1,4 +1,4 @@
-import type { IngestionStrategy, DataSource, RawDocument, CleanTextDocument, SyncState } from "@flashcard-master/core";
+import { createKnownItemMatcher, type IngestionStrategy, type IngestionOptions, type DataSource, type RawDocument, type CleanTextDocument, type SyncState } from "@flashcard-master/core";
 import { XMLParser } from "fast-xml-parser";
 import { Readability } from "@mozilla/readability";
 import { JSDOM } from "jsdom";
@@ -178,7 +178,10 @@ export class SitemapIngestionStrategy implements IngestionStrategy {
     }
   }
 
-  async fetch(source: DataSource, lastSync?: SyncState): Promise<RawDocument[]> {
+  async fetch(source: DataSource, lastSync?: SyncState, options?: IngestionOptions): Promise<RawDocument[]> {
+    const syncMode = options?.syncMode ?? "new-only";
+    const knownMatcher =
+      syncMode !== "full" ? createKnownItemMatcher("sitemap", options?.knownItemKeys) : null;
     try {
       const rootXml = await this.fetchText(source.uri);
       if (!rootXml) {
@@ -196,6 +199,10 @@ export class SitemapIngestionStrategy implements IngestionStrategy {
         seenUrls.add(entry.loc);
 
         if (this.isIgnoredUrl(entry.loc)) continue;
+        if (knownMatcher && knownMatcher.hasHttpUrl(entry.loc)) {
+          options?.onItemSkipped?.(entry.loc);
+          continue;
+        }
         candidateUrls.push(entry);
 
         if (candidateUrls.length >= this.maxArticles) break;

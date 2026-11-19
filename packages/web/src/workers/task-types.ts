@@ -7,6 +7,7 @@ import type {
   CleanTextDocument,
   DiscoveredDocument,
   DocumentSlicingOptions,
+  SyncMode,
   DataSource,
   Flashcard,
 } from "@flashcard-master/core";
@@ -45,6 +46,8 @@ export interface GenerationTaskPayload {
 export interface SyncTaskPayload {
   sources: DataSource[];
   slicing?: DocumentSlicingOptions;
+  syncMode?: SyncMode;
+  knownItemKeysBySource?: Record<string, string[]>;
   timeoutMs?: number;
   mediaDir?: string;
   localFilesDir?: string;
@@ -95,6 +98,7 @@ export type WorkerInboundMessage =
       sourceId: string;
       newCount: number;
       totalFetched: number;
+      skippedCount?: number;
       error?: string;
     };
 
@@ -150,6 +154,8 @@ export type WorkerOutboundMessage =
       stepTitle?: string;
       documents?: DiscoveredDocument[];
       slicing?: DocumentSlicingOptions;
+      syncMode?: SyncMode;
+      skippedCount?: number;
     }
   | {
       type: "TASK_COMPLETE";
