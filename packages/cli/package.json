@@ -1,6 +1,6 @@
 {
   "name": "@flashcard-master/cli",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Local-first, grounded AI flashcard generator and study knowledge base CLI and dashboard",
   "license": "AGPL-3.0",
   "author": "Ionut-Alexandru Prodan <prodanalexandru580@gmail.com>",
@@ -44,9 +44,9 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "@flashcard-master/adapters": "1.2.0",
-    "@flashcard-master/core": "1.2.0",
-    "@flashcard-master/web": "1.2.0",
+    "@flashcard-master/adapters": "1.3.0",
+    "@flashcard-master/core": "1.3.0",
+    "@flashcard-master/web": "1.3.0",
     "commander": "^12.1.0"
   },
   "devDependencies": {

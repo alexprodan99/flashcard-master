@@ -13,9 +13,9 @@ Download the latest native desktop installer from the **[Flashcard Master GitHub
 
 | Operating System | Download Formats | Notes |
 | :--- | :--- | :--- |
-| **Windows** | [`Flashcard.Master.Setup.1.2.0.exe`](https://github.com/alexprodan99/flashcard-master/releases) (NSIS) or `Flashcard.Master.1.2.0.exe` (Portable) | 64-bit Windows 10/11 installer or standalone portable binary |
-| **macOS** | [`Flashcard.Master-1.2.0-universal.dmg`](https://github.com/alexprodan99/flashcard-master/releases), [`arm64.dmg`](https://github.com/alexprodan99/flashcard-master/releases), [`x64.dmg`](https://github.com/alexprodan99/flashcard-master/releases) | Universal binary supporting Apple Silicon (M1/M2/M3/M4) & Intel |
-| **Linux** | [`Flashcard.Master-1.2.0.deb`](https://github.com/alexprodan99/flashcard-master/releases) or [`Flashcard.Master-1.2.0.AppImage`](https://github.com/alexprodan99/flashcard-master/releases) | Native Debian/Ubuntu `.deb` package or portable AppImage |
+| **Windows** | [`Flashcard.Master.Setup.1.3.0.exe`](https://github.com/alexprodan99/flashcard-master/releases) (NSIS) or `Flashcard.Master.1.3.0.exe` (Portable) | 64-bit Windows 10/11 installer or standalone portable binary |
+| **macOS** | [`Flashcard.Master-1.3.0-universal.dmg`](https://github.com/alexprodan99/flashcard-master/releases), [`arm64.dmg`](https://github.com/alexprodan99/flashcard-master/releases), [`x64.dmg`](https://github.com/alexprodan99/flashcard-master/releases) | Universal binary supporting Apple Silicon (M1/M2/M3/M4) & Intel |
+| **Linux** | [`Flashcard.Master-1.3.0.deb`](https://github.com/alexprodan99/flashcard-master/releases) or [`Flashcard.Master-1.3.0.AppImage`](https://github.com/alexprodan99/flashcard-master/releases) | Native Debian/Ubuntu `.deb` package or portable AppImage |
 
 ::: tip 💡 Windows Defender SmartScreen Note
 Because Flashcard Master is a community open-source project without a costly commercial EV code-signing certificate, Windows or Edge may show an *"Unrecognized app"* or *"Isn't commonly downloaded"* prompt on new releases:

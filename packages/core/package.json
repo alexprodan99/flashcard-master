@@ -1,6 +1,6 @@
 {
   "name": "@flashcard-master/core",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Core domain models, SQLite storage, grounding guard, and card generation services for Flashcard Master",
   "license": "AGPL-3.0",
   "author": "Ionut-Alexandru Prodan <prodanalexandru580@gmail.com>",
