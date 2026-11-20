@@ -1550,7 +1550,7 @@ describe('Svelte 5 Universal Client Stores (Epic 14.4)', () => {
 
       expect(getClientItemSyncStatus('C:\\', 'local', ['c:/notes/a.md'])).toBe('synced');
       expect(getClientItemSyncStatus('file:///C:/notes/./sub/../a.md', 'local', ['c:/notes/a.md'])).toBe('synced');
-      expect(getClientItemSyncStatus('/media', 'audio', ['/media/track1.mp3'])).toBe('new'); // audio is exact-item, not directory prefix
+      expect(getClientItemSyncStatus('/media', 'audio', ['/media/track1.mp3'])).toBe('synced');
       expect(getClientItemSyncStatus('/media/track1.mp3#t=0,60', 'audio', ['/media/track1.mp3'])).toBe('synced');
       expect(getClientItemSyncStatus('https://youtube.com/shorts/dQw4w9WgXcQ', 'youtube', ['https://youtu.be/dQw4w9WgXcQ'])).toBe('synced');
       expect(

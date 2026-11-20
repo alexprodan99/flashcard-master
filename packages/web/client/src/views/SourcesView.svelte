@@ -147,11 +147,15 @@
               const newCount = summary.newCount ?? summary.totalNewDocuments ?? 0;
               const totalFetched = summary.totalFetched ?? summary.totalFetchedDocuments ?? 0;
               const skippedCount = summary.skippedCount ?? summary.totalSkippedDocuments ?? 0;
-              const toastInfo = formatSyncCompletionSummary(sourceName, { newCount, totalFetched, skippedCount });
-              if (toastInfo.variant === 'success') {
-                toastStore.success(toastInfo.message);
+              if (job.status === 'completed_with_warnings') {
+                toastStore.warn(`⚠️ ${job.errorMessage || `Sync completed with warnings for "${sourceName}".`}`);
               } else {
-                toastStore.info(toastInfo.message);
+                const toastInfo = formatSyncCompletionSummary(sourceName, { newCount, totalFetched, skippedCount });
+                if (toastInfo.variant === 'success') {
+                  toastStore.success(toastInfo.message);
+                } else {
+                  toastStore.info(toastInfo.message);
+                }
               }
               await loadSources();
             }
@@ -231,13 +235,17 @@
             const totalFetched = summary.totalFetchedDocuments ?? summary.totalFetched ?? 0;
             const totalSkipped = summary.totalSkippedDocuments ?? summary.skippedCount ?? 0;
             const totalSources = summary.totalSources ?? job.metadata?.sourceCount ?? 'all';
-            const toastInfo = formatSyncCompletionSummary(null, {
-              newCount: totalNew,
-              totalFetched,
-              skippedCount: totalSkipped,
-              totalSources,
-            });
-            toastStore.success(toastInfo.message);
+            if (job.status === 'completed_with_warnings') {
+              toastStore.warn(`⚠️ ${job.errorMessage || 'Bulk sync completed with warnings.'}`);
+            } else {
+              const toastInfo = formatSyncCompletionSummary(null, {
+                newCount: totalNew,
+                totalFetched,
+                skippedCount: totalSkipped,
+                totalSources,
+              });
+              toastStore.success(toastInfo.message);
+            }
             await loadSources();
           }
           break;
@@ -263,11 +271,19 @@
   function handleSourceCreated(newSource: DataSource) {
     sourcesStore.setSources([newSource, ...sourcesStore.sources]);
     toastStore.success(`Data source "${newSource.name}" added successfully.`);
+    const pendingJobId = sourcesStore.activeSyncJobIds[newSource.id];
+    if (sourcesStore.syncingSourceIds[newSource.id] && pendingJobId) {
+      pollSyncJob(newSource.id, pendingJobId, newSource.name);
+    }
   }
 
   function handleSourceUpdated(updated: DataSource) {
     sourcesStore.updateSource(updated);
     toastStore.success(`Data source "${updated.name}" updated successfully.`);
+    const pendingJobId = sourcesStore.activeSyncJobIds[updated.id];
+    if (sourcesStore.syncingSourceIds[updated.id] && pendingJobId) {
+      pollSyncJob(updated.id, pendingJobId, updated.name);
+    }
   }
 
   function getUriSummary(source: DataSource): {
@@ -320,6 +336,12 @@
         pollSyncJob(sourceId, jobId, source ? source.name : 'Source');
       }
     }
+    const unsubscribeJobCompleted = taskStore.onJobCompleted((job) => {
+      if (job.type === 'sync_source' || job.type === 'sync_all') {
+        void loadSources();
+      }
+    });
+    return () => unsubscribeJobCompleted();
   });
 </script>
 

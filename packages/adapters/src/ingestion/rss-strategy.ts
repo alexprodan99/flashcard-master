@@ -2,6 +2,7 @@ import { createKnownItemMatcher, normalizeHttpUrlKey, type IngestionStrategy, ty
 import { XMLParser } from "fast-xml-parser";
 import crypto from "node:crypto";
 import { safeIsoDate } from "../utils/date.js";
+import { fetchSafePublicResponse, readResponseTextWithLimit } from "../utils/safe-fetch.js";
 import { htmlToCleanText } from "../utils/html-cleaner.js";
 
 export class FeedParsingError extends Error {
@@ -35,26 +36,25 @@ export class RssIngestionStrategy implements IngestionStrategy {
   }
 
   async fetch(source: DataSource, lastSync?: SyncState, options?: IngestionOptions): Promise<RawDocument[]> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-
-      const response = await this.fetchFn(source.uri, {
+      const response = await fetchSafePublicResponse(this.fetchFn, source.uri, {
         signal: controller.signal,
         headers: {
           "User-Agent": "flashcard-master/1.0 (+https://github.com/aprodan/flashcard-master)",
           Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9, */*;q=0.8",
         },
       });
-      clearTimeout(timer);
 
       if (!response.ok) {
+        await response.body?.cancel?.().catch(() => {});
         console.warn(`[RssIngestionStrategy] HTTP error ${response.status} fetching ${source.uri}`);
         options?.onFetchError?.(`HTTP ${response.status} fetching ${source.uri}`);
         return [];
       }
 
-      const xmlText = await response.text();
+      const xmlText = await readResponseTextWithLimit(response);
       const parsedDocs = this.parseXml(xmlText, source.id, source.uri);
       const syncMode = options?.syncMode ?? "new-only";
       const knownMatcher =
@@ -80,6 +80,8 @@ export class RssIngestionStrategy implements IngestionStrategy {
       console.warn(`[RssIngestionStrategy] Network or parse failure for ${source.uri}:`, err.message);
       options?.onFetchError?.(err?.message || `RSS fetch failure for ${source.uri}`);
       return [];
+    } finally {
+      clearTimeout(timer);
     }
   }
 

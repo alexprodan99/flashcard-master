@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { fetchSources, fetchSourceDocuments, fetchDocuments, fetchDocumentDetails, syncSource, generateCards, fetchJobDetails } from '../lib/api';
+  import { fetchSources, fetchSourceDocuments, fetchDocuments, fetchDocumentDetails, generateCards, fetchJobDetails } from '../lib/api';
   import type { DataSource, DiscoveredDocument, Flashcard, GenerationResult, DifficultyLevel, PersonaType, CardDepthMode } from '../lib/types';
   import { formatPageBadge } from '../lib/formatters.js';
   import GenerationConfigFields from '../components/GenerationConfigFields.svelte';
@@ -131,13 +131,14 @@
         }
       }
 
-      // Prune dead source IDs that no longer exist
-      const activeSourceIds = sources.map((s) => s.id);
-      generateStore.pruneDeadIds(activeSourceIds);
-
       // Pre-load documents for all active sources so cards display accurate document metrics immediately
-      for (const s of sources) {
-        loadDocumentsForSource(s.id);
+      const docResults = await Promise.all(sources.map((s) => loadDocumentsForSource(s.id)));
+      const activeSourceIds = sources.map((s) => s.id);
+      if (docResults.every(Boolean)) {
+        const validDocIds = sources.flatMap((s) => (generateStore.sourceDocuments[s.id] || []).map((d) => d.id));
+        generateStore.pruneDeadIds(activeSourceIds, validDocIds);
+      } else {
+        generateStore.pruneDeadIds(activeSourceIds);
       }
     } catch (err: any) {
       generateStore.errorMessage = 'Failed to load active data sources: ' + err.message;
@@ -179,13 +180,23 @@
       .reduce((sum, doc) => sum + (doc.wordCount || 0), 0);
   }
 
-  async function loadDocumentsForSource(sourceId: string) {
+  async function loadDocumentsForSource(sourceId: string): Promise<boolean> {
     generateStore.loadingDocs[sourceId] = true;
     try {
       const data = await fetchSourceDocuments(sourceId);
       generateStore.sourceDocuments[sourceId] = data.documents;
+      const validSourceIds = sources.map((s) => s.id);
+      const allLoadedIds = validSourceIds.flatMap((id) => (generateStore.sourceDocuments[id] || []).map((d) => d.id));
+      const removedFromThisSource = Object.keys(generateStore.selectedDocIds).some(
+        (docId) => !allLoadedIds.includes(docId) && data.documents.length >= 0
+      );
+      if (removedFromThisSource && validSourceIds.length > 0 && validSourceIds.every((id) => generateStore.sourceDocuments[id] !== undefined)) {
+        generateStore.pruneDeadIds(validSourceIds, allLoadedIds);
+      }
+      return true;
     } catch (err: any) {
       console.error(`Failed to load docs for source ${sourceId}:`, err);
+      return false;
     } finally {
       generateStore.loadingDocs[sourceId] = false;
     }
@@ -210,36 +221,6 @@
           });
         }
       }
-    }
-  }
-
-  async function handleQuickSyncSource(sourceId: string) {
-    generateStore.syncingSources[sourceId] = true;
-    try {
-      const result: any = await syncSource(sourceId);
-      if (result.jobId) {
-        toastStore.info(`⚡ Sync task queued (#${result.jobId.slice(0, 8)}). Ingesting in background...`);
-        const pollInterval = 1500;
-        let attempts = 0;
-        while (generateStore.syncingSources[sourceId] && attempts < 240) {
-          await new Promise((resolve) => setTimeout(resolve, pollInterval));
-          try {
-            const { job } = await fetchJobDetails(result.jobId);
-            if (job.status === 'completed' || job.status === 'completed_with_warnings') {
-              break;
-            } else if (job.status === 'failed' || job.status === 'cancelled') {
-              break;
-            }
-          } catch {}
-          attempts++;
-        }
-      }
-      await loadDocumentsForSource(sourceId);
-      selectAllDocsForSource(sourceId);
-    } catch (err: any) {
-      toastStore.error('Sync failed: ' + err.message);
-    } finally {
-      generateStore.syncingSources[sourceId] = false;
     }
   }
 
@@ -663,14 +644,24 @@
     activeJobTrackers.delete(jobId);
   }
 
-  onMount(async () => {
-    await generateStore.loadSystemDefaultsIfEmpty();
-    loadSources();
-    for (const job of taskStore.activeJobs) {
-      if (job.type === 'generation' || (job.type as any) === 'generate') {
-        trackJobCompletion(job.id);
+  onMount(() => {
+    void (async () => {
+      await generateStore.loadSystemDefaultsIfEmpty();
+      await loadSources();
+      for (const job of taskStore.activeJobs) {
+        if (job.type === 'generation' || (job.type as any) === 'generate') {
+          trackJobCompletion(job.id);
+        }
       }
-    }
+    })();
+    const unsubCompleted = taskStore.onJobCompleted((job) => {
+      if (job.type === 'sync_source' && job.metadata?.sourceId) {
+        void loadDocumentsForSource(job.metadata.sourceId);
+      } else if (job.type === 'sync_all') {
+        void loadSources();
+      }
+    });
+    return () => unsubCompleted();
   });
 </script>
 

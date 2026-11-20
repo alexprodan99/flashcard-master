@@ -26,6 +26,7 @@ export * from "./export/epub-flashcard-exporter.js";
 export * from "./export/document-export-service.js";
 export * from "./verification/provider-verifier.js";
 export * from "./media/audio-trimmer.js";
+export * from "./utils/safe-fetch.js";
 export * from "./stt/openai-stt-adapter.js";
 export * from "./stt/gemini-stt-adapter.js";
 export * from "./stt/local-whisper-stt-adapter.js";

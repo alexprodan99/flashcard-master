@@ -1,5 +1,6 @@
 import {
   createKnownItemMatcher,
+  parseSourceUrlsPure,
   type IngestionStrategy,
   type IngestionOptions,
   type DataSource,
@@ -12,6 +13,7 @@ import { Readability } from "@mozilla/readability";
 import { JSDOM } from "jsdom";
 import crypto from "node:crypto";
 import { safeIsoDate } from "../utils/date.js";
+import { fetchSafePublicResponse, readResponseTextWithLimit } from "../utils/safe-fetch.js";
 import { htmlToCleanText } from "../utils/html-cleaner.js";
 
 export interface WebReaderStrategyOptions {
@@ -22,69 +24,7 @@ export interface WebReaderStrategyOptions {
 }
 
 export function parseSourceUrls(uri: string): string[] {
-  if (!uri || typeof uri !== "string") {
-    return [];
-  }
-  const trimmed = uri.trim();
-  if (!trimmed) {
-    return [];
-  }
-
-  let rawTokens: string[] = [];
-
-  // 1. Try parsing JSON array
-  if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
-    try {
-      const parsed = JSON.parse(trimmed);
-      if (Array.isArray(parsed)) {
-        rawTokens = parsed.map((u) => (typeof u === "string" ? u.trim() : ""));
-      }
-    } catch {
-      const stripped = trimmed.replace(/^\[|\]$/g, "").trim();
-      rawTokens = [stripped];
-    }
-  } else {
-    rawTokens = [trimmed];
-  }
-
-  // 2. Tokenize by newlines and URL boundary delimiters
-  const candidates: string[] = [];
-  for (const token of rawTokens) {
-    if (!token) continue;
-    const lines = token.split(/[\r\n]+/);
-    for (const line of lines) {
-      const l = line.trim();
-      if (!l) continue;
-      // Split on comma or whitespace only if followed by http:// or https://
-      const splitByUrls = l.split(/[\s,]+(?=https?:\/\/)/i);
-      for (const piece of splitByUrls) {
-        const p = piece.trim().replace(/^[<"']|[>"']$/g, "");
-        if (p) candidates.push(p);
-      }
-    }
-  }
-
-  // Filter valid HTTP/HTTPS URLs and deduplicate
-  const validUrls: string[] = [];
-  const seen = new Set<string>();
-
-  for (const item of candidates) {
-    if (!item) continue;
-    try {
-      const parsed = new URL(item);
-      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
-        const normalized = parsed.href;
-        if (!seen.has(normalized)) {
-          seen.add(normalized);
-          validUrls.push(item);
-        }
-      }
-    } catch {
-      // Skip invalid URL syntax
-    }
-  }
-
-  return validUrls;
+  return parseSourceUrlsPure(uri, { filterHttpOnly: true, deduplicate: true });
 }
 
 export class WebReaderStrategy implements IngestionStrategy {
@@ -220,7 +160,7 @@ export class WebReaderStrategy implements IngestionStrategy {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
-      const response = await this.fetchFn(url, {
+      const response = await fetchSafePublicResponse(this.fetchFn, url, {
         signal: controller.signal,
         headers: {
           "User-Agent": "flashcard-master/1.0 (Mozilla/5.0 Compatible; +https://github.com/aprodan/flashcard-master)",
@@ -234,7 +174,7 @@ export class WebReaderStrategy implements IngestionStrategy {
         return null;
       }
 
-      let html = await response.text();
+      let html = await readResponseTextWithLimit(response);
       if (this.mediaService) {
         html = await this.localizeImagesInHtml(html, url);
       }

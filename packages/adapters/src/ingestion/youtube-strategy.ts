@@ -4,6 +4,7 @@ import * as fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
+import { fetchSafePublicResponse, readResponseTextWithLimit } from "../utils/safe-fetch.js";
 import { pipeline } from "node:stream/promises";
 import {
   type CleanTextDocument,
@@ -169,7 +170,8 @@ export async function resolveVideoMetadataSummary(
       headers: { Accept: "application/json" },
     });
     if (res.ok) {
-      const data = (await res.json()) as { title?: unknown; author_name?: unknown };
+      const oembedJson = await readResponseTextWithLimit(res, 512 * 1024);
+      const data = JSON.parse(oembedJson) as { title?: unknown; author_name?: unknown };
       const title = typeof data?.title === "string" ? data.title.trim() : "";
       if (title) {
         const channel =
@@ -207,7 +209,7 @@ export async function resolveVideoMetadataSummary(
       },
     });
     if (res.ok) {
-      const html = await res.text();
+      const html = await readResponseTextWithLimit(res);
       const playerResponse = extractPlayerResponseFromHtml(html);
       if (playerResponse) {
         const details = playerResponse.videoDetails ?? {};
@@ -1032,7 +1034,7 @@ export class YouTubeIngestionStrategy implements IngestionStrategy {
         );
       }
 
-      responseText = await response.text();
+      responseText = await readResponseTextWithLimit(response);
     } catch (err) {
       if (err instanceof UnavailableYouTubeVideoError) {
         throw err;
@@ -1151,13 +1153,13 @@ export class YouTubeIngestionStrategy implements IngestionStrategy {
   ): Promise<SubtitleCue[]> {
     const timeout = withTimeoutSignal(30_000, signal);
     try {
-      const response = await this.fetchFn(track.baseUrl, { signal: timeout.signal });
+      const response = await fetchSafePublicResponse(this.fetchFn, track.baseUrl, { signal: timeout.signal });
       if (!response.ok) {
         throw new Error(
           `Failed to download YouTube caption track (${track.languageCode}): HTTP ${response.status} ${response.statusText}`
         );
       }
-      const payload = await response.text();
+      const payload = await readResponseTextWithLimit(response);
       return parseYouTubeCaptionPayload(payload, this.subtitleParser);
     } finally {
       timeout.cleanup();

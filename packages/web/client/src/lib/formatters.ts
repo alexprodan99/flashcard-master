@@ -1,4 +1,12 @@
-import type { DataSourceType, DiscoveredDocument, ItemSyncState, MediaExtractionMode, MediaSourceItem, SttProvider } from './types.js';
+import {
+  canonicalizeYouTubeUrl as coreCanonicalizeYouTubeUrl,
+  extractYouTubeVideoId as coreExtractYouTubeVideoId,
+  getItemSyncStatus as coreGetItemSyncStatus,
+  parseRawMediaSourceItems,
+  parseSourceUrlsPure,
+  stripUrlFragment as coreStripUrlFragment,
+} from '@flashcard-master/core/sync-keys';
+import type { DataSourceType, ItemSyncState, MediaExtractionMode, MediaSourceItem, SttProvider } from './types.js';
 
 /**
  * Formats a user-friendly page coordinate badge for a document.
@@ -63,94 +71,11 @@ export function parseMediaItemsSummary(
   if (!uri || typeof uri !== 'string') {
     return empty;
   }
-
   const trimmed = uri.trim();
   if (!trimmed) {
     return empty;
   }
-
-  const normalizeEntry = (entry: any): MediaSourceItem | null => {
-    if (typeof entry === 'string') {
-      const clean = entry.trim();
-      return clean ? { uri: clean, extractionMode: 'auto' } : null;
-    }
-    if (entry && typeof entry === 'object' && typeof entry.uri === 'string' && entry.uri.trim()) {
-      return {
-        uri: entry.uri.trim(),
-        title: typeof entry.title === 'string' && entry.title.trim() ? entry.title.trim() : undefined,
-        extractionMode:
-          entry.extractionMode === 'subtitles' || entry.extractionMode === 'stt' || entry.extractionMode === 'auto'
-            ? entry.extractionMode
-            : 'auto',
-        subtitlePath:
-          typeof entry.subtitlePath === 'string' && entry.subtitlePath.trim() ? entry.subtitlePath.trim() : undefined,
-        sttProvider:
-          entry.sttProvider === 'openai' || entry.sttProvider === 'gemini' || entry.sttProvider === 'whisper-local'
-            ? entry.sttProvider
-            : undefined,
-        timestampRanges: Array.isArray(entry.timestampRanges)
-          ? entry.timestampRanges
-              .filter((r: any) => r && typeof r.start === 'string' && typeof r.end === 'string')
-              .map((r: any) => ({
-                start: r.start.trim(),
-                end: r.end.trim(),
-                ...(typeof r.label === 'string' && r.label.trim() ? { label: r.label.trim() } : {}),
-              }))
-          : undefined,
-        slicingMode:
-          entry.slicingMode === 'inherit' ||
-          entry.slicingMode === 'chapters' ||
-          entry.slicingMode === 'timestamps' ||
-          entry.slicingMode === 'none'
-            ? entry.slicingMode
-            : undefined,
-        intervalMinutes:
-          typeof entry.intervalMinutes === 'number' &&
-          Number.isInteger(entry.intervalMinutes) &&
-          entry.intervalMinutes >= 1 &&
-          entry.intervalMinutes <= 240
-            ? entry.intervalMinutes
-            : undefined,
-      };
-    }
-    return null;
-  };
-
-  let items: MediaSourceItem[] = [];
-
-  if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
-    try {
-      const parsed = JSON.parse(trimmed);
-      if (Array.isArray(parsed)) {
-        items = parsed.map(normalizeEntry).filter((x): x is MediaSourceItem => x !== null);
-      } else {
-        const single = normalizeEntry(parsed);
-        if (single) items = [single];
-      }
-    } catch {
-      // Fallback to line parsing below
-    }
-  }
-
-  if (items.length === 0) {
-    const lines = trimmed.split(/[\r\n]+/);
-    for (const line of lines) {
-      const cleanLine = line.trim();
-      if (!cleanLine) continue;
-      if (/https?:\/\//i.test(cleanLine)) {
-        const pieces = cleanLine.split(/[\s,]+(?=https?:\/\/)/i);
-        for (const piece of pieces) {
-          const cleanPiece = piece.trim().replace(/^[<"']|[>"']$/g, '');
-          if (cleanPiece) {
-            items.push({ uri: cleanPiece, extractionMode: 'auto' });
-          }
-        }
-      } else {
-        items.push({ uri: cleanLine, extractionMode: 'auto' });
-      }
-    }
-  }
-
+  const items = parseRawMediaSourceItems(trimmed) as MediaSourceItem[];
   return {
     isMulti: items.length > 1,
     count: items.length,
@@ -211,60 +136,16 @@ export function formatLocatorLabel(locator: string): string {
   return `${icon} ${locator}`;
 }
 
-const CLIENT_YT_ID_RE = /^[A-Za-z0-9_-]{11}$/;
-
 /**
  * Extracts a canonical 11-character YouTube video ID from standard watch, short youtu.be,
  * shorts, live, embed, mobile/music URLs, or bare IDs.
  */
 export function extractClientYouTubeVideoId(input: string): string | null {
-  const trimmed = (input || '').trim();
-  if (!trimmed) return null;
-  if (CLIENT_YT_ID_RE.test(trimmed)) return trimmed;
-
-  const candidateUrl = /^https?:\/\//i.test(trimmed)
-    ? trimmed
-    : /^(?:www\.|m\.|music\.)?(?:youtube\.com|youtu\.be|youtube-nocookie\.com)\//i.test(trimmed)
-      ? `https://${trimmed}`
-      : null;
-  if (!candidateUrl) return null;
-
-  let parsed: URL;
-  try {
-    parsed = new URL(candidateUrl);
-  } catch {
-    return null;
-  }
-
-  const host = parsed.hostname.toLowerCase();
-  const isShortHost = host === 'youtu.be' || host.endsWith('.youtu.be');
-  const isYouTubeHost =
-    host === 'youtube.com' ||
-    host.endsWith('.youtube.com') ||
-    host === 'youtube-nocookie.com' ||
-    host.endsWith('.youtube-nocookie.com');
-  if (!isShortHost && !isYouTubeHost) return null;
-
-  const segments = parsed.pathname.split('/').filter(Boolean);
-  if (isShortHost) {
-    const id = segments[0] ?? '';
-    return CLIENT_YT_ID_RE.test(id) ? id : null;
-  }
-
-  const vParam = parsed.searchParams.get('v')?.trim() ?? '';
-  if (CLIENT_YT_ID_RE.test(vParam)) return vParam;
-
-  if (segments.length >= 2 && ['shorts', 'live', 'embed', 'v'].includes(segments[0].toLowerCase())) {
-    const id = segments[1] ?? '';
-    return CLIENT_YT_ID_RE.test(id) ? id : null;
-  }
-
-  return null;
+  return coreExtractYouTubeVideoId(input);
 }
 
 export function canonicalizeYouTubeUrl(input: string): string | null {
-  const id = extractClientYouTubeVideoId(input);
-  return id ? `https://www.youtube.com/watch?v=${id}` : null;
+  return coreCanonicalizeYouTubeUrl(input);
 }
 
 /**
@@ -287,7 +168,7 @@ export function planYoutubeUrlAdditions(
     const clean = (item.uri || '').trim();
     if (!clean) continue;
     seenRawUris.add(clean);
-    const vid = extractClientYouTubeVideoId(clean);
+    const vid = coreExtractYouTubeVideoId(clean);
     if (vid && !seenVideoIds.has(vid)) {
       seenVideoIds.set(vid, clean);
     }
@@ -300,7 +181,7 @@ export function planYoutubeUrlAdditions(
   for (const raw of inputs) {
     const clean = (raw || '').trim();
     if (!clean) continue;
-    const videoId = extractClientYouTubeVideoId(clean);
+    const videoId = coreExtractYouTubeVideoId(clean);
     if (!videoId) {
       invalid.push(clean);
       continue;
@@ -331,119 +212,18 @@ export function planYoutubeUrlAdditions(
 }
 
 /**
- * Parses configured web source URI strings across single URLs, JSON arrays, and comma/newline lists.
+ * Parses configured web source URI strings across single URLs, JSON arrays, and comma/newline lists
+ * while preserving commas inside URL query/path segments.
  */
 export function parseWebSourceUrlsClient(raw: string): string[] {
-  const trimmed = (raw || '').trim();
-  if (!trimmed) return [];
-  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
-    try {
-      const parsed = JSON.parse(trimmed);
-      if (Array.isArray(parsed)) {
-        return parsed.map((u) => String(u || '').trim()).filter(Boolean);
-      }
-    } catch {
-      // Fall through to delimiter parsing without leaving literal brackets
-    }
-  }
-  return trimmed
-    .replace(/^\[|\]$/g, '')
-    .split(/[\r\n,]+/)
-    .map((u) => u.trim())
-    .filter(Boolean);
+  return parseSourceUrlsPure(raw, { filterHttpOnly: false, deduplicate: false });
 }
 
 /**
- * Strips hash fragments from HTTP(S) URLs and known slice fragments from local paths.
+ * Strips hash fragments from HTTP(S) URLs and known/EPUB slice fragments from local paths.
  */
 export function stripClientUrlFragment(rawUri: string): string {
-  const trimmed = (rawUri || '').trim();
-  if (!trimmed) return '';
-  if (!/^https?:\/\//i.test(trimmed)) {
-    const match = trimmed.match(
-      /#(?:(?:page|t|part|section|cfg)=|(?:slice-\d+|id-[^#\s]*|order-[^#\s]*)|[^#\s]*\.x?html?(?:$|[?#]))/i
-    );
-    return match && match.index !== undefined ? trimmed.slice(0, match.index).trim() : trimmed;
-  }
-  const hashIdx = trimmed.indexOf('#');
-  return (hashIdx >= 0 ? trimmed.slice(0, hashIdx) : trimmed).trim();
-}
-
-function normalizeClientHttpUrlKey(rawUrl: string): string {
-  const clean = stripClientUrlFragment(rawUrl);
-  if (!clean) return '';
-  try {
-    return new URL(clean).href;
-  } catch {
-    return clean;
-  }
-}
-
-function extractClientNotionHexId(input: string): string | null {
-  const trimmed = stripClientUrlFragment(input);
-  if (!trimmed) return null;
-  const uuidMatch = trimmed.match(
-    /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/
-  );
-  if (uuidMatch) return uuidMatch[0].replace(/-/g, '').toLowerCase();
-  const hexMatch = trimmed.match(/[0-9a-fA-F]{32}/);
-  return hexMatch ? hexMatch[0].toLowerCase() : null;
-}
-
-function resolvePosixDotSegments(pathStr: string): string {
-  const isAbs = pathStr.startsWith('/');
-  const driveMatch = pathStr.match(/^([A-Za-z]:)(\/.*)$/);
-  const prefix = driveMatch ? driveMatch[1] : isAbs ? '/' : '';
-  const body = driveMatch ? driveMatch[2] : pathStr;
-  const segments = body.split('/');
-  const stack: string[] = [];
-  for (const seg of segments) {
-    if (!seg || seg === '.') continue;
-    if (seg === '..') {
-      if (stack.length > 0 && stack[stack.length - 1] !== '..') {
-        stack.pop();
-      } else if (!prefix) {
-        stack.push('..');
-      }
-      continue;
-    }
-    stack.push(seg);
-  }
-  if (driveMatch) {
-    return `${prefix}/${stack.join('/')}`;
-  }
-  if (isAbs) {
-    return `/${stack.join('/')}`;
-  }
-  return stack.join('/') || '.';
-}
-
-function normalizeClientLocalPathKey(input: string): string {
-  let clean = stripClientUrlFragment(input);
-  if (!clean) return '';
-  if (/^file:\/\//i.test(clean)) {
-    clean = clean.replace(/^file:\/\/localhost(?=\/)/i, 'file://').slice('file://'.length);
-    try {
-      clean = decodeURIComponent(clean);
-    } catch {
-      // Preserve literal % sequences
-    }
-    if (/^\/[A-Za-z]:[\\/]/.test(clean)) {
-      clean = clean.slice(1);
-    }
-  }
-  clean = clean.replace(/\\/g, '/').replace(/\/+/g, '/');
-  if (/^[A-Za-z]:$/.test(clean)) {
-    clean = `${clean}/`;
-  }
-  clean = resolvePosixDotSegments(clean);
-  if (clean.length > 1 && !/^[A-Za-z]:\/$/.test(clean) && clean.endsWith('/')) {
-    clean = clean.slice(0, -1);
-  }
-  if (/^[A-Za-z]:\//.test(clean)) {
-    clean = clean.toLowerCase();
-  }
-  return clean;
+  return coreStripUrlFragment(rawUri);
 }
 
 /**
@@ -454,69 +234,7 @@ export function getClientItemSyncStatus(
   sourceType: DataSourceType | string,
   knownKeys: ReadonlyArray<string> | ReadonlySet<string> | undefined | null
 ): ItemSyncState {
-  const rawUri = (uri || '').trim();
-  if (!rawUri || !knownKeys) return 'new';
-  const keyList = Array.isArray(knownKeys) ? knownKeys : Array.from(knownKeys);
-  if (keyList.length === 0) return 'new';
-
-  const rawSet = new Set(keyList.map((k) => (k || '').trim()).filter(Boolean));
-  if (rawSet.size === 0) return 'new';
-
-  const stripped = stripClientUrlFragment(rawUri);
-  if (rawSet.has(rawUri) || rawSet.has(stripped)) {
-    return 'synced';
-  }
-
-  if (sourceType === 'youtube') {
-    const vid = extractClientYouTubeVideoId(stripped);
-    if (vid) {
-      if (rawSet.has(vid)) return 'synced';
-      for (const k of rawSet) {
-        if (extractClientYouTubeVideoId(stripClientUrlFragment(k)) === vid) {
-          return 'synced';
-        }
-      }
-    }
-  }
-
-  if (sourceType === 'notion') {
-    const targetHex = extractClientNotionHexId(stripped);
-    if (targetHex) {
-      if (rawSet.has(targetHex)) return 'synced';
-      for (const k of rawSet) {
-        if (extractClientNotionHexId(k) === targetHex) {
-          return 'synced';
-        }
-      }
-    }
-  }
-
-  if (/^https?:\/\//i.test(stripped)) {
-    const normHttp = normalizeClientHttpUrlKey(stripped);
-    if (normHttp && rawSet.has(normHttp)) return 'synced';
-    for (const k of rawSet) {
-      if (/^https?:\/\//i.test(k) && normalizeClientHttpUrlKey(k) === normHttp) {
-        return 'synced';
-      }
-    }
-    return 'new';
-  }
-
-  if (sourceType === 'local' || sourceType === 'audio' || sourceType === 'video') {
-    const normPath = normalizeClientLocalPathKey(stripped);
-    if (!normPath) return 'new';
-    if (rawSet.has(normPath) || rawSet.has(`file://${normPath}`)) return 'synced';
-    const allowDirPrefix = sourceType === 'local';
-    const dirPrefix = normPath.endsWith('/') ? normPath : `${normPath}/`;
-    for (const k of rawSet) {
-      const normKey = normalizeClientLocalPathKey(k);
-      if (normKey === normPath || (allowDirPrefix && normKey.startsWith(dirPrefix))) {
-        return 'synced';
-      }
-    }
-  }
-
-  return 'new';
+  return coreGetItemSyncStatus(uri, sourceType, knownKeys);
 }
 
 export function formatSyncCompletionSummary(

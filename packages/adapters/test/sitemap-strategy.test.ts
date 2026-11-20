@@ -147,4 +147,18 @@ describe("SitemapIngestionStrategy", () => {
     const docs = await strategy.fetch(dummySource);
     expect(docs).toEqual([]);
   });
+
+  it("blocks SSRF redirects/urls targeting loopback hosts before invoking customFetch", async () => {
+    const fetchSpy = vi.fn();
+    const strategy = new SitemapIngestionStrategy({ customFetch: fetchSpy as any });
+    const errors: string[] = [];
+    const docs = await strategy.fetch(
+      { ...dummySource, uri: "http://127.0.0.1:8080/sitemap.xml" },
+      undefined,
+      { onFetchError: (msg) => errors.push(msg) }
+    );
+    expect(docs).toEqual([]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(errors.some((e) => /Blocked|IPv4/i.test(e))).toBe(true);
+  });
 });

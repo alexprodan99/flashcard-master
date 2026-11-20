@@ -10,6 +10,7 @@
     ariaLabel?: string;
     title?: string;
     dropUp?: boolean;
+    defaultMode?: SyncMode;
     onSync: (mode: SyncMode) => void;
   }
 
@@ -22,6 +23,7 @@
     ariaLabel,
     title = 'Sync New Items Only (incremental)',
     dropUp = false,
+    defaultMode = 'new-only',
     onSync,
   }: Props = $props();
 
@@ -41,7 +43,7 @@
   function handlePrimaryClick() {
     closeMenu();
     if (!disabled && !syncing) {
-      onSync('new-only');
+      onSync(defaultMode);
     }
   }
 

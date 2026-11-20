@@ -10,7 +10,7 @@
     SourceSyncStatusResponse,
     SyncMode,
   } from '../lib/types';
-  import { getClientItemSyncStatus, parseMediaItemsSummary, parseWebSourceUrlsClient, validateMediaItems } from '../lib/formatters.js';
+  import { extractClientYouTubeVideoId, getClientItemSyncStatus, parseMediaItemsSummary, parseWebSourceUrlsClient, validateMediaItems } from '../lib/formatters.js';
   import { settingsStore, sourcesStore, toastStore } from '../stores/index.js';
   import { buildNotionUri, parseNotionUri, isValidNotionInput } from '../lib/notion-uri.js';
   import UrlListManager from './UrlListManager.svelte';
@@ -46,22 +46,44 @@
   let syncStatusError = $state(false);
   let originalCleanUri = $state('');
   let localFilePaths = $state<string[]>([]);
+  let mediaEditorRef = $state<any>(null);
+  let baselineSourceSlicing = $state('');
+  let baselineMediaConfigByKey = $state<Record<string, string>>({});
   let modalSession = 0;
+
+  function getMediaConfigKey(item: MediaSourceItem, sourceType: DataSourceType): string {
+    const vid = sourceType === 'youtube' ? extractClientYouTubeVideoId(item.uri) : null;
+    return vid || item.uri;
+  }
+
+  function serializeMediaConfig(item: MediaSourceItem): string {
+    return JSON.stringify({
+      extractionMode: item.extractionMode || 'auto',
+      sttProvider: item.sttProvider || '',
+      subtitlePath: item.subtitlePath || '',
+      slicingMode: item.slicingMode || 'inherit',
+      intervalMinutes: item.intervalMinutes ?? null,
+      timestampRanges: item.timestampRanges || [],
+    });
+  }
 
   const isMediaType = (t: DataSourceType): t is 'audio' | 'video' | 'youtube' =>
     t === 'audio' || t === 'video' || t === 'youtube';
 
-  async function handleFileReplace(file: File) {
-    const lastDot = file.name.lastIndexOf('.');
-    const ext = lastDot >= 0 ? file.name.slice(lastDot).toLowerCase() : '';
-    if (ext === '.doc') {
-      errorMessage = 'Legacy pre-2007 Word (.doc) files are not supported. Please convert to .docx or .pdf before uploading.';
-      return;
-    }
+  async function handleFilesAddOrReplace(files: File[]) {
+    if (!files || files.length === 0) return;
     const ALLOWED_EXTS = ['.md', '.markdown', '.txt', '.pdf', '.docx', '.epub'];
-    if (!ALLOWED_EXTS.includes(ext)) {
-      errorMessage = 'Only .md, .markdown, .txt, .pdf, .docx, and .epub files are supported.';
-      return;
+    for (const file of files) {
+      const lastDot = file.name.lastIndexOf('.');
+      const ext = lastDot >= 0 ? file.name.slice(lastDot).toLowerCase() : '';
+      if (ext === '.doc') {
+        errorMessage = 'Legacy pre-2007 Word (.doc) files are not supported. Please convert to .docx or .pdf before uploading.';
+        return;
+      }
+      if (!ALLOWED_EXTS.includes(ext)) {
+        errorMessage = 'Only .md, .markdown, .txt, .pdf, .docx, and .epub files are supported.';
+        return;
+      }
     }
 
     isUploadingFile = true;
@@ -69,15 +91,25 @@
     const activeSession = modalSession;
 
     try {
-      const result = await uploadSourceFile(file);
-      if (activeSession !== modalSession || !isOpen) return;
-      if (localFilePaths.length > 0) {
-        localFilePaths = [...localFilePaths, result.path];
-      } else {
-        uri = result.path;
+      const uploadedPaths: string[] = [];
+      let firstFilename = '';
+      for (const file of files) {
+        const result = await uploadSourceFile(file);
+        if (activeSession !== modalSession || !isOpen) return;
+        uploadedPaths.push(result.path);
+        if (!firstFilename) firstFilename = result.filename;
       }
-      if (!name.trim()) {
-        name = result.filename.replace(/\.(md|markdown|txt|pdf|docx|epub)$/i, '');
+
+      if (localFilePaths.length > 0 || uploadedPaths.length > 1) {
+        const existing = localFilePaths.length > 0 ? localFilePaths : (uri.trim() ? [uri.trim()] : []);
+        const merged = Array.from(new Set([...existing, ...uploadedPaths]));
+        localFilePaths = merged;
+        uri = merged.length === 1 ? merged[0] : '';
+      } else if (uploadedPaths.length === 1) {
+        uri = uploadedPaths[0];
+      }
+      if (!name.trim() && firstFilename) {
+        name = firstFilename.replace(/\.(md|markdown|txt|pdf|docx|epub)$/i, '');
       }
     } catch (err: any) {
       errorMessage = err.message || 'Failed to upload file';
@@ -88,8 +120,8 @@
 
   function handleFileSelect(e: Event) {
     const input = e.target as HTMLInputElement;
-    if (input.files && input.files[0]) {
-      handleFileReplace(input.files[0]);
+    if (input.files && input.files.length > 0) {
+      void handleFilesAddOrReplace(Array.from(input.files));
     }
   }
 
@@ -128,17 +160,26 @@
         }
         originalCleanUri = raw;
       } else if (isMediaType(source.type)) {
-        mediaItems = parseMediaItemsSummary(source.uri || '', source.type).items;
+        const parsedMediaItems = parseMediaItemsSummary(source.uri || '', source.type).items;
         const fallbackMode: SlicingMode = source.type === 'youtube' ? 'chapters' : 'timestamps';
         const savedMode = source.defaultSlicingMode;
-        slicingMode =
+        let nextSlicingMode: SlicingMode =
           savedMode === 'chapters' || savedMode === 'timestamps' || savedMode === 'none'
             ? savedMode
             : fallbackMode;
-        if (source.type !== 'youtube' && slicingMode === 'chapters') {
-          slicingMode = 'timestamps';
+        if (source.type !== 'youtube' && nextSlicingMode === 'chapters') {
+          nextSlicingMode = 'timestamps';
         }
-        minutesPerChunk = source.defaultIntervalMinutes ?? 10;
+        const nextMinutesPerChunk = source.defaultIntervalMinutes ?? 10;
+        mediaItems = parsedMediaItems;
+        slicingMode = nextSlicingMode;
+        minutesPerChunk = nextMinutesPerChunk;
+        baselineSourceSlicing = JSON.stringify({ mode: nextSlicingMode, interval: nextMinutesPerChunk });
+        const baseMap: Record<string, string> = {};
+        for (const item of parsedMediaItems) {
+          baseMap[getMediaConfigKey(item, source.type)] = serializeMediaConfig(item);
+        }
+        baselineMediaConfigByKey = baseMap;
       } else if (source.type === 'notion') {
         const parsed = parseNotionUri(source.uri || '', source.tags || []);
         notionRecursive = parsed.isRecursive;
@@ -202,6 +243,27 @@
     onClose();
   }
 
+  const hasReprocessConfigChanges = $derived.by(() => {
+    if (!source || !isMediaType(source.type) || !syncStatus?.hasSyncedDocuments) {
+      return false;
+    }
+    const normalizedInterval = slicingMode === 'none' ? null : Math.max(1, Math.min(240, parseInt(String(minutesPerChunk), 10) || 10));
+    const currentSlicing = JSON.stringify({ mode: slicingMode, interval: normalizedInterval });
+    const parsedBase = baselineSourceSlicing ? JSON.parse(baselineSourceSlicing) : null;
+    const normBase = parsedBase ? JSON.stringify({ mode: parsedBase.mode, interval: parsedBase.mode === 'none' ? null : parsedBase.interval }) : '';
+    if (normBase && currentSlicing !== normBase) {
+      return true;
+    }
+    for (const item of mediaItems) {
+      const key = getMediaConfigKey(item, source.type);
+      const baseline = baselineMediaConfigByKey[key];
+      if (baseline && baseline !== serializeMediaConfig(item)) {
+        return true;
+      }
+    }
+    return false;
+  });
+
   function getMediaSlicingOptions(): DocumentSlicingOptions {
     const mins = Math.max(1, Math.min(240, parseInt(String(minutesPerChunk), 10) || 10));
     if (slicingMode === 'chapters' && source?.type === 'youtube') {
@@ -215,6 +277,14 @@
 
   async function saveChanges(resyncAfter: boolean, syncMode: SyncMode = 'new-only') {
     if (!source || isSubmitting) return;
+    const activeSession = modalSession;
+    isSubmitting = true;
+    errorMessage = null;
+    try {
+    if (isMediaType(source.type) && mediaEditorRef?.waitForPendingMetadata) {
+      await mediaEditorRef.waitForPendingMetadata();
+    }
+    if (!isOpen || !source || activeSession !== modalSession) return;
 
     let finalUri = '';
     if (source.type === 'web') {
@@ -254,10 +324,7 @@
       return;
     }
 
-    isSubmitting = true;
-    errorMessage = null;
 
-    try {
       let cleanTags = Array.from(
         new Set(
           tags
@@ -284,7 +351,6 @@
           : {}),
       });
 
-      onSourceUpdated(updated);
       if (resyncAfter) {
         try {
           const res: any = await syncSource(updated.id, {
@@ -302,6 +368,7 @@
           toastStore.warn(`Saved changes, but re-sync failed: ${syncErr?.message || 'Sync error'}`);
         }
       }
+      onSourceUpdated(updated);
       onClose();
     } catch (err: any) {
       errorMessage = err.message || 'Failed to update data source';
@@ -383,6 +450,11 @@
                       disabled={isSubmitting}
                       onclick={() => {
                         localFilePaths = localFilePaths.filter((_, i) => i !== fIdx);
+                        if (localFilePaths.length === 1) {
+                          uri = localFilePaths[0];
+                        } else if (localFilePaths.length === 0) {
+                          uri = '';
+                        }
                       }}
                     >
                       ✕
@@ -390,6 +462,20 @@
                   </li>
                 {/each}
               </ul>
+              <div style="margin-top: 8px;">
+                <label class="btn-browse-replace">
+                  {isUploadingFile ? 'Uploading...' : '➕ Add File(s)...'}
+                  <input
+                    bind:this={fileInputRef}
+                    type="file"
+                    multiple
+                    accept=".md,.markdown,.txt,.pdf,.docx,.epub"
+                    onchange={handleFileSelect}
+                    disabled={isSubmitting || isUploadingFile}
+                    hidden
+                  />
+                </label>
+              </div>
             {:else}
             <div class="local-path-input-group">
               <input
@@ -399,10 +485,11 @@
                 required
               />
               <label class="btn-browse-replace">
-                {isUploadingFile ? 'Uploading...' : '📁 Replace File...'}
+                {isUploadingFile ? 'Uploading...' : '📁 Add / Replace File(s)...'}
                 <input
                   bind:this={fileInputRef}
                   type="file"
+                  multiple
                   accept=".md,.markdown,.txt,.pdf,.docx,.epub"
                   onchange={handleFileSelect}
                   disabled={isSubmitting || isUploadingFile}
@@ -473,7 +560,9 @@
         {:else if isMediaType(source.type)}
           <div class="form-group">
             <MediaItemListEditor
+              bind:this={mediaEditorRef}
               sourceType={source.type}
+              sourceKey={source.id}
               bind:items={mediaItems}
               disabled={isSubmitting}
               knownKeys={syncStatus?.knownKeys ?? []}
@@ -580,13 +669,14 @@
             Cancel
           </button>
           <SplitSyncButton
-            primaryLabel="⚡ Save & Sync"
+            primaryLabel={hasReprocessConfigChanges ? '♻️ Save & Full Re-sync' : '⚡ Save & Sync'}
             syncingLabel="Saving..."
             syncing={isSubmitting}
-            disabled={isSubmitting}
+            disabled={isSubmitting || isUploadingFile}
             variant="secondary"
             ariaLabel="Modal Save and Sync"
-            title="Save changes and sync new items only"
+            defaultMode={hasReprocessConfigChanges ? 'full' : 'new-only'}
+            title={hasReprocessConfigChanges ? 'Slicing or extraction config changed — click to run Full Re-sync' : 'Save changes and sync new items only'}
             dropUp={true}
             onSync={(mode) => saveChanges(true, mode)}
           />

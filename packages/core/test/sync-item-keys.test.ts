@@ -4,8 +4,11 @@ import {
   normalizeHttpUrlKey,
   normalizeLocalFilePathKey,
   extractYouTubeVideoId,
+  extractNotionHexId,
+  parseSourceUrlsPure,
   buildKnownItemKeysForSource,
   createKnownItemMatcher,
+  getItemSyncStatus,
 } from "../src/services/sync-item-keys.js";
 
 describe("sync-item-keys (Story 22.2)", () => {
@@ -97,5 +100,29 @@ describe("sync-item-keys (Story 22.2)", () => {
     );
     const notionMatcher = createKnownItemMatcher("notion", notionKeys);
     expect(notionMatcher.hasNotionPage("12345678-90ab-cdef-1234-567890abcdef")).toBe(true);
+  });
+
+  it("handles EPUB space/non-HTML fragments, Notion ?p= ID precedence, URL commas, and audio/video directory prefixes (Action Item 3)", () => {
+    expect(stripUrlFragment("file:///books/My C# Book.epub#Chapter 1.xhtml")).toBe(
+      "file:///books/My C# Book.epub"
+    );
+    expect(stripUrlFragment("/books/a.epub#toc_sec1")).toBe("/books/a.epub");
+    expect(stripUrlFragment("/notes/C# Guide.html")).toBe("/notes/C# Guide.html");
+
+    expect(
+      extractNotionHexId(
+        "https://www.notion.so/Workspace-DB-11111111111111111111111111111111?v=33333333333333333333333333333333&p=22222222222222222222222222222222"
+      )
+    ).toBe("22222222222222222222222222222222");
+
+    expect(
+      parseSourceUrlsPure("https://example.com/search?tags=a,b https://example.com/two", {
+        filterHttpOnly: true,
+      })
+    ).toEqual(["https://example.com/search?tags=a,b", "https://example.com/two"]);
+
+    expect(normalizeLocalFilePathKey("/media/albums/")).toBe("/media/albums");
+    expect(getItemSyncStatus("/media/albums", "audio", ["/media/albums/track1.mp3"])).toBe("synced");
+    expect(getItemSyncStatus("/media/videos/", "video", ["/media/videos/lecture.mp4"])).toBe("synced");
   });
 });

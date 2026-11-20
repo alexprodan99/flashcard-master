@@ -17,6 +17,7 @@
 
   interface Props {
     sourceType: 'audio' | 'video' | 'youtube';
+    sourceKey?: string | number;
     items?: MediaSourceItem[];
     disabled?: boolean;
     knownKeys?: string[];
@@ -28,6 +29,7 @@
 
   let {
     sourceType,
+    sourceKey = '',
     items = $bindable<MediaSourceItem[]>([]),
     disabled = false,
     knownKeys = [],
@@ -48,13 +50,47 @@
   let manualPathInput = $state('');
   let showManualPath = $state(false);
   let isUploading = $state(false);
-  let uploadingSubForIndex = $state<number | null>(null);
+  let uploadingSubForKey = $state<string | null>(null);
   let isDragging = $state(false);
   let resolvingMetadataCount = $state(0);
   let isResolvingMetadata = $derived(resolvingMetadataCount > 0);
+  const pendingMetadataPromises = new Set<Promise<void>>();
   let localError = $state<string | null>(null);
   let duplicateNotice = $state<string | null>(null);
   let mediaFileInputRef = $state<HTMLInputElement | null>(null);
+  let lastTrackedContext = '';
+
+  function getItemStableKey(item: MediaSourceItem, fallbackIdx?: number): string {
+    const vid = sourceType === 'youtube' ? extractClientYouTubeVideoId(item.uri) : null;
+    return vid || item.uri || String(fallbackIdx ?? '');
+  }
+
+  const itemRenderKeys = $derived.by(() => {
+    const counts = new Map<string, number>();
+    return items.map((item, idx) => {
+      const base = getItemStableKey(item, idx);
+      const seen = counts.get(base) || 0;
+      counts.set(base, seen + 1);
+      return seen === 0 ? base : `${base}#dup-${seen}`;
+    });
+  });
+
+  export async function waitForPendingMetadata(): Promise<void> {
+    while (pendingMetadataPromises.size > 0) {
+      await Promise.allSettled(Array.from(pendingMetadataPromises));
+    }
+  }
+
+  $effect(() => {
+    const currentContext = `${sourceType}::${sourceKey}`;
+    if (currentContext !== lastTrackedContext) {
+      lastTrackedContext = currentContext;
+      manuallyEditedKeys.clear();
+      attemptedMetadataIds.clear();
+      duplicateNotice = null;
+      uploadingSubForKey = null;
+    }
+  });
 
   $effect(() => {
     if (!settingsStore.hasLoaded && !settingsStore.loading) {
@@ -130,10 +166,12 @@
       if (vid) attemptedMetadataIds.add(vid);
     }
 
+    const requestContext = lastTrackedContext;
     resolvingMetadataCount += 1;
+    const run = (async () => {
     try {
       const { items: resolvedList } = await resolveYouTubeUrls(uniqueUrls);
-      if (sourceType !== 'youtube') return;
+      if (sourceType !== 'youtube' || requestContext !== lastTrackedContext) return;
       const byVideoId = new Map<string, { canonicalUrl: string; title: string }>();
       for (const entry of resolvedList || []) {
         if (
@@ -174,6 +212,13 @@
       // Degrade gracefully when offline or endpoint unavailable
     } finally {
       resolvingMetadataCount = Math.max(0, resolvingMetadataCount - 1);
+    }
+    })();
+    pendingMetadataPromises.add(run);
+    try {
+      await run;
+    } finally {
+      pendingMetadataPromises.delete(run);
     }
   }
 
@@ -259,7 +304,7 @@
     }
   }
 
-  async function handleSubtitleFile(idx: number, files: File[]) {
+  async function handleSubtitleFile(itemKey: string, files: File[]) {
     if (!files || files.length === 0) return;
     const file = files[0];
     const dot = file.name.lastIndexOf('.');
@@ -270,14 +315,17 @@
     }
 
     setError(null);
-    uploadingSubForIndex = idx;
+    uploadingSubForKey = itemKey;
     try {
       const res = await uploadSourceFile(file);
-      updateItem(idx, { subtitlePath: res.path });
+      const targetIdx = items.findIndex((entry, i) => getItemStableKey(entry, i) === itemKey);
+      if (targetIdx >= 0) {
+        updateItem(targetIdx, { subtitlePath: res.path });
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to upload subtitle file.');
     } finally {
-      uploadingSubForIndex = null;
+      uploadingSubForKey = null;
     }
   }
 
@@ -455,7 +503,8 @@
 
   {#if items.length > 0}
     <div class="media-items-list">
-      {#each items as item, idx (idx)}
+      {#each items as item, idx (itemRenderKeys[idx])}
+        {@const stableKey = itemRenderKeys[idx]}
         {@const activeProvider = item.sttProvider || settingsStore.general.defaultSttProvider || 'openai'}
         {@const showStt = item.extractionMode === 'stt' || item.extractionMode === 'auto'}
         {@const missingKey = showStt && isMissingSttKey(activeProvider)}
@@ -619,17 +668,17 @@
                     </button>
                   {:else}
                     <label class="btn-upload-sub">
-                      {uploadingSubForIndex === idx ? '⏳ Uploading...' : '+ Upload .srt/.vtt'}
+                      {uploadingSubForKey === stableKey ? '⏳ Uploading...' : '+ Upload .srt/.vtt'}
                       <input
                         id={`media-sub-${idx}`}
                         type="file"
                         accept=".srt,.vtt"
                         onchange={(e) => {
                           const input = e.target as HTMLInputElement;
-                          if (input.files) handleSubtitleFile(idx, Array.from(input.files));
+                          if (input.files) handleSubtitleFile(stableKey, Array.from(input.files));
                         }}
                         hidden
-                        disabled={disabled || uploadingSubForIndex === idx}
+                        disabled={disabled || uploadingSubForKey === stableKey}
                       />
                     </label>
                   {/if}

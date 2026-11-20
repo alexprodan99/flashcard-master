@@ -23,4 +23,5 @@ export * from "./services/document-slicing-engine.js";
 export * from "./services/subtitle-parser.js";
 export * from "./services/sync-item-keys.js";
 export * from "./llm/dialect-compiler.js";
+export * from "./utils/safe-fetch.js";
 

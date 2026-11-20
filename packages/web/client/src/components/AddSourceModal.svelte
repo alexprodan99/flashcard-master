@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createSource, uploadSourceFile, syncSource } from '../lib/api';
   import type { DataSource, DataSourceType, MediaSourceItem, SlicingMode, DocumentSlicingOptions } from '../lib/types';
-  import { settingsStore, toastStore } from '../stores/index.js';
+  import { settingsStore, sourcesStore, toastStore } from '../stores/index.js';
   import { buildNotionUri, isValidNotionInput } from '../lib/notion-uri.js';
   import { validateMediaItems } from '../lib/formatters.js';
   import UrlListManager from './UrlListManager.svelte';
@@ -41,6 +41,8 @@
   let isDragging = $state(false);
   let showAdvancedPath = $state(false);
   let fileInputRef = $state<HTMLInputElement | null>(null);
+  let mediaEditorRef = $state<any>(null);
+  let nameTouched = $state(false);
 
   // Slicing configuration state (Story 17.6 & Story 21.6)
   let slicingMode = $state<SlicingMode>('outline');
@@ -55,8 +57,17 @@
   $effect(() => {
     if (type !== lastSourceType) {
       lastSourceType = type;
+      uri = '';
+      webUrls = [];
       mediaItems = [];
+      selectedLocalFiles = [];
+      showAdvancedPath = false;
+      notionRecursive = false;
       errorMessage = null;
+      if (fileInputRef) fileInputRef.value = '';
+      if (!nameTouched) {
+        name = '';
+      }
     }
     if (isMediaType(type)) {
       if (slicingMode !== 'timestamps' && slicingMode !== 'chapters' && slicingMode !== 'none') {
@@ -65,7 +76,7 @@
       if (type !== 'youtube' && slicingMode === 'chapters') {
         slicingMode = 'timestamps';
       }
-      if (!name.trim() && mediaItems.length > 0 && mediaItems[0].title) {
+      if (!nameTouched && !name.trim() && mediaItems.length > 0 && mediaItems[0].title) {
         name =
           mediaItems.length === 1
             ? mediaItems[0].title
@@ -219,10 +230,41 @@
     }
   }
 
+  function resetModalState() {
+    name = '';
+    uri = '';
+    webUrls = [];
+    mediaItems = [];
+    tags = [];
+    selectedLocalFiles = [];
+    if (fileInputRef) fileInputRef.value = '';
+    isUploadingFile = false;
+    isDragging = false;
+    showAdvancedPath = false;
+    notionRecursive = false;
+    nameTouched = false;
+    slicingMode = 'outline';
+    pagesPerChunk = 5;
+    wordsPerChunk = 1500;
+    minChunkWords = 200;
+    minutesPerChunk = 10;
+    syncImmediately = true;
+    errorMessage = null;
+  }
+
+  function handleModalClose() {
+    if (isSubmitting) return;
+    resetModalState();
+    onClose();
+  }
+
   async function handleSubmit(e: Event) {
     e.preventDefault();
     if (isSubmitting) return;
+    errorMessage = null;
+    isSubmitting = true;
 
+    try {
     let finalUri = '';
     if (type === 'web') {
       const cleanUrls = webUrls.map((u) => u.trim()).filter(Boolean);
@@ -238,6 +280,10 @@
         return;
       }
     } else if (isMediaType(type)) {
+      if (mediaEditorRef?.waitForPendingMetadata) {
+        await mediaEditorRef.waitForPendingMetadata();
+      }
+      if (!isOpen) return;
       const validationErr = validateMediaItems(mediaItems, type);
       if (validationErr) {
         errorMessage = validationErr;
@@ -263,11 +309,6 @@
       errorMessage = 'Please provide a source name and target URI / path.';
       return;
     }
-
-    isSubmitting = true;
-    errorMessage = null;
-
-    try {
       const cleanTags = Array.from(
         new Set(
           tags
@@ -276,13 +317,13 @@
         )
       );
 
-      const slicingForCreate = isMediaType(type) ? getSlicingOptions() : undefined;
+      const slicingForCreate = (isMediaType(type) || type === 'local') ? getSlicingOptions() : undefined;
       const source = await createSource({
         name: name.trim(),
         type,
         uri: finalUri,
         tags: cleanTags,
-        ...(isMediaType(type)
+        ...(isMediaType(type) || type === 'local'
           ? {
               defaultSlicingMode: slicingMode,
               ...(slicingForCreate?.minutesPerChunk !== undefined
@@ -297,6 +338,7 @@
           const slicing = getSlicingOptions();
           const syncResult: any = await syncSource(source.id, { ...(slicing ? { slicing } : {}), syncMode: 'new-only' });
           if (syncResult?.jobId) {
+            sourcesStore.setSyncing(source.id, true, syncResult.jobId);
             toastStore.info(`Source added. Sync task #${syncResult.jobId.slice(0, 8)} queued in background.`);
           } else if (syncResult?.newCount !== undefined) {
             toastStore.success(`Source added and synced: ${syncResult.newCount} document(s) ingested.`);
@@ -307,23 +349,7 @@
         }
       }
 
-      // Reset form
-      name = '';
-      uri = '';
-      webUrls = [];
-      mediaItems = [];
-      tags = [];
-      selectedLocalFiles = [];
-      isUploadingFile = false;
-      isDragging = false;
-      showAdvancedPath = false;
-      notionRecursive = false;
-      slicingMode = 'outline';
-      pagesPerChunk = 5;
-      wordsPerChunk = 1500;
-      minChunkWords = 200;
-      minutesPerChunk = 10;
-      syncImmediately = true;
+      resetModalState();
       onSourceCreated(source);
       onClose();
     } catch (err: any) {
@@ -334,18 +360,18 @@
   }
 </script>
 
-<svelte:window onkeydown={(e) => { if (e.key === 'Escape' && isOpen) onClose(); }} />
+<svelte:window onkeydown={(e) => { if (e.key === 'Escape' && isOpen) handleModalClose(); }} />
 
 {#if isOpen}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="modal-backdrop" onclick={onClose}>
+  <div class="modal-backdrop" onclick={handleModalClose}>
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="modal-card" role="dialog" aria-modal="true" tabindex="-1" onclick={(e) => e.stopPropagation()}>
       <div class="modal-header">
         <h2>Add Ingestion Source</h2>
-        <button class="close-btn" onclick={onClose} aria-label="Close modal">✕</button>
+        <button class="close-btn" onclick={handleModalClose} aria-label="Close modal">✕</button>
       </div>
 
       {#if errorMessage}
@@ -402,6 +428,7 @@
             type="text"
             placeholder="e.g. Engineering Architecture Blog"
             bind:value={name}
+            oninput={() => (nameTouched = true)}
             required
           />
         </div>
@@ -660,7 +687,9 @@
         {:else if isMediaType(type)}
           <div class="form-group">
             <MediaItemListEditor
+              bind:this={mediaEditorRef}
               sourceType={type}
+              sourceKey="add-modal"
               bind:items={mediaItems}
               disabled={isSubmitting}
               {onNavigate}
@@ -766,7 +795,7 @@
         </div>
 
         <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" onclick={onClose} disabled={isSubmitting}>
+          <button type="button" class="btn btn-secondary" onclick={handleModalClose} disabled={isSubmitting}>
             Cancel
           </button>
           <button type="submit" class="btn btn-primary" disabled={isSubmitting}>
