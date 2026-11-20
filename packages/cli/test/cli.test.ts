@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { createAppContext } from "../src/app.js";
 import { createCli } from "../src/cli.js";
 import type { AppContext } from "../src/app.js";
@@ -31,6 +34,7 @@ describe("CLI Application", () => {
     console.log = originalLog;
     console.error = originalError;
     console.warn = originalWarn;
+    process.exitCode = undefined;
     context.close();
   });
 
@@ -360,6 +364,7 @@ describe("CLI Application", () => {
         wordsPerChunk: 1200,
         minChunkWords: undefined,
       },
+      syncMode: "new-only",
     });
   });
 
@@ -713,8 +718,158 @@ describe("CLI Application", () => {
         minutesPerChunk: 5,
         timestampRanges: [{ start: "01:00", end: "04:00" }],
       },
+      syncMode: "new-only",
     });
   });
+
+  it("defaults sync and sources sync to new-only, supports --full, and prints new/skipped counts and errors (Story 22.5)", async () => {
+    const syncSourceSpy = vi.spyOn(context.ingestionService, "syncSource").mockResolvedValue({
+      sourceId: "src-yt",
+      sourceName: "YouTube Lecture",
+      newCount: 1,
+      skippedCount: 3,
+      totalFetched: 1,
+      durationMs: 25,
+      newDocuments: [],
+    });
+    const syncAllSpy = vi.spyOn(context.ingestionService, "syncAllActive").mockResolvedValue([
+      {
+        sourceId: "src-yt",
+        sourceName: "YouTube Lecture",
+        newCount: 1,
+        skippedCount: 3,
+        totalFetched: 1,
+        durationMs: 25,
+        newDocuments: [],
+      },
+      {
+        sourceId: "src-web",
+        sourceName: "Tech Blog",
+        newCount: 2,
+        skippedCount: undefined as any,
+        totalFetched: 2,
+        durationMs: 15,
+        newDocuments: [],
+      },
+    ]);
+
+    const runFreshCli = async (argv: string[]) => {
+      const cli = createCli(context);
+      cli.exitOverride();
+      await cli.parseAsync(["node", "flashcard-master", ...argv]);
+    };
+
+    // 1. Default bulk sync -> syncMode: "new-only" with multi-source aggregation
+    logs = [];
+    await runFreshCli(["sync"]);
+    expect(syncAllSpy).toHaveBeenLastCalledWith({ slicing: undefined, syncMode: "new-only" });
+    expect(logs.some((l) => l.includes("incremental sync (new items only)"))).toBe(true);
+    expect(logs.some((l) => l.includes("Ingested 1 new items (3 skipped, Total fetched: 1)"))).toBe(true);
+    expect(logs.some((l) => l.includes("Ingested 2 new items (0 skipped, Total fetched: 2)"))).toBe(true);
+    expect(logs.some((l) => l.includes("Total new items fetched: 3 (Skipped: 3)"))).toBe(true);
+
+    // 2. Bulk sources sync --full -> syncMode: "full"
+    logs = [];
+    await runFreshCli(["sources", "sync", "--full"]);
+    expect(syncAllSpy).toHaveBeenLastCalledWith({ slicing: undefined, syncMode: "full" });
+    expect(logs.some((l) => l.includes("full re-sync (all items)"))).toBe(true);
+    expect(logs.some((l) => l.includes("Total new items fetched: 3 (Skipped: 3)"))).toBe(true);
+
+    // 3. sync <id> --full
+    logs = [];
+    await runFreshCli(["sync", "src-yt", "--full"]);
+    expect(syncSourceSpy).toHaveBeenLastCalledWith("src-yt", { slicing: undefined, syncMode: "full" });
+    expect(logs.some((l) => l.includes("Ingested 1 new items (3 skipped, Total fetched: 1)"))).toBe(true);
+
+    // 4. sources sync <id> default -> new-only, then --full with slicing flags
+    logs = [];
+    await runFreshCli(["sources", "sync", "src-yt"]);
+    expect(syncSourceSpy).toHaveBeenLastCalledWith("src-yt", { slicing: undefined, syncMode: "new-only" });
+    expect(logs.some((l) => l.includes("incremental sync (new items only)"))).toBe(true);
+
+    logs = [];
+    await runFreshCli([
+      "sources",
+      "sync",
+      "src-yt",
+      "--full",
+      "--slicing-mode",
+      "chapters",
+      "--interval-minutes",
+      "15",
+    ]);
+    expect(syncSourceSpy).toHaveBeenLastCalledWith("src-yt", {
+      slicing: {
+        mode: "chapters",
+        pagesPerChunk: undefined,
+        wordsPerChunk: undefined,
+        minChunkWords: undefined,
+        minutesPerChunk: 15,
+      },
+      syncMode: "full",
+    });
+    expect(logs.some((l) => l.includes("full re-sync (all items)"))).toBe(true);
+    expect(logs.some((l) => l.includes("Total new items fetched: 1 (Skipped: 3)"))).toBe(true);
+
+    // 5. Empty active sources list & error result exit code
+    syncAllSpy.mockResolvedValueOnce([]);
+    logs = [];
+    await runFreshCli(["sources", "sync"]);
+    expect(logs.some((l) => l.includes("No active sources found"))).toBe(true);
+
+    syncAllSpy.mockResolvedValueOnce([
+      { sourceId: "src-err", sourceName: "Broken Feed", newCount: 0, skippedCount: 0, totalFetched: 0, durationMs: 5, newDocuments: [], error: "HTTP 500" },
+    ]);
+    warnings = [];
+    logs = [];
+    await runFreshCli(["sync"]);
+    expect(process.exitCode).toBe(1);
+    expect(warnings.some((w) => w.includes("Broken Feed") && w.includes("HTTP 500"))).toBe(true);
+    expect(logs.some((l) => l.includes("Failed: 1"))).toBe(true);
+  });
+
+  it("executes real non-mocked incremental CLI sync -> repeat sync (skip) -> --full re-sync E2E (Story 22.5)", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "cli-sync-e2e-"));
+    try {
+      fs.writeFileSync(path.join(tmpDir, "note-one.md"), "# Chapter 1\nInitial knowledge note.", "utf8");
+      const source = context.sourceRepo.create({
+        name: "Local Notes E2E",
+        type: "local",
+        uri: tmpDir,
+      });
+
+      const runFreshCli = async (argv: string[]) => {
+        const cli = createCli(context);
+        cli.exitOverride();
+        await cli.parseAsync(["node", "flashcard-master", ...argv]);
+      };
+
+      // Pass 1: First incremental sync ingests note-one.md (1 new, 0 skipped)
+      logs = [];
+      await runFreshCli(["sync", source.id]);
+      expect(process.exitCode).toBeUndefined();
+      expect(logs.some((l) => l.includes("Ingested 1 new items (0 skipped, Total fetched: 1)"))).toBe(true);
+      expect(context.docRepo.listBySourceId(source.id).length).toBe(1);
+
+      // Add a second file and re-run default sync -> skips note-one.md, ingests only note-two.md (1 new, 1 skipped)
+      fs.writeFileSync(path.join(tmpDir, "note-two.md"), "# Chapter 2\nSecond knowledge note.", "utf8");
+      logs = [];
+      await runFreshCli(["sources", "sync", source.id]);
+      expect(logs.some((l) => l.includes("Ingested 1 new items (1 skipped, Total fetched: 1)"))).toBe(true);
+      expect(context.docRepo.listBySourceId(source.id).length).toBe(2);
+
+      // Repeat default sync with no changes -> 0 new, 2 skipped
+      logs = [];
+      await runFreshCli(["sync", source.id]);
+      expect(logs.some((l) => l.includes("Ingested 0 new items (2 skipped, Total fetched: 0)"))).toBe(true);
+
+      // Run with --full -> re-ingests both items (2 new, 0 skipped)
+      logs = [];
+      await runFreshCli(["sync", source.id, "--full"]);
+      expect(logs.some((l) => l.includes("Ingested 2 new items (0 skipped, Total fetched: 2)"))).toBe(true);
+      expect(context.docRepo.listBySourceId(source.id).length).toBe(2);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });
-
-

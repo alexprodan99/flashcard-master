@@ -225,7 +225,7 @@ development_status:
   22-2-incremental-new-only-sync-engine: review
   22-3-youtube-metadata-identity-and-dedup: review
   22-4-ui-split-sync-and-item-status: review
-  22-5-cli-full-flag-docs-and-e2e: ready-for-dev
+  22-5-cli-full-flag-docs-and-e2e: review
   epic-22-retrospective: optional
 action_items:
   - id: "epic-14-retro-item-1-add-progressive-exponential-backoff-and"

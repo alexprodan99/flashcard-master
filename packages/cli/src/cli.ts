@@ -14,6 +14,7 @@ import {
   type SttProvider,
   type TimestampRange,
   type DocumentSlicingOptions,
+  type SyncMode,
   CardGenerationService,
   SttProviderSchema,
   formatTimestampRange,
@@ -338,8 +339,10 @@ export function createCli(providedContext?: AppContext): Command {
           const syncRes = await context.ingestionService.syncSource(source.id, { slicing });
           if (syncRes.error) {
             console.warn(`⚠️ [${syncRes.sourceName}] Sync error: ${syncRes.error}`);
+            process.exitCode = 1;
           } else {
-            console.log(`✅ [${syncRes.sourceName}] Ingested ${syncRes.newCount} new items (Total fetched: ${syncRes.totalFetched})`);
+            const skipped = syncRes.skippedCount ?? 0;
+            console.log(`✅ [${syncRes.sourceName}] Ingested ${syncRes.newCount} new items (${skipped} skipped, Total fetched: ${syncRes.totalFetched})`);
           }
         }
       } catch (err: any) {
@@ -531,56 +534,67 @@ export function createCli(providedContext?: AppContext): Command {
       minChunkWords?: string;
       intervalMinutes?: string;
       timestamps?: string;
+      full?: boolean;
     }
   ) => {
     try {
-      console.log(`Starting ingestion synchronization${sourceId ? ` for source [${sourceId}]` : " for all active sources"}...`);
+      const syncMode: SyncMode = options.full ? "full" : "new-only";
+      const modeLabel = syncMode === "full" ? "full re-sync (all items)" : "incremental sync (new items only)";
+      console.log(`Starting ${modeLabel}${sourceId ? ` for source [${sourceId}]` : " for all active sources"}...`);
       const slicing = buildCliSlicingOptions(options);
 
       const results = sourceId
-        ? [await context.ingestionService.syncSource(sourceId, { slicing })]
-        : await context.ingestionService.syncAllActive({ slicing });
+        ? [await context.ingestionService.syncSource(sourceId, { slicing, syncMode })]
+        : await context.ingestionService.syncAllActive({ slicing, syncMode });
+
+      if (results.length === 0) {
+        console.log("No active sources found to sync.");
+        return;
+      }
 
       let totalNewItems = 0;
+      let totalSkippedItems = 0;
+      let errorCount = 0;
       for (const r of results) {
         if (r.error) {
           console.warn(`⚠️ [${r.sourceName}] Sync error: ${r.error}`);
+          errorCount++;
         } else {
-          console.log(`✅ [${r.sourceName}] Ingested ${r.newCount} new items (Total fetched: ${r.totalFetched})`);
+          const skipped = r.skippedCount ?? 0;
+          console.log(`✅ [${r.sourceName}] Ingested ${r.newCount} new items (${skipped} skipped, Total fetched: ${r.totalFetched})`);
           totalNewItems += r.newCount;
+          totalSkippedItems += skipped;
         }
       }
-      console.log(`Sync complete. Total new items fetched: ${totalNewItems}`);
+      if (errorCount > 0) {
+        process.exitCode = 1;
+      }
+      const failedSuffix = errorCount > 0 ? `, Failed: ${errorCount}` : "";
+      console.log(`Sync complete. Total new items fetched: ${totalNewItems} (Skipped: ${totalSkippedItems}${failedSuffix})`);
     } catch (err: any) {
       console.error(`Sync failure: ${err.message}`);
       process.exitCode = 1;
     }
   };
 
-  sourcesCmd
-    .command("sync [sourceId]")
-    .description("Synchronize and fetch new text documents from registered sources")
-    .option("--slicing-mode <mode>", "Document slicing mode: outline | budget | timestamps | chapters | none")
-    .option("--pages-per-chunk <count>", "Page budget chunk size (number of pages)")
-    .option("--words-per-chunk <count>", "Word budget chunk size (number of words)")
-    .option("--min-chunk-words <count>", "Minimum section words for outline slicing")
-    .option("--interval-minutes <minutes>", "Transcript window size in minutes for timestamp/chapter slicing")
-    .option("--timestamps <ranges>", "Comma-separated start-end timestamp ranges (e.g. 00:00-05:00,10:00-15:00)")
-    .action(runSync);
+  const configureSyncCommand = (cmd: Command) =>
+    cmd
+      .description("Synchronize and fetch documents from registered sources (defaults to new items only; pass --full to re-sync all)")
+      .option("--full", "Perform a full re-sync of all items instead of incremental new-only mode")
+      .option("--slicing-mode <mode>", "Document slicing mode: outline | budget | timestamps | chapters | none")
+      .option("--pages-per-chunk <count>", "Page budget chunk size (number of pages)")
+      .option("--words-per-chunk <count>", "Word budget chunk size (number of words)")
+      .option("--min-chunk-words <count>", "Minimum section words for outline slicing")
+      .option("--interval-minutes <minutes>", "Transcript window size in minutes for timestamp/chapter slicing")
+      .option("--timestamps <ranges>", "Comma-separated start-end timestamp ranges (e.g. 00:00-05:00,10:00-15:00)")
+      .action(runSync);
+
+  configureSyncCommand(sourcesCmd.command("sync [sourceId]"));
 
   // ==========================================
   // SYNC COMMAND
   // ==========================================
-  program
-    .command("sync [sourceId]")
-    .description("Synchronize and fetch new text documents from registered sources")
-    .option("--slicing-mode <mode>", "Document slicing mode: outline | budget | timestamps | chapters | none")
-    .option("--pages-per-chunk <count>", "Page budget chunk size (number of pages)")
-    .option("--words-per-chunk <count>", "Word budget chunk size (number of words)")
-    .option("--min-chunk-words <count>", "Minimum section words for outline slicing")
-    .option("--interval-minutes <minutes>", "Transcript window size in minutes for timestamp/chapter slicing")
-    .option("--timestamps <ranges>", "Comma-separated start-end timestamp ranges (e.g. 00:00-05:00,10:00-15:00)")
-    .action(runSync);
+  configureSyncCommand(program.command("sync [sourceId]"));
 
   // ==========================================
   // GENERATE COMMAND

@@ -2,7 +2,7 @@
 title: 'Story 22.5: CLI --full Sync Flag, Documentation & End-to-End Verification Suite'
 type: 'feature'
 created: '2026-11-18'
-status: 'ready-for-dev'
+status: 'review'
 baseline_commit: 'main'
 review_loop_iteration: 0
 context:
@@ -42,10 +42,10 @@ CLI `sync` and `sources sync` commands currently always trigger full ingestion w
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `packages/cli/src/cli.ts` -- Add `--full` flag to `sync` and `sources sync` (defaulting to `syncMode: 'new-only'`), and print new + skipped counts clearly.
-- [ ] `packages/cli/test/cli.test.ts` -- Add tests verifying default `new-only` sync invocation, `--full` flag behavior, and output reporting.
-- [ ] `docs/user-guide/` -- Update documentation for unified `~/.flashcard-master/` storage across Desktop/Web/CLI, `--data-dir`, Sync New Only vs. `--full`, and YouTube metadata/item visibility.
-- [ ] Monorepo verification -- Run `npm run typecheck`, `npm run lint`, `npm test`, and `npm run build` across all 5 packages.
+- [x] `packages/cli/src/cli.ts` -- Add `--full` flag to `sync` and `sources sync` (defaulting to `syncMode: 'new-only'`), and print new + skipped counts clearly.
+- [x] `packages/cli/test/cli.test.ts` -- Add tests verifying default `new-only` sync invocation, `--full` flag behavior, and output reporting.
+- [x] `docs/user-guide/` -- Update documentation for unified `~/.flashcard-master/` storage across Desktop/Web/CLI, `--data-dir`, Sync New Only vs. `--full`, and YouTube metadata/item visibility.
+- [x] Monorepo verification -- Run `npm run typecheck`, `npm run lint`, `npm test`, and `npm run build` across all 5 packages.
 
 **Acceptance Criteria:**
 - `flashcard-master sync` and `flashcard-master sources sync` default to `syncMode: 'new-only'` and support `--full` for full re-sync, reporting new and skipped item counts clearly.

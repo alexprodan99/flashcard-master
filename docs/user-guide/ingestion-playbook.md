@@ -91,12 +91,33 @@ RSS and Atom feeds allow you to continuously learn from your favorite newsletter
 - Only newly published articles are ingested during subsequent syncs.
 - Background sync tasks can be triggered manually or via CLI:
   ```bash
-  # Sync a specific source:
+  # Incremental sync (defaults to Sync New Only across all active sources):
+  flashcard-master sync
+
+  # Incremental sync for a specific source:
   flashcard-master sync <source-id>
 
-  # Sync all configured data sources:
-  flashcard-master sync --all
+  # Force a full re-sync of every item in a source or all active sources:
+  flashcard-master sync <source-id> --full
+  flashcard-master sync --full
   ```
+
+---
+
+## ⚡ Incremental Sync ("Sync New Only" vs. "Full Re-sync") & Item Visibility
+
+By default, every sync trigger in Flashcard Master runs in **Sync New Only** mode (`syncMode: "new-only"`), avoiding redundant downloads, PDF/EPUB parsing, and expensive Speech-to-Text runs on already-ingested items:
+
+- **Pre-Fetch Filtering Across All 9 Source Types**:
+  - **Multi-Item Sources** (`web`, `local`, `audio`, `video`, `youtube`): Skips already-synced URLs, local file paths, and YouTube videos **before** downloading or transcribing, matching canonicalized URLs and video IDs across fragment-sliced subdocuments (`#page=`, `#t=`, `#section=`).
+  - **Catalog / Feed Sources** (`rss`, `sitemap`, `llms-txt`, `notion`): Skips already-ingested feed entries, discovered URLs, or unchanged Notion pages while still checking for newly published additions.
+- **When to Use Full Re-sync**:
+  - **Web UI Split Buttons**: Clicking **⚡ Sync** (row), **🔄 Sync All** (header), or **⚡ Save & Sync** (Edit Data Source modal) runs **Sync New Items Only** in one click. Open the adjacent **▾** menu and choose **Full Re-sync (All Items)** whenever you want to re-fetch and re-slice already-synced items (for example, after changing video transcript slicing intervals in Edit Data Source, or passing new `--slicing-mode` / `--pages-per-chunk` flags via CLI).
+  - **CLI Flag (`--full`)**: Both `flashcard-master sync [sourceId]` and `flashcard-master sources sync [sourceId]` default to `new-only` and report newly ingested vs. skipped item counts. Pass `--full` to force full re-ingestion.
+- **General "Synced" vs. "New" Visibility in Edit Data Source**:
+  - Opening **Edit Data Source** inspects synced parent items (`GET /api/sources/:id/sync-status`) and displays clear **Synced** and **New** status badges across web URLs, local files/directories, media/YouTube lists, feeds, sitemaps, `llms.txt`, and Notion sources—turning newly appended URLs or videos immediately **New** so you know exactly what **Sync New Only** will ingest.
+- **YouTube Title Resolution & Video ID Deduplication**:
+  - Pasting YouTube URLs automatically resolves video titles (plus backfills missing titles for existing YouTube sources during sync), renders both **Title** and a **clickable URL**, and prevents duplicate videos across `youtube.com/watch?v=...`, `youtu.be/...`, `shorts/`, and `live/` links.
 
 ---
 
@@ -133,7 +154,7 @@ Configure your defaults and check `ffmpeg`, `yt-dlp`, and `whisper-local` readin
   - **Time Windows (`timestamps`)**: Splits transcripts into fixed N-minute windows (e.g. `10` minutes) aligned cleanly to cue boundaries.
   - **None (`none`)**: Keeps the entire transcript as a single document.
 - **Source Defaults & Per-Item Overrides**:
-  - **Data Source Default**: Configure and edit the default slicing strategy (`chapters`, `timestamps`, or `none`) and interval minutes in both **Add Source** and **Edit Source** (with **Save & Re-sync** to re-slice existing documents immediately).
+  - **Data Source Default**: Configure and edit the default slicing strategy (`chapters`, `timestamps`, or `none`) and interval minutes in both **Add Source** and **Edit Source** (open **Save & Sync ▾** and select **Full Re-sync (All Items)** to re-slice existing documents immediately).
   - **Per-Item Override**: In multi-item media sources, each audio/video/YouTube row defaults to **Inherit source default**, or can override `slicingMode` (`chapters` | `timestamps` | `none`) and `intervalMinutes` individually (precedence: *Per-item override* &rarr; *Sync/CLI flag* &rarr; *Source default*).
 - **CLI Examples**:
   ```bash

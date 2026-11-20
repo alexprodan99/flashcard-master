@@ -31,7 +31,7 @@ Open **System Settings** &rarr; **Privacy & Security** &rarr; scroll to Security
 **Desktop Benefits:**
 * **Zero Terminal Required:** Double-click and run like any native application.
 * **System Tray Minimization:** Keep Flashcard Master running in your background tray/dock without cluttering your workspace.
-* **Storage Isolation:** Automatically places your SQLite database (`data.sqlite`) and media cache in your OS user data directory (`%APPDATA%`, `~/Library/Application Support`, or `~/.config`).
+* **Unified Local Storage (`~/.flashcard-master/`):** Desktop App, Web UI, and CLI all share `~/.flashcard-master/` (`data.sqlite`, `media/`, and `local-files/`) so your sources, documents, and decks stay seamlessly synchronized across every interface.
 * **Ephemeral Port Protection:** Binds an internal loopback port dynamically to prevent conflicts with other services.
 
 ### Option B: Zero-Install (Web UI via NPX)
@@ -57,6 +57,9 @@ npm install -g @flashcard-master/cli
 Once installed, start the dashboard anytime:
 ```bash
 flashcard-master serve
+
+# Or point CLI/Web at a custom data directory instead of ~/.flashcard-master/:
+flashcard-master --data-dir /path/to/my-kb serve
 ```
 
 ---
@@ -91,6 +94,7 @@ Flashcard Master supports 4 cutting-edge AI providers:
    - **Notion Workspace**: Connect your Notion page or database.
    - **Audio / Video / YouTube**: Import local `.mp3`/`.mp4` recordings (with optional `.srt`/`.vtt` subtitles and timestamp ranges) or YouTube URLs with subtitle-first extraction, Speech-to-Text fallback, and chapter/timestamp slicing.
 4. Click **Save & Ingest**. Flashcard Master extracts clean text and breaks it into semantic chapters or chunks automatically.
+5. On subsequent runs, click **⚡ Sync** (**Sync New Items Only** by default) to ingest only new additions and skip already-synced items—or open the dropdown (**▾**) to choose **Full Re-sync (All Items)** (or run `flashcard-master sync --full` in CLI).
 
 ---
 
