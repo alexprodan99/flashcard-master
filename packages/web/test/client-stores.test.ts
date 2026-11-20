@@ -9,8 +9,8 @@ import { TaskStore } from '../client/src/stores/taskStore.svelte.js';
 import { SettingsStore, settingsStore } from '../client/src/stores/settingsStore.svelte.js';
 import { loadCachedStats, saveCachedStats, DASHBOARD_STATS_STORAGE_KEY } from '../client/src/lib/dashboard-cache.js';
 import type { DataSource, Flashcard, GenerationResult, Job, DashboardStats, DiscoveredDocument, DocumentSlicingOptions, SlicingMode } from '../client/src/lib/types.js';
-import { syncSource, syncAllSources } from '../client/src/lib/api.js';
-import { formatPageBadge } from '../client/src/lib/formatters.js';
+import { syncSource, syncAllSources, fetchSourceSyncStatus } from '../client/src/lib/api.js';
+import { formatPageBadge, getClientItemSyncStatus, formatSyncCompletionSummary, parseWebSourceUrlsClient } from '../client/src/lib/formatters.js';
 
 describe('Svelte 5 Universal Client Stores (Epic 14.4)', () => {
   let localStorageMock: Record<string, string> = {};
@@ -1460,6 +1460,118 @@ describe('Svelte 5 Universal Client Stores (Epic 14.4)', () => {
       expect(previewContent).toContain('z-index: 1300');
     });
   });
+
+  describe('Story 22.4: Sync API Options & Client Item Sync Status Matching', () => {
+    it('forwards syncMode in syncSource and syncAllSources and fetches GET /api/sources/:id/sync-status', async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ success: true }),
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      await syncSource('src-1', { syncMode: 'new-only' });
+      expect(fetchMock).toHaveBeenLastCalledWith('/api/sync/src-1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ syncMode: 'new-only' }),
+      });
+
+      await syncSource('src-1', { syncMode: 'full', slicing: { mode: 'none' } });
+      expect(fetchMock).toHaveBeenLastCalledWith('/api/sync/src-1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slicing: { mode: 'none' }, syncMode: 'full' }),
+      });
+
+      await syncAllSources({ syncMode: 'full' });
+      expect(fetchMock).toHaveBeenLastCalledWith('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ syncMode: 'full' }),
+      });
+
+      await fetchSourceSyncStatus('src-abc');
+      expect(fetchMock).toHaveBeenLastCalledWith('/api/sources/src-abc/sync-status');
+    });
+
+    it('matches synced vs new items across HTTP fragments, YouTube videoIds, and local/media paths', () => {
+      // Empty knownKeys -> always 'new'
+      expect(getClientItemSyncStatus('https://example.com/a', 'web', [])).toBe('new');
+
+      // HTTP with fragment stripping
+      expect(
+        getClientItemSyncStatus('https://example.com/docs/intro', 'web', ['https://example.com/docs/intro'])
+      ).toBe('synced');
+      expect(
+        getClientItemSyncStatus('https://example.com/docs/intro#page=1-5', 'web', ['https://example.com/docs/intro'])
+      ).toBe('synced');
+      expect(
+        getClientItemSyncStatus('https://example.com/docs/next', 'web', ['https://example.com/docs/intro'])
+      ).toBe('new');
+
+      // YouTube cross-URL videoId matching
+      expect(
+        getClientItemSyncStatus('https://youtu.be/dQw4w9WgXcQ', 'youtube', ['dQw4w9WgXcQ'])
+      ).toBe('synced');
+      expect(
+        getClientItemSyncStatus('https://www.youtube.com/watch?v=9bZkp7q19f0', 'youtube', ['dQw4w9WgXcQ'])
+      ).toBe('new');
+
+      // Local / media path matching
+      expect(
+        getClientItemSyncStatus('/docs/guide.md', 'local', ['/docs/guide.md'])
+      ).toBe('synced');
+      expect(
+        getClientItemSyncStatus('/docs', 'local', ['/docs/guide.md'])
+      ).toBe('synced');
+      expect(
+        getClientItemSyncStatus('/docs/other.md', 'local', ['/docs/guide.md'])
+      ).toBe('new');
+    });
+
+    it('formats completion summaries including skippedCount when present', () => {
+      const msg1 = formatSyncCompletionSummary('Podcast Feed', { newCount: 1, totalFetched: 4, skippedCount: 3 });
+      expect(msg1.variant).toBe('success');
+      expect(msg1.message).toContain('3 already-synced skipped');
+
+      const msg2 = formatSyncCompletionSummary('Podcast Feed', { newCount: 0, totalFetched: 3, skippedCount: 3 });
+      expect(msg2.variant).toBe('info');
+      expect(msg2.message).toContain('Up to date');
+      expect(msg2.message).toContain('3 already-synced skipped');
+
+      const msgBulk = formatSyncCompletionSummary(null, { newCount: 2, skippedCount: 5, totalSources: 3 });
+      expect(msgBulk.variant).toBe('success');
+      expect(msgBulk.message).toContain('5 already-synced skipped');
+    });
+
+    it('handles Windows drive roots, dot segments, file:// URIs, Notion IDs, non-JSON web lists, and API error responses', async () => {
+      expect(parseWebSourceUrlsClient('[https://a.com, https://b.com]')).toEqual(['https://a.com', 'https://b.com']);
+      expect(parseWebSourceUrlsClient('["https://x.com","https://y.com"]')).toEqual(['https://x.com', 'https://y.com']);
+
+      expect(getClientItemSyncStatus('C:\\', 'local', ['c:/notes/a.md'])).toBe('synced');
+      expect(getClientItemSyncStatus('file:///C:/notes/./sub/../a.md', 'local', ['c:/notes/a.md'])).toBe('synced');
+      expect(getClientItemSyncStatus('/media', 'audio', ['/media/track1.mp3'])).toBe('new'); // audio is exact-item, not directory prefix
+      expect(getClientItemSyncStatus('/media/track1.mp3#t=0,60', 'audio', ['/media/track1.mp3'])).toBe('synced');
+      expect(getClientItemSyncStatus('https://youtube.com/shorts/dQw4w9WgXcQ', 'youtube', ['https://youtu.be/dQw4w9WgXcQ'])).toBe('synced');
+      expect(
+        getClientItemSyncStatus(
+          'https://www.notion.so/Renamed-Title-1234567890abcdef1234567890abcdef',
+          'notion',
+          new Set(['12345678-90ab-cdef-1234-567890abcdef'])
+        )
+      ).toBe('synced');
+      expect(getClientItemSyncStatus('', 'web', null)).toBe('new');
+
+      const noSkipMsg = formatSyncCompletionSummary('Feed', { newCount: 2, totalFetched: 2, skippedCount: 0 });
+      expect(noSkipMsg.message).not.toContain('skipped');
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: false,
+        json: async () => ({ error: 'Invalid syncMode' }),
+      }));
+      await expect(syncSource('s1', { syncMode: 'full' })).rejects.toThrow('Invalid syncMode');
+      await expect(syncAllSources({ syncMode: 'full' })).rejects.toThrow('Invalid syncMode');
+      await expect(fetchSourceSyncStatus('s1')).rejects.toThrow('Invalid syncMode');
+    });
+  });
 });
-
-

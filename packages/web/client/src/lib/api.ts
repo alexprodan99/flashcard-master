@@ -17,6 +17,8 @@ import type {
   MediaDiagnosticsResult,
   PaginatedCardsResponse,
   ResolvedYouTubeUrlEntry,
+  SyncMode,
+  SourceSyncStatusResponse,
 } from './types.js';
 
 export async function fetchStats(): Promise<DashboardStats> {
@@ -130,12 +132,15 @@ export async function deleteSource(id: string): Promise<void> {
 
 export async function syncSource(
   id: string,
-  options?: { slicing?: DocumentSlicingOptions }
-): Promise<{ success: boolean; sourceId?: string; newCount?: number; totalFetched?: number; jobId?: string; status?: string; title?: string; error?: string }> {
+  options?: { slicing?: DocumentSlicingOptions; syncMode?: SyncMode }
+): Promise<{ success: boolean; sourceId?: string; newCount?: number; totalFetched?: number; skippedCount?: number; syncMode?: SyncMode; jobId?: string; status?: string; title?: string; error?: string }> {
+  const payload: Record<string, unknown> = {};
+  if (options?.slicing !== undefined) payload.slicing = options.slicing;
+  if (options?.syncMode !== undefined) payload.syncMode = options.syncMode;
   const res = await fetch(`/api/sync/${encodeURIComponent(id)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: options?.slicing ? JSON.stringify({ slicing: options.slicing }) : undefined,
+    body: Object.keys(payload).length > 0 ? JSON.stringify(payload) : undefined,
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
@@ -145,16 +150,28 @@ export async function syncSource(
 }
 
 export async function syncAllSources(
-  options?: { slicing?: DocumentSlicingOptions }
-): Promise<Array<{ success: boolean; sourceId?: string; newCount?: number; totalFetched?: number; error?: string }> | { success: boolean; jobId: string; status: string; title?: string }> {
+  options?: { slicing?: DocumentSlicingOptions; syncMode?: SyncMode }
+): Promise<Array<{ success: boolean; sourceId?: string; newCount?: number; totalFetched?: number; skippedCount?: number; syncMode?: SyncMode; error?: string }> | { success: boolean; jobId: string; status: string; title?: string }> {
+  const payload: Record<string, unknown> = {};
+  if (options?.slicing !== undefined) payload.slicing = options.slicing;
+  if (options?.syncMode !== undefined) payload.syncMode = options.syncMode;
   const res = await fetch('/api/sync', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: options?.slicing ? JSON.stringify({ slicing: options.slicing }) : undefined,
+    body: Object.keys(payload).length > 0 ? JSON.stringify(payload) : undefined,
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || 'Batch sync failed');
+  }
+  return res.json();
+}
+
+export async function fetchSourceSyncStatus(id: string): Promise<SourceSyncStatusResponse> {
+  const res = await fetch(`/api/sources/${encodeURIComponent(id)}/sync-status`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to fetch source sync status');
   }
   return res.json();
 }

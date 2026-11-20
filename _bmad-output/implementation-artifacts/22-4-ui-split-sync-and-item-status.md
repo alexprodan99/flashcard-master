@@ -2,7 +2,7 @@
 title: 'Story 22.4: Web UI Split-Button Sync Controls & General "Synced vs. New" Item Visibility'
 type: 'feature'
 created: '2026-11-18'
-status: 'ready-for-dev'
+status: 'review'
 baseline_commit: 'main'
 review_loop_iteration: 0
 context:
@@ -44,11 +44,11 @@ The Web UI currently provides only a single `⚡ Sync` button per source row and
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `packages/web/src/server.ts` -- Accept `syncMode` (`'new-only' | 'full'`, default `'new-only'`) in `POST /api/sync` and `POST /api/sync/:id`, and add an endpoint/payload returning Synced vs. New item keys for a source (`GET /api/sources/:id/sync-status` or similar).
-- [ ] `packages/web/client/src/lib/types.ts` & `packages/web/client/src/lib/api.ts` -- Add `SyncMode` type, pass `syncMode` in `syncSource` / `syncAllSources`, and add client helper to fetch source item sync status.
-- [ ] `packages/web/client/src/views/SourcesView.svelte` -- Implement split-button dropdowns for `⚡ Sync ▾` and `🔄 Sync All ▾` (1-click default = Sync New Only, dropdown option = Full Re-sync) and update toast summaries to include skipped counts.
-- [ ] `packages/web/client/src/components/EditSourceModal.svelte`, `UrlListManager.svelte`, `MediaItemListEditor.svelte`, `AddSourceModal.svelte` -- Render **Synced** vs. **New** item status badges across all data sources in Edit Data Source, render YouTube **Title + URL** clearly, and support `syncMode` when syncing from modals.
-- [ ] `packages/web/test/` -- Add/update component & server tests verifying split-button behavior, `syncMode` routing, Synced/New item badges across source types, and YouTube title/URL rendering.
+- [x] `packages/web/src/server.ts` -- Accept `syncMode` (`'new-only' | 'full'`, default `'new-only'`) in `POST /api/sync` and `POST /api/sync/:id`, and add an endpoint/payload returning Synced vs. New item keys for a source (`GET /api/sources/:id/sync-status` or similar).
+- [x] `packages/web/client/src/lib/types.ts` & `packages/web/client/src/lib/api.ts` -- Add `SyncMode` type, pass `syncMode` in `syncSource` / `syncAllSources`, and add client helper to fetch source item sync status.
+- [x] `packages/web/client/src/views/SourcesView.svelte` -- Implement split-button dropdowns for `⚡ Sync ▾` and `🔄 Sync All ▾` (1-click default = Sync New Only, dropdown option = Full Re-sync) and update toast summaries to include skipped counts.
+- [x] `packages/web/client/src/components/EditSourceModal.svelte`, `UrlListManager.svelte`, `MediaItemListEditor.svelte`, `AddSourceModal.svelte` -- Render **Synced** vs. **New** item status badges across all data sources in Edit Data Source, render YouTube **Title + URL** clearly, and support `syncMode` when syncing from modals.
+- [x] `packages/web/test/` -- Add/update component & server tests verifying split-button behavior, `syncMode` routing, Synced/New item badges across source types, and YouTube title/URL rendering.
 
 **Acceptance Criteria:**
 - `POST /api/sync` and `POST /api/sync/:id` default to `syncMode: 'new-only'` and support `{ syncMode: 'full' }`.

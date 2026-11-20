@@ -2027,9 +2027,326 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       expect(res2.status).toBe(400);
     });
   });
+
+  describe("Story 22.4: syncMode Routing & GET /api/sources/:id/sync-status", () => {
+    it("defaults syncMode to 'new-only' and forwards 'full' on POST /api/sync/:id and POST /api/sync", async () => {
+      const syncSourceCalls: any[] = [];
+      const syncAllCalls: any[] = [];
+      const customIngestionService = {
+        syncSource: async (sourceId: string, opts?: any) => {
+          syncSourceCalls.push({ sourceId, opts });
+          return { sourceId, newCount: 1, totalFetched: 2, skippedCount: opts?.syncMode === "full" ? 0 : 1, syncMode: opts?.syncMode };
+        },
+        syncAllActive: async (opts?: any) => {
+          syncAllCalls.push({ opts });
+          return [{ sourceId: "src-1", newCount: 1, totalFetched: 2, skippedCount: 0, syncMode: opts?.syncMode }];
+        },
+      } as any;
+
+      const s = createWebServer({
+        port: 0,
+        sourceRepo,
+        syncRepo,
+        cardRepo,
+        documentRepo: docRepo,
+        ingestionService: customIngestionService,
+      });
+      const { url: localUrl } = await s.listen();
+
+      try {
+        const src = sourceRepo.create({ name: "Sync Mode Web", type: "web", uri: "https://example.com/a" });
+
+        // Default syncMode -> "new-only"
+        const resDefault = await fetch(`${localUrl}/api/sync/${src.id}`, { method: "POST" });
+        expect(resDefault.status).toBe(200);
+        expect(syncSourceCalls[0].opts.syncMode).toBe("new-only");
+
+        // Explicit syncMode -> "full"
+        const resFull = await fetch(`${localUrl}/api/sync/${src.id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ syncMode: "full", slicing: { mode: "none" } }),
+        });
+        expect(resFull.status).toBe(200);
+        expect(syncSourceCalls[1].opts).toEqual({ syncMode: "full", slicing: { mode: "none" } });
+
+        // Invalid syncMode rejected with 400
+        const resBad = await fetch(`${localUrl}/api/sync/${src.id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ syncMode: "invalid-mode" }),
+        });
+        expect(resBad.status).toBe(400);
+
+        // Bulk POST /api/sync default + explicit full + invalid
+        const bulkDefault = await fetch(`${localUrl}/api/sync`, { method: "POST" });
+        expect(bulkDefault.status).toBe(200);
+        expect(syncAllCalls[0].opts.syncMode).toBe("new-only");
+
+        const bulkFull = await fetch(`${localUrl}/api/sync`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ syncMode: "full" }),
+        });
+        expect(bulkFull.status).toBe(200);
+        expect(syncAllCalls[1].opts.syncMode).toBe("full");
+
+        const bulkBad = await fetch(`${localUrl}/api/sync`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ syncMode: "bogus" }),
+        });
+        expect(bulkBad.status).toBe(400);
+      } finally {
+        await s.close();
+      }
+    });
+
+    it("enqueues job metadata with explicit syncMode on POST /api/sync/:id and POST /api/sync", async () => {
+      const { JobManager } = await import("../src/jobs/index.js");
+      const jobRepo = new JobRepository(db);
+      const jobManager = new JobManager(jobRepo);
+      const jmServer = createWebServer({
+        port: 0,
+        sourceRepo,
+        syncRepo,
+        cardRepo,
+        documentRepo: docRepo,
+        ingestionService,
+        jobManager,
+        jobRepo,
+      });
+      const { url: jmUrl } = await jmServer.listen();
+      try {
+        const src = sourceRepo.create({ name: "Queued Sync Source", type: "rss", uri: "https://example.com/feed.xml" });
+        const singleRes = await fetch(`${jmUrl}/api/sync/${src.id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ syncMode: "full" }),
+        });
+        expect(singleRes.status).toBe(202);
+        const singleBody = (await singleRes.json()) as any;
+        expect(jobManager.getJob(singleBody.jobId)?.metadata?.syncMode).toBe("full");
+
+        const bulkRes = await fetch(`${jmUrl}/api/sync`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ syncMode: "new-only" }),
+        });
+        expect(bulkRes.status).toBe(202);
+        const bulkBody = (await bulkRes.json()) as any;
+        expect(jobManager.getJob(bulkBody.jobId)?.metadata?.syncMode).toBe("new-only");
+      } finally {
+        await jmServer.close();
+      }
+    });
+
+    it("returns 404 for unknown source and accurate synced vs new breakdown across source types on GET /api/sources/:id/sync-status", async () => {
+      const notFoundRes = await fetch(`${serverUrl}/api/sources/does-not-exist/sync-status`);
+      expect(notFoundRes.status).toBe(404);
+
+      // 1. Zero-doc web source -> all items "new"
+      const emptyWeb = sourceRepo.create({
+        name: "Unsynced Web",
+        type: "web",
+        uri: JSON.stringify(["https://example.com/one", "https://example.com/two"]),
+      });
+      const emptyRes = await fetch(`${serverUrl}/api/sources/${emptyWeb.id}/sync-status`);
+      expect(emptyRes.status).toBe(200);
+      const emptyData = (await emptyRes.json()) as any;
+      expect(emptyData.syncedDocumentCount).toBe(0);
+      expect(emptyData.hasSyncedDocuments).toBe(false);
+      expect(emptyData.items.map((i: any) => i.status)).toEqual(["new", "new"]);
+
+      // 2. Web source with fragment-sliced synced document -> first synced, second new
+      const mixedWeb = sourceRepo.create({
+        name: "Mixed Web",
+        type: "web",
+        uri: JSON.stringify(["https://example.com/synced-page", "https://example.com/new-page"]),
+      });
+      docRepo.upsert({
+        id: "web-slice-1",
+        sourceId: mixedWeb.id,
+        title: "Synced Page (Part 1)",
+        url: "https://example.com/synced-page#page=1-5",
+        textContent: "Slice content",
+        wordCount: 2,
+      });
+      const webRes = await fetch(`${serverUrl}/api/sources/${mixedWeb.id}/sync-status`);
+      const webData = (await webRes.json()) as any;
+      expect(webData.hasSyncedDocuments).toBe(true);
+      expect(webData.syncedDocumentCount).toBe(1);
+      expect(webData.items).toEqual([
+        expect.objectContaining({ uri: "https://example.com/synced-page", status: "synced" }),
+        expect.objectContaining({ uri: "https://example.com/new-page", status: "new" }),
+      ]);
+
+      // 3. YouTube source matching via videoId across short/watch URLs and timestamp fragments
+      const mixedYt = sourceRepo.create({
+        name: "Mixed YouTube",
+        type: "youtube",
+        uri: JSON.stringify([
+          { uri: "https://youtu.be/dQw4w9WgXcQ", title: "Synced Talk", extractionMode: "auto" },
+          { uri: "https://www.youtube.com/watch?v=9bZkp7q19f0", title: "New Talk", extractionMode: "auto" },
+        ]),
+      });
+      docRepo.upsert({
+        id: "yt-slice-1",
+        sourceId: mixedYt.id,
+        title: "Synced Talk [00:00-05:00]",
+        url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ#t=0,300",
+        textContent: "Transcript slice",
+        wordCount: 2,
+      });
+      const ytRes = await fetch(`${serverUrl}/api/sources/${mixedYt.id}/sync-status`);
+      const ytData = (await ytRes.json()) as any;
+      expect(ytData.items).toEqual([
+        expect.objectContaining({ key: "dQw4w9WgXcQ", label: "Synced Talk", status: "synced" }),
+        expect.objectContaining({ key: "9bZkp7q19f0", label: "New Talk", status: "new" }),
+      ]);
+
+      // 4. Catalog RSS source with discovered docs reports synced items cleanly
+      const syncedRss = sourceRepo.create({
+        name: "Synced RSS",
+        type: "rss",
+        uri: "https://blog.example.com/rss.xml",
+      });
+      docRepo.upsert({
+        id: "rss-doc-1",
+        sourceId: syncedRss.id,
+        title: "RSS Article 1",
+        url: "https://blog.example.com/post-1#section=1",
+        textContent: "Body",
+        wordCount: 1,
+      });
+      const rssRes = await fetch(`${serverUrl}/api/sources/${syncedRss.id}/sync-status`);
+      const rssData = (await rssRes.json()) as any;
+      expect(rssData.hasSyncedDocuments).toBe(true);
+      expect(rssData.items[0].status).toBe("synced");
+      expect(rssData.syncedItems).toEqual([
+        expect.objectContaining({ uri: "https://blog.example.com/post-1", sliceCount: 1 }),
+      ]);
+    });
+
+    it("rejects malformed JSON bodies, empty syncMode, invalid slicing, and malformed percent-encoding with HTTP 400", async () => {
+      const src = sourceRepo.create({ name: "Bad Sync Input", type: "web", uri: "https://example.com/x" });
+
+      const malformedJson = await fetch(`${serverUrl}/api/sync/${src.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{bad-json",
+      });
+      expect(malformedJson.status).toBe(400);
+
+      const bulkMalformedJson = await fetch(`${serverUrl}/api/sync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{bad-json",
+      });
+      expect(bulkMalformedJson.status).toBe(400);
+
+      const emptySyncMode = await fetch(`${serverUrl}/api/sync/${src.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ syncMode: "" }),
+      });
+      expect(emptySyncMode.status).toBe(400);
+      expect(((await emptySyncMode.json()) as any).error).toContain("Invalid syncMode");
+
+      const queryBadMode = await fetch(`${serverUrl}/api/sync/${src.id}?syncMode=bogus`, {
+        method: "POST",
+      });
+      expect(queryBadMode.status).toBe(400);
+
+      const badPercentSync = await fetch(`${serverUrl}/api/sync/%ZZ`, { method: "POST" });
+      expect(badPercentSync.status).toBe(400);
+
+      const badPercentStatus = await fetch(`${serverUrl}/api/sources/%ZZ/sync-status`);
+      expect(badPercentStatus.status).toBe(400);
+    });
+
+    it("covers GET /api/sources/:id/sync-status across local multi-file, audio, video, sitemap, llms-txt, notion, and sliceCount grouping", async () => {
+      // Multi-file local + slice aggregation
+      const localSrc = sourceRepo.create({
+        name: "Local Pack",
+        type: "local",
+        uri: JSON.stringify(["/docs/guide.md", "/docs/new.md"]),
+      });
+      docRepo.upsert({
+        id: "loc-1",
+        sourceId: localSrc.id,
+        title: "Guide (Part 1)",
+        url: "/docs/guide.md#page=1-3",
+        textContent: "A",
+        wordCount: 1,
+      });
+      docRepo.upsert({
+        id: "loc-2",
+        sourceId: localSrc.id,
+        title: "Guide (Part 2)",
+        url: "/docs/guide.md#page=4-6",
+        textContent: "B",
+        wordCount: 1,
+      });
+      const localRes = await fetch(`${serverUrl}/api/sources/${localSrc.id}/sync-status`);
+      expect(localRes.status).toBe(200);
+      const localData = (await localRes.json()) as any;
+      expect(localData.items).toEqual([
+        expect.objectContaining({ uri: "/docs/guide.md", status: "synced" }),
+        expect.objectContaining({ uri: "/docs/new.md", status: "new" }),
+      ]);
+      expect(localData.syncedItems).toEqual([
+        expect.objectContaining({ uri: "/docs/guide.md", label: "Guide", sliceCount: 2 }),
+      ]);
+
+      // Audio source
+      const audioSrc = sourceRepo.create({
+        name: "Audio Pack",
+        type: "audio",
+        uri: JSON.stringify([
+          { uri: "/media/ep1.mp3", title: "Episode 1", extractionMode: "stt" },
+          { uri: "/media/ep2.mp3", title: "Episode 2", extractionMode: "stt" },
+        ]),
+      });
+      docRepo.upsert({
+        id: "aud-1",
+        sourceId: audioSrc.id,
+        title: "Episode 1 [00:00-05:00]",
+        url: "/media/ep1.mp3#t=0,300",
+        textContent: "Audio words",
+        wordCount: 2,
+      });
+      const audioData = (await (await fetch(`${serverUrl}/api/sources/${audioSrc.id}/sync-status`)).json()) as any;
+      expect(audioData.items.map((i: any) => i.status)).toEqual(["synced", "new"]);
+
+      // Video source
+      const videoSrc = sourceRepo.create({
+        name: "Video Pack",
+        type: "video",
+        uri: JSON.stringify([{ uri: "/videos/talk.mp4", title: "Talk", extractionMode: "auto" }]),
+      });
+      const videoData = (await (await fetch(`${serverUrl}/api/sources/${videoSrc.id}/sync-status`)).json()) as any;
+      expect(videoData.items).toEqual([expect.objectContaining({ label: "Talk", status: "new" })]);
+
+      // Sitemap, llms-txt, and Notion
+      const sitemapSrc = sourceRepo.create({ name: "Docs Sitemap", type: "sitemap", uri: "https://docs.example.com/sitemap.xml" });
+      const llmsSrc = sourceRepo.create({ name: "Docs LLMs", type: "llms-txt", uri: "https://docs.example.com/llms.txt" });
+      const notionSrc = sourceRepo.create({ name: "Notion Wiki", type: "notion", uri: "https://www.notion.so/Page-1234567890abcdef1234567890abcdef" });
+      docRepo.upsert({
+        id: "notion-doc-1",
+        sourceId: notionSrc.id,
+        title: "Notion Intro",
+        url: "https://www.notion.so/Page-1234567890abcdef1234567890abcdef",
+        textContent: "Hello Notion",
+        wordCount: 2,
+      });
+      const sitemapData = (await (await fetch(`${serverUrl}/api/sources/${sitemapSrc.id}/sync-status`)).json()) as any;
+      const llmsData = (await (await fetch(`${serverUrl}/api/sources/${llmsSrc.id}/sync-status`)).json()) as any;
+      const notionData = (await (await fetch(`${serverUrl}/api/sources/${notionSrc.id}/sync-status`)).json()) as any;
+      expect(sitemapData.items[0].status).toBe("new");
+      expect(llmsData.items[0].status).toBe("new");
+      expect(notionData.items[0].status).toBe("synced");
+      expect(notionData.knownKeys).toContain("1234567890abcdef1234567890abcdef");
+    });
+  });
 });
-
-
-
-
-

@@ -1,13 +1,14 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { fetchSources, fetchSourceDocuments, toggleSourceActive, deleteSource, syncSource, syncAllSources, fetchJobDetails } from '../lib/api';
-  import type { DataSource, DiscoveredDocument } from '../lib/types';
+  import type { DataSource, DiscoveredDocument, SyncMode } from '../lib/types';
   import AddSourceModal from '../components/AddSourceModal.svelte';
   import EditSourceModal from '../components/EditSourceModal.svelte';
   import SourceDocumentInspector from '../components/SourceDocumentInspector.svelte';
   import DocumentExportModal from '../components/DocumentExportModal.svelte';
+  import SplitSyncButton from '../components/SplitSyncButton.svelte';
   import { parseNotionUri } from '../lib/notion-uri.js';
-  import { parseMediaItemsSummary } from '../lib/formatters.js';
+  import { parseMediaItemsSummary, formatSyncCompletionSummary } from '../lib/formatters.js';
   import { sourcesStore, toastStore, taskStore } from '../stores/index.js';
 
   interface Props {
@@ -86,26 +87,36 @@
     }
   }
 
-  async function handleSync(source: DataSource) {
+  async function handleSync(source: DataSource, syncMode: SyncMode = 'new-only') {
     if (sourcesStore.syncingSourceIds[source.id]) return;
     sourcesStore.setSyncing(source.id, true);
     try {
-      const syncOpts =
-        source.type === 'youtube'
-          ? { slicing: { mode: 'chapters' as const, minutesPerChunk: 10 } }
+      const slicing = source.defaultSlicingMode
+        ? {
+            mode: source.defaultSlicingMode,
+            ...(source.defaultIntervalMinutes != null ? { minutesPerChunk: source.defaultIntervalMinutes } : {}),
+          }
+        : source.type === 'youtube'
+          ? { mode: 'chapters' as const, minutesPerChunk: 10 }
           : source.type === 'audio' || source.type === 'video'
-            ? { slicing: { mode: 'timestamps' as const, minutesPerChunk: 10 } }
+            ? { mode: 'timestamps' as const, minutesPerChunk: 10 }
             : undefined;
-      const result: any = await syncSource(source.id, syncOpts);
+      const result: any = await syncSource(source.id, { ...(slicing ? { slicing } : {}), syncMode });
       if (result.jobId) {
         sourcesStore.setSyncing(source.id, true, result.jobId);
-        toastStore.info(`⚡ Sync queued (#${result.jobId.slice(0, 8)}) for "${source.name}". Ingesting in background...`);
+        const modeLabel = syncMode === 'full' ? 'Full re-sync' : 'Incremental sync';
+        toastStore.info(`⚡ ${modeLabel} queued (#${result.jobId.slice(0, 8)}) for "${source.name}". Ingesting in background...`);
         pollSyncJob(source.id, result.jobId, source.name);
       } else {
-        if (result.newCount > 0) {
-          toastStore.success(`Synced "${source.name}": ${result.newCount} new documents ingested (${result.totalFetched} total found).`);
+        const toastInfo = formatSyncCompletionSummary(source.name, {
+          newCount: result.newCount ?? 0,
+          totalFetched: result.totalFetched ?? 0,
+          skippedCount: result.skippedCount ?? 0,
+        });
+        if (toastInfo.variant === 'success') {
+          toastStore.success(toastInfo.message);
         } else {
-          toastStore.info(`Synced "${source.name}": Up to date (0 new documents, ${result.totalFetched} total checked).`);
+          toastStore.info(toastInfo.message);
         }
         await loadSources();
         sourcesStore.setSyncing(source.id, false);
@@ -135,10 +146,12 @@
               const summary = job.resultSummary || {};
               const newCount = summary.newCount ?? summary.totalNewDocuments ?? 0;
               const totalFetched = summary.totalFetched ?? summary.totalFetchedDocuments ?? 0;
-              if (newCount > 0) {
-                toastStore.success(`🎉 Synced "${sourceName}": ${newCount} new document(s) ingested (${totalFetched} total checked).`);
+              const skippedCount = summary.skippedCount ?? summary.totalSkippedDocuments ?? 0;
+              const toastInfo = formatSyncCompletionSummary(sourceName, { newCount, totalFetched, skippedCount });
+              if (toastInfo.variant === 'success') {
+                toastStore.success(toastInfo.message);
               } else {
-                toastStore.info(`Synced "${sourceName}": Up to date (0 new documents, ${totalFetched} total checked).`);
+                toastStore.info(toastInfo.message);
               }
               await loadSources();
             }
@@ -167,18 +180,25 @@
     }
   }
 
-  async function handleSyncAll() {
+  async function handleSyncAll(syncMode: SyncMode = 'new-only') {
     if (isSyncingAll || Object.values(sourcesStore.syncingSourceIds).some(Boolean)) return;
     sourcesStore.setSyncingAll(true);
     try {
-      const results: any = await syncAllSources();
+      const results: any = await syncAllSources({ syncMode });
       if (results && results.jobId) {
         sourcesStore.setSyncingAll(true, results.jobId);
-        toastStore.info(`⚡ Bulk sync queued (#${results.jobId.slice(0, 8)}). Ingesting in background...`);
+        const modeLabel = syncMode === 'full' ? 'Bulk full re-sync' : 'Bulk incremental sync';
+        toastStore.info(`⚡ ${modeLabel} queued (#${results.jobId.slice(0, 8)}). Ingesting in background...`);
         pollSyncAllJob(results.jobId);
       } else if (Array.isArray(results)) {
         const totalNew = results.reduce((acc, r) => acc + (r.newCount || 0), 0);
-        toastStore.success(`Bulk sync completed: ${totalNew} new documents ingested across ${results.length} sources.`);
+        const totalSkipped = results.reduce((acc, r) => acc + (r.skippedCount || 0), 0);
+        const toastInfo = formatSyncCompletionSummary(null, {
+          newCount: totalNew,
+          skippedCount: totalSkipped,
+          totalSources: results.length,
+        });
+        toastStore.success(toastInfo.message);
         await loadSources();
         sourcesStore.setSyncingAll(false);
       } else {
@@ -208,8 +228,16 @@
             sourcesStore.setSyncingAll(false);
             const summary = job.resultSummary || {};
             const totalNew = summary.totalNewDocuments ?? summary.newCount ?? 0;
+            const totalFetched = summary.totalFetchedDocuments ?? summary.totalFetched ?? 0;
+            const totalSkipped = summary.totalSkippedDocuments ?? summary.skippedCount ?? 0;
             const totalSources = summary.totalSources ?? job.metadata?.sourceCount ?? 'all';
-            toastStore.success(`🎉 Bulk sync completed: ${totalNew} new document(s) ingested across ${totalSources} sources.`);
+            const toastInfo = formatSyncCompletionSummary(null, {
+              newCount: totalNew,
+              totalFetched,
+              skippedCount: totalSkipped,
+              totalSources,
+            });
+            toastStore.success(toastInfo.message);
             await loadSources();
           }
           break;
@@ -302,13 +330,16 @@
       <p class="view-subtitle">Connect and synchronize RSS feeds, XML sitemaps, technical blogs, and local notes.</p>
     </div>
     <div class="header-actions">
-      <button class="btn btn-secondary" onclick={handleSyncAll} disabled={isSyncingAll || Object.values(sourcesStore.syncingSourceIds).some(Boolean) || sources.length === 0}>
-        {#if isSyncingAll}
-          <span class="mini-spinner"></span> Syncing All...
-        {:else}
-          🔄 Sync All Sources
-        {/if}
-      </button>
+      <SplitSyncButton
+        primaryLabel="🔄 Sync All"
+        syncingLabel="🔄 Syncing All..."
+        syncing={isSyncingAll}
+        disabled={Object.values(sourcesStore.syncingSourceIds).some(Boolean) || sources.length === 0}
+        variant="secondary"
+        ariaLabel="Bulk"
+        title="Sync New Items Only across all active sources"
+        onSync={(mode) => handleSyncAll(mode)}
+      />
       <button class="btn btn-primary" onclick={() => (isAddModalOpen = true)} disabled={isSyncingAll}>
         ➕ Add Ingestion Source
       </button>
@@ -429,18 +460,16 @@
                   >
                     📤 Export
                   </button>
-                  <button
-                    class="action-btn sync-btn"
-                    disabled={isSyncingAll || !!sourcesStore.syncingSourceIds[s.id]}
-                    onclick={() => handleSync(s)}
-                    title="Trigger Ingestion & Extraction"
-                  >
-                    {#if sourcesStore.syncingSourceIds[s.id]}
-                      <span class="mini-spinner"></span> Syncing...
-                    {:else}
-                      ⚡ Sync
-                    {/if}
-                  </button>
+                  <SplitSyncButton
+                    primaryLabel="⚡ Sync"
+                    syncingLabel="Syncing..."
+                    syncing={!!sourcesStore.syncingSourceIds[s.id]}
+                    disabled={isSyncingAll}
+                    variant="row"
+                    ariaLabel={s.name}
+                    title="Sync New Items Only for this source"
+                    onSync={(mode) => handleSync(s, mode)}
+                  />
                   <button
                     class="action-btn delete-btn"
                     disabled={!!sourcesStore.syncingSourceIds[s.id]}
@@ -532,7 +561,7 @@
     background: #1e293b;
     border: 1px solid #334155;
     border-radius: 12px;
-    overflow: hidden;
+    overflow: visible;
   }
 
   .sources-table {

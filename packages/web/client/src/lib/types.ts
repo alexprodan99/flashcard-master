@@ -3,6 +3,33 @@ export type DifficultyLevel = 'beginner' | 'intermediate' | 'expert' | 'mixed';
 export type PersonaType = 'socratic-mentor' | 'strict-examiner' | 'analogy-builder';
 export type CardDepthMode = 'atomic' | 'deep-dive' | 'scenario';
 export type DocumentExportFormat = 'markdown' | 'html' | 'txt' | 'json' | 'epub';
+export type SyncMode = 'new-only' | 'full';
+export type ItemSyncState = 'synced' | 'new';
+
+export interface SourceItemSyncStatus {
+  key: string;
+  uri: string;
+  label: string;
+  status: ItemSyncState;
+}
+
+export interface SourceSyncedItemSummary {
+  key: string;
+  uri: string;
+  label: string;
+  sliceCount: number;
+}
+
+export interface SourceSyncStatusResponse {
+  sourceId: string;
+  sourceType: DataSourceType;
+  syncedDocumentCount: number;
+  hasSyncedDocuments: boolean;
+  lastSyncedAt: string | null;
+  knownKeys: string[];
+  items: SourceItemSyncStatus[];
+  syncedItems: SourceSyncedItemSummary[];
+}
 
 export type SttProvider = 'openai' | 'gemini' | 'whisper-local';
 export type MediaExtractionMode = 'subtitles' | 'stt' | 'auto';

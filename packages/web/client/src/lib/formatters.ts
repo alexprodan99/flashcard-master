@@ -1,4 +1,4 @@
-import type { DataSourceType, DiscoveredDocument, MediaExtractionMode, MediaSourceItem, SttProvider } from './types.js';
+import type { DataSourceType, DiscoveredDocument, ItemSyncState, MediaExtractionMode, MediaSourceItem, SttProvider } from './types.js';
 
 /**
  * Formats a user-friendly page coordinate badge for a document.
@@ -328,4 +328,220 @@ export function planYoutubeUrlAdditions(
   }
 
   return { additions, duplicates, invalid };
+}
+
+/**
+ * Parses configured web source URI strings across single URLs, JSON arrays, and comma/newline lists.
+ */
+export function parseWebSourceUrlsClient(raw: string): string[] {
+  const trimmed = (raw || '').trim();
+  if (!trimmed) return [];
+  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed.map((u) => String(u || '').trim()).filter(Boolean);
+      }
+    } catch {
+      // Fall through to delimiter parsing without leaving literal brackets
+    }
+  }
+  return trimmed
+    .replace(/^\[|\]$/g, '')
+    .split(/[\r\n,]+/)
+    .map((u) => u.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Strips hash fragments from HTTP(S) URLs and known slice fragments from local paths.
+ */
+export function stripClientUrlFragment(rawUri: string): string {
+  const trimmed = (rawUri || '').trim();
+  if (!trimmed) return '';
+  if (!/^https?:\/\//i.test(trimmed)) {
+    const match = trimmed.match(
+      /#(?:(?:page|t|part|section|cfg)=|(?:slice-\d+|id-[^#\s]*|order-[^#\s]*)|[^#\s]*\.x?html?(?:$|[?#]))/i
+    );
+    return match && match.index !== undefined ? trimmed.slice(0, match.index).trim() : trimmed;
+  }
+  const hashIdx = trimmed.indexOf('#');
+  return (hashIdx >= 0 ? trimmed.slice(0, hashIdx) : trimmed).trim();
+}
+
+function normalizeClientHttpUrlKey(rawUrl: string): string {
+  const clean = stripClientUrlFragment(rawUrl);
+  if (!clean) return '';
+  try {
+    return new URL(clean).href;
+  } catch {
+    return clean;
+  }
+}
+
+function extractClientNotionHexId(input: string): string | null {
+  const trimmed = stripClientUrlFragment(input);
+  if (!trimmed) return null;
+  const uuidMatch = trimmed.match(
+    /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/
+  );
+  if (uuidMatch) return uuidMatch[0].replace(/-/g, '').toLowerCase();
+  const hexMatch = trimmed.match(/[0-9a-fA-F]{32}/);
+  return hexMatch ? hexMatch[0].toLowerCase() : null;
+}
+
+function resolvePosixDotSegments(pathStr: string): string {
+  const isAbs = pathStr.startsWith('/');
+  const driveMatch = pathStr.match(/^([A-Za-z]:)(\/.*)$/);
+  const prefix = driveMatch ? driveMatch[1] : isAbs ? '/' : '';
+  const body = driveMatch ? driveMatch[2] : pathStr;
+  const segments = body.split('/');
+  const stack: string[] = [];
+  for (const seg of segments) {
+    if (!seg || seg === '.') continue;
+    if (seg === '..') {
+      if (stack.length > 0 && stack[stack.length - 1] !== '..') {
+        stack.pop();
+      } else if (!prefix) {
+        stack.push('..');
+      }
+      continue;
+    }
+    stack.push(seg);
+  }
+  if (driveMatch) {
+    return `${prefix}/${stack.join('/')}`;
+  }
+  if (isAbs) {
+    return `/${stack.join('/')}`;
+  }
+  return stack.join('/') || '.';
+}
+
+function normalizeClientLocalPathKey(input: string): string {
+  let clean = stripClientUrlFragment(input);
+  if (!clean) return '';
+  if (/^file:\/\//i.test(clean)) {
+    clean = clean.replace(/^file:\/\/localhost(?=\/)/i, 'file://').slice('file://'.length);
+    try {
+      clean = decodeURIComponent(clean);
+    } catch {
+      // Preserve literal % sequences
+    }
+    if (/^\/[A-Za-z]:[\\/]/.test(clean)) {
+      clean = clean.slice(1);
+    }
+  }
+  clean = clean.replace(/\\/g, '/').replace(/\/+/g, '/');
+  if (/^[A-Za-z]:$/.test(clean)) {
+    clean = `${clean}/`;
+  }
+  clean = resolvePosixDotSegments(clean);
+  if (clean.length > 1 && !/^[A-Za-z]:\/$/.test(clean) && clean.endsWith('/')) {
+    clean = clean.slice(0, -1);
+  }
+  if (/^[A-Za-z]:\//.test(clean)) {
+    clean = clean.toLowerCase();
+  }
+  return clean;
+}
+
+/**
+ * Evaluates whether a configured item URI/path matches already-synced parent keys returned by GET /api/sources/:id/sync-status.
+ */
+export function getClientItemSyncStatus(
+  uri: string,
+  sourceType: DataSourceType | string,
+  knownKeys: ReadonlyArray<string> | ReadonlySet<string> | undefined | null
+): ItemSyncState {
+  const rawUri = (uri || '').trim();
+  if (!rawUri || !knownKeys) return 'new';
+  const keyList = Array.isArray(knownKeys) ? knownKeys : Array.from(knownKeys);
+  if (keyList.length === 0) return 'new';
+
+  const rawSet = new Set(keyList.map((k) => (k || '').trim()).filter(Boolean));
+  if (rawSet.size === 0) return 'new';
+
+  const stripped = stripClientUrlFragment(rawUri);
+  if (rawSet.has(rawUri) || rawSet.has(stripped)) {
+    return 'synced';
+  }
+
+  if (sourceType === 'youtube') {
+    const vid = extractClientYouTubeVideoId(stripped);
+    if (vid) {
+      if (rawSet.has(vid)) return 'synced';
+      for (const k of rawSet) {
+        if (extractClientYouTubeVideoId(stripClientUrlFragment(k)) === vid) {
+          return 'synced';
+        }
+      }
+    }
+  }
+
+  if (sourceType === 'notion') {
+    const targetHex = extractClientNotionHexId(stripped);
+    if (targetHex) {
+      if (rawSet.has(targetHex)) return 'synced';
+      for (const k of rawSet) {
+        if (extractClientNotionHexId(k) === targetHex) {
+          return 'synced';
+        }
+      }
+    }
+  }
+
+  if (/^https?:\/\//i.test(stripped)) {
+    const normHttp = normalizeClientHttpUrlKey(stripped);
+    if (normHttp && rawSet.has(normHttp)) return 'synced';
+    for (const k of rawSet) {
+      if (/^https?:\/\//i.test(k) && normalizeClientHttpUrlKey(k) === normHttp) {
+        return 'synced';
+      }
+    }
+    return 'new';
+  }
+
+  if (sourceType === 'local' || sourceType === 'audio' || sourceType === 'video') {
+    const normPath = normalizeClientLocalPathKey(stripped);
+    if (!normPath) return 'new';
+    if (rawSet.has(normPath) || rawSet.has(`file://${normPath}`)) return 'synced';
+    const allowDirPrefix = sourceType === 'local';
+    const dirPrefix = normPath.endsWith('/') ? normPath : `${normPath}/`;
+    for (const k of rawSet) {
+      const normKey = normalizeClientLocalPathKey(k);
+      if (normKey === normPath || (allowDirPrefix && normKey.startsWith(dirPrefix))) {
+        return 'synced';
+      }
+    }
+  }
+
+  return 'new';
+}
+
+export function formatSyncCompletionSummary(
+  sourceName: string | null,
+  counts: { newCount?: number; totalFetched?: number; skippedCount?: number; totalSources?: number | string }
+): { variant: 'success' | 'info'; message: string } {
+  const newCount = counts.newCount ?? 0;
+  const totalFetched = counts.totalFetched ?? 0;
+  const skippedCount = counts.skippedCount ?? 0;
+  const skippedSuffix = skippedCount > 0 ? `, ${skippedCount} already-synced skipped` : '';
+  if (sourceName) {
+    if (newCount > 0) {
+      return {
+        variant: 'success',
+        message: `🎉 Synced "${sourceName}": ${newCount} new document(s) ingested (${totalFetched} checked${skippedSuffix}).`,
+      };
+    }
+    return {
+      variant: 'info',
+      message: `Synced "${sourceName}": Up to date (0 new documents, ${totalFetched} checked${skippedSuffix}).`,
+    };
+  }
+  const sourcesLabel = counts.totalSources !== undefined ? ` across ${counts.totalSources} sources` : '';
+  return {
+    variant: 'success',
+    message: `🎉 Bulk sync completed: ${newCount} new document(s) ingested${sourcesLabel}${skippedSuffix}.`,
+  };
 }

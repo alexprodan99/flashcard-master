@@ -1,15 +1,31 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
+  import { getClientItemSyncStatus } from '../lib/formatters.js';
+  import SyncStatusBadge from './SyncStatusBadge.svelte';
+
   interface Props {
     urls: string[];
     onUrlsChange: (urls: string[]) => void;
     disabled?: boolean;
+    knownKeys?: string[];
+    showSyncStatus?: boolean;
   }
 
-  let { urls = [], onUrlsChange, disabled = false }: Props = $props();
+  let {
+    urls = [],
+    onUrlsChange,
+    disabled = false,
+    knownKeys = [],
+    showSyncStatus = false,
+  }: Props = $props();
 
   let inputVal = $state('');
   let warningMessage = $state<string | null>(null);
   let warningTimer: ReturnType<typeof setTimeout> | null = null;
+
+  onDestroy(() => {
+    if (warningTimer) clearTimeout(warningTimer);
+  });
 
   function showWarning(msg: string) {
     if (warningTimer) clearTimeout(warningTimer);
@@ -186,17 +202,25 @@
     {:else}
       <ul class="urls-list">
         {#each urls as url, index}
+          {@const itemStatus = showSyncStatus ? getClientItemSyncStatus(url, 'web', knownKeys) : null}
           <li class="url-item">
             <span class="url-index">#{index + 1}</span>
-            <a
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              class="url-link"
-              title={url}
-            >
-              {url}
-            </a>
+            {#if /^https?:\/\//i.test(url)}
+              <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="url-link"
+                title={url}
+              >
+                {url}
+              </a>
+            {:else}
+              <span class="url-link" title={url}>{url}</span>
+            {/if}
+            {#if itemStatus}
+              <SyncStatusBadge status={itemStatus} />
+            {/if}
             {#if !disabled}
               <button
                 type="button"
@@ -391,6 +415,7 @@
   .url-link:hover {
     text-decoration: underline;
   }
+
 
   .remove-btn {
     background: transparent;

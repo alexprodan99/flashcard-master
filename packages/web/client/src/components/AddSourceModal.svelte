@@ -295,7 +295,7 @@
       if (syncImmediately) {
         try {
           const slicing = getSlicingOptions();
-          const syncResult: any = await syncSource(source.id, slicing ? { slicing } : undefined);
+          const syncResult: any = await syncSource(source.id, { ...(slicing ? { slicing } : {}), syncMode: 'new-only' });
           if (syncResult?.jobId) {
             toastStore.info(`Source added. Sync task #${syncResult.jobId.slice(0, 8)} queued in background.`);
           } else if (syncResult?.newCount !== undefined) {

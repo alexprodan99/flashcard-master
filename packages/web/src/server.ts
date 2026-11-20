@@ -31,6 +31,16 @@ import {
   MediaService,
   CardGenerationService,
   type DocumentSlicingOptions,
+  type DataSource,
+  type SyncMode,
+  SyncModeSchema,
+  buildKnownItemKeysForSource,
+  createKnownItemMatcher,
+  parseMediaSourceItems,
+  stripUrlFragment,
+  extractYouTubeVideoId,
+  normalizeHttpUrlKey,
+  normalizeLocalFilePathKey,
 } from "@flashcard-master/core";
 import {
   createLLMAdapter,
@@ -2191,35 +2201,23 @@ export class WebServer {
           }
 
           // 4. Single Source Sync Endpoint: POST /api/sync/:id
-          if (pathname.startsWith("/api/sync/") && method === "POST") {
-            const sourceId = pathname.slice("/api/sync/".length);
+          const syncSourceMatch = pathname.match(/^\/api\/sync\/([^/]+)$/);
+          if (syncSourceMatch && method === "POST") {
+            const sourceId = this.decodeRouteParam(syncSourceMatch[1]);
             const source = this.options.sourceRepo.getById(sourceId);
             if (!source) {
               this.sendJson(res, 404, { error: `Source "${sourceId}" not found` });
               return;
             }
 
-            const body = await this.parseBody(req).catch(() => ({}));
-            let slicing: DocumentSlicingOptions | undefined = body?.slicing;
-            if (typeof slicing === "string") {
-              try {
-                slicing = JSON.parse(slicing);
-              } catch {
-                slicing = { mode: slicing as any };
-              }
-            } else if (!slicing && typeof parsedUrl.query.slicing === "string") {
-              try {
-                slicing = JSON.parse(parsedUrl.query.slicing);
-              } catch {
-                slicing = { mode: parsedUrl.query.slicing as any };
-              }
-            }
+            const body = await this.parseJsonBodyStrict(req);
+            const { slicing, syncMode } = this.parseSyncRequestOptions(body, parsedUrl.query);
 
             if (this.jobManager && parsedUrl.query.sync !== "true") {
               const job = await this.jobManager.enqueueJob(
                 "sync_source",
                 `Sync source: ${source.name}`,
-                { sourceId, sourceName: source.name, slicing },
+                { sourceId, sourceName: source.name, slicing, syncMode },
                 async (_j, ctx) => {
                   const explicitTimeout = typeof (slicing as any)?.timeoutMs === "number" && (slicing as any).timeoutMs >= 0 ? (slicing as any).timeoutMs : undefined;
                   const syncTimeoutMs = explicitTimeout !== undefined
@@ -2231,6 +2229,7 @@ export class WebServer {
                       payload: {
                         sources: [source],
                         slicing,
+                        syncMode,
                         timeoutMs: syncTimeoutMs,
                         mediaDir: this.mediaDir,
                         localFilesDir: this.localFilesDir,
@@ -2251,7 +2250,7 @@ export class WebServer {
             }
 
             if (this.options.ingestionService) {
-              const syncRes = await this.options.ingestionService.syncSource(sourceId, { slicing });
+              const syncRes = await this.options.ingestionService.syncSource(sourceId, { slicing, syncMode });
               this.sendJson(res, syncRes.error && syncRes.totalFetched === 0 ? 404 : 200, syncRes);
             } else {
               this.sendJson(res, 200, { sourceId, newCount: 0, totalFetched: 0 });
@@ -2263,27 +2262,14 @@ export class WebServer {
           if (pathname === "/api/sync" && method === "POST") {
             const activeSources = this.options.sourceRepo.list().filter((s) => s.isActive);
 
-            const body = await this.parseBody(req).catch(() => ({}));
-            let slicing: DocumentSlicingOptions | undefined = body?.slicing;
-            if (typeof slicing === "string") {
-              try {
-                slicing = JSON.parse(slicing);
-              } catch {
-                slicing = { mode: slicing as any };
-              }
-            } else if (!slicing && typeof parsedUrl.query.slicing === "string") {
-              try {
-                slicing = JSON.parse(parsedUrl.query.slicing);
-              } catch {
-                slicing = { mode: parsedUrl.query.slicing as any };
-              }
-            }
+            const body = await this.parseJsonBodyStrict(req);
+            const { slicing, syncMode } = this.parseSyncRequestOptions(body, parsedUrl.query);
 
             if (this.jobManager && parsedUrl.query.sync !== "true") {
               const job = await this.jobManager.enqueueJob(
                 "sync_all",
                 `Sync all sources (${activeSources.length} active)`,
-                { sourceCount: activeSources.length, slicing },
+                { sourceCount: activeSources.length, slicing, syncMode },
                 async (_j, ctx) => {
                   const explicitTimeout = typeof (slicing as any)?.timeoutMs === "number" && (slicing as any).timeoutMs >= 0 ? (slicing as any).timeoutMs : undefined;
                   const syncTimeoutMs = explicitTimeout !== undefined
@@ -2298,6 +2284,7 @@ export class WebServer {
                       payload: {
                         sources: activeSources,
                         slicing,
+                        syncMode,
                         timeoutMs: syncTimeoutMs,
                         mediaDir: this.mediaDir,
                         localFilesDir: this.localFilesDir,
@@ -2318,7 +2305,7 @@ export class WebServer {
             }
 
             if (this.options.ingestionService) {
-              const syncResults = await this.options.ingestionService.syncAllActive({ slicing });
+              const syncResults = await this.options.ingestionService.syncAllActive({ slicing, syncMode });
               this.sendJson(res, 200, syncResults);
             } else {
               this.sendJson(res, 200, []);
@@ -2833,6 +2820,19 @@ export class WebServer {
               };
             });
             this.sendJson(res, 200, { documents: enrichedDocs, total: enrichedDocs.length });
+            return;
+          }
+
+          // 6b-bis. Per-Source Sync Status & Item Breakdown: GET /api/sources/:id/sync-status
+          const sourceSyncStatusMatch = pathname.match(/^\/api\/sources\/([^/]+)\/sync-status$/);
+          if (sourceSyncStatusMatch && method === "GET") {
+            const sourceId = this.decodeRouteParam(sourceSyncStatusMatch[1]);
+            const source = this.options.sourceRepo.getById(sourceId);
+            if (!source) {
+              this.sendJson(res, 404, { error: `Source "${sourceId}" not found` });
+              return;
+            }
+            this.sendJson(res, 200, this.buildSourceSyncStatus(source));
             return;
           }
 
@@ -3790,6 +3790,218 @@ export class WebServer {
         });
       });
     });
+  }
+
+  private decodeRouteParam(raw: string): string {
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      const err = new Error(`Invalid URL encoding in path parameter: "${raw}"`);
+      (err as any).statusCode = 400;
+      throw err;
+    }
+  }
+
+  private async parseJsonBodyStrict(req: http.IncomingMessage): Promise<any> {
+    try {
+      return await this.parseBody(req);
+    } catch (err: any) {
+      const badReq = new Error(err?.message || "Invalid JSON body");
+      (badReq as any).statusCode = 400;
+      throw badReq;
+    }
+  }
+
+  private parseSyncRequestOptions(
+    body: any,
+    query: Record<string, any>
+  ): { slicing?: DocumentSlicingOptions; syncMode: SyncMode } {
+    let rawSlicing: unknown = body?.slicing;
+    if (rawSlicing === undefined && typeof query?.slicing === "string" && query.slicing.trim() !== "") {
+      rawSlicing = query.slicing;
+    }
+    let slicing: DocumentSlicingOptions | undefined;
+    if (typeof rawSlicing === "string") {
+      const trimmed = rawSlicing.trim();
+      if (trimmed) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+            const err = new Error("Invalid slicing configuration: expected object");
+            (err as any).statusCode = 400;
+            throw err;
+          }
+          slicing = parsed as DocumentSlicingOptions;
+        } catch (err: any) {
+          if (err?.statusCode === 400) throw err;
+          slicing = { mode: trimmed as any };
+        }
+      }
+    } else if (rawSlicing !== undefined) {
+      if (typeof rawSlicing !== "object" || rawSlicing === null || Array.isArray(rawSlicing)) {
+        const err = new Error("Invalid slicing configuration: expected object");
+        (err as any).statusCode = 400;
+        throw err;
+      }
+      slicing = rawSlicing as DocumentSlicingOptions;
+    }
+
+    const rawSyncMode = body?.syncMode !== undefined ? body.syncMode : query?.syncMode;
+    let syncMode: SyncMode = "new-only";
+    if (rawSyncMode !== undefined) {
+      const parsed = SyncModeSchema.safeParse(rawSyncMode);
+      if (!parsed.success) {
+        const err = new Error(`Invalid syncMode "${String(rawSyncMode)}". Expected "new-only" or "full".`);
+        (err as any).statusCode = 400;
+        throw err;
+      }
+      syncMode = parsed.data;
+    }
+
+    return { slicing, syncMode };
+  }
+
+  private buildSourceSyncStatus(source: DataSource) {
+    const docs = this.options.documentRepo ? this.options.documentRepo.listBySourceId(source.id) : [];
+    const syncState = this.options.syncRepo ? this.options.syncRepo.get(source.id) : undefined;
+    const knownKeysSet = buildKnownItemKeysForSource(source, docs);
+    const matcher = createKnownItemMatcher(source.type, knownKeysSet);
+
+    const items: Array<{ key: string; uri: string; label: string; status: "synced" | "new" }> = [];
+    const parseUriList = (raw: string, splitDelimiters = false): string[] => {
+      const trimmed = (raw || "").trim();
+      if (!trimmed) return [];
+      if (trimmed.startsWith("[")) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed)) {
+            return parsed.map((v) => String(v || "").trim()).filter(Boolean);
+          }
+        } catch {
+          // Fall through cleanly
+        }
+      }
+      if (splitDelimiters) {
+        const parts = trimmed.replace(/^\[|\]$/g, "").split(/[\r\n,]+/).map((u) => u.trim()).filter(Boolean);
+        if (parts.length > 0) return parts;
+      }
+      return [trimmed];
+    };
+
+    if (source.type === "web") {
+      for (const uri of parseUriList(source.uri, true)) {
+        items.push({
+          key: normalizeHttpUrlKey(uri) || uri,
+          uri,
+          label: uri,
+          status: matcher.hasHttpUrl(uri) ? "synced" : "new",
+        });
+      }
+    } else if (source.type === "audio" || source.type === "video" || source.type === "youtube") {
+      for (const mediaItem of parseMediaSourceItems(source.uri)) {
+        const isYt = source.type === "youtube";
+        const isHttp = /^https?:\/\//i.test(mediaItem.uri);
+        const synced = isYt
+          ? matcher.hasYouTubeUri(mediaItem.uri)
+          : isHttp
+            ? matcher.hasHttpUrl(mediaItem.uri)
+            : matcher.hasLocalPath(mediaItem.uri);
+        const key = isYt
+          ? extractYouTubeVideoId(mediaItem.uri) || normalizeHttpUrlKey(mediaItem.uri) || mediaItem.uri
+          : isHttp
+            ? normalizeHttpUrlKey(mediaItem.uri) || mediaItem.uri
+            : normalizeLocalFilePathKey(mediaItem.uri) || mediaItem.uri;
+        const label =
+          mediaItem.title?.trim() ||
+          (isYt || isHttp ? mediaItem.uri : path.basename(mediaItem.uri) || mediaItem.uri);
+        items.push({
+          key,
+          uri: mediaItem.uri,
+          label,
+          status: synced ? "synced" : "new",
+        });
+      }
+    } else if (source.type === "local") {
+      const localEntries = parseUriList(source.uri);
+      const docPathKeys = Array.from(knownKeysSet).filter((k) => !k.startsWith("file://"));
+      for (const entry of localEntries) {
+        const normEntry = normalizeLocalFilePathKey(entry) || entry;
+        let synced = matcher.hasLocalPath(entry);
+        if (!synced && normEntry) {
+          const dirPrefix = normEntry.endsWith("/") ? normEntry : `${normEntry}/`;
+          const isWindowsPath = /^[a-z]:\//i.test(dirPrefix);
+          synced = docPathKeys.some((dk) =>
+            isWindowsPath ? dk.toLowerCase().startsWith(dirPrefix.toLowerCase()) : dk.startsWith(dirPrefix)
+          );
+        }
+        items.push({
+          key: normEntry,
+          uri: entry,
+          label: path.basename(entry) || entry,
+          status: synced ? "synced" : "new",
+        });
+      }
+    } else if (source.type === "notion") {
+      for (const entry of parseUriList(source.uri)) {
+        const key = normalizeHttpUrlKey(entry) || entry;
+        items.push({
+          key,
+          uri: entry,
+          label: entry,
+          status: matcher.hasNotionPage(entry, entry) || docs.length > 0 ? "synced" : "new",
+        });
+      }
+    } else {
+      for (const entry of parseUriList(source.uri)) {
+        const key = normalizeHttpUrlKey(entry) || entry;
+        items.push({
+          key,
+          uri: entry,
+          label: entry,
+          status: matcher.hasHttpUrl(entry) || docs.length > 0 ? "synced" : "new",
+        });
+      }
+    }
+
+    // Parent-level deduplicated synced items across discovered documents (covers catalog sources like rss/sitemap/llms-txt/notion/local directories)
+    const syncedGroupMap = new Map<string, { key: string; uri: string; label: string; sliceCount: number }>();
+    for (const doc of docs) {
+      const rawUrl = (doc.url || "").trim();
+      const baseUri = stripUrlFragment(rawUrl) || (doc.title || doc.id);
+      const groupKey = rawUrl
+        ? source.type === "youtube"
+          ? extractYouTubeVideoId(baseUri) || normalizeHttpUrlKey(baseUri) || baseUri
+          : source.type === "local" || source.type === "audio" || source.type === "video"
+            ? (/^https?:\/\//i.test(baseUri) ? normalizeHttpUrlKey(baseUri) : normalizeLocalFilePathKey(baseUri) || baseUri)
+            : normalizeHttpUrlKey(baseUri) || baseUri
+        : (doc.title || doc.id).replace(/\s+\((?:Part|Slice|Pages|Chunk)[^)]*\)$/i, "").trim();
+      const cleanTitle = (doc.title || baseUri)
+        .replace(/\s+\((?:Part|Slice|Pages|Chunk)[^)]*\)$/i, "")
+        .replace(/\s+\[(?:Part\s+[^\]]+|\d{1,2}:\d{2}[^\]]*)\]$/i, "")
+        .trim();
+      const existing = syncedGroupMap.get(groupKey);
+      if (existing) {
+        existing.sliceCount += 1;
+      } else {
+        syncedGroupMap.set(groupKey, {
+          key: groupKey,
+          uri: baseUri,
+          label: cleanTitle || baseUri,
+          sliceCount: 1,
+        });
+      }
+    }
+
+    return {
+      sourceId: source.id,
+      sourceType: source.type,
+      syncedDocumentCount: docs.length,
+      hasSyncedDocuments: docs.length > 0,
+      lastSyncedAt: (syncState?.lastSyncedAt as unknown) instanceof Date ? (syncState!.lastSyncedAt as unknown as Date).toISOString() : (syncState?.lastSyncedAt || null),
+      knownKeys: Array.from(knownKeysSet),
+      items,
+      syncedItems: Array.from(syncedGroupMap.values()),
+    };
   }
 
   async close(): Promise<void> {
