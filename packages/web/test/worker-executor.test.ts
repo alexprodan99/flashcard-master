@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
-import { fileURLToPath } from "node:url";
 import { WorkerExecutor, resolveDefaultWorkerScriptPath } from "../src/workers/worker-executor.js";
 import type { JobExecutionContext } from "../src/jobs/job-manager.js";
 import {
@@ -1046,16 +1045,11 @@ Beta details on page 5.
       uri: "https://example.com/post-1",
     });
 
-    const realTaskWorkerPath = path.resolve(
-      path.dirname(fileURLToPath(import.meta.url)),
-      "../src/workers/task-worker.ts"
-    );
     const executor = new WorkerExecutor({
       ingestionService: realIngestionService,
       documentRepo: docRepo,
       cardRepo,
       syncRepo,
-      workerScriptPath: realTaskWorkerPath,
     });
 
     const ctx = {
