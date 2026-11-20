@@ -7,7 +7,7 @@ export interface DesktopBridge {
 }
 
 const versionArg = process.argv.find((arg) => arg.startsWith("--fm-app-version="));
-const resolvedVersion = versionArg ? versionArg.slice("--fm-app-version=".length) : "1.2.0";
+const resolvedVersion = versionArg ? versionArg.slice("--fm-app-version=".length) : "1.3.0";
 
 const desktopBridge: DesktopBridge = {
   isDesktop: true,

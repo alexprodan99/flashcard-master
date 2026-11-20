@@ -44,7 +44,7 @@ export function getWebPackageVersion(): string {
   } catch {
     // Fall back safely if package metadata cannot be read
   }
-  cachedVersion = "1.2.0";
+  cachedVersion = "1.3.0";
   return cachedVersion;
 }
 

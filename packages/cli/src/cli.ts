@@ -105,7 +105,7 @@ function getCliVersion(): string {
   } catch {
     // Fallback if package.json is unavailable
   }
-  return "1.2.0";
+  return "1.3.0";
 }
 
 export function createCli(providedContext?: AppContext): Command {
