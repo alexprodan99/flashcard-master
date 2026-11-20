@@ -1,5 +1,9 @@
 <script lang="ts">
-  import { uploadSourceFile } from '../lib/api';
+  import { resolveYouTubeUrls, uploadSourceFile } from '../lib/api';
+  import {
+    extractClientYouTubeVideoId,
+    planYoutubeUrlAdditions,
+  } from '../lib/formatters';
   import type {
     MediaExtractionMode,
     MediaSlicingOverride,
@@ -31,8 +35,8 @@
   const VIDEO_EXTS = ['.mp4', '.mkv', '.webm', '.mov'];
   const SUBTITLE_EXTS = ['.srt', '.vtt'];
   const TIMESTAMP_REGEX = /^(?:\d+:[0-5]\d:[0-5]\d|\d{1,3}:[0-5]\d)$/;
-  const YOUTUBE_CANDIDATE_REGEX =
-    /^(?:https?:\/\/(?:www\.|m\.|music\.)?(?:youtube\.com|youtube-nocookie\.com|youtu\.be)\/|[A-Za-z0-9_-]{11}$)/i;
+  const manuallyEditedKeys = new Set<string>();
+  const attemptedMetadataIds = new Set<string>();
 
   let urlInput = $state('');
   let manualPathInput = $state('');
@@ -40,12 +44,28 @@
   let isUploading = $state(false);
   let uploadingSubForIndex = $state<number | null>(null);
   let isDragging = $state(false);
+  let resolvingMetadataCount = $state(0);
+  let isResolvingMetadata = $derived(resolvingMetadataCount > 0);
   let localError = $state<string | null>(null);
+  let duplicateNotice = $state<string | null>(null);
   let mediaFileInputRef = $state<HTMLInputElement | null>(null);
 
   $effect(() => {
     if (!settingsStore.hasLoaded && !settingsStore.loading) {
       settingsStore.loadKeys();
+    }
+  });
+
+  $effect(() => {
+    if (sourceType !== 'youtube' || items.length === 0) return;
+    const missing = items.filter((item) => {
+      if (item.title?.trim()) return false;
+      const vid = extractClientYouTubeVideoId(item.uri);
+      if (!vid || attemptedMetadataIds.has(vid) || manuallyEditedKeys.has(vid)) return false;
+      return true;
+    });
+    if (missing.length > 0) {
+      void hydrateYoutubeMetadata(missing.map((m) => m.uri));
     }
   });
 
@@ -96,24 +116,99 @@
     }
   }
 
+  async function hydrateYoutubeMetadata(targetUrls: string[]) {
+    const uniqueUrls = Array.from(new Set(targetUrls.map((u) => u.trim()).filter(Boolean)));
+    if (uniqueUrls.length === 0) return;
+    for (const u of uniqueUrls) {
+      const vid = extractClientYouTubeVideoId(u);
+      if (vid) attemptedMetadataIds.add(vid);
+    }
+
+    resolvingMetadataCount += 1;
+    try {
+      const { items: resolvedList } = await resolveYouTubeUrls(uniqueUrls);
+      if (sourceType !== 'youtube') return;
+      const byVideoId = new Map<string, { canonicalUrl: string; title: string }>();
+      for (const entry of resolvedList || []) {
+        if (
+          entry.valid &&
+          entry.resolvedFromRemote === true &&
+          entry.videoId &&
+          entry.title &&
+          entry.canonicalUrl
+        ) {
+          byVideoId.set(entry.videoId, {
+            canonicalUrl: entry.canonicalUrl,
+            title: entry.title,
+          });
+        }
+      }
+      if (byVideoId.size === 0) return;
+
+      let changed = false;
+      const nextItems = items.map((item) => {
+        const vid = extractClientYouTubeVideoId(item.uri);
+        if (!vid) return item;
+        const resolved = byVideoId.get(vid);
+        if (!resolved) return item;
+        if (manuallyEditedKeys.has(vid) || manuallyEditedKeys.has(item.uri) || item.title?.trim()) {
+          return item;
+        }
+        changed = true;
+        return {
+          ...item,
+          uri: resolved.canonicalUrl,
+          title: resolved.title,
+        };
+      });
+      if (changed) {
+        items = nextItems;
+      }
+    } catch {
+      // Degrade gracefully when offline or endpoint unavailable
+    } finally {
+      resolvingMetadataCount = Math.max(0, resolvingMetadataCount - 1);
+    }
+  }
+
   function handleAddYoutubeUrls() {
     setError(null);
+    duplicateNotice = null;
     const raw = urlInput.trim();
     if (!raw) return;
 
     const candidates = raw
       .split(/[\r\n,\s]+/)
-      .map((s) => s.trim())
+      .map((s) => s.trim().replace(/^[<"\x27]|[>"\x27]$/g, ""))
       .filter(Boolean);
 
-    const invalid = candidates.filter((u) => !YOUTUBE_CANDIDATE_REGEX.test(u));
+    const { additions, duplicates, invalid } = planYoutubeUrlAdditions(candidates, items, {
+      extractionMode: defaultExtractionMode(),
+      sttProvider: settingsStore.general.defaultSttProvider || 'openai',
+    });
+
     if (invalid.length > 0) {
       setError(`Invalid YouTube URL(s): ${invalid.join(', ')}`);
       return;
     }
 
-    appendMediaUris(candidates);
-    urlInput = '';
+    if (duplicates.length > 0) {
+      duplicateNotice = `Skipped duplicate YouTube video(s): ${duplicates
+        .map((d) => `${d.input} (${d.videoId})`)
+        .join(', ')}`;
+    }
+
+    if (additions.length > 0) {
+      for (const added of additions) {
+        const vid = extractClientYouTubeVideoId(added.uri);
+        if (vid) attemptedMetadataIds.add(vid);
+      }
+      items = [...items, ...additions];
+      urlInput = '';
+      void hydrateYoutubeMetadata(additions.map((a) => a.uri));
+    } else if (duplicates.length > 0) {
+      urlInput = '';
+    }
   }
 
   function handleAddManualPath() {
@@ -185,6 +280,15 @@
   }
 
   function removeItem(idx: number) {
+    const removed = items[idx];
+    if (removed) {
+      manuallyEditedKeys.delete(removed.uri);
+      const vid = extractClientYouTubeVideoId(removed.uri);
+      if (vid) {
+        manuallyEditedKeys.delete(vid);
+        attemptedMetadataIds.delete(vid);
+      }
+    }
     items = items.filter((_, i) => i !== idx);
   }
 
@@ -239,8 +343,16 @@
     </span>
   </div>
 
-  {#if localError}
+  {#if localError && !onError}
     <div class="media-error-banner">⚠️ {localError}</div>
+  {/if}
+
+  {#if duplicateNotice}
+    <div class="media-duplicate-banner" role="status">ℹ️ {duplicateNotice}</div>
+  {/if}
+
+  {#if isResolvingMetadata}
+    <div class="media-resolving-banner" role="status">⏳ Resolving YouTube video metadata...</div>
   {/if}
 
   {#if sourceType === 'youtube'}
@@ -337,7 +449,7 @@
 
   {#if items.length > 0}
     <div class="media-items-list">
-      {#each items as item, idx (item.uri)}
+      {#each items as item, idx (idx)}
         {@const activeProvider = item.sttProvider || settingsStore.general.defaultSttProvider || 'openai'}
         {@const showStt = item.extractionMode === 'stt' || item.extractionMode === 'auto'}
         {@const missingKey = showStt && isMissingSttKey(activeProvider)}
@@ -345,7 +457,12 @@
           <div class="item-card-top">
             <div class="item-identity">
               <span class="item-index">#{idx + 1}</span>
-              <span class="item-uri" title={item.uri}>{getFilenameDisplay(item.uri)}</span>
+              <div class="item-identity-text">
+                {#if item.title}
+                  <span class="item-title-display" title={item.title}>{item.title}</span>
+                {/if}
+                <span class="item-uri" title={item.uri}>{getFilenameDisplay(item.uri)}</span>
+              </div>
             </div>
             <button
               type="button"
@@ -368,6 +485,9 @@
                 value={item.title || ''}
                 oninput={(e) => {
                   const val = (e.target as HTMLInputElement).value;
+                  manuallyEditedKeys.add(item.uri);
+                  const vid = extractClientYouTubeVideoId(item.uri);
+                  if (vid) manuallyEditedKeys.add(vid);
                   updateItem(idx, { title: val.trim() ? val : undefined });
                 }}
                 disabled={disabled}
@@ -761,6 +881,40 @@
     align-items: center;
     gap: 6px;
     min-width: 0;
+  }
+
+  .item-identity-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    gap: 2px;
+  }
+
+  .item-title-display {
+    font-size: 13px;
+    font-weight: 600;
+    color: #f8fafc;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .media-duplicate-banner {
+    background: rgba(245, 158, 11, 0.12);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    color: #fcd34d;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+  }
+
+  .media-resolving-banner {
+    background: rgba(56, 189, 248, 0.1);
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    color: #7dd3fc;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 12px;
   }
 
   .item-index {

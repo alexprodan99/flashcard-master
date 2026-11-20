@@ -602,4 +602,85 @@ describe("IngestionService", () => {
     });
     expect(seenFullKnownSets[seenFullKnownSets.length - 1]).toBeUndefined();
   });
+
+  it("backfills YouTube canonical URIs and resolved titles from plain-text or empty-title entries while preserving per-item metadata", async () => {
+    const ytSrc = sourceRepo.create({
+      name: "Plain YouTube Source",
+      type: "youtube",
+      uri: "https://youtu.be/VidAlpha001\nhttps://www.youtube.com/shorts/VidAlpha001",
+    });
+
+    class MockYtStrategy implements IngestionStrategy {
+      readonly type = "youtube" as const;
+
+      async fetch(source: DataSource, _lastSync?: any, options?: IngestionOptions): Promise<RawDocument[]> {
+        if (options?.knownItemKeys?.has("VidAlpha001") && options?.syncMode !== "full") {
+          options.onItemSkipped?.("VidAlpha001");
+          return [];
+        }
+        return [
+          {
+            id: "yt-1",
+            sourceId: source.id,
+            title: "Alpha Resolved Title",
+            rawContent: "[00:00 - 00:10] Hello world.",
+            originUrl: "https://www.youtube.com/watch?v=VidAlpha001",
+          },
+        ];
+      }
+
+      extractCleanText(raw: RawDocument): CleanTextDocument {
+        return {
+          id: raw.id,
+          sourceId: raw.sourceId,
+          title: raw.title,
+          textContent: raw.rawContent,
+          originUrl: raw.originUrl,
+          contentHash: `hash-${raw.id}`,
+        };
+      }
+    }
+
+    strategyRegistry.register(new MockYtStrategy());
+
+    const first = await service.syncSource(ytSrc.id);
+    expect(first.newCount).toBe(1);
+
+    const afterFirst = JSON.parse(sourceRepo.getById(ytSrc.id)!.uri);
+    expect(afterFirst).toHaveLength(1);
+    expect(afterFirst[0]).toMatchObject({
+      uri: "https://www.youtube.com/watch?v=VidAlpha001",
+      title: "Alpha Resolved Title",
+    });
+
+    // Update source with empty title "" and custom slicing fields + duplicate; 'new-only' sync still canonicalizes/dedups and strips empty title
+    sourceRepo.update(ytSrc.id, {
+      uri: JSON.stringify([
+        {
+          uri: "https://youtu.be/VidAlpha001",
+          title: "",
+          extractionMode: "stt",
+          sttProvider: "gemini",
+          slicingMode: "timestamps",
+          intervalMinutes: 5,
+          timestampRanges: [{ start: "00:00", end: "01:00" }],
+        },
+        { uri: "https://www.youtube.com/shorts/VidAlpha001", extractionMode: "auto" },
+      ]),
+    });
+
+    const second = await service.syncSource(ytSrc.id);
+    expect(second.skippedCount).toBe(1);
+    const afterSecond = JSON.parse(sourceRepo.getById(ytSrc.id)!.uri);
+    expect(afterSecond).toHaveLength(1);
+    expect(afterSecond[0]).toMatchObject({
+      uri: "https://www.youtube.com/watch?v=VidAlpha001",
+      extractionMode: "stt",
+      sttProvider: "gemini",
+      slicingMode: "timestamps",
+      intervalMinutes: 5,
+      timestampRanges: [{ start: "00:00", end: "01:00" }],
+    });
+    expect(afterSecond[0].title).toBeUndefined();
+  });
 });

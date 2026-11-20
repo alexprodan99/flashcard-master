@@ -16,6 +16,7 @@ import type {
   AnkiTestResult,
   MediaDiagnosticsResult,
   PaginatedCardsResponse,
+  ResolvedYouTubeUrlEntry,
 } from './types.js';
 
 export async function fetchStats(): Promise<DashboardStats> {
@@ -94,6 +95,25 @@ export async function updateSource(
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || 'Failed to update data source');
+  }
+  return res.json();
+}
+
+export async function resolveYouTubeUrls(
+  urls: string[],
+  existingUrls?: string[]
+): Promise<{ items: ResolvedYouTubeUrlEntry[] }> {
+  const res = await fetch('/api/sources/youtube/resolve', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      urls,
+      ...(existingUrls && existingUrls.length > 0 ? { existingUrls } : {}),
+    }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to resolve YouTube metadata');
   }
   return res.json();
 }

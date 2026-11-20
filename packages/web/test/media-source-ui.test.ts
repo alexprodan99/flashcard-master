@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -8,7 +8,12 @@ import {
   formatLocatorLabel,
   parseMediaItemsSummary,
   validateMediaItems,
+  extractClientYouTubeVideoId,
+  canonicalizeYouTubeUrl,
+  planYoutubeUrlAdditions,
 } from '../client/src/lib/formatters.js';
+import { resolveYouTubeUrls } from '../client/src/lib/api.js';
+import { YouTubeIngestionStrategy } from '@flashcard-master/adapters';
 import { createWebServer, type WebServer } from '../src/server.js';
 import { WorkerExecutor } from '../src/workers/worker-executor.js';
 import type { JobExecutionContext } from '../src/jobs/job-manager.js';
@@ -584,6 +589,141 @@ describe('Story 21.6: Web UI Media Source Helpers, API & Worker Progress', () =>
         const updated = (await updateRes.json()) as any;
         expect(updated.defaultSlicingMode).toBe('timestamps');
         expect(updated.defaultIntervalMinutes).toBe(5);
+      } finally {
+        await server.close();
+        db.close();
+      }
+    });
+
+    it('detects duplicate YouTube videoIds across URL formats via planYoutubeUrlAdditions and resolves via POST /api/sources/youtube/resolve', async () => {
+      expect(extractClientYouTubeVideoId('https://youtu.be/dQw4w9WgXcQ')).toBe('dQw4w9WgXcQ');
+      expect(extractClientYouTubeVideoId('https://www.youtube.com/shorts/dQw4w9WgXcQ')).toBe('dQw4w9WgXcQ');
+      expect(canonicalizeYouTubeUrl('dQw4w9WgXcQ')).toBe('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+
+      const plan = planYoutubeUrlAdditions(
+        [
+          'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+          'https://www.youtube.com/shorts/dQw4w9WgXcQ',
+          'https://youtu.be/NewVid12345',
+        'm.youtube.com/watch?v=MobVid67890',
+        'https://www.youtube-nocookie.com/embed/NoCook12345',
+          'https://example.com/not-yt',
+        ],
+        [{ uri: 'https://youtu.be/dQw4w9WgXcQ', extractionMode: 'auto' }]
+      );
+      expect(plan.additions).toHaveLength(3);
+      expect(plan.additions[1].uri).toBe('https://www.youtube.com/watch?v=MobVid67890');
+      expect(plan.additions[2].uri).toBe('https://www.youtube.com/watch?v=NoCook12345');
+      expect(plan.additions[0].uri).toBe('https://www.youtube.com/watch?v=NewVid12345');
+      expect(plan.duplicates).toHaveLength(2);
+      expect(plan.invalid).toEqual(['https://example.com/not-yt']);
+
+      const db = createDatabaseClient({ inMemory: true });
+      const strategyRegistry = new StrategyRegistry();
+      const customFetch = vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input).includes('/oembed?')) {
+          return new Response(
+            JSON.stringify({ title: 'Mocked YouTube Lecture', author_name: 'Course Channel' }),
+            { status: 200 }
+          );
+        }
+        return new Response('Not Found', { status: 404 });
+      }) as unknown as typeof fetch;
+
+      strategyRegistry.register(new YouTubeIngestionStrategy({ customFetch }));
+      const server = createWebServer({
+        port: 0,
+        sourceRepo: new DataSourceRepository(db),
+        syncRepo: new SyncStateRepository(db),
+        cardRepo: new FlashcardRepository(db),
+        strategyRegistry,
+      });
+
+      const { url } = await server.listen(0);
+      try {
+        const badRes = await fetch(`${url}/api/sources/youtube/resolve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        expect(badRes.status).toBe(400);
+
+        const malformedRes = await fetch(`${url}/api/sources/youtube/resolve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: '{invalid-json',
+        });
+        expect(malformedRes.status).toBe(400);
+
+        const nonStringRes = await fetch(`${url}/api/sources/youtube/resolve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ urls: [123] }),
+        });
+        expect(nonStringRes.status).toBe(400);
+
+        const tooManyRes = await fetch(`${url}/api/sources/youtube/resolve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ urls: Array.from({ length: 51 }, (_, i) => `Vid${String(i).padStart(8, '0')}`) }),
+        });
+        expect(tooManyRes.status).toBe(400);
+
+        const invalidUrlRes = await fetch(`${url}/api/sources/youtube/resolve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ urls: ['https://example.com/bad'] }),
+        });
+        expect(invalidUrlRes.status).toBe(200);
+        const invalidUrlBody = (await invalidUrlRes.json()) as any;
+        expect(invalidUrlBody.items[0]).toMatchObject({ valid: false, duplicate: false });
+
+        const resolveRes = await fetch(`${url}/api/sources/youtube/resolve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            urls: [
+              'https://youtu.be/NewVid12345',
+              'https://www.youtube.com/watch?v=NewVid12345',
+              'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+            ],
+            existingUrls: ['https://youtu.be/dQw4w9WgXcQ'],
+          }),
+        });
+        expect(resolveRes.status).toBe(200);
+        const body = (await resolveRes.json()) as any;
+        expect(body.items).toHaveLength(3);
+        expect(body.items[0]).toMatchObject({
+          valid: true,
+          duplicate: false,
+          videoId: 'NewVid12345',
+          canonicalUrl: 'https://www.youtube.com/watch?v=NewVid12345',
+          title: 'Mocked YouTube Lecture',
+          channel: 'Course Channel',
+          resolvedFromRemote: true,
+        });
+        expect(body.items[1]).toMatchObject({
+          valid: true,
+          duplicate: true,
+          videoId: 'NewVid12345',
+          duplicateOf: 'https://www.youtube.com/watch?v=NewVid12345',
+        });
+        expect(body.items[2]).toMatchObject({
+          valid: true,
+          duplicate: true,
+          videoId: 'dQw4w9WgXcQ',
+        });
+
+        // Also test resolveYouTubeUrls client helper against live endpoint via URL override
+        const origFetch = globalThis.fetch;
+        globalThis.fetch = ((reqUrl: any, init?: any) =>
+          origFetch(`${url}${reqUrl}`, init)) as typeof fetch;
+        try {
+          const clientRes = await resolveYouTubeUrls(['NewVid12345']);
+          expect(clientRes.items[0].title).toBe('Mocked YouTube Lecture');
+        } finally {
+          globalThis.fetch = origFetch;
+        }
       } finally {
         await server.close();
         db.close();

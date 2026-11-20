@@ -19,6 +19,7 @@ import {
   type SyncState,
   SubtitleParser,
   createKnownItemMatcher,
+  extractYouTubeVideoId,
   formatTimestampRange,
   parseMediaSourceItems,
   parseTimestampToSeconds,
@@ -39,7 +40,6 @@ import {
   filterCuesByTimestampRanges,
 } from "./media-transcript-resolver.js";
 
-const YOUTUBE_VIDEO_ID_RE = /^[A-Za-z0-9_-]{11}$/;
 const DESCRIPTION_CHAPTER_LINE_RE =
   /^\s*(?:[-*•]\s*|\d+[.)]\s*)?\[?((?:\d{1,2}:)?\d{1,2}:\d{2})\]?\s*(?:[-–—|:]+\s*)?(.+?)\s*$/;
 
@@ -80,6 +80,27 @@ export interface YouTubeVideoMetadata {
   captionTracks: YouTubeCaptionTrack[];
 }
 
+export interface YouTubeVideoMetadataSummary {
+  videoId: string;
+  canonicalUrl: string;
+  title: string;
+  channel?: string;
+  resolvedFromRemote: boolean;
+}
+
+export interface ResolvedYouTubeUrlEntry {
+  input: string;
+  valid: boolean;
+  duplicate: boolean;
+  duplicateOf?: string;
+  videoId?: string;
+  canonicalUrl?: string;
+  title?: string;
+  channel?: string;
+  resolvedFromRemote?: boolean;
+  error?: string;
+}
+
 export interface YouTubeIngestionStrategyOptions {
   settingsService?: SettingsService;
   sttPort?: SpeechToTextPort;
@@ -101,68 +122,7 @@ export interface YouTubeIngestionStrategyOptions {
   onProgress?: (stage: MediaResolutionStage, message: string, uri?: string) => void;
 }
 
-/**
- * Extracts a canonical 11-character YouTube video ID from standard watch, short youtu.be,
- * shorts, live, embed, mobile/music subdomains, or bare ID strings.
- */
-export function extractYouTubeVideoId(input: string): string | null {
-  const trimmed = (input || "").trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  if (YOUTUBE_VIDEO_ID_RE.test(trimmed)) {
-    return trimmed;
-  }
-
-  const candidateUrl = /^https?:\/\//i.test(trimmed)
-    ? trimmed
-    : /^(?:www\.|m\.|music\.)?(?:youtube\.com|youtu\.be|youtube-nocookie\.com)\//i.test(trimmed)
-      ? `https://${trimmed}`
-      : null;
-
-  if (!candidateUrl) {
-    return null;
-  }
-
-  let parsed: URL;
-  try {
-    parsed = new URL(candidateUrl);
-  } catch {
-    return null;
-  }
-
-  const host = parsed.hostname.toLowerCase();
-  const isShortHost = host === "youtu.be" || host.endsWith(".youtu.be");
-  const isYouTubeHost =
-    host === "youtube.com" ||
-    host.endsWith(".youtube.com") ||
-    host === "youtube-nocookie.com" ||
-    host.endsWith(".youtube-nocookie.com");
-
-  if (!isShortHost && !isYouTubeHost) {
-    return null;
-  }
-
-  const segments = parsed.pathname.split("/").filter(Boolean);
-
-  if (isShortHost) {
-    const id = segments[0] ?? "";
-    return YOUTUBE_VIDEO_ID_RE.test(id) ? id : null;
-  }
-
-  const vParam = parsed.searchParams.get("v")?.trim() ?? "";
-  if (YOUTUBE_VIDEO_ID_RE.test(vParam)) {
-    return vParam;
-  }
-
-  if (segments.length >= 2 && ["shorts", "live", "embed", "v"].includes(segments[0].toLowerCase())) {
-    const id = segments[1] ?? "";
-    return YOUTUBE_VIDEO_ID_RE.test(id) ? id : null;
-  }
-
-  return null;
-}
+export { extractYouTubeVideoId };
 
 /**
  * Normalizes any supported YouTube URL or video ID into `{ videoId, canonicalUrl }`.
@@ -178,6 +138,118 @@ export function normalizeYouTubeUrl(input: string): { videoId: string; canonical
     videoId,
     canonicalUrl: `https://www.youtube.com/watch?v=${videoId}`,
   };
+}
+
+/**
+ * Resolves lightweight YouTube video metadata (videoId, canonicalUrl, title, optional channel)
+ * via oEmbed + watch-page HTML fallback without downloading captions, audio, or running STT.
+ * Degrades gracefully when offline or unreachable.
+ */
+export async function resolveVideoMetadataSummary(
+  input: string,
+  options: { fetchFn?: typeof fetch; timeoutMs?: number; signal?: AbortSignal } = {}
+): Promise<YouTubeVideoMetadataSummary> {
+  const { videoId, canonicalUrl } = normalizeYouTubeUrl(input);
+  const fetchFn = options.fetchFn ?? globalThis.fetch;
+  const timeoutMs = options.timeoutMs ?? 5000;
+  const fallback: YouTubeVideoMetadataSummary = {
+    videoId,
+    canonicalUrl,
+    title: `YouTube Video ${videoId}`,
+    resolvedFromRemote: false,
+  };
+
+  // Tier A: Fast YouTube oEmbed lookup
+  const oembedTimeout = withTimeoutSignal(timeoutMs, options.signal);
+  try {
+    const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(canonicalUrl)}&format=json`;
+    const res = await fetchFn(oembedUrl, {
+      method: "GET",
+      signal: oembedTimeout.signal,
+      headers: { Accept: "application/json" },
+    });
+    if (res.ok) {
+      const data = (await res.json()) as { title?: unknown; author_name?: unknown };
+      const title = typeof data?.title === "string" ? data.title.trim() : "";
+      if (title) {
+        const channel =
+          typeof data?.author_name === "string" && data.author_name.trim()
+            ? data.author_name.trim()
+            : undefined;
+        return {
+          videoId,
+          canonicalUrl,
+          title,
+          ...(channel ? { channel } : {}),
+          resolvedFromRemote: true,
+        };
+      }
+    }
+  } catch {
+    if (options.signal?.aborted) {
+      return fallback;
+    }
+  } finally {
+    oembedTimeout.cleanup();
+  }
+
+  // Tier B: Watch-page lightweight HTML metadata fallback
+  const watchTimeout = withTimeoutSignal(timeoutMs, options.signal);
+  try {
+    const watchUrl = `https://www.youtube.com/watch?v=${videoId}&hl=en`;
+    const res = await fetchFn(watchUrl, {
+      method: "GET",
+      signal: watchTimeout.signal,
+      headers: {
+        "Accept-Language": "en-US,en;q=0.9",
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      },
+    });
+    if (res.ok) {
+      const html = await res.text();
+      const playerResponse = extractPlayerResponseFromHtml(html);
+      if (playerResponse) {
+        const details = playerResponse.videoDetails ?? {};
+        const micro = playerResponse.microformat?.playerMicroformatRenderer ?? {};
+        const rawTitle = decodeHtmlEntities(
+          readRendererText(details.title) || readRendererText(micro.title)
+        ).trim();
+        const rawChannel = decodeHtmlEntities(
+          readRendererText(details.author) || readRendererText(micro.ownerChannelName)
+        ).trim();
+        if (rawTitle) {
+          return {
+            videoId,
+            canonicalUrl,
+            title: rawTitle,
+            ...(rawChannel ? { channel: rawChannel } : {}),
+            resolvedFromRemote: true,
+          };
+        }
+      }
+      const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+      if (titleMatch && titleMatch[1]) {
+        const cleanPageTitle = decodeHtmlEntities(titleMatch[1])
+          .replace(/\s*-\s*YouTube\s*$/i, "")
+          .trim();
+        if (cleanPageTitle && cleanPageTitle.toLowerCase() !== "youtube") {
+          return {
+            videoId,
+            canonicalUrl,
+            title: cleanPageTitle,
+            resolvedFromRemote: true,
+          };
+        }
+      }
+    }
+  } catch {
+    // Graceful offline fallback below
+  } finally {
+    watchTimeout.cleanup();
+  }
+
+  return fallback;
 }
 
 function decodeHtmlEntitiesOnce(input: string): string {
@@ -847,6 +919,87 @@ export class YouTubeIngestionStrategy implements IngestionStrategy {
     return promise;
   }
 
+  async resolveVideoMetadataSummary(
+    input: string,
+    signal?: AbortSignal
+  ): Promise<YouTubeVideoMetadataSummary> {
+    return resolveVideoMetadataSummary(input, {
+      fetchFn: this.fetchFn,
+      timeoutMs: Math.min(this.timeoutMs, 8000),
+      signal,
+    });
+  }
+
+  async resolveUrls(
+    inputs: string[],
+    options: { existingUrls?: string[]; signal?: AbortSignal } = {}
+  ): Promise<ResolvedYouTubeUrlEntry[]> {
+    const seenVideoIds = new Map<string, string>();
+    for (const existing of options.existingUrls ?? []) {
+      const vid = extractYouTubeVideoId(existing);
+      if (vid && !seenVideoIds.has(vid)) {
+        seenVideoIds.set(vid, `https://www.youtube.com/watch?v=${vid}`);
+      }
+    }
+
+    const entries: ResolvedYouTubeUrlEntry[] = new Array(inputs.length);
+    const pendingResolutions: Array<{ idx: number; input: string; videoId: string; canonicalUrl: string }> = [];
+
+    for (let i = 0; i < inputs.length; i++) {
+      const rawInput = (inputs[i] ?? "").trim();
+      const videoId = extractYouTubeVideoId(rawInput);
+      if (!videoId) {
+        entries[i] = {
+          input: rawInput,
+          valid: false,
+          duplicate: false,
+          error: "Invalid YouTube URL or 11-character video ID",
+        };
+        continue;
+      }
+
+      const canonicalUrl = `https://www.youtube.com/watch?v=${videoId}`;
+      const duplicateOf = seenVideoIds.get(videoId);
+      if (duplicateOf) {
+        entries[i] = {
+          input: rawInput,
+          valid: true,
+          duplicate: true,
+          duplicateOf,
+          videoId,
+          canonicalUrl,
+        };
+        continue;
+      }
+
+      seenVideoIds.set(videoId, canonicalUrl);
+      pendingResolutions.push({ idx: i, input: rawInput, videoId, canonicalUrl });
+    }
+
+    const concurrency = Math.min(4, pendingResolutions.length);
+    let cursor = 0;
+    await Promise.all(
+      Array.from({ length: concurrency }, async () => {
+        while (cursor < pendingResolutions.length) {
+          const current = pendingResolutions[cursor++];
+          const summary = await this.resolveVideoMetadataSummary(current.canonicalUrl, options.signal);
+          entries[current.idx] = {
+            input: current.input,
+            valid: true,
+            duplicate: false,
+            videoId: summary.videoId,
+            canonicalUrl: summary.canonicalUrl,
+            title: summary.title,
+            ...(summary.channel ? { channel: summary.channel } : {}),
+            resolvedFromRemote: summary.resolvedFromRemote,
+          };
+        }
+      })
+    );
+
+    return entries;
+  }
+
   async fetchVideoMetadata(
     videoId: string,
     canonicalUrl: string,
@@ -1167,7 +1320,11 @@ export class YouTubeIngestionStrategy implements IngestionStrategy {
     fallbackText?: string;
   }): RawDocument {
     const { sourceId, item, metadata, cues, fallbackText } = options;
-    const title = item.title?.trim() || metadata.title;
+    const rawItemTitle = item.title?.trim();
+    const title =
+      rawItemTitle && rawItemTitle !== `YouTube Video ${metadata.videoId}`
+        ? rawItemTitle
+        : metadata.title;
     const rawContent = this.formatTranscriptContent(cues, metadata.chapters, fallbackText);
 
     let startSeconds: number | null = null;
@@ -1382,6 +1539,7 @@ export class YouTubeIngestionStrategy implements IngestionStrategy {
     }
 
     const docs: RawDocument[] = [];
+    const seenVideoIdsInSource = new Set<string>();
     for (const item of items) {
       if (options?.signal?.aborted) {
         const abortErr = new Error("Task aborted by user");
@@ -1389,14 +1547,27 @@ export class YouTubeIngestionStrategy implements IngestionStrategy {
         throw abortErr;
       }
 
+      const itemVideoId = extractYouTubeVideoId(item.uri);
+
       if (knownMatcher && knownMatcher.hasYouTubeUri(item.uri)) {
-        const videoId = extractYouTubeVideoId(item.uri);
-        options?.onItemSkipped?.(videoId || item.uri);
+        options?.onItemSkipped?.(itemVideoId || item.uri);
         options?.onLog?.(
           "debug",
-          `[YouTubeIngestionStrategy] Skipping already-synced video: ${videoId || item.uri}`
+          `[YouTubeIngestionStrategy] Skipping already-synced video: ${itemVideoId || item.uri}`
         );
         continue;
+      }
+
+      if (itemVideoId && seenVideoIdsInSource.has(itemVideoId)) {
+        options?.onItemSkipped?.(itemVideoId);
+        options?.onLog?.(
+          "debug",
+          `[YouTubeIngestionStrategy] Skipping duplicate YouTube videoId in source: ${itemVideoId}`
+        );
+        continue;
+      }
+      if (itemVideoId) {
+        seenVideoIdsInSource.add(itemVideoId);
       }
 
       const doc = await this.resolveItem(source.id, item, {

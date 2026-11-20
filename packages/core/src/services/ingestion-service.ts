@@ -1,4 +1,4 @@
-import type { DataSource, CleanTextDocument, DiscoveredDocument, RawDocument, SyncMode, SyncState } from "../domain/models.js";
+import { parseMediaSourceItems, type DataSource, type CleanTextDocument, type DiscoveredDocument, type MediaSourceItem, type RawDocument, type SyncMode, type SyncState } from "../domain/models.js";
 import type { DataSourceRepository } from "../storage/source-repository.js";
 import type { SyncStateRepository } from "../storage/sync-state-repository.js";
 import type { DocumentRepository } from "../storage/document-repository.js";
@@ -8,6 +8,7 @@ import { DocumentSlicingEngine, type DocumentSlicingOptions } from "./document-s
 import {
   buildKnownItemKeysForSource,
   createKnownItemMatcher,
+  extractYouTubeVideoId,
   normalizeHttpUrlKey,
   type KnownItemMatcher,
 } from "./sync-item-keys.js";
@@ -191,6 +192,9 @@ export class IngestionService {
       };
 
       const rawDocs = await strategy.fetch(source, lastSync, effectiveOptions);
+      if (source.type === "youtube") {
+        this.backfillYouTubeSourceMetadata(source, rawDocs);
+      }
       const totalFetched = rawDocs.length;
       options?.onLog?.(
         "info",
@@ -427,6 +431,80 @@ export class IngestionService {
         durationMs: Date.now() - startTime,
         error: err.message || "Unknown synchronization error",
       };
+    }
+  }
+
+  /**
+   * Persists resolved YouTube video titles and canonical URLs back into `data_sources.uri`
+   * after sync without overwriting any user-customized item title, and deduplicates by videoId.
+   */
+  private backfillYouTubeSourceMetadata(source: DataSource, rawDocs: RawDocument[]): void {
+    const resolvedByVideoId = new Map<string, { title: string; canonicalUrl: string }>();
+    for (const raw of rawDocs) {
+      const vid = extractYouTubeVideoId(raw.originUrl || raw.guid || "");
+      const title = (raw.title || "").trim();
+      if (vid && title) {
+        resolvedByVideoId.set(vid, {
+          title,
+          canonicalUrl: `https://www.youtube.com/watch?v=${vid}`,
+        });
+      }
+    }
+    const items = parseMediaSourceItems(source.uri);
+    if (items.length === 0) {
+      return;
+    }
+
+    let changed = false;
+    const seenVideoIds = new Set<string>();
+    const updatedItems: MediaSourceItem[] = [];
+
+    for (const item of items) {
+      const vid = extractYouTubeVideoId(item.uri);
+      if (!vid) {
+        updatedItems.push(item);
+        continue;
+      }
+      if (seenVideoIds.has(vid)) {
+        changed = true;
+        continue;
+      }
+      seenVideoIds.add(vid);
+
+      const resolved = resolvedByVideoId.get(vid);
+      const canonicalUrl = resolved?.canonicalUrl ?? `https://www.youtube.com/watch?v=${vid}`;
+      const trimmedExistingTitle = item.title?.trim();
+      let nextTitle = trimmedExistingTitle || undefined;
+      if (
+        (!nextTitle || nextTitle === `YouTube Video ${vid}`) &&
+        resolved?.title &&
+        resolved.title !== `YouTube Video ${vid}`
+      ) {
+        nextTitle = resolved.title;
+      }
+
+      if (
+        item.uri !== canonicalUrl ||
+        (nextTitle ?? undefined) !== (item.title ?? undefined)
+      ) {
+        changed = true;
+      }
+
+      const { title: _strippedTitle, ...restItem } = item;
+      updatedItems.push({
+        ...restItem,
+        uri: canonicalUrl,
+        ...(nextTitle ? { title: nextTitle } : {}),
+      });
+    }
+
+    if (changed) {
+      const serialized = JSON.stringify(updatedItems);
+      try {
+        this.sourceRepo.update(source.id, { uri: serialized });
+      } catch {
+        // Non-fatal if source was concurrently removed
+      }
     }
   }
 
