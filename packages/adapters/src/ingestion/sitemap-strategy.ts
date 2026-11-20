@@ -4,6 +4,7 @@ import { Readability } from "@mozilla/readability";
 import { JSDOM } from "jsdom";
 import crypto from "node:crypto";
 import { safeIsoDate } from "../utils/date.js";
+import { fetchSafePublicResponse, readResponseTextWithLimit } from "../utils/safe-fetch.js";
 import { htmlToCleanText } from "../utils/html-cleaner.js";
 
 export interface SitemapStrategyOptions {
@@ -44,29 +45,30 @@ export class SitemapIngestionStrategy implements IngestionStrategy {
   }
 
   private async fetchText(url: string, onFetchError?: (msg: string) => void): Promise<string | null> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-
-      const res = await this.fetchFn(url, {
+      const res = await fetchSafePublicResponse(this.fetchFn, url, {
         signal: controller.signal,
         headers: {
           "User-Agent": "flashcard-master/1.0 (Mozilla/5.0 Compatible; +https://github.com/aprodan/flashcard-master)",
           Accept: "text/html,application/xhtml+xml,application/xml,text/xml;q=0.9,*/*;q=0.8",
         },
       });
-      clearTimeout(timer);
 
       if (!res.ok) {
+        await res.body?.cancel?.().catch(() => {});
         console.warn(`[SitemapIngestionStrategy] HTTP error ${res.status} fetching ${url}`);
         onFetchError?.(`HTTP ${res.status} fetching ${url}`);
         return null;
       }
-      return await res.text();
+      return await readResponseTextWithLimit(res);
     } catch (err: any) {
       console.warn(`[SitemapIngestionStrategy] Network error fetching ${url}:`, err.message);
       onFetchError?.(err?.message || `Sitemap fetch error for ${url}`);
       return null;
+    } finally {
+      clearTimeout(timer);
     }
   }
 

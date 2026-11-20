@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { parseRawMediaSourceItems } from "../services/sync-item-keys-pure.js";
 
 export const DataSourceTypeSchema = z.enum([
   "rss",
@@ -85,27 +86,7 @@ export function parseMediaSourceItems(rawUri: string): MediaSourceItem[] {
     }
   }
 
-  const items: MediaSourceItem[] = [];
-  const lines = trimmed.split(/[\r\n]+/);
-  for (const line of lines) {
-    const cleanLine = line.trim();
-    if (!cleanLine) continue;
-
-    // Split multiple HTTP(S) URLs on a single line while preserving commas/spaces inside local file paths
-    if (/https?:\/\//i.test(cleanLine)) {
-      const pieces = cleanLine.split(/[\s,]+(?=https?:\/\/)/i);
-      for (const piece of pieces) {
-        const cleanPiece = piece.trim().replace(/^[<"']|[>"']$/g, "");
-        if (cleanPiece) {
-          items.push(MediaSourceItemSchema.parse({ uri: cleanPiece }));
-        }
-      }
-    } else {
-      items.push(MediaSourceItemSchema.parse({ uri: cleanLine }));
-    }
-  }
-
-  return items;
+  return parseRawMediaSourceItems(trimmed).map((rawItem) => MediaSourceItemSchema.parse(rawItem));
 }
 
 export const DataSourceSchema = z.object({

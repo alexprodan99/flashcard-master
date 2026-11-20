@@ -47,7 +47,7 @@ The following table lists all settings managed by the Centralized Settings Servi
 | :--- | :--- | :--- | :--- | :--- |
 | **`ankiconnect_url`** | `ANKI_CONNECT_URL`, `ANKICONNECT_URL` | `http://127.0.0.1:8765` | Valid HTTP/HTTPS URL | Endpoint URL for the AnkiConnect desktop add-on. |
 | **`ankiconnect_api_key`** | `ANKI_CONNECT_API_KEY`, `ANKICONNECT_API_KEY` | `null` | Masked token | Optional security key configured in AnkiConnect `apiKey`. |
-| **`ankiconnect_timeout_ms`** | `ANKI_CONNECT_TIMEOUT_MS` | `10000` | Integer $\ge 500$ ms | Connection timeout for AnkiConnect HTTP requests. |
+| **`ankiconnect_timeout_ms`** | `ANKI_CONNECT_TIMEOUT_MS` | `3000` | Integer $\ge 500$ ms | Connection timeout for AnkiConnect HTTP requests. |
 | **`default_ai_provider`** | `DEFAULT_AI_PROVIDER` | `ollama` | `ollama`, `openai`, `gemini`, `anthropic` | Default LLM provider pre-selected in Generate Studio. |
 | **`default_ai_model`** | `DEFAULT_AI_MODEL` | `phi4-mini` | Non-empty string | Default model identifier pre-selected in Generate Studio. |
 | **`default_persona`** | `DEFAULT_PERSONA` | `socratic-mentor` | Valid persona key | Default cognitive persona used for card generation prompt. |

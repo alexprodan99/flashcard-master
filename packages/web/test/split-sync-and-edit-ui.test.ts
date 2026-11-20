@@ -4,7 +4,12 @@ import { mount, unmount, flushSync } from 'svelte';
 import SplitSyncButton from '../client/src/components/SplitSyncButton.svelte';
 import SourcesView from '../client/src/views/SourcesView.svelte';
 import EditSourceModal from '../client/src/components/EditSourceModal.svelte';
+import AddSourceModal from '../client/src/components/AddSourceModal.svelte';
+import MediaItemListEditor from '../client/src/components/MediaItemListEditor.svelte';
+import GenerateStudio from '../client/src/views/GenerateStudio.svelte';
 import { sourcesStore } from '../client/src/stores/sourcesStore.svelte.js';
+import { generateStore } from '../client/src/stores/generateStore.svelte.js';
+import { taskStore } from '../client/src/stores/taskStore.svelte.js';
 import { toastStore } from '../client/src/stores/toastStore.svelte.js';
 import type { DataSource } from '../client/src/lib/types.js';
 
@@ -508,6 +513,257 @@ describe('Story 22.4 UI: SplitSyncButton, SourcesView & EditSourceModal Item Syn
 
       expect(target.querySelector('[data-testid="edit-sync-status-panel"]')?.textContent).toContain('Sync status unavailable right now');
       expect(target.querySelector('.field-label-row [data-sync-status]')).toBeNull();
+    });
+
+    it('reloads SourcesView when SSE job_completed fires and auto-upgrades Save & Sync to Full Re-sync on dirty slicing config (Action Item 4)', async () => {
+      const mediaSrc: DataSource = {
+        id: 'src-yt-dirty',
+        name: 'Talk Series',
+        type: 'youtube',
+        uri: JSON.stringify([{ uri: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', title: 'Talk 1', extractionMode: 'auto' }]),
+        tags: [],
+        isActive: true,
+        defaultSlicingMode: 'chapters',
+        defaultIntervalMinutes: 10,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      let listCalls = 0;
+      let lastSyncPayload: any = null;
+      const fetchMock = vi.fn().mockImplementation(async (input: string, init?: RequestInit) => {
+        const url = String(input);
+        if (url === '/api/sources' && (!init?.method || init.method === 'GET')) {
+          listCalls += 1;
+          return { ok: true, json: async () => [mediaSrc] };
+        }
+        if (url === `/api/sources/${mediaSrc.id}/sync-status`) {
+          return {
+            ok: true,
+            json: async () => ({
+              sourceId: mediaSrc.id,
+              sourceType: 'youtube',
+              syncedDocumentCount: 2,
+              hasSyncedDocuments: true,
+              lastSyncedAt: new Date().toISOString(),
+              knownKeys: ['dQw4w9WgXcQ'],
+              items: [],
+              syncedItems: [],
+            }),
+          };
+        }
+        if (url === `/api/sources/${mediaSrc.id}` && init?.method === 'PATCH') {
+          return { ok: true, json: async () => ({ ...mediaSrc, defaultSlicingMode: 'none', defaultIntervalMinutes: null }) };
+        }
+        if (url === `/api/sync/${mediaSrc.id}` && init?.method === 'POST') {
+          lastSyncPayload = JSON.parse(String(init.body));
+          return { ok: true, json: async () => ({ success: true, jobId: 'job-dirty-full' }) };
+        }
+        return { ok: true, json: async () => ({ keys: {} }) };
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      comp = mount(SourcesView, { target });
+      await new Promise((r) => setTimeout(r, 40));
+      flushSync();
+      const initialLoads = listCalls;
+      (taskStore as any).notifyJobCompleted({
+        id: 'job-sse-refresh',
+        type: 'sync_source',
+        status: 'completed',
+        title: 'Sync',
+        metadata: { sourceId: mediaSrc.id },
+      });
+      await new Promise((r) => setTimeout(r, 30));
+      expect(listCalls).toBeGreaterThan(initialLoads);
+
+      unmount(comp);
+      comp = null;
+
+      comp = mount(EditSourceModal, {
+        target,
+        props: {
+          isOpen: true,
+          source: mediaSrc,
+          onClose: vi.fn(),
+          onSourceUpdated: vi.fn(),
+        },
+      });
+      await new Promise((r) => setTimeout(r, 50));
+      flushSync();
+
+      const select = target.querySelector('#edit-media-slicing') as HTMLSelectElement;
+      expect(select).not.toBeNull();
+      select.value = 'none';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      flushSync();
+
+      const primarySyncBtn = target.querySelector('.modal-footer .split-primary-btn') as HTMLButtonElement;
+      expect(primarySyncBtn.textContent).toContain('Save & Full Re-sync');
+      primarySyncBtn.click();
+      await new Promise((r) => setTimeout(r, 50));
+      expect(lastSyncPayload?.syncMode).toBe('full');
+    });
+
+    it('resets AddSourceModal inputs on type switch and keys MediaItemListEditor items stably across removals', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ keys: {} }) }));
+      comp = mount(AddSourceModal, {
+        target,
+        props: {
+          isOpen: true,
+          onClose: vi.fn(),
+          onSourceCreated: vi.fn(),
+        },
+      });
+      flushSync();
+      const uriInput = target.querySelector('#src-uri') as HTMLInputElement;
+      uriInput.value = 'https://example.com/feed.xml';
+      uriInput.dispatchEvent(new Event('input', { bubbles: true }));
+      flushSync();
+
+      const webRadio = target.querySelector('input[name="sourceType"][value="web"]') as HTMLInputElement;
+      webRadio.click();
+      flushSync();
+      const rssRadio = target.querySelector('input[name="sourceType"][value="rss"]') as HTMLInputElement;
+      rssRadio.click();
+      flushSync();
+      expect((target.querySelector('#src-uri') as HTMLInputElement).value).toBe('');
+
+      unmount(comp);
+      comp = null;
+
+      comp = mount(MediaItemListEditor, {
+        target,
+        props: {
+          sourceType: 'audio',
+          items: [
+            { uri: '/audio/first.mp3', title: 'First', extractionMode: 'stt' },
+            { uri: '/audio/second.mp3', title: 'Second', extractionMode: 'subtitles' },
+          ],
+        },
+      });
+      flushSync();
+      const firstRemove = target.querySelectorAll('.btn-remove-item')[0] as HTMLButtonElement;
+      firstRemove.click();
+      flushSync();
+      const titles = Array.from(target.querySelectorAll('input[placeholder="Default from file/video metadata"]')).map(
+        (el) => (el as HTMLInputElement).value
+      );
+      expect(titles).toEqual(['Second']);
+    });
+
+    it('prunes deleted docIds in GenerateStudio after Full Re-sync, surfaces warning toast on completed_with_warnings, and tracks AddSourceModal jobId (Actions 4 & 5)', async () => {
+      const studioSrc: DataSource = {
+        id: 'src-studio',
+        name: 'Studio Book',
+        type: 'local',
+        uri: '/books/guide.pdf',
+        tags: [],
+        isActive: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      let docPhase = 1;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockImplementation(async (input: string) => {
+          const url = String(input);
+          if (url === '/api/sources') return { ok: true, json: async () => [studioSrc] };
+          if (url === `/api/sources/${studioSrc.id}/documents`) {
+            return {
+              ok: true,
+              json: async () => ({
+                documents: docPhase === 1
+                  ? [{ id: 'doc-old', sourceId: studioSrc.id, title: 'Old Slice', wordCount: 100 }]
+                  : [{ id: 'doc-new', sourceId: studioSrc.id, title: 'New Slice', wordCount: 120 }],
+                total: 1,
+              }),
+            };
+          }
+          return { ok: true, json: async () => ({ settings: {} }) };
+        })
+      );
+
+      generateStore.selectedDocIds = { 'doc-old': true };
+      comp = mount(GenerateStudio, { target });
+      await new Promise((r) => setTimeout(r, 50));
+      flushSync();
+      expect(generateStore.selectedDocIds['doc-old']).toBe(true);
+
+      docPhase = 2;
+      (taskStore as any).notifyJobCompleted({
+        id: 'job-resync-1',
+        type: 'sync_source',
+        status: 'completed_with_warnings',
+        title: 'Re-sync',
+        metadata: { sourceId: studioSrc.id },
+      });
+      await new Promise((r) => setTimeout(r, 50));
+      flushSync();
+      expect(generateStore.selectedDocIds['doc-old']).toBeUndefined();
+
+      unmount(comp);
+      comp = null;
+
+      // Verify taskStore completed_with_warnings on sync_source triggers warning toast rather than success
+      toastStore.toasts = [];
+      let listenersAttached = false;
+      class FakeEventSource {
+        handlers: Record<string, (e: any) => void> = {};
+        addEventListener(type: string, cb: (e: any) => void) {
+          this.handlers[type] = cb;
+          listenersAttached = true;
+        }
+        close() {}
+      }
+      const fakeEs = new FakeEventSource();
+      vi.stubGlobal('EventSource', vi.fn(() => fakeEs));
+      taskStore.init();
+      expect(listenersAttached).toBe(true);
+      sourcesStore.setSyncing('src-warn', true, 'job-warn-1');
+      fakeEs.handlers['job_completed']?.({
+        data: JSON.stringify({
+          id: 'job-warn-1',
+          type: 'sync_source',
+          status: 'completed_with_warnings',
+          title: 'Sync Warn',
+          errorMessage: '1 URL failed with HTTP 500',
+          metadata: { sourceId: 'src-warn', sourceName: 'Mixed Source' },
+          resultSummary: { newCount: 1, totalFetched: 2, skippedCount: 0 },
+        }),
+      });
+      expect(toastStore.toasts.some((t) => t.type === 'warning' && t.message.includes('HTTP 500'))).toBe(true);
+      expect(toastStore.toasts.some((t) => t.type === 'success')).toBe(false);
+      (taskStore as any).eventSource?.close?.();
+
+      // AddSourceModal registers immediate sync jobId in sourcesStore
+      const createdId = 'src-yt-created';
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockImplementation(async (input: string) => {
+          const url = String(input);
+          if (url === '/api/sources') {
+            return { ok: true, json: async () => ({ id: createdId, name: 'My YT', type: 'youtube', uri: '[]', tags: [], isActive: true }) };
+          }
+          if (url === `/api/sync/${createdId}`) {
+            return { ok: true, json: async () => ({ success: true, jobId: 'job-add-sync-99' }) };
+          }
+          return { ok: true, json: async () => ({ keys: {} }) };
+        })
+      );
+      comp = mount(AddSourceModal, {
+        target,
+        props: { isOpen: true, onClose: vi.fn(), onSourceCreated: vi.fn() },
+      });
+      flushSync();
+      (target.querySelector('#src-name') as HTMLInputElement).value = 'My RSS';
+      (target.querySelector('#src-name') as HTMLInputElement).dispatchEvent(new Event('input', { bubbles: true }));
+      (target.querySelector('#src-uri') as HTMLInputElement).value = 'https://example.com/rss.xml';
+      (target.querySelector('#src-uri') as HTMLInputElement).dispatchEvent(new Event('input', { bubbles: true }));
+      flushSync();
+      (target.querySelector('form.modal-form') as HTMLFormElement).dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      await new Promise((r) => setTimeout(r, 50));
+      expect(sourcesStore.activeSyncJobIds[createdId]).toBe('job-add-sync-99');
     });
   });
 });

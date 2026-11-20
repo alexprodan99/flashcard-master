@@ -32,6 +32,7 @@ import {
   LocalFileStrategy,
 } from "@flashcard-master/adapters";
 import { createWebServer, WebServer } from "../src/server.js";
+import { getFallbackHtmlSpa } from "../src/fallback-spa.js";
 import { JobManager } from "../src/jobs/index.js";
 import type Database from "better-sqlite3";
 import type { IngestionStrategy, RawDocument, CleanTextDocument, DataSource } from "@flashcard-master/core";
@@ -195,9 +196,10 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
   it("returns health status at /api/health", async () => {
     const res = await fetch(`${serverUrl}/api/health`);
     expect(res.status).toBe(200);
+    const pkgJson = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, "../package.json"), "utf-8"));
     const json = await res.json();
     expect(json.status).toBe("ok");
-    expect(json.version).toBe("1.0.0");
+    expect(json.version).toBe(pkgJson.version);
   });
 
   it("returns aggregated metrics at /api/stats", async () => {
@@ -2374,4 +2376,68 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
     });
   });
 
+  describe("Hardening PR 2: CORS, Stale Doc Generation, Directory Sync Status & Fallback SPA", () => {
+    it("allows loopback CORS origins and omits Access-Control-Allow-Origin for external origins", async () => {
+      const localRes = await fetch(`${serverUrl}/api/health`, {
+        headers: { Origin: "http://localhost:5173" },
+      });
+      expect(localRes.status).toBe(200);
+      expect(localRes.headers.get("access-control-allow-origin")).toBe("http://localhost:5173");
+
+      const evilRes = await fetch(`${serverUrl}/api/health`, {
+        headers: { Origin: "https://evil.example.com" },
+      });
+      expect(evilRes.status).toBe(200);
+      expect(evilRes.headers.get("access-control-allow-origin")).toBeNull();
+
+      const preflightEvil = await fetch(`${serverUrl}/api/sources`, {
+        method: "OPTIONS",
+        headers: { Origin: "https://evil.example.com" },
+      });
+      expect(preflightEvil.status).toBe(204);
+      expect(preflightEvil.headers.get("access-control-allow-origin")).toBeNull();
+    });
+
+    it("rejects POST /api/generate with 400 when explicit documentIds were all deleted", async () => {
+      const res = await fetch(`${serverUrl}/api/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: "ollama",
+          documentIds: ["non-existent-doc-1"],
+        }),
+      });
+      expect(res.status).toBe(400);
+      const data = (await res.json()) as any;
+      expect(data.error).toContain("Selected documents were not found");
+    });
+
+    it("marks audio and video directory URIs as synced when matching discovered track files exist", async () => {
+      const audioDirSrc = sourceRepo.create({
+        name: "Podcast Folder",
+        type: "audio",
+        uri: JSON.stringify([{ uri: "/media/podcasts/", extractionMode: "stt" }]),
+      });
+      docRepo.upsert({
+        id: "aud-dir-1",
+        sourceId: audioDirSrc.id,
+        title: "Episode 1",
+        url: "/media/podcasts/ep01.mp3#t=0,300",
+        textContent: "Transcript text",
+        wordCount: 2,
+      });
+
+      const statusRes = await fetch(`${serverUrl}/api/sources/${audioDirSrc.id}/sync-status`);
+      expect(statusRes.status).toBe(200);
+      const statusData = (await statusRes.json()) as any;
+      expect(statusData.items).toEqual([expect.objectContaining({ status: "synced" })]);
+    });
+
+    it("renders fallback HTML SPA wired to syncAllSources and async 202 job responses", () => {
+      const html = getFallbackHtmlSpa();
+      expect(html).toContain('onclick="syncAllSources()"');
+      expect(html).not.toContain('triggerBulkSync');
+      expect(html).toContain('res.status === 202');
+    });
+  });
 });

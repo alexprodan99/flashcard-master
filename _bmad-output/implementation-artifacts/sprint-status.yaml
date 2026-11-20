@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 08-30-2026 20:47
-last_updated: 11-20-2026 14:43
+last_updated: 11-20-2026 20:18
 project: flashcard-master
 project_key: NOKEY
 tracking_system: file-system
@@ -220,12 +220,12 @@ development_status:
   21-7-settings-stt-defaults-cli-media-flags-and-verification: done
   epic-21-retrospective: done
 
-  epic-22: in-progress
-  22-1-unified-desktop-web-directory: review
-  22-2-incremental-new-only-sync-engine: review
-  22-3-youtube-metadata-identity-and-dedup: review
-  22-4-ui-split-sync-and-item-status: review
-  22-5-cli-full-flag-docs-and-e2e: review
+  epic-22: done
+  22-1-unified-desktop-web-directory: done
+  22-2-incremental-new-only-sync-engine: done
+  22-3-youtube-metadata-identity-and-dedup: done
+  22-4-ui-split-sync-and-item-status: done
+  22-5-cli-full-flag-docs-and-e2e: done
   epic-22-retrospective: done
 action_items:
   - id: "epic-14-retro-item-1-add-progressive-exponential-backoff-and"
@@ -412,7 +412,7 @@ action_items:
       unchanged parent S3 downloads, wrap deleteBySourceId+upsertBatch in SQLite transactions
       with complete full purge, and stop advancing sync_state on failed fetches"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-22-retro-2026-11-20.md"
   - id: "epic-22-retro-item-2-harden-cross-process-jobs-worker-sync-and-desktop-build"
     epic: 22
@@ -422,7 +422,7 @@ action_items:
       fidelity, route all desktop dist* scripts through electron-build.mjs, fix FLASHCARD_DESKTOP_USER_DATA/stdoutBuffer/preload
       version, and deduplicate/boundary-check POST /api/sources/upload paths"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-22-retro-2026-11-20.md"
   - id: "epic-22-retro-item-3-unify-key-matchers-modularize-server-and-cors-ssrf"
     epic: 22
@@ -433,7 +433,7 @@ action_items:
       fallback triggerBulkSync(), and restrict wildcard CORS + SSRF/response-size
       guards"
     owner: "architect"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-22-retro-2026-11-20.md"
   - id: "epic-22-retro-item-4-fix-ui-sync-tracking-dirty-config-resync-and-modals"
     epic: 22
@@ -444,7 +444,7 @@ action_items:
       local add controls, prune deleted docIds in GenerateStudio (removing dead handleQuickSyncSource),
       and add audio/video/youtube to CLI init"
     owner: "dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-22-retro-2026-11-20.md"
   - id: "epic-22-retro-item-5-close-verification-gaps-reconcile-tracking-and-release-1-3-0"
     epic: 22
@@ -454,5 +454,5 @@ action_items:
       budget, 3000ms), and ship lockstep 1.3.0 version bump PR with quickstart 1.3.0
       installer links"
     owner: "qa"
-    status: open
+    status: in-progress
     ref: "_bmad-output/implementation-artifacts/epic-22-retro-2026-11-20.md"

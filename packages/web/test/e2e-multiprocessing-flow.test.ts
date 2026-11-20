@@ -310,4 +310,43 @@ describe("E2E Multi-Processing Flow & Concurrency Verification", () => {
     const totalCards = cardRepo.list();
     expect(totalCards.length).toBe(9); // 3 jobs * 3 steps
   });
+
+  it("preserves sibling live-PID running jobs across two JobManager instances sharing a file-backed SQLite database", async () => {
+    const { spawn } = await import("node:child_process");
+    const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 5000)"], { stdio: "ignore" });
+    const liveSiblingPid = child.pid!;
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "fcm-shared-db-e2e-"));
+    const dbFile = path.join(tmpDir, "data.sqlite");
+    const dbA = createDatabaseClient({ dbPath: dbFile });
+    const dbB = createDatabaseClient({ dbPath: dbFile });
+    try {
+      const repoA = new JobRepository(dbA);
+      const repoB = new JobRepository(dbB);
+
+      const liveSiblingJob = repoA.create({
+        type: "sync_source",
+        title: "Live Sibling Sync",
+        status: "running",
+        metadata: { sourceId: "src-live", ownerPid: liveSiblingPid, ownerInstanceId: "sibling-live" },
+      });
+
+      const deadSiblingJob = repoA.create({
+        type: "sync_source",
+        title: "Crashed Sibling Sync",
+        status: "running",
+        metadata: { sourceId: "src-dead", ownerPid: 99999999, ownerInstanceId: "sibling-dead" },
+      });
+
+      const _mgrB = new JobManager(repoB);
+      expect(_mgrB).toBeDefined();
+
+      expect(repoB.getById(liveSiblingJob.id)?.status).toBe("running");
+      expect(repoB.getById(deadSiblingJob.id)?.status).toBe("failed");
+    } finally {
+      try { child.kill(); } catch {}
+      dbA.close();
+      dbB.close();
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });

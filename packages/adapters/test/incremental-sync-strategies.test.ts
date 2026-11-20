@@ -246,6 +246,21 @@ describe("Pre-Fetch Incremental Skipping Across All 9 Ingestion Strategies (Stor
     });
     expect(epubSkipped).toEqual([]);
     expect(epubSpy).not.toHaveBeenCalled();
+
+    const spacedEpubPath = path.join(dir, "My Book.epub");
+    await fs.writeFile(spacedEpubPath, "fake epub");
+    const spacedSource = makeSource({ type: "local", uri: spacedEpubPath });
+    const spacedSkipped: string[] = [];
+    const spacedResult = await strategy.fetch(spacedSource, undefined, {
+      knownItemKeys: new Set([
+        `file://${spacedEpubPath.replace(/\\/g, "/")}#Chapter 1.xhtml`,
+        `file://${spacedEpubPath.replace(/\\/g, "/")}#toc_sec1`,
+      ]),
+      onItemSkipped: (k) => spacedSkipped.push(k),
+    });
+    expect(spacedResult).toEqual([]);
+    expect(spacedSkipped.length).toBe(1);
+    expect(epubSpy).not.toHaveBeenCalled();
   });
 
   it("AudioIngestionStrategy & VideoIngestionStrategy skip known items before STT transcription", async () => {
@@ -614,4 +629,42 @@ describe("Pre-Fetch Incremental Skipping Across All 9 Ingestion Strategies (Stor
     expect(rssErrors.length).toBe(1);
   });
 
+  it("NotionStrategy prioritizes ?p= side-peek page ID over parent DB ID during incremental skip (Action Item 5)", async () => {
+    const dbId = "11111111-1111-1111-1111-111111111111";
+    const peekPageId = "22222222-2222-2222-2222-222222222222";
+    const mockPeekClient: any = {
+      databases: { retrieve: vi.fn().mockRejectedValue({ status: 404 }) },
+      pages: {
+        retrieve: vi.fn().mockResolvedValue({
+          id: peekPageId,
+          url: "https://www.notion.so/SidePeek-22222222222222222222222222222222",
+          last_edited_time: "2026-09-01T00:00:00.000Z",
+          properties: { title: { type: "title", title: [{ plain_text: "Peek Page" }] } },
+        }),
+      },
+      blocks: { children: { list: vi.fn() } },
+    };
+
+    const notion = new NotionStrategy({
+      notionClient: mockPeekClient,
+      settingsService: { getSecret: () => "secret" },
+    });
+    const skipped: string[] = [];
+    const docs = await notion.fetch(
+      makeSource({
+        type: "notion",
+        uri: "https://www.notion.so/workspace-11111111111111111111111111111111?p=22222222222222222222222222222222",
+      }),
+      undefined,
+      {
+        syncMode: "new-only",
+        knownItemKeys: new Set([peekPageId]),
+        onItemSkipped: (k) => skipped.push(k),
+      }
+    );
+    expect(docs).toEqual([]);
+    expect(skipped).toEqual([peekPageId]);
+    expect(dbId).not.toBe(peekPageId);
+    expect(mockPeekClient.blocks.children.list).not.toHaveBeenCalled();
+  });
 });

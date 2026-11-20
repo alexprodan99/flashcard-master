@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import readline from "node:readline";
 import { createAppContext } from "../src/app.js";
 import { createCli } from "../src/cli.js";
 import type { AppContext } from "../src/app.js";
@@ -870,6 +871,25 @@ describe("CLI Application", () => {
       expect(context.docRepo.listBySourceId(source.id).length).toBe(2);
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("accepts audio, video, and youtube source types in interactive init wizard (Action Item 4)", async () => {
+    const answers = ["YouTube Lectures", "youtube", "https://youtu.be/dQw4w9WgXcQ"];
+    const createInterfaceSpy = vi.spyOn(readline, "createInterface").mockReturnValue({
+      question: (_prompt: string, cb: (ans: string) => void) => cb(answers.shift() || ""),
+      close: vi.fn(),
+    } as any);
+
+    try {
+      const cli = createCli(context);
+      cli.exitOverride();
+      await cli.parseAsync(["node", "flashcard-master", "init"]);
+      const created = context.sourceRepo.list().find((s) => s.name === "YouTube Lectures");
+      expect(created?.type).toBe("youtube");
+      expect(created?.uri).toBe("https://youtu.be/dQw4w9WgXcQ");
+    } finally {
+      createInterfaceSpy.mockRestore();
     }
   });
 });

@@ -1,6 +1,8 @@
 import { Client, LogLevel } from "@notionhq/client";
 import {
   createKnownItemMatcher,
+  extractNotionHexId,
+  formatNotionUuidFromHex,
   type KnownItemMatcher,
   type IngestionStrategy,
   type IngestionOptions,
@@ -50,78 +52,15 @@ export function sanitizeUri(uri: string): string {
  */
 export function extractNotionId(input: string): string | null {
   if (!input || typeof input !== "string") return null;
-  const trimmed = input.trim();
-
-  // Check for 8-4-4-4-12 hyphenated UUID directly
-  if (/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(trimmed)) {
-    return trimmed.replace(/-/g, "").toLowerCase();
-  }
-
-  // Check for raw 32-hex string directly
-  if (/^[0-9a-fA-F]{32}$/.test(trimmed)) {
-    return trimmed.toLowerCase();
-  }
-
-  // If input is an HTTP(S) URL, inspect query parameters and pathname
-  if (/^https?:\/\//i.test(trimmed)) {
-    try {
-      const parsed = new URL(trimmed);
-
-      // Check ?p= query parameter used in Notion side-peek/modal URLs
-      const pParam = parsed.searchParams.get("p");
-      if (pParam) {
-        const idFromP = extractNotionId(pParam);
-        if (idFromP) return idFromP;
-      }
-
-      const segments = parsed.pathname.split("/").filter(Boolean);
-      const lastSegment = segments[segments.length - 1] || "";
-
-      // 1. Check if the last path segment matches standard 8-4-4-4-12 UUID
-      const uuidInPath = lastSegment.match(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/);
-      if (uuidInPath) {
-        return uuidInPath[0].replace(/-/g, "").toLowerCase();
-      }
-
-      // 2. Check if the last path segment ends with a 32-hex string (e.g., Page-Title-32hex)
-      const hexAtEnd = lastSegment.match(/[0-9a-fA-F]{32}$/);
-      if (hexAtEnd) {
-        return hexAtEnd[0].toLowerCase();
-      }
-
-      // 3. Check for any 32-hex string with boundary in the last segment
-      const anyHex = lastSegment.match(/(?:^|[-_])([0-9a-fA-F]{32})(?:[-_]|$)/);
-      if (anyHex && anyHex[1]) {
-        return anyHex[1].toLowerCase();
-      }
-    } catch {
-      // Fall through if URL parsing fails
-    }
-  }
-
-  // Check for general 8-4-4-4-12 hyphenated UUID substring
-  const uuidMatch = trimmed.match(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/);
-  if (uuidMatch) {
-    return uuidMatch[0].replace(/-/g, "").toLowerCase();
-  }
-
-  // Check for general 32-hex substring
-  const hexMatch = trimmed.match(/[0-9a-fA-F]{32}/);
-  if (hexMatch) {
-    return hexMatch[0].toLowerCase();
-  }
-
-  return null;
+  return extractNotionHexId(input);
 }
 
 /**
  * Formats a 32-character hex ID into a standard 8-4-4-4-12 UUID format.
  */
 export function formatNotionUuid(hex32: string): string {
-  if (typeof hex32 !== "string" || hex32.length !== 32) {
-    return hex32;
-  }
-  return `${hex32.slice(0, 8)}-${hex32.slice(8, 12)}-${hex32.slice(12, 16)}-${hex32.slice(16, 20)}-${hex32.slice(20)}`;
+  if (typeof hex32 !== "string") return hex32;
+  return formatNotionUuidFromHex(hex32);
 }
 
 /**

@@ -533,4 +533,23 @@ describe("SQLite Database Client", () => {
     expect(migratedDb.prepare("PRAGMA foreign_key_check").all()).toHaveLength(0);
     migratedDb.close();
   });
+
+  it("handles concurrent migrateLegacyDatabaseIfNeeded calls safely against a shared file path", async () => {
+    const legacyDbPath = path.join(tempDir, "concurrent-legacy.sqlite");
+    const canonicalDbPath = path.join(tempDir, "concurrent-canonical.sqlite");
+    const legacy = createDatabaseClient({ dbPath: legacyDbPath });
+    legacy.prepare("INSERT INTO data_sources (id, name, type, uri) VALUES ('c-1', 'Concurrent Src', 'rss', 'https://example.com/rss')").run();
+    legacy.close();
+
+    const results = await Promise.all([
+      Promise.resolve().then(() => migrateLegacyDatabaseIfNeeded(legacyDbPath, canonicalDbPath)),
+      Promise.resolve().then(() => migrateLegacyDatabaseIfNeeded(legacyDbPath, canonicalDbPath)),
+    ]);
+
+    expect(results.filter(Boolean).length).toBe(1);
+    expect(fs.existsSync(canonicalDbPath)).toBe(true);
+    const checkDb = createDatabaseClient({ dbPath: canonicalDbPath });
+    expect((checkDb.prepare("SELECT * FROM data_sources WHERE id = 'c-1'").get() as any)?.name).toBe("Concurrent Src");
+    checkDb.close();
+  });
 });

@@ -247,7 +247,10 @@ export class TaskStore {
             const skippedCount = summary.skippedCount ?? summary.totalSkippedDocuments ?? 0;
             const sourceName = completedJob.metadata?.sourceName || (sourceId ? (sourcesStore.sources.find(s => s.id === sourceId)?.name || 'Source') : 'Source');
 
-            if (isTracked) {
+            if (completedJob.status === 'completed_with_warnings') {
+              const warnMsg = completedJob.errorMessage || `Sync completed with warnings for "${sourceName}" (${newCount} new, ${totalFetched} checked).`;
+              toastStore.warn(`⚠️ ${warnMsg}`);
+            } else if (isTracked) {
               const toastInfo = formatSyncCompletionSummary(sourceName, { newCount, totalFetched, skippedCount });
               if (toastInfo.variant === 'success') {
                 toastStore.success(toastInfo.message);
@@ -271,7 +274,10 @@ export class TaskStore {
             const totalSkipped = summary.totalSkippedDocuments ?? summary.skippedCount ?? 0;
             const totalSources = summary.totalSources ?? completedJob.metadata?.sourceCount ?? 'all';
 
-            if (isTracked) {
+            if (completedJob.status === 'completed_with_warnings') {
+              const warnMsg = completedJob.errorMessage || `Bulk sync completed with warnings (${totalNew} new across ${totalSources} sources).`;
+              toastStore.warn(`⚠️ ${warnMsg}`);
+            } else if (isTracked) {
               const toastInfo = formatSyncCompletionSummary(null, {
                 newCount: totalNew,
                 totalFetched,

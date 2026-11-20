@@ -806,10 +806,10 @@ export function createCli(providedContext?: AppContext): Command {
 
       try {
         const sourceName = (await question("1. First data source name (e.g. 'Tech Blog'): ")) || "Tech Blog";
-        const sourceType = (await question("2. Source type (rss, web, local, sitemap, llms-txt, notion) [rss]: ")) || "rss";
+        const sourceType = (await question("2. Source type (rss, web, local, sitemap, llms-txt, notion, audio, video, youtube) [rss]: ")) || "rss";
         const sourceUri = (await question("3. Source URI / feed URL / folder path: ")) || "https://news.ycombinator.com/rss";
 
-        const validTypes: DataSourceType[] = ["rss", "web", "local", "sitemap", "llms-txt", "notion"];
+        const validTypes: DataSourceType[] = ["rss", "web", "local", "sitemap", "llms-txt", "notion", "audio", "video", "youtube"];
         const finalType = validTypes.includes(sourceType as DataSourceType)
           ? (sourceType as DataSourceType)
           : "rss";

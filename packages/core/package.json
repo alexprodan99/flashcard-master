@@ -26,6 +26,16 @@
   ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./sync-keys": {
+      "types": "./dist/services/sync-item-keys-pure.d.ts",
+      "default": "./dist/services/sync-item-keys-pure.js"
+    }
+  },
   "type": "module",
   "files": [
     "dist",

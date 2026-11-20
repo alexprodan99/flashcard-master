@@ -41,12 +41,12 @@ Semantic Outline Mode        Page Budget Mode             Word Budget Mode
 - Produces clean chapter titles like *"Chapter 1: Foundations"*, *"Chapter 2: Core Concepts"*.
 - If a book lacks heading markers, it automatically falls back gracefully to Page Budget or Word Budget mode.
 
-### 2. Page Budget Mode (`pages`)
+### 2. Page Budget Mode (`budget`)
 - Groups pages into consistent blocks (e.g., 5 to 25 pages per subdocument).
 - Maintains page coordinate ranges (`startPage` to `endPage`) for precise citation tracing.
 - Ideal for textbooks and academic papers with structured page layouts.
 
-### 3. Word Budget Mode (`words`)
+### 3. Word Budget Mode (`budget`)
 - Splits dense text into balanced word counts (e.g., 2,000 to 4,000 words).
 - Guarantees each chunk fits comfortably inside optimal LLM attention windows.
 

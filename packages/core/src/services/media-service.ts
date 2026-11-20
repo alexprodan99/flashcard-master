@@ -5,6 +5,7 @@ import crypto from "node:crypto";
 import sharp from "sharp";
 import type { MediaAsset, MediaOptimizationOptions, CompactMediaOptions } from "../domain/models.js";
 import { getDefaultMediaDirectory } from "../storage/db.js";
+import { fetchSafePublicResponse, readResponseBufferWithLimit } from "../utils/safe-fetch.js";
 
 // Limit Sharp thread concurrency to avoid 100% CPU starvation during batch ingestion
 sharp.concurrency(Math.min(2, os.cpus().length || 2));
@@ -299,7 +300,7 @@ export class MediaService {
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
 
     try {
-      const response = await this.fetchFn(targetUrl, {
+      const response = await fetchSafePublicResponse(this.fetchFn, targetUrl, {
         signal: controller.signal,
         headers: {
           "User-Agent": "flashcard-master/1.0 (Mozilla/5.0 Compatible)",
@@ -308,11 +309,11 @@ export class MediaService {
       });
 
       if (!response.ok) {
+        await response.body?.cancel?.().catch(() => {});
         return null;
       }
 
-      const arrayBuf = await response.arrayBuffer();
-      const buffer = Buffer.from(arrayBuf);
+      const buffer = await readResponseBufferWithLimit(response);
       if (buffer.length === 0) {
         return null;
       }
