@@ -92,28 +92,35 @@ export function createAppContext(options: AppOptions = {}): AppContext {
   }
   const resolvedBaseDir = trimmedDataDir ? path.resolve(trimmedDataDir) : undefined;
 
+  const trimmedDbPath = options.dbPath?.trim();
+  const inMemoryBaseDir = options.inMemory
+    ? fs.mkdtempSync(path.join(os.tmpdir(), "flashcard-master-inmemory-"))
+    : undefined;
+
   const dbPath = options.inMemory
     ? ":memory:"
-    : options.dbPath?.trim() ||
+    : trimmedDbPath ||
       (resolvedBaseDir ? path.join(resolvedBaseDir, "data.sqlite") : getDefaultDatabasePath());
+
+  const siblingBaseDir = resolvedBaseDir || (trimmedDbPath ? path.dirname(path.resolve(trimmedDbPath)) : undefined);
 
   const mediaDir =
     options.mediaDir?.trim() ||
-    (resolvedBaseDir
-      ? path.join(resolvedBaseDir, "media")
-      : options.inMemory
-        ? path.join(os.tmpdir(), "flashcard-master-inmemory", "media")
+    (siblingBaseDir
+      ? path.join(siblingBaseDir, "media")
+      : inMemoryBaseDir
+        ? path.join(inMemoryBaseDir, "media")
         : getDefaultMediaDirectory());
 
   const localFilesDir =
     options.localFilesDir?.trim() ||
-    (resolvedBaseDir
-      ? path.join(resolvedBaseDir, "local-files")
-      : options.inMemory
-        ? path.join(os.tmpdir(), "flashcard-master-inmemory", "local-files")
+    (siblingBaseDir
+      ? path.join(siblingBaseDir, "local-files")
+      : inMemoryBaseDir
+        ? path.join(inMemoryBaseDir, "local-files")
         : getDefaultLocalFilesDirectory());
 
-  if (!options.inMemory && !fs.existsSync(localFilesDir)) {
+  if (!fs.existsSync(localFilesDir)) {
     fs.mkdirSync(localFilesDir, { recursive: true });
   }
 
@@ -188,6 +195,13 @@ export function createAppContext(options: AppOptions = {}): AppContext {
     groundingGuard,
     dedupService,
     ankiConnectAdapter,
-    close: () => db.close(),
+    close: () => {
+      db.close();
+      if (inMemoryBaseDir) {
+        try {
+          fs.rmSync(inMemoryBaseDir, { recursive: true, force: true });
+        } catch {}
+      }
+    },
   };
 }

@@ -12,6 +12,8 @@ import {
   SyncStateRepository,
   DataSourceRepository,
   MediaService,
+  IngestionService,
+  StrategyRegistry,
 } from "@flashcard-master/core";
 
 describe("WorkerExecutor", () => {
@@ -1005,4 +1007,104 @@ Beta details on page 5.
     expect(summary.newCount).toBe(3);
     expect(summary.skippedCount).toBe(0);
   }, 30000);
+
+  it("executes custodial non-local sync through real IngestionService + SQLite DocumentRepository and clears emptied local docs on full mode", async () => {
+    const db = createDatabaseClient({ inMemory: true });
+    const sourceRepo = new DataSourceRepository(db);
+    const syncRepo = new SyncStateRepository(db);
+    const cardRepo = new FlashcardRepository(db);
+    const docRepo = new DocumentRepository(db);
+    const registry = new StrategyRegistry();
+
+    let returnSecond = false;
+    registry.register({
+      type: "web",
+      fetch: async (src, _last, opts) => {
+        const uri = returnSecond ? "https://example.com/post-2" : "https://example.com/post-1";
+        if ((opts?.syncMode ?? "new-only") !== "full" && opts?.knownItemKeys?.has(uri)) {
+          opts?.onItemSkipped?.(uri);
+          return [];
+        }
+        return [{ id: uri, sourceId: src.id, title: uri, originUrl: uri, rawContent: "Content for " + uri, guid: uri }];
+      },
+      extractCleanText: (raw) => ({
+        id: raw.id,
+        sourceId: raw.sourceId,
+        title: raw.title,
+        textContent: raw.rawContent,
+        originUrl: raw.originUrl,
+        contentHash: "h-" + raw.originUrl,
+        wordCount: 3,
+      }),
+    });
+
+    const realIngestionService = new IngestionService(sourceRepo, syncRepo, registry, docRepo);
+    const webSource = sourceRepo.create({
+      name: "Custodial Web",
+      type: "web",
+      uri: "https://example.com/post-1",
+    });
+
+    const executor = new WorkerExecutor({
+      ingestionService: realIngestionService,
+      documentRepo: docRepo,
+      cardRepo,
+      syncRepo,
+    });
+
+    const ctx = {
+      jobId: "custodial-real-1",
+      signal: new AbortController().signal,
+      updateProgress: () => {},
+      log: () => ({}) as any,
+      setResultSummary: () => {},
+    };
+
+    const first = await executor.executeTask(
+      { type: "sync_source", payload: { sources: [webSource], syncMode: "new-only" } },
+      ctx
+    );
+    expect(first.newCount).toBe(1);
+    expect(docRepo.listBySourceId(webSource.id).map((d) => d.url)).toEqual(["https://example.com/post-1"]);
+
+    // Second run in new-only skips post-1
+    const second = await executor.executeTask(
+      { type: "sync_source", payload: { sources: [webSource], syncMode: "new-only" } },
+      ctx
+    );
+    expect(second.newCount).toBe(0);
+    expect(second.skippedCount).toBe(1);
+
+    // Replace item & run 'full' sync -> old post-1 purged, post-2 persisted
+    returnSecond = true;
+    const third = await executor.executeTask(
+      { type: "sync_source", payload: { sources: [webSource], syncMode: "full" } },
+      ctx
+    );
+    expect(third.newCount).toBe(1);
+    expect(docRepo.listBySourceId(webSource.id).map((d) => d.url)).toEqual(["https://example.com/post-2"]);
+
+    // Local source full re-sync on empty directory purges existing docs cleanly
+    const emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), "worker-empty-local-"));
+    try {
+      const localSrc = sourceRepo.create({ name: "Empty Local", type: "local", uri: emptyDir });
+      docRepo.upsert({
+        id: "stale-doc-1",
+        sourceId: localSrc.id,
+        title: "Stale Deleted File",
+        url: path.join(emptyDir, "deleted.md"),
+        textContent: "Old content",
+        wordCount: 2,
+      });
+      await executor.executeTask(
+        { type: "sync_source", payload: { sources: [localSrc], syncMode: "full" } },
+        ctx
+      );
+      expect(docRepo.listBySourceId(localSrc.id)).toHaveLength(0);
+    } finally {
+      fs.rmSync(emptyDir, { recursive: true, force: true });
+    }
+    db.close();
+  }, 30000);
+
 });

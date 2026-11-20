@@ -525,4 +525,93 @@ describe("Pre-Fetch Incremental Skipping Across All 9 Ingestion Strategies (Stor
     expect(editedDocs).toHaveLength(1);
     expect(mockPageClient.blocks.children.list).toHaveBeenCalledTimes(1);
   });
+
+  it("NotionStrategy forwards lastSync to child databases, skips S3 media on unchanged parent pages, and flags fetch errors", async () => {
+    const parentId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const childDbId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const childRowId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    const mediaSpy = { downloadAndSave: vi.fn(async () => ({ url: "/api/media/x.webp" })) };
+
+    const dbQueryFn = vi.fn().mockResolvedValue({
+      results: [
+        {
+          id: childRowId,
+          url: "https://www.notion.so/Row-" + childRowId.replace(/-/g, ""),
+          last_edited_time: "2026-09-20T00:00:00.000Z",
+          properties: { Name: { type: "title", title: [{ plain_text: "Updated Child DB Row" }] } },
+        },
+      ],
+      has_more: false,
+    });
+
+    const mockClient: any = {
+      pages: {
+        retrieve: vi.fn().mockResolvedValue({
+          id: parentId,
+          url: "https://www.notion.so/Parent-" + parentId.replace(/-/g, ""),
+          last_edited_time: "2026-09-01T00:00:00.000Z",
+          properties: { title: { type: "title", title: [{ plain_text: "Parent" }] } },
+        }),
+      },
+      databases: {
+        retrieve: vi.fn(async ({ database_id }: any) => {
+          if (database_id === parentId) throw new Error("Not a database");
+          return { id: childDbId };
+        }),
+        query: dbQueryFn,
+      },
+      blocks: {
+        children: {
+          list: vi.fn().mockImplementation(async ({ block_id }: any) => {
+            if (block_id === parentId) {
+              return {
+                results: [
+                  { id: "img-1", type: "image", image: { type: "external", external: { url: "https://example.com/pic.png" } } },
+                  { id: childDbId, type: "child_database", child_database: { title: "Sub DB" } },
+                ],
+                has_more: false,
+              };
+            }
+            return { results: [], has_more: false };
+          }),
+        },
+      },
+    };
+
+    const notion = new NotionStrategy({
+      settingsService: { getSecret: () => "secret" },
+      mediaService: mediaSpy as any,
+      notionClient: mockClient,
+    });
+    const src = makeSource({
+      type: "notion",
+      uri: "https://www.notion.so/Parent-" + parentId.replace(/-/g, "") + "?recursive=true",
+    });
+
+    const docs = await notion.fetch(
+      src,
+      { sourceId: src.id, lastSyncedAt: "2026-09-10T00:00:00.000Z", itemCount: 2 },
+      { syncMode: "new-only", knownItemKeys: new Set([parentId, childRowId]) }
+    );
+
+    expect(mediaSpy.downloadAndSave).not.toHaveBeenCalled();
+    expect(dbQueryFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        database_id: childDbId,
+        filter: {
+          timestamp: "last_edited_time",
+          last_edited_time: { after: "2026-09-10T00:00:00.000Z" },
+        },
+      })
+    );
+    expect(docs.map((d) => d.title)).toEqual(["Updated Child DB Row"]);
+
+    const rssErrors: string[] = [];
+    const rss = new RssIngestionStrategy({ customFetch: async () => new Response("fail", { status: 503 }) });
+    await rss.fetch(makeSource({ type: "rss", uri: "https://example.com/feed.xml" }), undefined, {
+      onFetchError: (m) => rssErrors.push(m),
+    });
+    expect(rssErrors.length).toBe(1);
+  });
+
 });

@@ -93,7 +93,11 @@ export class JobRepository {
     const currentStep = input.currentStep !== undefined ? input.currentStep : 0;
     const progressPercent = input.progressPercent !== undefined ? input.progressPercent : 0.0;
     const currentStepName = input.currentStepName || null;
-    const metadata = JSON.stringify(input.metadata || {});
+    const metadataObj = {
+      ...(input.metadata || {}),
+      ownerPid: typeof input.metadata?.ownerPid === "number" ? input.metadata.ownerPid : process.pid,
+    };
+    const metadata = JSON.stringify(metadataObj);
     const now = new Date().toISOString();
 
     const stmt = this.db.prepare(`
@@ -320,16 +324,77 @@ export class JobRepository {
     return res.changes;
   }
 
-  recoverInterruptedJobs(): number {
+  recoverInterruptedJobs(options?: {
+    currentPid?: number;
+    ownerInstanceId?: string;
+    isProcessAlive?: (pid: number) => boolean;
+  }): number {
+    const currentPid = options?.currentPid ?? process.pid;
+    const isAlive =
+      options?.isProcessAlive ??
+      ((pid: number) => {
+        if (!Number.isInteger(pid) || pid <= 0) return false;
+        try {
+          process.kill(pid, 0);
+          return true;
+        } catch (err: any) {
+          return err?.code === "EPERM";
+        }
+      });
+
+    const activeRows = this.db
+      .prepare("SELECT id, metadata FROM jobs WHERE status IN ('running', 'queued')")
+      .all() as Array<{ id: string; metadata: string | null }>;
+    if (activeRows.length === 0) {
+      return 0;
+    }
+
+    const idsToRecover: string[] = [];
+    for (const row of activeRows) {
+      let meta: Record<string, any> = {};
+      if (row.metadata) {
+        try {
+          meta = JSON.parse(row.metadata);
+        } catch {
+          meta = {};
+        }
+      }
+      const ownerPid = typeof meta.ownerPid === "number" ? meta.ownerPid : undefined;
+      const ownerInstanceId = typeof meta.ownerInstanceId === "string" ? meta.ownerInstanceId : undefined;
+
+      if (ownerPid !== undefined && ownerPid !== currentPid && isAlive(ownerPid)) {
+        // Active job belongs to another running Desktop/Web/CLI process sharing this SQLite DB
+        continue;
+      }
+      if (
+        ownerPid === currentPid &&
+        options?.ownerInstanceId &&
+        ownerInstanceId === options.ownerInstanceId
+      ) {
+        continue;
+      }
+      idsToRecover.push(row.id);
+    }
+
+    if (idsToRecover.length === 0) {
+      return 0;
+    }
+
     const now = new Date().toISOString();
-    const stmt = this.db.prepare(`
+    const updateStmt = this.db.prepare(`
       UPDATE jobs
       SET status = 'failed',
           error_message = 'Job was interrupted by unexpected server restart or shutdown.',
           completed_at = ?
-      WHERE status IN ('running', 'queued')
+      WHERE id = ?
     `);
-    const res = stmt.run(now);
-    return res.changes;
+    const tx = this.db.transaction((ids: string[]) => {
+      let recovered = 0;
+      for (const id of ids) {
+        recovered += updateStmt.run(now, id).changes;
+      }
+      return recovered;
+    });
+    return tx(idsToRecover);
   }
 }

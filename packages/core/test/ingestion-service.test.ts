@@ -683,4 +683,102 @@ describe("IngestionService", () => {
     });
     expect(afterSecond[0].title).toBeUndefined();
   });
+
+  it("preserves concurrent YouTube edits during async backfill, purges replaced items on full sync, and guards sync_state on fetch errors", async () => {
+    const { StrategyRegistry, SyncStateRepository, DataSourceRepository, DocumentRepository } = await import("../src/index.js");
+    const db = (sourceRepo as any).db;
+    const syncRepoLocal = new SyncStateRepository(db);
+    const sourceRepoLocal = new DataSourceRepository(db);
+    const docRepoLocal = new DocumentRepository(db);
+    const registry = new StrategyRegistry();
+
+    const ytSource = sourceRepoLocal.create({
+      name: "Concurrent YT",
+      type: "youtube",
+      uri: JSON.stringify([{ uri: "https://youtu.be/dQw4w9WgXcQ", extractionMode: "auto" }]),
+    });
+
+    registry.register({
+      type: "youtube",
+      fetch: async () => {
+        sourceRepoLocal.update(ytSource.id, {
+          uri: JSON.stringify([
+            { uri: "https://youtu.be/dQw4w9WgXcQ", extractionMode: "auto" },
+            { uri: "https://www.youtube.com/watch?v=9bZkp7q19f0", title: "Added Mid-Sync", extractionMode: "auto" },
+          ]),
+        });
+        return [
+          {
+            id: "raw-yt-1",
+            sourceId: ytSource.id,
+            title: "Resolved Original Video",
+            originUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            rawContent: "Transcript body",
+            guid: "dQw4w9WgXcQ",
+          },
+        ];
+      },
+      extractCleanText: (raw) => ({
+        id: raw.id,
+        sourceId: raw.sourceId,
+        title: raw.title,
+        textContent: raw.rawContent,
+        originUrl: raw.originUrl,
+        contentHash: "hash-yt-1",
+        wordCount: 2,
+      }),
+    });
+
+    const svc = new IngestionService(sourceRepoLocal, syncRepoLocal, registry, docRepoLocal);
+    await svc.syncSource(ytSource.id);
+
+    const after = sourceRepoLocal.getById(ytSource.id)!;
+    const items = JSON.parse(after.uri);
+    expect(items).toHaveLength(2);
+    expect(items[0].title).toBe("Resolved Original Video");
+    expect(items[1]).toEqual(expect.objectContaining({ title: "Added Mid-Sync" }));
+
+    let returnSecond = false;
+    const webSrc = sourceRepoLocal.create({
+      name: "Web Replace Full",
+      type: "web",
+      uri: "https://example.com/a",
+    });
+    registry.register({
+      type: "web",
+      fetch: async (_src, _last, opts) => {
+        if ((opts as any)?.failNow) {
+          opts?.onFetchError?.("HTTP 503");
+          return [];
+        }
+        const url = returnSecond ? "https://example.com/b" : "https://example.com/a";
+        return [{ id: url, sourceId: webSrc.id, title: url, originUrl: url, rawContent: "Body " + url, guid: url }];
+      },
+      extractCleanText: (raw) => ({
+        id: raw.id,
+        sourceId: raw.sourceId,
+        title: raw.title,
+        textContent: raw.rawContent,
+        originUrl: raw.originUrl,
+        contentHash: "hash-" + raw.originUrl,
+        wordCount: 2,
+      }),
+    });
+
+    await svc.syncSource(webSrc.id, { syncMode: "new-only" });
+    const prevCursor = syncRepoLocal.get(webSrc.id)!;
+    expect(prevCursor.itemCount).toBe(1);
+
+    await new Promise((r) => setTimeout(r, 10));
+    await svc.syncSource(webSrc.id, { syncMode: "new-only", failNow: true } as any);
+    const afterErrCursor = syncRepoLocal.get(webSrc.id)!;
+    expect(afterErrCursor.lastSyncedAt).toBe(prevCursor.lastSyncedAt);
+    expect(afterErrCursor.itemCount).toBe(1);
+
+    returnSecond = true;
+    await svc.syncSource(webSrc.id, { syncMode: "full" });
+    const docsAfterReplace = docRepoLocal.listBySourceId(webSrc.id);
+    expect(docsAfterReplace.map((d) => d.url)).toEqual(["https://example.com/b"]);
+  });
+
 });

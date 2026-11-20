@@ -342,4 +342,20 @@ export class DocumentRepository {
     const res = this.db.prepare("DELETE FROM documents WHERE source_id = ?").run(sourceId);
     return res.changes;
   }
+
+  /**
+   * Atomically replaces all documents belonging to a source within a single SQLite transaction.
+   */
+  replaceBySourceId(
+    sourceId: string,
+    documents: Array<Partial<DiscoveredDocument> & { sourceId: string; title: string; textContent: string }>
+  ): void {
+    const tx = this.db.transaction(() => {
+      this.deleteBySourceId(sourceId);
+      if (documents.length > 0) {
+        this.upsertBatch(documents);
+      }
+    });
+    tx();
+  }
 }

@@ -6,10 +6,13 @@ export interface DesktopBridge {
   version: string;
 }
 
+const versionArg = process.argv.find((arg) => arg.startsWith("--fm-app-version="));
+const resolvedVersion = versionArg ? versionArg.slice("--fm-app-version=".length) : "1.2.0";
+
 const desktopBridge: DesktopBridge = {
   isDesktop: true,
   platform: process.platform,
-  version: "1.0.0",
+  version: resolvedVersion,
 };
 
 contextBridge.exposeInMainWorld("desktopApp", desktopBridge);

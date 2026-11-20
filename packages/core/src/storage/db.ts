@@ -120,7 +120,13 @@ function hasUserData(filePath: string): boolean {
       const cardCount = (testDb.prepare("SELECT count(*) as c FROM flashcards").get() as any)?.c ?? 0;
       const docCount = (testDb.prepare("SELECT count(*) as c FROM documents").get() as any)?.c ?? 0;
       const settingsCount = (testDb.prepare("SELECT count(*) as c FROM app_settings").get() as any)?.c ?? 0;
-      return sourceCount > 0 || cardCount > 0 || docCount > 0 || settingsCount > 0;
+      let jobCount = 0;
+      try {
+        jobCount = (testDb.prepare("SELECT count(*) as c FROM jobs").get() as any)?.c ?? 0;
+      } catch {
+        // Older legacy schema before jobs table
+      }
+      return sourceCount > 0 || cardCount > 0 || docCount > 0 || settingsCount > 0 || jobCount > 0;
     } catch {
       if (testDb) {
         try {
@@ -152,12 +158,38 @@ export function migrateLegacyDatabaseIfNeeded(
   const defaultDir = path.join(home, ".flashcard-master");
   const actualLegacy = legacyPath || path.join(defaultDir, "flashcards.db");
   const actualCanonical = canonicalPath || path.join(defaultDir, "data.sqlite");
-  const tempCanonical = `${actualCanonical}.tmp`;
+  const tempCanonical = `${actualCanonical}.${process.pid}.tmp`;
+  const lockPath = `${actualCanonical}.migrate.lock`;
+  let lockFd: number | null = null;
 
   try {
     const legacyExists = fs.existsSync(actualLegacy);
     if (!legacyExists) {
       return false;
+    }
+
+    const destDir = path.dirname(actualCanonical);
+    if (!fs.existsSync(destDir)) {
+      fs.mkdirSync(destDir, { recursive: true });
+    }
+    try {
+      lockFd = fs.openSync(lockPath, "wx");
+    } catch (lockErr: any) {
+      if (lockErr?.code === "EEXIST") {
+        try {
+          const stat = fs.statSync(lockPath);
+          if (Date.now() - stat.mtimeMs > 60_000) {
+            fs.unlinkSync(lockPath);
+            lockFd = fs.openSync(lockPath, "wx");
+          } else {
+            return false; // Another process is actively migrating
+          }
+        } catch {
+          return false;
+        }
+      } else {
+        throw lockErr;
+      }
     }
 
     const canonicalExists = fs.existsSync(actualCanonical);
@@ -232,6 +264,15 @@ export function migrateLegacyDatabaseIfNeeded(
       `[db] Failed to migrate legacy database from ${actualLegacy} to ${actualCanonical}:`,
       err
     );
+  } finally {
+    if (lockFd !== null) {
+      try {
+        fs.closeSync(lockFd);
+      } catch {}
+      try {
+        if (fs.existsSync(lockPath)) fs.unlinkSync(lockPath);
+      } catch {}
+    }
   }
 
   return false;
