@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 08-30-2026 20:47
-last_updated: 11-18-2026 19:04
+last_updated: 11-20-2026 14:43
 project: flashcard-master
 project_key: NOKEY
 tracking_system: file-system
@@ -226,7 +226,7 @@ development_status:
   22-3-youtube-metadata-identity-and-dedup: review
   22-4-ui-split-sync-and-item-status: review
   22-5-cli-full-flag-docs-and-e2e: review
-  epic-22-retrospective: optional
+  epic-22-retrospective: done
 action_items:
   - id: "epic-14-retro-item-1-add-progressive-exponential-backoff-and"
     epic: 14
@@ -346,15 +346,17 @@ action_items:
   - id: "epic-20-retro-item-2-e2e-smoke-test-for-desktop-binary-in-ci"
     epic: 20
     action: "Add a headless smoke-test step in .github/workflows/release-desktop.yml
-      on Linux using xvfb-run to assert that the packaged binary boots and cleanly shuts down"
+      on Linux using xvfb-run to assert that the packaged binary boots and cleanly
+      shuts down"
     owner: "dev"
     status: done
     ref: "_bmad-output/implementation-artifacts/epic-20-retro-2026-10-27.md"
   - id: "epic-21-retro-item-1-per-item-media-slicing-and-source-defaults"
     epic: 21
     action: "Support editable data-source slicing defaults and optional per-item slicing
-      overrides (inherit | chapters | timestamps | none) in MediaSourceItemSchema, Web UI
-      Add/Edit modals, CLI, and IngestionService (with Save & Re-sync / slicing-change detection)"
+      overrides (inherit | chapters | timestamps | none) in MediaSourceItemSchema,
+      Web UI Add/Edit modals, CLI, and IngestionService (with Save & Re-sync / slicing-change
+      detection)"
     owner: "dev"
     status: done
     ref: "_bmad-output/implementation-artifacts/epic-21-retro-2026-11-17.md"
@@ -374,8 +376,9 @@ action_items:
     ref: "_bmad-output/implementation-artifacts/epic-21-retro-2026-11-17.md"
   - id: "epic-21-retro-item-4-ingestion-service-resync-and-dedup-fixes"
     epic: 21
-    action: "Fix IngestionService re-sync transitions (sliced -> none cleanup, empty custom-range
-      protection, and avoiding redundant upsertBatch/STT work on unchanged media items)"
+    action: "Fix IngestionService re-sync transitions (sliced -> none cleanup, empty
+      custom-range protection, and avoiding redundant upsertBatch/STT work on unchanged
+      media items)"
     owner: "dev"
     status: done
     ref: "_bmad-output/implementation-artifacts/epic-21-retro-2026-11-17.md"
@@ -388,17 +391,68 @@ action_items:
     ref: "_bmad-output/implementation-artifacts/epic-21-retro-2026-11-17.md"
   - id: "epic-21-retro-item-6-deferred-hardening-upload-limit-html-entities-ffmpeg"
     epic: 21
-    action: "Add max upload byte limit in WebServer.readRequestBodyBuffer, code-point range guard
-      in decodeHtmlEntitiesOnce, main/main.exe binary classification in LocalWhisperSttAdapter, and
-      default ffmpeg timeout in AudioTrimmer"
+    action: "Add max upload byte limit in WebServer.readRequestBodyBuffer, code-point
+      range guard in decodeHtmlEntitiesOnce, main/main.exe binary classification in
+      LocalWhisperSttAdapter, and default ffmpeg timeout in AudioTrimmer"
     owner: "dev"
     status: done
     ref: "_bmad-output/implementation-artifacts/epic-21-retro-2026-11-17.md"
   - id: "epic-21-retro-item-7-close-media-verification-gaps"
     epic: 21
     action: "Add automated tests for WorkerExecutor syncResult.error, IngestionService
-      timestamps -> none transitions, LocalWhisperSttAdapter path-traversal/zip-slip guards,
-      and CLI sources sync media flags"
+      timestamps -> none transitions, LocalWhisperSttAdapter path-traversal/zip-slip
+      guards, and CLI sources sync media flags"
     owner: "qa"
     status: done
     ref: "_bmad-output/implementation-artifacts/epic-21-retro-2026-11-17.md"
+  - id: "epic-22-retro-item-1-fix-youtube-backfill-race-notion-child-db-and-tx-purge"
+    epic: 22
+    action: "Fix IngestionService.backfillYouTubeSourceMetadata stale-snapshot overwrite
+      race & silent catch, pass lastSync to NotionStrategy child databases & skip
+      unchanged parent S3 downloads, wrap deleteBySourceId+upsertBatch in SQLite transactions
+      with complete full purge, and stop advancing sync_state on failed fetches"
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-22-retro-2026-11-20.md"
+  - id: "epic-22-retro-item-2-harden-cross-process-jobs-worker-sync-and-desktop-build"
+    epic: 22
+    action: "Scope JobManager.recoverInterruptedJobs with process ownership across
+      unified ~/.flashcard-master/data.sqlite, fix db.ts concurrent migration/inMemory
+      isolation & app.ts dbPath-only directories, fix worker local sync error/totalFetched/totalSteps/lastGuid/full-purge
+      fidelity, route all desktop dist* scripts through electron-build.mjs, fix FLASHCARD_DESKTOP_USER_DATA/stdoutBuffer/preload
+      version, and deduplicate/boundary-check POST /api/sources/upload paths"
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-22-retro-2026-11-20.md"
+  - id: "epic-22-retro-item-3-unify-key-matchers-modularize-server-and-cors-ssrf"
+    epic: 22
+    action: "Consolidate duplicated URI/key/media/URL-list helpers (sync-item-keys.ts,
+      formatters.ts, models.ts, notion-strategy.ts) fixing EPUB space-anchor stripping,
+      Notion ?p= ID precedence, and audio/video directory status; extract route modules
+      from 4027-line packages/web/src/server.ts, fix /api/health version & inline
+      fallback triggerBulkSync(), and restrict wildcard CORS + SSRF/response-size
+      guards"
+    owner: "architect"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-22-retro-2026-11-20.md"
+  - id: "epic-22-retro-item-4-fix-ui-sync-tracking-dirty-config-resync-and-modals"
+    epic: 22
+    action: "Refresh SourcesView when SSE finishes sync jobs and handle completed_with_warnings,
+      track AddSourceModal sync jobIds in sourcesStore, auto-select/prompt full re-sync
+      when slicing or media config changes in EditSourceModal, key MediaItemListEditor
+      items stably instead of index and await metadata resolution, expose multi-file
+      local add controls, prune deleted docIds in GenerateStudio (removing dead handleQuickSyncSource),
+      and add audio/video/youtube to CLI init"
+    owner: "dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-22-retro-2026-11-20.md"
+  - id: "epic-22-retro-item-5-close-verification-gaps-reconcile-tracking-and-release-1-3-0"
+    epic: 22
+    action: "Add non-mocked custodial WorkerExecutor+SQLite sync tests, Notion child-db/?p=,
+      EPUB space-anchor, and concurrent unified-DB tests; reconcile sprint-status
+      (22-1..22-5 -> done), stale deferred-work.md (17-5/17-6), epics.md/docs (sync-status,
+      budget, 3000ms), and ship lockstep 1.3.0 version bump PR with quickstart 1.3.0
+      installer links"
+    owner: "qa"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-22-retro-2026-11-20.md"
