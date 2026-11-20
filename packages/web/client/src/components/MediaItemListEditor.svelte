@@ -2,6 +2,7 @@
   import { resolveYouTubeUrls, uploadSourceFile } from '../lib/api';
   import {
     extractClientYouTubeVideoId,
+    getClientItemSyncStatus,
     planYoutubeUrlAdditions,
   } from '../lib/formatters';
   import type {
@@ -12,11 +13,14 @@
     TimestampRange,
   } from '../lib/types';
   import { settingsStore } from '../stores/index.js';
+  import SyncStatusBadge from './SyncStatusBadge.svelte';
 
   interface Props {
     sourceType: 'audio' | 'video' | 'youtube';
     items?: MediaSourceItem[];
     disabled?: boolean;
+    knownKeys?: string[];
+    showSyncStatus?: boolean;
     onNavigate?: (tab: string, queryParams?: Record<string, string>) => void;
     onCloseModal?: () => void;
     onError?: (msg: string | null) => void;
@@ -26,6 +30,8 @@
     sourceType,
     items = $bindable<MediaSourceItem[]>([]),
     disabled = false,
+    knownKeys = [],
+    showSyncStatus = false,
     onNavigate,
     onCloseModal,
     onError,
@@ -453,6 +459,7 @@
         {@const activeProvider = item.sttProvider || settingsStore.general.defaultSttProvider || 'openai'}
         {@const showStt = item.extractionMode === 'stt' || item.extractionMode === 'auto'}
         {@const missingKey = showStt && isMissingSttKey(activeProvider)}
+        {@const itemStatus = showSyncStatus ? getClientItemSyncStatus(item.uri, sourceType, knownKeys) : null}
         <div class="media-item-card">
           <div class="item-card-top">
             <div class="item-identity">
@@ -461,18 +468,35 @@
                 {#if item.title}
                   <span class="item-title-display" title={item.title}>{item.title}</span>
                 {/if}
-                <span class="item-uri" title={item.uri}>{getFilenameDisplay(item.uri)}</span>
+                {#if /^https?:\/\//i.test(item.uri)}
+                  <a
+                    href={item.uri}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="item-uri-link"
+                    title={item.uri}
+                  >
+                    {item.uri}
+                  </a>
+                {:else}
+                  <span class="item-uri" title={item.uri}>{getFilenameDisplay(item.uri)}</span>
+                {/if}
               </div>
             </div>
-            <button
-              type="button"
-              class="btn-remove-item"
-              onclick={() => removeItem(idx)}
-              disabled={disabled}
-              aria-label={`Remove media item ${idx + 1}`}
-            >
-              ✕ Remove
-            </button>
+            <div class="item-card-actions">
+              {#if itemStatus}
+                <SyncStatusBadge status={itemStatus} />
+              {/if}
+              <button
+                type="button"
+                class="btn-remove-item"
+                onclick={() => removeItem(idx)}
+                disabled={disabled}
+                aria-label={`Remove media item ${idx + 1}`}
+              >
+                ✕ Remove
+              </button>
+            </div>
           </div>
 
           <div class="item-fields-grid">
@@ -934,6 +958,28 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+
+  .item-uri-link {
+    font-size: 12px;
+    color: #60a5fa;
+    font-family: monospace;
+    text-decoration: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .item-uri-link:hover {
+    text-decoration: underline;
+  }
+
+  .item-card-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
 
   .btn-remove-item {
     background: transparent;

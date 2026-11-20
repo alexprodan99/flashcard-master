@@ -1,17 +1,22 @@
 <script lang="ts">
-  import { updateSource, uploadSourceFile, syncSource } from '../lib/api';
+  import { fetchSourceSyncStatus, updateSource, uploadSourceFile, syncSource } from '../lib/api';
   import type {
     DataSource,
     DataSourceType,
     DocumentSlicingOptions,
+    ItemSyncState,
     MediaSourceItem,
     SlicingMode,
+    SourceSyncStatusResponse,
+    SyncMode,
   } from '../lib/types';
-  import { parseMediaItemsSummary, validateMediaItems } from '../lib/formatters.js';
-  import { settingsStore, toastStore } from '../stores/index.js';
+  import { getClientItemSyncStatus, parseMediaItemsSummary, parseWebSourceUrlsClient, validateMediaItems } from '../lib/formatters.js';
+  import { settingsStore, sourcesStore, toastStore } from '../stores/index.js';
   import { buildNotionUri, parseNotionUri, isValidNotionInput } from '../lib/notion-uri.js';
   import UrlListManager from './UrlListManager.svelte';
   import MediaItemListEditor from './MediaItemListEditor.svelte';
+  import SplitSyncButton from './SplitSyncButton.svelte';
+  import SyncStatusBadge from './SyncStatusBadge.svelte';
   import TagInput from './TagInput.svelte';
 
   interface Props {
@@ -36,6 +41,12 @@
   let fileInputRef = $state<HTMLInputElement | null>(null);
   let slicingMode = $state<SlicingMode>('timestamps');
   let minutesPerChunk = $state<number | string>(10);
+  let syncStatus = $state<SourceSyncStatusResponse | null>(null);
+  let syncStatusLoading = $state(false);
+  let syncStatusError = $state(false);
+  let originalCleanUri = $state('');
+  let localFilePaths = $state<string[]>([]);
+  let modalSession = 0;
 
   const isMediaType = (t: DataSourceType): t is 'audio' | 'video' | 'youtube' =>
     t === 'audio' || t === 'video' || t === 'youtube';
@@ -55,10 +66,16 @@
 
     isUploadingFile = true;
     errorMessage = null;
+    const activeSession = modalSession;
 
     try {
       const result = await uploadSourceFile(file);
-      uri = result.path;
+      if (activeSession !== modalSession || !isOpen) return;
+      if (localFilePaths.length > 0) {
+        localFilePaths = [...localFilePaths, result.path];
+      } else {
+        uri = result.path;
+      }
       if (!name.trim()) {
         name = result.filename.replace(/\.(md|markdown|txt|pdf|docx|epub)$/i, '');
       }
@@ -88,20 +105,28 @@
       tags = [...(source.tags || [])];
       errorMessage = null;
 
+      modalSession += 1;
+      localFilePaths = [];
       if (source.type === 'web') {
-        const raw = source.uri || '';
-        if (raw.trim().startsWith('[') && raw.trim().endsWith(']')) {
+        webUrls = parseWebSourceUrlsClient(source.uri || '');
+      } else if (source.type === 'local') {
+        const raw = (source.uri || '').trim();
+        if (raw.startsWith('[')) {
           try {
             const parsed = JSON.parse(raw);
-            webUrls = Array.isArray(parsed) ? parsed.map((u) => String(u).trim()).filter(Boolean) : [raw.trim()];
+            if (Array.isArray(parsed)) {
+              localFilePaths = parsed.map((u) => String(u || '').trim()).filter(Boolean);
+              uri = '';
+            } else {
+              uri = raw;
+            }
           } catch {
-            webUrls = raw.split(/[\r\n,]+/).map((u) => u.trim()).filter(Boolean);
+            uri = raw;
           }
-        } else if (raw.trim()) {
-          webUrls = [raw.trim()];
         } else {
-          webUrls = [];
+          uri = raw;
         }
+        originalCleanUri = raw;
       } else if (isMediaType(source.type)) {
         mediaItems = parseMediaItemsSummary(source.uri || '', source.type).items;
         const fallbackMode: SlicingMode = source.type === 'youtube' ? 'chapters' : 'timestamps';
@@ -118,11 +143,64 @@
         const parsed = parseNotionUri(source.uri || '', source.tags || []);
         notionRecursive = parsed.isRecursive;
         uri = parsed.cleanUri;
+        originalCleanUri = parsed.cleanUri;
       } else {
         uri = source.uri || '';
+        originalCleanUri = (source.uri || '').trim();
       }
+
+      let cancelled = false;
+      syncStatus = null;
+      syncStatusError = false;
+      syncStatusLoading = true;
+      fetchSourceSyncStatus(source.id)
+        .then((res) => {
+          if (!cancelled) {
+            syncStatus = res;
+            syncStatusError = false;
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            syncStatus = null;
+            syncStatusError = true;
+          }
+        })
+        .finally(() => {
+          if (!cancelled) {
+            syncStatusLoading = false;
+          }
+        });
+      return () => {
+        cancelled = true;
+      };
     }
   });
+
+  function getSingleUriSyncStatus(): ItemSyncState | null {
+    if (!source || syncStatusLoading || syncStatusError) {
+      return null;
+    }
+    if (!syncStatus || !syncStatus.hasSyncedDocuments) {
+      return 'new';
+    }
+    const trimmedUri = uri.trim();
+    if (!trimmedUri) return 'new';
+    if (source.type === 'local') {
+      return getClientItemSyncStatus(trimmedUri, 'local', syncStatus.knownKeys);
+    }
+    const directMatch = getClientItemSyncStatus(trimmedUri, source.type, syncStatus.knownKeys);
+    if (directMatch === 'synced') return 'synced';
+    if (originalCleanUri && trimmedUri === originalCleanUri) {
+      return 'synced';
+    }
+    return 'new';
+  }
+
+  function handleRequestClose() {
+    if (isSubmitting) return;
+    onClose();
+  }
 
   function getMediaSlicingOptions(): DocumentSlicingOptions {
     const mins = Math.max(1, Math.min(240, parseInt(String(minutesPerChunk), 10) || 10));
@@ -135,7 +213,7 @@
     return { mode: 'none' };
   }
 
-  async function saveChanges(resyncAfter: boolean) {
+  async function saveChanges(resyncAfter: boolean, syncMode: SyncMode = 'new-only') {
     if (!source || isSubmitting) return;
 
     let finalUri = '';
@@ -164,6 +242,9 @@
         return;
       }
       finalUri = buildNotionUri(rawUri, { recursive: notionRecursive });
+    } else if (source.type === 'local' && localFilePaths.length > 0) {
+      const cleanPaths = localFilePaths.map((p) => p.trim()).filter(Boolean);
+      finalUri = cleanPaths.length === 1 ? cleanPaths[0] : JSON.stringify(cleanPaths);
     } else {
       finalUri = uri.trim();
     }
@@ -206,14 +287,16 @@
       onSourceUpdated(updated);
       if (resyncAfter) {
         try {
-          const res: any = await syncSource(
-            updated.id,
-            mediaSlicing ? { slicing: mediaSlicing } : undefined
-          );
+          const res: any = await syncSource(updated.id, {
+            ...(mediaSlicing ? { slicing: mediaSlicing } : {}),
+            syncMode,
+          });
+          const modeLabel = syncMode === 'full' ? 'full re-sync' : 'incremental sync';
           if (res?.jobId) {
-            toastStore.info(`Saved and queued re-sync (#${res.jobId.slice(0, 8)}).`);
+            sourcesStore.setSyncing(updated.id, true, res.jobId);
+            toastStore.info(`Saved and queued ${modeLabel} (#${res.jobId.slice(0, 8)}).`);
           } else {
-            toastStore.success('Saved and re-synced data source.');
+            toastStore.success(`Saved and completed ${modeLabel}.`);
           }
         } catch (syncErr: any) {
           toastStore.warn(`Saved changes, but re-sync failed: ${syncErr?.message || 'Sync error'}`);
@@ -233,12 +316,12 @@
   }
 </script>
 
-<svelte:window onkeydown={(e) => { if (e.key === 'Escape' && isOpen) onClose(); }} />
+<svelte:window onkeydown={(e) => { if (e.key === 'Escape' && isOpen) handleRequestClose(); }} />
 
 {#if isOpen && source}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="modal-backdrop" onclick={onClose}>
+  <div class="modal-backdrop" onclick={handleRequestClose}>
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="modal-card" role="dialog" aria-modal="true" tabindex="-1" onclick={(e) => e.stopPropagation()}>
@@ -247,7 +330,7 @@
           <h2>Edit Data Source</h2>
           <span class="type-pill {source.type}">{source.type}</span>
         </div>
-        <button class="close-btn" onclick={onClose} aria-label="Close modal">✕</button>
+        <button class="close-btn" onclick={handleRequestClose} disabled={isSubmitting} aria-label="Close modal">✕</button>
       </div>
 
       {#if errorMessage}
@@ -272,11 +355,42 @@
               urls={webUrls}
               onUrlsChange={(next) => (webUrls = next)}
               disabled={isSubmitting}
+              knownKeys={syncStatus?.knownKeys ?? []}
+              showSyncStatus={!syncStatusLoading && !syncStatusError}
             />
           </div>
         {:else if source.type === 'local'}
+          {@const localStatus = getSingleUriSyncStatus()}
           <div class="form-group">
-            <label for="edit-src-uri">Local File / Directory Path</label>
+            <div class="field-label-row">
+              <label for="edit-src-uri">Local File / Directory Path</label>
+              {#if localFilePaths.length === 0 && localStatus}
+                <SyncStatusBadge status={localStatus} />
+              {/if}
+            </div>
+            {#if localFilePaths.length > 0}
+              <ul class="local-files-status-list">
+                {#each localFilePaths as filePath, fIdx}
+                  {@const fileStatus = !syncStatusLoading && !syncStatusError ? getClientItemSyncStatus(filePath, 'local', syncStatus?.knownKeys ?? []) : null}
+                  <li class="local-file-status-row">
+                    <span class="local-file-path" title={filePath}>{filePath}</span>
+                    {#if fileStatus}
+                      <SyncStatusBadge status={fileStatus} />
+                    {/if}
+                    <button
+                      type="button"
+                      class="btn-inline-settings"
+                      disabled={isSubmitting}
+                      onclick={() => {
+                        localFilePaths = localFilePaths.filter((_, i) => i !== fIdx);
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </li>
+                {/each}
+              </ul>
+            {:else}
             <div class="local-path-input-group">
               <input
                 id="edit-src-uri"
@@ -296,12 +410,19 @@
                 />
               </label>
             </div>
+            {/if}
             <span class="field-hint">Specify an absolute directory path, custom file path, or click Replace File to upload a new document.</span>
           </div>
         {:else if source.type === 'notion'}
+          {@const notionStatus = getSingleUriSyncStatus()}
           <div class="form-group">
             <div class="notion-header-row">
-              <label for="edit-src-uri">Notion Page or Database URL</label>
+              <div class="label-with-status">
+                <label for="edit-src-uri">Notion Page or Database URL</label>
+                {#if notionStatus}
+                  <SyncStatusBadge status={notionStatus} />
+                {/if}
+              </div>
               <div class="token-status-wrapper">
                 {#if settingsStore.loading && !settingsStore.hasLoaded}
                   <span class="token-badge loading" title="Checking Notion token...">
@@ -355,6 +476,8 @@
               sourceType={source.type}
               bind:items={mediaItems}
               disabled={isSubmitting}
+              knownKeys={syncStatus?.knownKeys ?? []}
+              showSyncStatus={!syncStatusLoading && !syncStatusError}
               {onNavigate}
               onCloseModal={onClose}
               onError={(msg) => (errorMessage = msg)}
@@ -386,17 +509,23 @@
                 />
               </div>
             {/if}
-            <small class="hint-text">Applied to all items unless overridden per item above. Click "Save &amp; Re-sync" to re-slice existing documents immediately.</small>
+            <small class="hint-text">Applied to all items unless overridden per item above. Choose "Full Re-sync (All Items)" in Save &amp; Sync to re-slice existing documents immediately.</small>
           </div>
         {:else}
+          {@const feedStatus = getSingleUriSyncStatus()}
           <div class="form-group">
-            <label for="edit-src-uri">
-              {source.type === 'rss'
-                ? 'RSS / Atom Feed URL'
-                : source.type === 'sitemap'
-                ? 'XML Sitemap URL'
-                : 'LLMs.txt Catalog URL'}
-            </label>
+            <div class="field-label-row">
+              <label for="edit-src-uri">
+                {source.type === 'rss'
+                  ? 'RSS / Atom Feed URL'
+                  : source.type === 'sitemap'
+                  ? 'XML Sitemap URL'
+                  : 'LLMs.txt Catalog URL'}
+              </label>
+              {#if feedStatus}
+                <SyncStatusBadge status={feedStatus} />
+              {/if}
+            </div>
             <input
               id="edit-src-uri"
               type="text"
@@ -406,25 +535,61 @@
           </div>
         {/if}
 
+        <div class="sync-status-panel" data-testid="edit-sync-status-panel">
+          {#if syncStatusLoading}
+            <span class="sync-summary-muted">⏳ Loading item sync status...</span>
+          {:else if syncStatusError}
+            <span class="sync-summary-muted">⚠️ Sync status unavailable right now.</span>
+          {:else if syncStatus && syncStatus.hasSyncedDocuments}
+            <div class="sync-summary-header">
+              <SyncStatusBadge status="synced" />
+              <span class="sync-summary-text">
+                {syncStatus.syncedItems.length} synced item(s) ({syncStatus.syncedDocumentCount} document slice(s) in knowledge base)
+              </span>
+            </div>
+            {#if !isMediaType(source.type) && source.type !== 'web' && syncStatus.syncedItems.length > 0}
+              <ul class="synced-items-preview">
+                {#each syncStatus.syncedItems.slice(0, 25) as item}
+                  <li class="synced-preview-row">
+                    <SyncStatusBadge status="synced" />
+                    <span class="synced-item-label" title={item.uri}>{item.label}</span>
+                  </li>
+                {/each}
+              </ul>
+              {#if syncStatus.syncedItems.length > 25}
+                <span class="sync-summary-muted">+{syncStatus.syncedItems.length - 25} more synced item(s)</span>
+              {/if}
+            {/if}
+          {:else}
+            <div class="sync-summary-header">
+              <SyncStatusBadge status="new" />
+              <span class="sync-summary-text">
+                Not synced yet — all configured items will be ingested on first sync.
+              </span>
+            </div>
+          {/if}
+        </div>
+
         <div class="form-group">
           <label for="edit-src-tags">Tags</label>
           <TagInput id="edit-src-tags" bind:tags />
         </div>
 
         <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" onclick={onClose} disabled={isSubmitting}>
+          <button type="button" class="btn btn-secondary" onclick={handleRequestClose} disabled={isSubmitting}>
             Cancel
           </button>
-          {#if isMediaType(source.type)}
-            <button
-              type="button"
-              class="btn btn-secondary"
-              onclick={() => saveChanges(true)}
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? 'Saving...' : 'Save & Re-sync'}
-            </button>
-          {/if}
+          <SplitSyncButton
+            primaryLabel="⚡ Save & Sync"
+            syncingLabel="Saving..."
+            syncing={isSubmitting}
+            disabled={isSubmitting}
+            variant="secondary"
+            ariaLabel="Modal Save and Sync"
+            title="Save changes and sync new items only"
+            dropUp={true}
+            onSync={(mode) => saveChanges(true, mode)}
+          />
           <button type="submit" class="btn btn-primary" disabled={isSubmitting}>
             {isSubmitting ? 'Saving Changes...' : 'Save Changes'}
           </button>
@@ -773,5 +938,97 @@
     font-size: 11px;
     color: #94a3b8;
     line-height: 1.4;
+  }
+
+  .field-label-row,
+  .label-with-status {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .local-files-status-list {
+    list-style: none;
+    margin: 0;
+    padding: 6px;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    max-height: 150px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .local-file-status-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    background: rgba(30, 41, 59, 0.6);
+    font-size: 12px;
+  }
+
+  .local-file-path {
+    flex: 1;
+    font-family: monospace;
+    color: #cbd5e1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sync-status-panel {
+    background: rgba(15, 23, 42, 0.55);
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .sync-summary-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .sync-summary-text {
+    font-size: 12px;
+    color: #cbd5e1;
+  }
+
+  .sync-summary-muted {
+    font-size: 11px;
+    color: #94a3b8;
+  }
+
+  .synced-items-preview {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 120px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .synced-preview-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: #cbd5e1;
+  }
+
+  .synced-item-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 </style>

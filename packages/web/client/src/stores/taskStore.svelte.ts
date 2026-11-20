@@ -3,6 +3,7 @@ import { fetchJobs, fetchJobDetails, cancelJobApi, clearJobHistory, fetchLogging
 import { toastStore } from './toastStore.svelte.js';
 import { generateStore } from './generateStore.svelte.js';
 import { sourcesStore } from './sourcesStore.svelte.js';
+import { formatSyncCompletionSummary } from '../lib/formatters.js';
 
 export class TaskStore {
   jobs = $state<Job[]>([]);
@@ -243,13 +244,15 @@ export class TaskStore {
             const summary = completedJob.resultSummary || {};
             const newCount = summary.newCount ?? summary.totalNewDocuments ?? 0;
             const totalFetched = summary.totalFetched ?? summary.totalFetchedDocuments ?? 0;
+            const skippedCount = summary.skippedCount ?? summary.totalSkippedDocuments ?? 0;
             const sourceName = completedJob.metadata?.sourceName || (sourceId ? (sourcesStore.sources.find(s => s.id === sourceId)?.name || 'Source') : 'Source');
 
             if (isTracked) {
-              if (newCount > 0) {
-                toastStore.success(`🎉 Synced "${sourceName}": ${newCount} new document(s) ingested (${totalFetched} total checked).`);
+              const toastInfo = formatSyncCompletionSummary(sourceName, { newCount, totalFetched, skippedCount });
+              if (toastInfo.variant === 'success') {
+                toastStore.success(toastInfo.message);
               } else {
-                toastStore.info(`Synced "${sourceName}": Up to date (0 new documents, ${totalFetched} total checked).`);
+                toastStore.info(toastInfo.message);
               }
             } else {
               toastStore.success(`🎉 Task "${title}" completed successfully!`);
@@ -264,10 +267,18 @@ export class TaskStore {
             sourcesStore.setSyncingAll(false);
             const summary = completedJob.resultSummary || {};
             const totalNew = summary.totalNewDocuments ?? summary.newCount ?? 0;
+            const totalFetched = summary.totalFetchedDocuments ?? summary.totalFetched ?? 0;
+            const totalSkipped = summary.totalSkippedDocuments ?? summary.skippedCount ?? 0;
             const totalSources = summary.totalSources ?? completedJob.metadata?.sourceCount ?? 'all';
 
             if (isTracked) {
-              toastStore.success(`🎉 Bulk sync completed: ${totalNew} new document(s) ingested across ${totalSources} sources.`);
+              const toastInfo = formatSyncCompletionSummary(null, {
+                newCount: totalNew,
+                totalFetched,
+                skippedCount: totalSkipped,
+                totalSources,
+              });
+              toastStore.success(toastInfo.message);
             } else {
               toastStore.success(`🎉 Task "${title}" completed successfully!`);
             }
