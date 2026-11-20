@@ -50,6 +50,7 @@ export class RssIngestionStrategy implements IngestionStrategy {
 
       if (!response.ok) {
         console.warn(`[RssIngestionStrategy] HTTP error ${response.status} fetching ${source.uri}`);
+        options?.onFetchError?.(`HTTP ${response.status} fetching ${source.uri}`);
         return [];
       }
 
@@ -77,6 +78,7 @@ export class RssIngestionStrategy implements IngestionStrategy {
       });
     } catch (err: any) {
       console.warn(`[RssIngestionStrategy] Network or parse failure for ${source.uri}:`, err.message);
+      options?.onFetchError?.(err?.message || `RSS fetch failure for ${source.uri}`);
       return [];
     }
   }

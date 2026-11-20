@@ -49,7 +49,7 @@ export class LlmsTxtIngestionStrategy implements IngestionStrategy {
   }
 
 
-  private async fetchText(url: string): Promise<string | null> {
+  private async fetchText(url: string, onFetchError?: (msg: string) => void): Promise<string | null> {
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -65,11 +65,13 @@ export class LlmsTxtIngestionStrategy implements IngestionStrategy {
 
       if (!res.ok) {
         console.warn(`[LlmsTxtIngestionStrategy] HTTP error ${res.status} fetching ${url}`);
+        onFetchError?.(`HTTP ${res.status} fetching ${url}`);
         return null;
       }
       return await res.text();
     } catch (err: any) {
       console.warn(`[LlmsTxtIngestionStrategy] Network error fetching ${url}:`, err.message);
+      onFetchError?.(err?.message || `llms.txt fetch error for ${url}`);
       return null;
     }
   }
@@ -281,7 +283,7 @@ export class LlmsTxtIngestionStrategy implements IngestionStrategy {
     const knownMatcher =
       syncMode !== "full" ? createKnownItemMatcher("llms-txt", options?.knownItemKeys) : null;
     try {
-      const catalogMarkdown = await this.fetchText(source.uri);
+      const catalogMarkdown = await this.fetchText(source.uri, options?.onFetchError);
       if (!catalogMarkdown) {
         return [];
       }
@@ -304,7 +306,7 @@ export class LlmsTxtIngestionStrategy implements IngestionStrategy {
         const batch = entries.slice(i, i + this.concurrency);
         const batchResults = await Promise.all(
           batch.map(async (entry) => {
-            let html = await this.fetchText(entry.url);
+            let html = await this.fetchText(entry.url, options?.onFetchError);
             if (!html) return null;
             if (this.mediaService) {
               html = await this.localizeImagesInHtml(html, entry.url);

@@ -45,7 +45,7 @@ export async function startDevServer(userDataPath?: string): Promise<DesktopBoot
 
   const nodeBinary = process.platform === "win32" ? "node.exe" : "node";
 
-  const normalizedUserData = userDataPath?.trim() || undefined;
+  const normalizedUserData = userDataPath?.trim() || process.env.FLASHCARD_DESKTOP_USER_DATA?.trim() || undefined;
   return new Promise((resolve, reject) => {
     const args = normalizedUserData ? [runnerPath, normalizedUserData] : [runnerPath];
     const spawnEnv: NodeJS.ProcessEnv = { ...process.env };
@@ -67,6 +67,9 @@ export async function startDevServer(userDataPath?: string): Promise<DesktopBoot
     child.stdout?.on("data", (data) => {
       const text = data.toString();
       stdoutBuffer += text;
+      if (stdoutBuffer.length > 16384) {
+        stdoutBuffer = stdoutBuffer.slice(-16384);
+      }
 
       const match = stdoutBuffer.match(/FLASHCARD_MASTER_SERVER_READY:(https?:\/\/[^\s\r\n]+)/);
       if (match && !resolved) {
@@ -113,7 +116,8 @@ export async function startDesktopServer(userDataPath?: string): Promise<Desktop
     return startDevServer(userDataPath);
   }
   const { bootstrapDesktopServer } = await import("./bootstrap.js");
-  return bootstrapDesktopServer({ userDataPath });
+  const resolvedUserData = userDataPath?.trim() || process.env.FLASHCARD_DESKTOP_USER_DATA?.trim() || undefined;
+  return bootstrapDesktopServer({ userDataPath: resolvedUserData });
 }
 
 function resolveAssetPath(filename: string): string {
@@ -150,6 +154,7 @@ export function createDesktopWindow(url: string): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      additionalArguments: [`--fm-app-version=${app.getVersion()}`],
     },
   });
 

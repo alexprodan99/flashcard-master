@@ -123,4 +123,25 @@ describe("CLI App Context and Canonical Database Resolution (Story 17.1 & 22.1)"
       cli.parseAsync(["node", "flashcard-master", "--data-dir", "   ", "stats"])
     ).rejects.toThrow("--data-dir must be a non-empty directory path");
   });
+
+  it("derives sibling media/local-files dirs from dbPath and isolates/cleans inMemory temp dirs on close", () => {
+    const customDb = path.join(tempDir, "custom-db-dir", "custom.sqlite");
+    const ctxDb = createAppContext({ dbPath: customDb });
+    try {
+      expect(ctxDb.mediaDir).toBe(path.join(path.dirname(customDb), "media"));
+      expect(ctxDb.localFilesDir).toBe(path.join(path.dirname(customDb), "local-files"));
+    } finally {
+      ctxDb.close();
+    }
+
+    const mem1 = createAppContext({ inMemory: true });
+    const mem2 = createAppContext({ inMemory: true });
+    expect(mem1.localFilesDir).not.toBe(mem2.localFilesDir);
+    expect(fs.existsSync(mem1.localFilesDir)).toBe(true);
+    const mem1Root = path.dirname(mem1.localFilesDir);
+    mem1.close();
+    mem2.close();
+    expect(fs.existsSync(mem1Root)).toBe(false);
+  });
+
 });

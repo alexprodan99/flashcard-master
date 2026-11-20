@@ -2777,20 +2777,42 @@ export class WebServer {
 
             // Ensure storage directory exists
             fs.mkdirSync(this.localFilesDir, { recursive: true });
-            const targetFilePath = path.resolve(this.localFilesDir, safeFilename);
-
-            // Verify target path stays strictly inside localFilesDir
             const resolvedDir = path.resolve(this.localFilesDir);
-            if (!targetFilePath.startsWith(resolvedDir)) {
+            let storedFilename = safeFilename;
+            let targetFilePath = path.resolve(resolvedDir, storedFilename);
+
+            // Verify target path stays strictly inside localFilesDir using path.relative
+            const checkInsideDir = (candidate: string) => {
+              const rel = path.relative(resolvedDir, candidate);
+              return Boolean(rel) && !rel.startsWith("..") && !path.isAbsolute(rel);
+            };
+            if (!checkInsideDir(targetFilePath)) {
               this.sendJson(res, 400, { error: "Path traversal detected" });
               return;
+            }
+
+            // Avoid overwriting a previously uploaded file with different content under the same filename
+            if (fs.existsSync(targetFilePath)) {
+              const cryptoMod = await import("node:crypto");
+              const newHash = cryptoMod.createHash("sha256").update(fileBuffer).digest("hex");
+              const existingHash = cryptoMod.createHash("sha256").update(fs.readFileSync(targetFilePath)).digest("hex");
+              if (existingHash !== newHash) {
+                const ext = path.extname(safeFilename);
+                const stem = ext ? safeFilename.slice(0, -ext.length) : safeFilename;
+                storedFilename = `${stem}-${newHash.slice(0, 8)}${ext}`;
+                targetFilePath = path.resolve(resolvedDir, storedFilename);
+                if (!checkInsideDir(targetFilePath)) {
+                  this.sendJson(res, 400, { error: "Path traversal detected" });
+                  return;
+                }
+              }
             }
 
             fs.writeFileSync(targetFilePath, fileBuffer);
 
             this.sendJson(res, 200, {
               path: targetFilePath,
-              filename: safeFilename,
+              filename: storedFilename,
               size: fileBuffer.length,
             });
             return;

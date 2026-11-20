@@ -182,4 +182,36 @@ describe("JobRepository", () => {
     const remaining = jobRepo.list({ status: "completed" });
     expect(remaining.length).toBe(2);
   });
+
+  it("skips live cross-process ownerPid jobs in recoverInterruptedJobs while recovering dead PIDs", () => {
+    const liveForeignJob = jobRepo.create({
+      type: "sync_source",
+      title: "Desktop Active Sync",
+      status: "running",
+      metadata: { ownerPid: process.pid + 1000, ownerInstanceId: "desktop-1" },
+    });
+    const deadForeignJob = jobRepo.create({
+      type: "generation",
+      title: "Dead Worker Gen",
+      status: "queued",
+      metadata: { ownerPid: process.pid + 2000, ownerInstanceId: "cli-dead" },
+    });
+    const sameInstanceJob = jobRepo.create({
+      type: "sync_all",
+      title: "Same Manager Active",
+      status: "running",
+      metadata: { ownerPid: process.pid, ownerInstanceId: "current-inst" },
+    });
+
+    const recovered = jobRepo.recoverInterruptedJobs({
+      ownerInstanceId: "current-inst",
+      isProcessAlive: (pid) => pid === process.pid + 1000,
+    });
+
+    expect(recovered).toBe(1);
+    expect(jobRepo.getById(liveForeignJob.id)?.status).toBe("running");
+    expect(jobRepo.getById(sameInstanceJob.id)?.status).toBe("running");
+    expect(jobRepo.getById(deadForeignJob.id)?.status).toBe("failed");
+  });
+
 });

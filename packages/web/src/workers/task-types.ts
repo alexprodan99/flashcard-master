@@ -156,6 +156,9 @@ export type WorkerOutboundMessage =
       slicing?: DocumentSlicingOptions;
       syncMode?: SyncMode;
       skippedCount?: number;
+      rawFetchedCount?: number;
+      lastGuid?: string | null;
+      contentHash?: string | null;
     }
   | {
       type: "TASK_COMPLETE";

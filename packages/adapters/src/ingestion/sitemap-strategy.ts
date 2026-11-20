@@ -43,7 +43,7 @@ export class SitemapIngestionStrategy implements IngestionStrategy {
     });
   }
 
-  private async fetchText(url: string): Promise<string | null> {
+  private async fetchText(url: string, onFetchError?: (msg: string) => void): Promise<string | null> {
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -59,16 +59,18 @@ export class SitemapIngestionStrategy implements IngestionStrategy {
 
       if (!res.ok) {
         console.warn(`[SitemapIngestionStrategy] HTTP error ${res.status} fetching ${url}`);
+        onFetchError?.(`HTTP ${res.status} fetching ${url}`);
         return null;
       }
       return await res.text();
     } catch (err: any) {
       console.warn(`[SitemapIngestionStrategy] Network error fetching ${url}:`, err.message);
+      onFetchError?.(err?.message || `Sitemap fetch error for ${url}`);
       return null;
     }
   }
 
-  async parseSitemapXml(xmlText: string, currentUrl: string, depth = 0): Promise<SitemapUrlEntry[]> {
+  async parseSitemapXml(xmlText: string, currentUrl: string, depth = 0, onFetchError?: (msg: string) => void): Promise<SitemapUrlEntry[]> {
     if (!xmlText || depth > 2) return [];
 
     try {
@@ -84,9 +86,9 @@ export class SitemapIngestionStrategy implements IngestionStrategy {
         for (const sm of sitemaps) {
           const subLoc = typeof sm.loc === "object" ? sm.loc["#text"] : sm.loc;
           if (subLoc && typeof subLoc === "string") {
-            const subXml = await this.fetchText(subLoc.trim());
+            const subXml = await this.fetchText(subLoc.trim(), onFetchError);
             if (subXml) {
-              const subEntries = await this.parseSitemapXml(subXml, subLoc.trim(), depth + 1);
+              const subEntries = await this.parseSitemapXml(subXml, subLoc.trim(), depth + 1, onFetchError);
               results.push(...subEntries);
             }
           }
@@ -183,7 +185,7 @@ export class SitemapIngestionStrategy implements IngestionStrategy {
     const knownMatcher =
       syncMode !== "full" ? createKnownItemMatcher("sitemap", options?.knownItemKeys) : null;
     try {
-      const rootXml = await this.fetchText(source.uri);
+      const rootXml = await this.fetchText(source.uri, options?.onFetchError);
       if (!rootXml) {
         return [];
       }
@@ -215,7 +217,7 @@ export class SitemapIngestionStrategy implements IngestionStrategy {
         const batch = candidateUrls.slice(i, i + this.concurrency);
         const batchResults = await Promise.all(
           batch.map(async (entry) => {
-            const html = await this.fetchText(entry.loc);
+            const html = await this.fetchText(entry.loc, options?.onFetchError);
             if (!html) return null;
             return this.parseArticleHtml(html, source.id, entry.loc, entry.lastmod);
           })

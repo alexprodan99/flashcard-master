@@ -538,7 +538,7 @@ export class NotionStrategy implements IngestionStrategy {
 
     options?.onLog?.("info", `[Notion] Crawling page "${title}" (depth ${currentDepth}/${maxDepth})`);
 
-    const { markdown: renderedMarkdown, childPageIds, childDatabaseIds } = await this.renderPageBlocksToMarkdown(client, pageId, pageUrl);
+    const { markdown: renderedMarkdown, childPageIds, childDatabaseIds } = await this.renderPageBlocksToMarkdown(client, pageId, pageUrl, { skipMediaDownload: pageIsKnownAndUnchanged, onFetchError: options?.onFetchError });
 
     options?.onLog?.(
       "debug",
@@ -602,8 +602,9 @@ export class NotionStrategy implements IngestionStrategy {
               knownMatcher
             );
             docs.push(...subDocs);
-          } catch {
-            // Gracefully skip inaccessible or deleted child pages
+          } catch (childErr: any) {
+            // Gracefully skip inaccessible or deleted child pages while flagging partial crawl error
+            options?.onFetchError?.(`Child page ${childId} failed: ${childErr?.message || "inaccessible"}`);
             options?.onLog?.("warn", `[Notion] Inaccessible or deleted child page: ${childId}`);
           }
         }
@@ -618,14 +619,15 @@ export class NotionStrategy implements IngestionStrategy {
 
           try {
             options?.onLog?.("info", `[Notion] Crawling child database ${dbId} inside "${title}"`);
-            const dbDocs = await this.fetchDatabase(client, source, dbId, undefined, options);
+            const dbDocs = await this.fetchDatabase(client, source, dbId, lastSync, options);
             for (const dbDoc of dbDocs) {
               const hierarchyTrail = nextBreadcrumbs.map((b) => `[${b.title}](${b.url})`).join(" ➔ ");
               dbDoc.rawContent = `*Parent Hierarchy: ${hierarchyTrail}*\n*Parent: [${title}](${pageUrl})*\n\n${dbDoc.rawContent}`;
               docs.push(dbDoc);
             }
-          } catch {
-            // Gracefully skip inaccessible child databases
+          } catch (dbErr: any) {
+            // Gracefully skip inaccessible child databases while flagging partial crawl error
+            options?.onFetchError?.(`Child database ${dbId} failed: ${dbErr?.message || "inaccessible"}`);
             options?.onLog?.("warn", `[Notion] Inaccessible or deleted child database: ${dbId}`);
           }
         }
@@ -666,7 +668,7 @@ export class NotionStrategy implements IngestionStrategy {
   /**
    * Fetches all child blocks of a given block/page ID with pagination.
    */
-  private async fetchAllChildBlocks(client: Client, blockId: string): Promise<any[]> {
+  private async fetchAllChildBlocks(client: Client, blockId: string, onFetchError?: (msg: string) => void): Promise<any[]> {
     const blocks: any[] = [];
     let cursor: string | undefined = undefined;
 
@@ -682,8 +684,9 @@ export class NotionStrategy implements IngestionStrategy {
           blocks.push(...response.results);
         }
         cursor = response?.has_more && response?.next_cursor ? response.next_cursor : undefined;
-      } catch {
-        // If block child retrieval fails, return partial collected blocks
+      } catch (blockErr: any) {
+        // If block child retrieval fails, flag error and return partial collected blocks
+        onFetchError?.(`Block children retrieval failed for ${blockId}: ${blockErr?.message || "error"}`);
         break;
       }
     } while (cursor);
@@ -697,15 +700,17 @@ export class NotionStrategy implements IngestionStrategy {
   private async renderPageBlocksToMarkdown(
     client: Client,
     pageId: string,
-    originUrl: string
+    originUrl: string,
+    opts?: { skipMediaDownload?: boolean; onFetchError?: (msg: string) => void }
   ): Promise<{ markdown: string; childPageIds: string[]; childDatabaseIds: string[] }> {
-    const blocks = await this.fetchAllChildBlocks(client, pageId);
+    const skipMediaDownload = Boolean(opts?.skipMediaDownload);
+    const blocks = await this.fetchAllChildBlocks(client, pageId, opts?.onFetchError);
     const childPageIds: string[] = [];
     const childDatabaseIds: string[] = [];
     const renderedParts: string[] = [];
 
     for (const block of blocks) {
-      const { text, childPageIds: ids, childDatabaseIds: dbIds } = await this.renderBlock(client, block, originUrl);
+      const { text, childPageIds: ids, childDatabaseIds: dbIds } = await this.renderBlock(client, block, originUrl, skipMediaDownload);
       if (ids && ids.length > 0) {
         childPageIds.push(...ids);
       }
@@ -732,7 +737,8 @@ export class NotionStrategy implements IngestionStrategy {
   private async renderBlock(
     client: Client,
     block: any,
-    originUrl: string
+    originUrl: string,
+    skipMediaDownload = false
   ): Promise<{ text: string; childPageIds?: string[]; childDatabaseIds?: string[] }> {
     if (!block || !block.type) {
       return { text: "" };
@@ -758,7 +764,7 @@ export class NotionStrategy implements IngestionStrategy {
           try {
             const children = await this.fetchAllChildBlocks(client, block.id);
             for (const child of children) {
-              const res = await this.renderBlock(client, child, originUrl);
+              const res = await this.renderBlock(client, child, originUrl, skipMediaDownload);
               if (res.childPageIds) childPageIds.push(...res.childPageIds);
               if (res.childDatabaseIds) childDatabaseIds.push(...res.childDatabaseIds);
               if (res.text) fullText += `\n> ${res.text.replace(/\n/g, "\n> ")}`;
@@ -776,7 +782,7 @@ export class NotionStrategy implements IngestionStrategy {
           try {
             const children = await this.fetchAllChildBlocks(client, block.id);
             for (const child of children) {
-              const res = await this.renderBlock(client, child, originUrl);
+              const res = await this.renderBlock(client, child, originUrl, skipMediaDownload);
               if (res.childPageIds) childPageIds.push(...res.childPageIds);
               if (res.childDatabaseIds) childDatabaseIds.push(...res.childDatabaseIds);
               if (res.text) {
@@ -796,7 +802,7 @@ export class NotionStrategy implements IngestionStrategy {
           try {
             const children = await this.fetchAllChildBlocks(client, block.id);
             for (const child of children) {
-              const res = await this.renderBlock(client, child, originUrl);
+              const res = await this.renderBlock(client, child, originUrl, skipMediaDownload);
               if (res.childPageIds) childPageIds.push(...res.childPageIds);
               if (res.childDatabaseIds) childDatabaseIds.push(...res.childDatabaseIds);
               if (res.text) {
@@ -824,7 +830,7 @@ export class NotionStrategy implements IngestionStrategy {
             const children = await this.fetchAllChildBlocks(client, block.id);
             const childTexts: string[] = [];
             for (const child of children) {
-              const res = await this.renderBlock(client, child, originUrl);
+              const res = await this.renderBlock(client, child, originUrl, skipMediaDownload);
               if (res.childPageIds) childPageIds.push(...res.childPageIds);
               if (res.childDatabaseIds) childDatabaseIds.push(...res.childDatabaseIds);
               if (res.text) childTexts.push(res.text);
@@ -901,7 +907,7 @@ export class NotionStrategy implements IngestionStrategy {
 
         // AWS S3 Notion images expire in 60 minutes.
         // Download and localize via MediaService immediately when available.
-        if (this.mediaService && s3Url) {
+        if (!skipMediaDownload && this.mediaService && s3Url) {
           try {
             const asset = await this.mediaService.downloadAndSave(s3Url, originUrl);
             if (asset && asset.url) {
@@ -954,7 +960,7 @@ export class NotionStrategy implements IngestionStrategy {
           try {
             const children = await this.fetchAllChildBlocks(client, block.id);
             for (const child of children) {
-              const res = await this.renderBlock(client, child, originUrl);
+              const res = await this.renderBlock(client, child, originUrl, skipMediaDownload);
               if (res.childPageIds) childPageIds.push(...res.childPageIds);
               if (res.childDatabaseIds) childDatabaseIds.push(...res.childDatabaseIds);
               if (res.text) renderedTexts.push(res.text);

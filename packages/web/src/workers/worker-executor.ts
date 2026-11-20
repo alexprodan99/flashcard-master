@@ -163,15 +163,27 @@ export class WorkerExecutor {
           task.type === "sync_all" || task.type === "sync_source"
             ? task.payload.knownItemKeysBySource
             : undefined;
-        const persistLocalSyncState = (sourceId: string, itemCount: number) => {
+        const persistLocalSyncState = (
+          sourceId: string,
+          itemCount: number,
+          lastGuid?: string | null,
+          contentHash?: string | null,
+          syncMode: SyncMode = "new-only"
+        ) => {
           if (!this.options.syncRepo) return;
           const prev = this.options.syncRepo.get(sourceId);
+          const nextItemCount =
+            syncMode === "full"
+              ? itemCount
+              : itemCount > 0
+                ? (prev?.itemCount ?? 0) + itemCount
+                : (prev?.itemCount ?? 0);
           this.options.syncRepo.upsert({
             sourceId,
             lastSyncedAt: new Date().toISOString(),
-            lastGuid: prev?.lastGuid ?? null,
-            contentHash: prev?.contentHash ?? null,
-            itemCount,
+            lastGuid: lastGuid ?? prev?.lastGuid ?? null,
+            contentHash: contentHash ?? prev?.contentHash ?? null,
+            itemCount: nextItemCount,
           });
         };
 
@@ -290,15 +302,23 @@ export class WorkerExecutor {
               let skippedCount = msg.skippedCount ?? 0;
               let syncError: string | undefined;
 
-              if (Array.isArray(msg.documents) && msg.documents.length > 0) {
+              const localSyncMode: SyncMode = msg.syncMode ?? "new-only";
+              if (Array.isArray(msg.documents) && (msg.documents.length > 0 || (this.options.documentRepo && (msg.skippedCount !== undefined || localSyncMode === "full")))) {
                 try {
                   if (this.options.documentRepo) {
-                    if ((msg.syncMode ?? "new-only") === "full") {
-                      // Purge previously generated subdocuments/slices in full mode (handles re-slice & reset-to-none)
-                      this.options.documentRepo.deleteBySourceId(msg.sourceId);
+                    if (localSyncMode === "full") {
+                      if (typeof (this.options.documentRepo as any).replaceBySourceId === "function") {
+                        (this.options.documentRepo as any).replaceBySourceId(msg.sourceId, msg.documents as any);
+                      } else {
+                        this.options.documentRepo.deleteBySourceId(msg.sourceId);
+                        if (msg.documents.length > 0) {
+                          this.options.documentRepo.upsertBatch(msg.documents as any);
+                        }
+                      }
+                    } else if (msg.documents.length > 0) {
+                      this.options.documentRepo.upsertBatch(msg.documents as any);
                     }
-                    this.options.documentRepo.upsertBatch(msg.documents as any);
-                  } else {
+                  } else if (msg.documents.length > 0) {
                     ctx.log(
                       msg.stepNumber || 0,
                       "Storage Warning",
@@ -307,9 +327,9 @@ export class WorkerExecutor {
                     );
                   }
                   newCount = msg.documents.length;
-                  totalFetched = msg.documents.length;
+                  totalFetched = msg.rawFetchedCount ?? msg.documents.length;
 
-                  persistLocalSyncState(msg.sourceId, newCount);
+                  persistLocalSyncState(msg.sourceId, newCount, msg.lastGuid, msg.contentHash, localSyncMode);
                 } catch (dbErr: any) {
                   ctx.log(
                     msg.stepNumber || 0,

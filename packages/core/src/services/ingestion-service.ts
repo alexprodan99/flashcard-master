@@ -181,6 +181,7 @@ export class IngestionService {
       const knownMatcher = createKnownItemMatcher(source.type, knownItemKeys);
 
       let preFetchSkippedCount = 0;
+      let fetchHadErrors = false;
       const effectiveOptions: IngestionOptions = {
         ...options,
         syncMode,
@@ -189,11 +190,15 @@ export class IngestionService {
           preFetchSkippedCount++;
           options?.onItemSkipped?.(itemKey);
         },
+        onFetchError: (errMessage: string) => {
+          fetchHadErrors = true;
+          options?.onFetchError?.(errMessage);
+        },
       };
 
       const rawDocs = await strategy.fetch(source, lastSync, effectiveOptions);
       if (source.type === "youtube") {
-        this.backfillYouTubeSourceMetadata(source, rawDocs);
+        this.backfillYouTubeSourceMetadata(source.id, rawDocs, options?.onLog);
       }
       const totalFetched = rawDocs.length;
       options?.onLog?.(
@@ -278,7 +283,7 @@ export class IngestionService {
             lastSync?.lastGuid && raw.guid && raw.guid === lastSync.lastGuid
           );
 
-          if (isSameContent || (source.type === "rss" && isSeenGuid)) {
+          if (isSameContent || (source.type === "rss" && !hasDistinctTrackedOrigin && isSeenGuid)) {
             postFetchSkippedCount++;
             continue;
           }
@@ -378,31 +383,47 @@ export class IngestionService {
         if (cleanDoc.contentHash) latestContentHash = cleanDoc.contentHash;
       }
 
-      if (this.docRepo && rawDocs.length > 0 && changedRawDocsCount > 0) {
-        if (isSlicingActive && docsToPersist.length === 0) {
-          options?.onLog?.(
-            "warn",
-            `No document slices matched the configured slicing/timestamp criteria for "${source.name}"; preserving existing documents.`,
-            { sourceId: source.id, stage: "slicing" }
-          );
-        } else if (docsToPersist.length > 0) {
-          if (syncMode === "full" && (isSlicingActive || shouldResetToUnsliced)) {
-            // Purge previously generated subdocuments in 'full' mode to prevent orphan/obsolete slices
-            this.docRepo.deleteBySourceId(source.id);
+      if (this.docRepo) {
+        if (rawDocs.length > 0 && changedRawDocsCount > 0) {
+          if (isSlicingActive && docsToPersist.length === 0) {
+            options?.onLog?.(
+              "warn",
+              `No document slices matched the configured slicing/timestamp criteria for "${source.name}"; preserving existing documents.`,
+              { sourceId: source.id, stage: "slicing" }
+            );
+          } else if (docsToPersist.length > 0) {
+            if (syncMode === "full") {
+              if (typeof (this.docRepo as any).replaceBySourceId === "function") {
+                (this.docRepo as any).replaceBySourceId(source.id, docsToPersist);
+              } else {
+                this.docRepo.deleteBySourceId(source.id);
+                this.docRepo.upsertBatch(docsToPersist);
+              }
+            } else {
+              this.docRepo.upsertBatch(docsToPersist);
+            }
           }
-          this.docRepo.upsertBatch(docsToPersist);
+        } else if (syncMode === "full" && rawDocs.length === 0 && !isSlicingActive && !fetchHadErrors && existingDocs.length > 0) {
+          this.docRepo.deleteBySourceId(source.id);
         }
       }
 
       const skippedCount = preFetchSkippedCount + postFetchSkippedCount;
 
-      // Update sync state cursor atomically
+      const preservedPriorCount =
+        syncMode === "full" && !fetchHadErrors
+          ? newDocuments.length
+          : newDocuments.length > 0
+            ? (lastSync?.itemCount ?? existingDocs.length) + newDocuments.length
+            : Math.max(lastSync?.itemCount ?? 0, existingDocs.length);
+
+      // Preserve cursor timestamp if fetch reported non-fatal errors so transiently failed items aren't skipped next sync
       this.syncRepo.upsert({
         sourceId: source.id,
-        lastSyncedAt: new Date().toISOString(),
+        lastSyncedAt: fetchHadErrors && lastSync?.lastSyncedAt ? lastSync.lastSyncedAt : new Date().toISOString(),
         lastGuid: latestGuid,
         contentHash: latestContentHash,
-        itemCount: newDocuments.length,
+        itemCount: preservedPriorCount,
       });
 
       options?.onLog?.(
@@ -438,7 +459,16 @@ export class IngestionService {
    * Persists resolved YouTube video titles and canonical URLs back into `data_sources.uri`
    * after sync without overwriting any user-customized item title, and deduplicates by videoId.
    */
-  private backfillYouTubeSourceMetadata(source: DataSource, rawDocs: RawDocument[]): void {
+  private backfillYouTubeSourceMetadata(
+    sourceId: string,
+    rawDocs: RawDocument[],
+    onLog?: IngestionOptions["onLog"]
+  ): void {
+    const latestSource = this.sourceRepo.getById(sourceId);
+    if (!latestSource) {
+      return;
+    }
+    const source = latestSource;
     const resolvedByVideoId = new Map<string, { title: string; canonicalUrl: string }>();
     for (const raw of rawDocs) {
       const vid = extractYouTubeVideoId(raw.originUrl || raw.guid || "");
@@ -502,8 +532,10 @@ export class IngestionService {
       const serialized = JSON.stringify(updatedItems);
       try {
         this.sourceRepo.update(source.id, { uri: serialized });
-      } catch {
-        // Non-fatal if source was concurrently removed
+      } catch (err: any) {
+        if (!/not found/i.test(String(err?.message || ""))) {
+          onLog?.("warn", `[YouTube] Failed to persist backfilled source metadata: ${err?.message || err}`);
+        }
       }
     }
   }

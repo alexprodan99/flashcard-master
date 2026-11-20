@@ -6,6 +6,7 @@ export interface IngestionOptions {
   signal?: AbortSignal;
   verbose?: boolean;
   onItemSkipped?: (itemKey: string) => void;
+  onFetchError?: (errMessage: string) => void;
   slicing?: DocumentSlicingOptions;
   syncMode?: SyncMode;
   knownItemKeys?: Set<string>;

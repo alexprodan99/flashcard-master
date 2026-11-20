@@ -2349,4 +2349,29 @@ describe.sequential("WebServer REST API and Dashboard SPA", () => {
       expect(notionData.knownKeys).toContain("1234567890abcdef1234567890abcdef");
     });
   });
+
+  describe("Hardening PR 1: Upload Collision Safety", () => {
+    it("suffixes conflicting upload filenames with a content hash instead of overwriting existing different files", async () => {
+      const res1 = await fetch(serverUrl + "/api/sources/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: "shared-notes.md", content: "# First Version\nOriginal content." }),
+      });
+      expect(res1.status).toBe(200);
+      const data1 = (await res1.json()) as any;
+      expect(data1.filename).toBe("shared-notes.md");
+
+      const res2 = await fetch(serverUrl + "/api/sources/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: "shared-notes.md", content: "# Second Version\nDifferent content." }),
+      });
+      expect(res2.status).toBe(200);
+      const data2 = (await res2.json()) as any;
+      expect(data2.filename).toMatch(/^shared-notes-[a-f0-9]{8}\.md$/);
+      expect(fs.readFileSync(data1.path, "utf8")).toContain("Original content");
+      expect(fs.readFileSync(data2.path, "utf8")).toContain("Different content");
+    });
+  });
+
 });

@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
 import os from "node:os";
 import type {
@@ -58,6 +59,7 @@ export class JobManager extends EventEmitter {
 
   private readonly activeJobs = new Map<string, QueuedItem>();
 
+  private readonly instanceId = crypto.randomUUID();
   private readonly isVerboseFn: () => boolean;
   private readonly logToConsole: boolean;
 
@@ -104,7 +106,7 @@ export class JobManager extends EventEmitter {
     
     // Automatically recover zombie jobs that were interrupted by a previous crash/shutdown
     try {
-      this.jobRepo.recoverInterruptedJobs();
+      this.jobRepo.recoverInterruptedJobs({ ownerInstanceId: this.instanceId });
     } catch {
       // Ignore in mock or uninitialized environments
     }
@@ -249,7 +251,11 @@ export class JobManager extends EventEmitter {
       title,
       totalSteps,
       status: "queued",
-      metadata,
+      metadata: {
+        ...(metadata || {}),
+        ownerPid: typeof metadata?.ownerPid === "number" ? metadata.ownerPid : process.pid,
+        ownerInstanceId: this.instanceId,
+      },
     });
 
     this.emit("job_created", job);

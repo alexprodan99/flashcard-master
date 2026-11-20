@@ -135,4 +135,14 @@ describe("Electron Desktop Packaging & Local Server Bootstrap", () => {
     // Subsequent requests to the closed server should fail
     await expect(fetch(`${url}/api/stats`)).rejects.toThrow();
   });
+
+  it("routes all dist* packaging scripts through electron-build.mjs and reads preload version dynamically", () => {
+    const pkg = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+    for (const scriptName of ["dist", "dist:win", "dist:mac", "dist:linux", "dist:dir"]) {
+      expect(pkg.scripts[scriptName]).toContain("electron-build.mjs");
+    }
+    const preloadSrc = fs.readFileSync(new URL("../src/preload.ts", import.meta.url), "utf8");
+    expect(preloadSrc).toContain("--fm-app-version=");
+  });
+
 });

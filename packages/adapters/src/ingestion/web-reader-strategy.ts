@@ -207,7 +207,7 @@ export class WebReaderStrategy implements IngestionStrategy {
       while (currentIndex < urls.length) {
         const idx = currentIndex++;
         const targetUrl = urls[idx];
-        results[idx] = await this.fetchSingleUrl(targetUrl, source.id);
+        results[idx] = await this.fetchSingleUrl(targetUrl, source.id, options?.onFetchError);
       }
     });
 
@@ -216,7 +216,7 @@ export class WebReaderStrategy implements IngestionStrategy {
     return results.filter((doc): doc is RawDocument => doc !== null);
   }
 
-  async fetchSingleUrl(url: string, sourceId: string): Promise<RawDocument | null> {
+  async fetchSingleUrl(url: string, sourceId: string, onFetchError?: (msg: string) => void): Promise<RawDocument | null> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
@@ -230,6 +230,7 @@ export class WebReaderStrategy implements IngestionStrategy {
 
       if (!response.ok) {
         console.warn(`[WebReaderStrategy] HTTP error ${response.status} fetching ${url}`);
+        onFetchError?.(`HTTP ${response.status} fetching ${url}`);
         return null;
       }
 
@@ -240,6 +241,7 @@ export class WebReaderStrategy implements IngestionStrategy {
       return this.parseHtml(html, sourceId, url);
     } catch (err: any) {
       console.warn(`[WebReaderStrategy] Network or parse failure for ${url}:`, err.message);
+      onFetchError?.(err?.message || `Web fetch failed for ${url}`);
       return null;
     } finally {
       clearTimeout(timer);

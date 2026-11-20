@@ -430,11 +430,11 @@ if (parentPort) {
               jobId,
               stepNumber,
               stepTitle,
-              level: "warn",
-              message: `Format error or parsing failure while reading "${source.name}": ${fetchErr.message}`,
+              level: "error",
+              message: `Parsing failure while reading "${source.name}": ${fetchErr.message}`,
               details: { error: fetchErr.message },
             });
-            rawDocs = [];
+            throw fetchErr;
           }
 
           const effectiveSlicing =
@@ -449,6 +449,8 @@ if (parentPort) {
               : undefined);
           const isSlicingActive = Boolean(effectiveSlicing && effectiveSlicing.mode !== "none");
           const documentsToCommit: DiscoveredDocument[] = [];
+          let latestGuid: string | null = null;
+          let latestContentHash: string | null = null;
 
           for (let docIdx = 0; docIdx < rawDocs.length; docIdx++) {
             if (isAborted) {
@@ -456,13 +458,15 @@ if (parentPort) {
             }
 
             const raw = rawDocs[docIdx];
-            postMessage({
-              type: "STEP_PROGRESS",
-              jobId,
-              currentStep: docIdx + 1,
-              totalSteps: rawDocs.length,
-              stepName: `Parsing: ${raw.title}`,
-            });
+            if (totalSources <= 1) {
+              postMessage({
+                type: "STEP_PROGRESS",
+                jobId,
+                currentStep: docIdx + 1,
+                totalSteps: rawDocs.length,
+                stepName: `Parsing: ${raw.title}`,
+              });
+            }
 
             postMessage({
               type: "STEP_LOG",
@@ -476,6 +480,8 @@ if (parentPort) {
             let cleanDoc: CleanTextDocument;
             try {
               cleanDoc = localStrategy.extractCleanText(raw);
+              if (raw.guid) latestGuid = raw.guid;
+              if (cleanDoc.contentHash) latestContentHash = cleanDoc.contentHash;
             } catch (cleanErr: any) {
               postMessage({
                 type: "STEP_LOG",
@@ -589,6 +595,9 @@ if (parentPort) {
             slicing: effectiveSlicing,
             syncMode,
             skippedCount: localSkippedCount,
+            rawFetchedCount: rawDocs.length,
+            lastGuid: latestGuid,
+            contentHash: latestContentHash,
           });
 
           const ack = await ackPromise;
