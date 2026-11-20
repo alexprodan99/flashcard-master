@@ -15,6 +15,7 @@ import {
   type SubtitleCue,
   SubtitleParser,
   type TimestampRange,
+  createKnownItemMatcher,
   formatTimestampRange,
   parseMediaSourceItems,
   parseTimestampToSeconds,
@@ -681,9 +682,22 @@ export class MediaTranscriptResolver {
     }
   ): Promise<RawDocument[]> {
     const items = await this.discoverItems(rawUri, options.allowedExtensions);
+    const syncMode = options.ingestionOptions?.syncMode ?? "new-only";
+    const knownMatcher =
+      syncMode !== "full"
+        ? createKnownItemMatcher(options.mediaKind, options.ingestionOptions?.knownItemKeys)
+        : null;
     const docs: RawDocument[] = [];
 
     for (const item of items) {
+      if (knownMatcher && knownMatcher.hasLocalPath(item.uri)) {
+        options.ingestionOptions?.onItemSkipped?.(item.uri);
+        options.ingestionOptions?.onLog?.(
+          "debug",
+          `Skipping already-synced ${options.mediaKind} item: ${item.uri}`
+        );
+        continue;
+      }
       if (options.ingestionOptions?.signal?.aborted) {
         const abortErr = new Error("Task aborted by user");
         abortErr.name = "AbortError";

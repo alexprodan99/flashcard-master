@@ -1,10 +1,12 @@
-import type {
-  IngestionStrategy,
-  DataSource,
-  RawDocument,
-  CleanTextDocument,
-  SyncState,
-  MediaService,
+import {
+  createKnownItemMatcher,
+  type IngestionOptions,
+  type IngestionStrategy,
+  type DataSource,
+  type RawDocument,
+  type CleanTextDocument,
+  type SyncState,
+  type MediaService,
 } from "@flashcard-master/core";
 import { Readability } from "@mozilla/readability";
 import { JSDOM } from "jsdom";
@@ -274,14 +276,27 @@ export class LlmsTxtIngestionStrategy implements IngestionStrategy {
     }
   }
 
-  async fetch(source: DataSource, lastSync?: SyncState): Promise<RawDocument[]> {
+  async fetch(source: DataSource, lastSync?: SyncState, options?: IngestionOptions): Promise<RawDocument[]> {
+    const syncMode = options?.syncMode ?? "new-only";
+    const knownMatcher =
+      syncMode !== "full" ? createKnownItemMatcher("llms-txt", options?.knownItemKeys) : null;
     try {
       const catalogMarkdown = await this.fetchText(source.uri);
       if (!catalogMarkdown) {
         return [];
       }
 
-      const entries = this.parseCatalogMarkdown(catalogMarkdown, source.uri);
+      const parsedEntries = this.parseCatalogMarkdown(catalogMarkdown, source.uri);
+      const entries =
+        knownMatcher && !knownMatcher.isEmpty
+          ? parsedEntries.filter((entry) => {
+              if (knownMatcher.hasHttpUrl(entry.url)) {
+                options?.onItemSkipped?.(entry.url);
+                return false;
+              }
+              return true;
+            })
+          : parsedEntries;
       const docs: RawDocument[] = [];
 
       // Concurrently fetch catalog articles with batching

@@ -18,6 +18,7 @@ import {
   type SubtitleCue,
   type SyncState,
   SubtitleParser,
+  createKnownItemMatcher,
   formatTimestampRange,
   parseMediaSourceItems,
   parseTimestampToSeconds,
@@ -1373,6 +1374,9 @@ export class YouTubeIngestionStrategy implements IngestionStrategy {
     options?: IngestionOptions
   ): Promise<RawDocument[]> {
     const items = parseMediaSourceItems(source.uri);
+    const syncMode = options?.syncMode ?? "new-only";
+    const knownMatcher =
+      syncMode !== "full" ? createKnownItemMatcher("youtube", options?.knownItemKeys) : null;
     if (items.length === 0) {
       throw new InvalidYouTubeUrlError("YouTube data source requires at least one valid video URL.");
     }
@@ -1383,6 +1387,16 @@ export class YouTubeIngestionStrategy implements IngestionStrategy {
         const abortErr = new Error("Task aborted by user");
         abortErr.name = "AbortError";
         throw abortErr;
+      }
+
+      if (knownMatcher && knownMatcher.hasYouTubeUri(item.uri)) {
+        const videoId = extractYouTubeVideoId(item.uri);
+        options?.onItemSkipped?.(videoId || item.uri);
+        options?.onLog?.(
+          "debug",
+          `[YouTubeIngestionStrategy] Skipping already-synced video: ${videoId || item.uri}`
+        );
+        continue;
       }
 
       const doc = await this.resolveItem(source.id, item, {

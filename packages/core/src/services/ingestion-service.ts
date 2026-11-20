@@ -1,10 +1,16 @@
-import type { DataSource, CleanTextDocument, DiscoveredDocument } from "../domain/models.js";
+import type { DataSource, CleanTextDocument, DiscoveredDocument, RawDocument, SyncMode, SyncState } from "../domain/models.js";
 import type { DataSourceRepository } from "../storage/source-repository.js";
 import type { SyncStateRepository } from "../storage/sync-state-repository.js";
 import type { DocumentRepository } from "../storage/document-repository.js";
 import type { StrategyRegistry } from "./strategy-registry.js";
 import type { IngestionOptions } from "../ports/index.js";
 import { DocumentSlicingEngine, type DocumentSlicingOptions } from "./document-slicing-engine.js";
+import {
+  buildKnownItemKeysForSource,
+  createKnownItemMatcher,
+  normalizeHttpUrlKey,
+  type KnownItemMatcher,
+} from "./sync-item-keys.js";
 import crypto from "node:crypto";
 
 export interface SyncResult {
@@ -52,6 +58,68 @@ function resolveSlicingForRaw(
   };
 }
 
+function isRawDocKnown(
+  source: Pick<DataSource, "type" | "uri">,
+  raw: RawDocument,
+  matcher: KnownItemMatcher,
+  lastSync?: SyncState
+): boolean {
+  if (matcher.isEmpty) return false;
+
+  switch (source.type) {
+    case "local":
+    case "audio":
+    case "video":
+      return Boolean(
+        (raw.originUrl && matcher.hasLocalPath(raw.originUrl)) ||
+          (raw.guid && matcher.hasRaw(raw.guid))
+      );
+
+    case "youtube":
+      return Boolean(
+        (raw.originUrl && matcher.hasYouTubeUri(raw.originUrl)) ||
+          (raw.guid && matcher.hasYouTubeUri(raw.guid))
+      );
+
+    case "notion": {
+      if (!matcher.hasNotionPage(raw.guid || "", raw.originUrl)) {
+        return false;
+      }
+      if (lastSync?.lastSyncedAt && raw.publishedAt) {
+        const editedMs = Date.parse(raw.publishedAt);
+        const syncedMs = Date.parse(lastSync.lastSyncedAt);
+        if (!isNaN(editedMs) && !isNaN(syncedMs) && editedMs > syncedMs) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    case "rss": {
+      if (raw.guid && matcher.hasRaw(raw.guid)) {
+        return true;
+      }
+      if (raw.originUrl) {
+        const originKey = normalizeHttpUrlKey(raw.originUrl);
+        const feedKey = normalizeHttpUrlKey(source.uri);
+        if (originKey && originKey !== feedKey && matcher.hasHttpUrl(raw.originUrl)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    case "web":
+    case "sitemap":
+    case "llms-txt":
+    default:
+      return Boolean(
+        (raw.originUrl && matcher.hasHttpUrl(raw.originUrl)) ||
+          (raw.guid && matcher.hasRaw(raw.guid))
+      );
+  }
+}
+
 export class IngestionService {
   private readonly slicingEngine: DocumentSlicingEngine;
 
@@ -96,15 +164,43 @@ export class IngestionService {
     }
 
     try {
-      options?.onLog?.("info", `Starting synchronization for "${source.name}" (${source.type})...`);
+      const syncMode: SyncMode = options?.syncMode ?? "new-only";
+      options?.onLog?.(
+        "info",
+        `Starting synchronization (${syncMode}) for "${source.name}" (${source.type})...`
+      );
       const strategy = this.strategyRegistry.getStrategy(source.type);
       const lastSync = this.syncRepo.get(source.id) ?? undefined;
 
-      const rawDocs = await strategy.fetch(source, lastSync, options);
+      const existingDocs = this.docRepo ? this.docRepo.listBySourceId(source.id) : [];
+      const knownItemKeys =
+        syncMode === "full"
+          ? undefined
+          : options?.knownItemKeys ?? buildKnownItemKeysForSource(source, existingDocs);
+      const knownMatcher = createKnownItemMatcher(source.type, knownItemKeys);
+
+      let preFetchSkippedCount = 0;
+      const effectiveOptions: IngestionOptions = {
+        ...options,
+        syncMode,
+        knownItemKeys,
+        onItemSkipped: (itemKey: string) => {
+          preFetchSkippedCount++;
+          options?.onItemSkipped?.(itemKey);
+        },
+      };
+
+      const rawDocs = await strategy.fetch(source, lastSync, effectiveOptions);
       const totalFetched = rawDocs.length;
-      options?.onLog?.("info", `Retrieved ${totalFetched} raw document(s) from "${source.name}"`);
+      options?.onLog?.(
+        "info",
+        `Retrieved ${totalFetched} raw document(s) from "${source.name}"${preFetchSkippedCount > 0 ? ` (${preFetchSkippedCount} known item(s) skipped pre-fetch)` : ""}`
+      );
 
       const newDocuments: CleanTextDocument[] = [];
+      const docsToPersist: Array<
+        Partial<DiscoveredDocument> & { sourceId: string; title: string; textContent: string }
+      > = [];
       let latestGuid = lastSync?.lastGuid ?? null;
       let latestContentHash = lastSync?.contentHash ?? null;
 
@@ -132,9 +228,8 @@ export class IngestionService {
         );
       }
 
-      const existingDocs =
-        this.docRepo && !isSlicingActive ? this.docRepo.listBySourceId(source.id) : [];
       const shouldResetToUnsliced =
+        syncMode === "full" &&
         !isSlicingActive &&
         rawDocs.length > 0 &&
         (existingDocs.length > rawDocs.length ||
@@ -148,29 +243,44 @@ export class IngestionService {
               )
             )));
 
-      const changedRawDocs = new Set<(typeof rawDocs)[number]>();
+      let changedRawDocsCount = 0;
+      let postFetchSkippedCount = 0;
 
-      // Extract and filter for incremental delta
       for (const raw of rawDocs) {
+        if (syncMode !== "full" && isRawDocKnown(source, raw, knownMatcher, lastSync)) {
+          postFetchSkippedCount++;
+          continue;
+        }
+
         const cleanDoc = strategy.extractCleanText(raw);
 
-        // Deduplication check against previous sync
-        const isSameContent = Boolean(
-          lastSync?.contentHash && cleanDoc.contentHash === lastSync.contentHash
-        );
-        const isSeenGuid = Boolean(
-          lastSync?.lastGuid && raw.guid && raw.guid === lastSync.lastGuid
-        );
+        if (syncMode !== "full" && !isSlicingActive && !shouldResetToUnsliced) {
+          const isPathBasedSource =
+            source.type === "local" || source.type === "audio" || source.type === "video";
+          const isLinklessRssFallback =
+            source.type === "rss" &&
+            Boolean(raw.originUrl) &&
+            normalizeHttpUrlKey(raw.originUrl!) === normalizeHttpUrlKey(source.uri);
+          const hasDistinctTrackedOrigin = Boolean(
+            this.docRepo && raw.originUrl && !isLinklessRssFallback
+          );
+          const isSameContent = Boolean(
+            !isPathBasedSource &&
+              !hasDistinctTrackedOrigin &&
+              lastSync?.contentHash &&
+              cleanDoc.contentHash === lastSync.contentHash
+          );
+          const isSeenGuid = Boolean(
+            lastSync?.lastGuid && raw.guid && raw.guid === lastSync.lastGuid
+          );
 
-        if (!isSlicingActive && !shouldResetToUnsliced) {
-          if (isSameContent) {
-            continue;
-          }
-          if (source.type === "rss" && isSeenGuid) {
+          if (isSameContent || (source.type === "rss" && isSeenGuid)) {
+            postFetchSkippedCount++;
             continue;
           }
         }
-        changedRawDocs.add(raw);
+
+        changedRawDocsCount++;
 
         if (cleanDoc.startPage == null && cleanDoc.textContent) {
           const bounds = extractPageBounds(cleanDoc.textContent);
@@ -180,14 +290,14 @@ export class IngestionService {
           }
         }
 
+        const docUrl =
+          cleanDoc.originUrl ||
+          raw.originUrl ||
+          (source.type === "web" ? source.uri : null);
         const effectiveSlicing = resolveSlicingForRaw(raw, baseSlicing);
         const isRawSlicingActive = Boolean(effectiveSlicing && effectiveSlicing.mode !== "none");
 
         if (isRawSlicingActive) {
-          const docUrl =
-            cleanDoc.originUrl ||
-            raw.originUrl ||
-            (source.type === "web" ? source.uri : null);
           const slices = this.slicingEngine.slice(
             {
               sourceId: source.id,
@@ -215,101 +325,56 @@ export class IngestionService {
               startSeconds: slice.startSeconds ?? cleanDoc.startSeconds ?? null,
               endSeconds: slice.endSeconds ?? cleanDoc.endSeconds ?? null,
             });
+            docsToPersist.push({
+              id: slice.id,
+              sourceId: slice.sourceId,
+              title: slice.title,
+              url: slice.url,
+              textContent: slice.textContent,
+              rawContent: slice.rawContent || null,
+              contentHash: slice.contentHash,
+              wordCount: slice.wordCount,
+              startPage: slice.startPage ?? null,
+              endPage: slice.endPage ?? null,
+              startSeconds: slice.startSeconds ?? cleanDoc.startSeconds ?? null,
+              endSeconds: slice.endSeconds ?? cleanDoc.endSeconds ?? null,
+            });
           }
         } else {
           newDocuments.push(cleanDoc);
+
+          const uniqueKey = docUrl || raw.guid || cleanDoc.title;
+          const deterministicId = crypto
+            .createHash("sha256")
+            .update(`${source.id}:${uniqueKey}`)
+            .digest("hex")
+            .slice(0, 32);
+
+          const wordCount = cleanDoc.textContent.trim()
+            ? cleanDoc.textContent.trim().split(/\s+/).length
+            : 0;
+
+          docsToPersist.push({
+            id: deterministicId,
+            sourceId: source.id,
+            title: cleanDoc.title || "Untitled Document",
+            url: docUrl,
+            textContent: cleanDoc.textContent,
+            rawContent: raw.rawContent || cleanDoc.rawContent || null,
+            contentHash: cleanDoc.contentHash || null,
+            wordCount,
+            startPage: cleanDoc.startPage ?? null,
+            endPage: cleanDoc.endPage ?? null,
+            startSeconds: cleanDoc.startSeconds ?? null,
+            endSeconds: cleanDoc.endSeconds ?? null,
+          });
         }
 
-        // Track most recent item
         if (raw.guid) latestGuid = raw.guid;
         if (cleanDoc.contentHash) latestContentHash = cleanDoc.contentHash;
       }
 
-      // Persist discovered documents into repository
-      if (this.docRepo && rawDocs.length > 0) {
-        const docsToPersist: Array<
-          Partial<DiscoveredDocument> & { sourceId: string; title: string; textContent: string }
-        > = [];
-
-        const rawDocsForPersistence = isSlicingActive ? rawDocs : Array.from(changedRawDocs);
-
-        for (const raw of rawDocsForPersistence) {
-          const cleanDoc = strategy.extractCleanText(raw);
-          if (cleanDoc.startPage == null && cleanDoc.textContent) {
-            const bounds = extractPageBounds(cleanDoc.textContent);
-            if (bounds.startPage !== null) {
-              cleanDoc.startPage = bounds.startPage;
-              cleanDoc.endPage = bounds.endPage;
-            }
-          }
-          const docUrl =
-            cleanDoc.originUrl ||
-            raw.originUrl ||
-            (source.type === "web" ? source.uri : null);
-
-          const effectiveSlicing = resolveSlicingForRaw(raw, baseSlicing);
-          const isRawSlicingActive = Boolean(effectiveSlicing && effectiveSlicing.mode !== "none");
-
-          if (isRawSlicingActive) {
-            const slices = this.slicingEngine.slice(
-              {
-                sourceId: source.id,
-                title: cleanDoc.title || "Untitled Document",
-                textContent: cleanDoc.textContent,
-                rawContent: raw.rawContent || cleanDoc.rawContent || null,
-                url: docUrl,
-                originUrl: docUrl,
-                startSeconds: cleanDoc.startSeconds ?? null,
-                endSeconds: cleanDoc.endSeconds ?? null,
-              },
-              effectiveSlicing
-            );
-
-            for (const slice of slices) {
-              docsToPersist.push({
-                id: slice.id,
-                sourceId: slice.sourceId,
-                title: slice.title,
-                url: slice.url,
-                textContent: slice.textContent,
-                rawContent: slice.rawContent || null,
-                contentHash: slice.contentHash,
-                wordCount: slice.wordCount,
-                startPage: slice.startPage ?? null,
-                endPage: slice.endPage ?? null,
-                startSeconds: slice.startSeconds ?? cleanDoc.startSeconds ?? null,
-                endSeconds: slice.endSeconds ?? cleanDoc.endSeconds ?? null,
-              });
-            }
-          } else {
-            const uniqueKey = docUrl || raw.guid || cleanDoc.title;
-            const deterministicId = crypto
-              .createHash("sha256")
-              .update(`${source.id}:${uniqueKey}`)
-              .digest("hex")
-              .slice(0, 32);
-
-            const wordCount = cleanDoc.textContent.trim()
-              ? cleanDoc.textContent.trim().split(/\s+/).length
-              : 0;
-
-            docsToPersist.push({
-              id: deterministicId,
-              sourceId: source.id,
-              title: cleanDoc.title || "Untitled Document",
-              url: docUrl,
-              textContent: cleanDoc.textContent,
-              rawContent: raw.rawContent || cleanDoc.rawContent || null,
-              contentHash: cleanDoc.contentHash || null,
-              wordCount,
-              startPage: cleanDoc.startPage ?? null,
-              endPage: cleanDoc.endPage ?? null,
-              startSeconds: cleanDoc.startSeconds ?? null,
-              endSeconds: cleanDoc.endSeconds ?? null,
-            });
-          }
-        }
-
+      if (this.docRepo && rawDocs.length > 0 && changedRawDocsCount > 0) {
         if (isSlicingActive && docsToPersist.length === 0) {
           options?.onLog?.(
             "warn",
@@ -317,13 +382,15 @@ export class IngestionService {
             { sourceId: source.id, stage: "slicing" }
           );
         } else if (docsToPersist.length > 0) {
-          if (isSlicingActive || shouldResetToUnsliced) {
-            // Purge previously generated subdocuments for this source to prevent orphan/obsolete slices
+          if (syncMode === "full" && (isSlicingActive || shouldResetToUnsliced)) {
+            // Purge previously generated subdocuments in 'full' mode to prevent orphan/obsolete slices
             this.docRepo.deleteBySourceId(source.id);
           }
           this.docRepo.upsertBatch(docsToPersist);
         }
       }
+
+      const skippedCount = preFetchSkippedCount + postFetchSkippedCount;
 
       // Update sync state cursor atomically
       this.syncRepo.upsert({
@@ -336,7 +403,7 @@ export class IngestionService {
 
       options?.onLog?.(
         "info",
-        `Sync finished for "${source.name}": ${newDocuments.length} new/updated document(s), ${totalFetched - newDocuments.length} unchanged`
+        `Sync finished for "${source.name}": ${newDocuments.length} new/updated document(s), ${skippedCount} skipped`
       );
 
       return {
@@ -345,7 +412,7 @@ export class IngestionService {
         newDocuments,
         totalFetched,
         newCount: newDocuments.length,
-        skippedCount: totalFetched - newDocuments.length,
+        skippedCount,
         durationMs: Date.now() - startTime,
       };
     } catch (err: any) {

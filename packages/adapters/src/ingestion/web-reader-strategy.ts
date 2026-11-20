@@ -1,10 +1,12 @@
-import type {
-  IngestionStrategy,
-  DataSource,
-  RawDocument,
-  CleanTextDocument,
-  SyncState,
-  MediaService,
+import {
+  createKnownItemMatcher,
+  type IngestionStrategy,
+  type IngestionOptions,
+  type DataSource,
+  type RawDocument,
+  type CleanTextDocument,
+  type SyncState,
+  type MediaService,
 } from "@flashcard-master/core";
 import { Readability } from "@mozilla/readability";
 import { JSDOM } from "jsdom";
@@ -177,8 +179,22 @@ export class WebReaderStrategy implements IngestionStrategy {
     }
   }
 
-  async fetch(source: DataSource, lastSync?: SyncState): Promise<RawDocument[]> {
-    const urls = parseSourceUrls(source.uri);
+  async fetch(source: DataSource, lastSync?: SyncState, options?: IngestionOptions): Promise<RawDocument[]> {
+    const syncMode = options?.syncMode ?? "new-only";
+    const knownMatcher =
+      syncMode !== "full" ? createKnownItemMatcher("web", options?.knownItemKeys) : null;
+    const rawUrls = parseSourceUrls(source.uri);
+    const urls =
+      knownMatcher && !knownMatcher.isEmpty
+        ? rawUrls.filter((targetUrl) => {
+            if (knownMatcher.hasHttpUrl(targetUrl)) {
+              options?.onItemSkipped?.(targetUrl);
+              options?.onLog?.("debug", `[WebReaderStrategy] Skipping already-synced URL: ${targetUrl}`);
+              return false;
+            }
+            return true;
+          })
+        : rawUrls;
     if (urls.length === 0) {
       return [];
     }

@@ -756,4 +756,253 @@ Beta details on page 5.
     const expectedBase64 = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg"><text>${svgMarker}</text></svg>`).toString("base64");
     expect(htmlContent).toContain(expectedBase64);
   }, 30000);
+
+  it("skips known local files pre-parse, preserves existing slices in 'new-only' mode, and re-ingests all in 'full' mode inside real task-worker", async () => {
+    const db = createDatabaseClient({ inMemory: true });
+    const documentRepo = new DocumentRepository(db);
+    const syncRepo = new SyncStateRepository(db);
+    const sourceRepo = new DataSourceRepository(db);
+
+    const localDir = path.join(tmpDir, "incremental-worker-docs");
+    fs.mkdirSync(localDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(localDir, "doc1.md"),
+      "<!-- page: 1 -->\n\nDoc 1 Page 1.\n\n<!-- page: 2 -->\n\nDoc 1 Page 2.",
+      "utf8"
+    );
+
+    const source = sourceRepo.create({
+      name: "Incremental Local Source",
+      type: "local",
+      uri: localDir,
+    });
+
+    const executor = new WorkerExecutor({
+      documentRepo,
+      syncRepo,
+      workerScriptPath: resolveDefaultWorkerScriptPath(),
+    });
+
+    const makeCtx = (jobId: string): JobExecutionContext => ({
+      jobId,
+      signal: new AbortController().signal,
+      updateProgress: () => {},
+      log: () => ({}) as any,
+      setResultSummary: () => {},
+    });
+
+    // 1. Initial sync (sliced into 2 subdocuments for doc1)
+    const firstResult = await executor.executeTask(
+      {
+        type: "sync_source",
+        payload: {
+          sources: [source],
+          slicing: { mode: "budget", pagesPerChunk: 1 },
+        },
+      },
+      makeCtx("real-worker-inc-1")
+    );
+    expect(firstResult.newCount).toBe(2);
+    expect(firstResult.skippedCount).toBe(0);
+    expect(documentRepo.listBySourceId(source.id)).toHaveLength(2);
+
+    // 2. Add doc2.md and sync with default ('new-only') mode: doc1 must be skipped & its 2 slices preserved
+    fs.writeFileSync(
+      path.join(localDir, "doc2.md"),
+      "<!-- page: 1 -->\n\nDoc 2 Page 1.\n\n<!-- page: 2 -->\n\nDoc 2 Page 2.",
+      "utf8"
+    );
+    const secondResult = await executor.executeTask(
+      {
+        type: "sync_source",
+        payload: {
+          sources: [source],
+          slicing: { mode: "budget", pagesPerChunk: 1 },
+        },
+      },
+      makeCtx("real-worker-inc-2")
+    );
+    expect(secondResult.syncMode).toBe("new-only");
+    expect(secondResult.skippedCount).toBe(1);
+    expect(secondResult.newCount).toBe(2);
+    expect(documentRepo.listBySourceId(source.id)).toHaveLength(4);
+
+    // 3. Third sync with no new files skips both doc1 and doc2
+    const thirdResult = await executor.executeTask(
+      {
+        type: "sync_source",
+        payload: {
+          sources: [source],
+          slicing: { mode: "budget", pagesPerChunk: 1 },
+        },
+      },
+      makeCtx("real-worker-inc-3")
+    );
+    expect(thirdResult.newCount).toBe(0);
+    expect(thirdResult.skippedCount).toBe(2);
+    expect(documentRepo.listBySourceId(source.id)).toHaveLength(4);
+
+    // 4. Explicit 'full' sync re-parses both files and refreshes all 4 slices
+    const fourthResult = await executor.executeTask(
+      {
+        type: "sync_source",
+        payload: {
+          sources: [source],
+          slicing: { mode: "budget", pagesPerChunk: 1 },
+          syncMode: "full",
+        },
+      },
+      makeCtx("real-worker-inc-4")
+    );
+    expect(fourthResult.syncMode).toBe("full");
+    expect(fourthResult.skippedCount).toBe(0);
+    expect(fourthResult.newCount).toBe(4);
+    expect(documentRepo.listBySourceId(source.id)).toHaveLength(4);
+
+    // 5. Switching a previously sliced local source back to mode='none' in 'full' mode purges stale slices
+    const resetResult = await executor.executeTask(
+      {
+        type: "sync_source",
+        payload: {
+          sources: [source],
+          slicing: { mode: "none" },
+          syncMode: "full",
+        },
+      },
+      makeCtx("real-worker-inc-5")
+    );
+    expect(resetResult.newCount).toBe(2);
+    expect(documentRepo.listBySourceId(source.id)).toHaveLength(2);
+
+    db.close();
+  }, 30000);
+
+  it("propagates syncMode, knownItemKeys, and skippedCount for non-local sync_all inside real task-worker", async () => {
+    const mockIngestionService = {
+      syncSource: vi.fn().mockResolvedValue({ newCount: 1, totalFetched: 1, skippedCount: 2 }),
+    };
+
+    const webSource1 = {
+      id: "11111111-1111-4111-8111-111111111111",
+      name: "Web Docs 1",
+      type: "web" as const,
+      uri: "https://example.com/1",
+      tags: [],
+      isActive: true,
+    };
+    const webSource2 = {
+      id: "22222222-2222-4222-8222-222222222222",
+      name: "Web Docs 2",
+      type: "web" as const,
+      uri: "https://example.com/2",
+      tags: [],
+      isActive: true,
+    };
+
+    const executor = new WorkerExecutor({
+      ingestionService: mockIngestionService as any,
+      workerScriptPath: resolveDefaultWorkerScriptPath(),
+    });
+
+    const summary = await executor.executeTask(
+      {
+        type: "sync_all",
+        payload: {
+          sources: [webSource1, webSource2],
+          knownItemKeysBySource: {
+            [webSource1.id]: ["https://example.com/1"],
+          },
+        },
+      },
+      {
+        jobId: "real-worker-custodial-all-1",
+        signal: new AbortController().signal,
+        updateProgress: () => {},
+        log: () => ({}) as any,
+        setResultSummary: () => {},
+      }
+    );
+
+    expect(mockIngestionService.syncSource).toHaveBeenNthCalledWith(
+      1,
+      webSource1.id,
+      expect.objectContaining({
+        syncMode: "new-only",
+        knownItemKeys: new Set(["https://example.com/1"]),
+      })
+    );
+    expect(mockIngestionService.syncSource).toHaveBeenNthCalledWith(
+      2,
+      webSource2.id,
+      expect.objectContaining({ syncMode: "new-only" })
+    );
+    expect(summary.newCount).toBe(2);
+    expect(summary.skippedCount).toBe(4);
+    expect(summary.totalSkippedDocuments).toBe(4);
+  }, 30000);
+
+  it("forwards syncMode into custodial IngestionService.syncSource calls", async () => {
+    mockWorkerPath = path.join(tmpDir, "mock-full-mode-worker.js");
+    fs.writeFileSync(
+      mockWorkerPath,
+      `
+      import { parentPort } from "node:worker_threads";
+      let ackResolve = null;
+      parentPort.on("message", async (msg) => {
+        if (msg.action === "COMMIT_SYNC_ACK" && ackResolve) {
+          ackResolve(msg);
+          ackResolve = null;
+        }
+        if (msg.action === "START_TASK") {
+          const ackPromise = new Promise((r) => { ackResolve = r; });
+          parentPort.postMessage({
+            type: "COMMIT_SYNC_RESULT",
+            jobId: msg.jobId,
+            sourceId: "src-web-1",
+            stepNumber: 1,
+            documents: undefined,
+            syncMode: msg.task.payload.syncMode,
+          });
+          const ack = await ackPromise;
+          parentPort.postMessage({
+            type: "TASK_COMPLETE",
+            jobId: msg.jobId,
+            resultSummary: {
+              newCount: ack.newCount,
+              skippedCount: ack.skippedCount,
+            },
+          });
+        }
+      });
+    `,
+      "utf8"
+    );
+
+    const mockIngestionService = {
+      syncSource: vi.fn().mockResolvedValue({ newCount: 3, totalFetched: 3, skippedCount: 0 }),
+    };
+
+    const executor = new WorkerExecutor({
+      ingestionService: mockIngestionService as any,
+      workerScriptPath: mockWorkerPath,
+    });
+
+    const summary = await executor.executeTask(
+      { type: "sync_source", payload: { sources: [], syncMode: "full" } },
+      {
+        jobId: "custodial-full-1",
+        signal: new AbortController().signal,
+        updateProgress: () => {},
+        log: () => ({}) as any,
+        setResultSummary: () => {},
+      }
+    );
+
+    expect(mockIngestionService.syncSource).toHaveBeenCalledWith(
+      "src-web-1",
+      expect.objectContaining({ syncMode: "full" })
+    );
+    expect(summary.newCount).toBe(3);
+    expect(summary.skippedCount).toBe(0);
+  }, 30000);
 });

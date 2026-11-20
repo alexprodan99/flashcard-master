@@ -122,6 +122,9 @@ export const DataSourceSchema = z.object({
 });
 export type DataSource = z.infer<typeof DataSourceSchema>;
 
+export const SyncModeSchema = z.enum(["new-only", "full"]);
+export type SyncMode = z.infer<typeof SyncModeSchema>;
+
 export const SyncStateSchema = z.object({
   sourceId: z.string().uuid(),
   lastSyncedAt: z.string().datetime(),

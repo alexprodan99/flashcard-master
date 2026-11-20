@@ -1,4 +1,4 @@
-import type { IngestionStrategy, DataSource, RawDocument, CleanTextDocument, SyncState, MediaService } from "@flashcard-master/core";
+import { createKnownItemMatcher, type IngestionStrategy, type IngestionOptions, type DataSource, type RawDocument, type CleanTextDocument, type SyncState, type MediaService } from "@flashcard-master/core";
 import fs from "node:fs";
 import path from "node:path";
 import fg from "fast-glob";
@@ -22,7 +22,10 @@ export class LocalFileStrategy implements IngestionStrategy {
     this.epubParser = new EpubParser({ mediaService: options.mediaService });
   }
 
-  async fetch(source: DataSource, lastSync?: SyncState): Promise<RawDocument[]> {
+  async fetch(source: DataSource, lastSync?: SyncState, options?: IngestionOptions): Promise<RawDocument[]> {
+    const syncMode = options?.syncMode ?? "new-only";
+    const knownMatcher =
+      syncMode !== "full" ? createKnownItemMatcher("local", options?.knownItemKeys) : null;
     let targetPaths: string[] = [];
     const trimmedUri = (source.uri || "").trim();
     if (trimmedUri.startsWith("[") && trimmedUri.endsWith("]")) {
@@ -50,6 +53,11 @@ export class LocalFileStrategy implements IngestionStrategy {
         const stats = fs.statSync(targetPath);
 
         if (stats.isFile()) {
+          if (knownMatcher && knownMatcher.hasLocalPath(targetPath)) {
+            options?.onItemSkipped?.(targetPath);
+            options?.onLog?.("debug", `[LocalFileStrategy] Skipping already-synced file: ${targetPath}`);
+            continue;
+          }
           const ext = path.extname(targetPath).toLowerCase();
           if (ext === ".doc") {
             throw new UnsupportedDocumentError(
@@ -77,6 +85,11 @@ export class LocalFileStrategy implements IngestionStrategy {
           });
 
           for (const filePath of files) {
+            if (knownMatcher && knownMatcher.hasLocalPath(filePath)) {
+              options?.onItemSkipped?.(filePath);
+              options?.onLog?.("debug", `[LocalFileStrategy] Skipping already-synced file: ${filePath}`);
+              continue;
+            }
             let fileStat: fs.Stats;
             try {
               fileStat = fs.statSync(filePath);

@@ -1,11 +1,14 @@
-import type { DataSource, RawDocument, CleanTextDocument, SyncState, Flashcard, DifficultyLevel, ImageQuality, Setting, ProviderVerificationResult, SecretProvider, JobLogLevel, SttProvider } from "../domain/models.js";
+import type { DataSource, RawDocument, CleanTextDocument, SyncState, SyncMode, Flashcard, DifficultyLevel, ImageQuality, Setting, ProviderVerificationResult, SecretProvider, JobLogLevel, SttProvider } from "../domain/models.js";
 import type { DocumentSlicingOptions } from "../services/document-slicing-engine.js";
 
 export interface IngestionOptions {
   onLog?: (level: JobLogLevel, message: string, details?: Record<string, any>) => void;
   signal?: AbortSignal;
   verbose?: boolean;
+  onItemSkipped?: (itemKey: string) => void;
   slicing?: DocumentSlicingOptions;
+  syncMode?: SyncMode;
+  knownItemKeys?: Set<string>;
 }
 
 export interface IngestionStrategy {

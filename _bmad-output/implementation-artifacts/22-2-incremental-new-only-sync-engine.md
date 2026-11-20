@@ -2,7 +2,7 @@
 title: 'Story 22.2: Core Incremental "Sync New Only" Engine & Pre-Fetch Item Filtering'
 type: 'feature'
 created: '2026-11-18'
-status: 'ready-for-dev'
+status: 'review'
 baseline_commit: 'main'
 review_loop_iteration: 0
 context:
@@ -51,11 +51,11 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `packages/core/src/domain/models.ts` & `packages/core/src/ports/index.ts` -- Define `SyncMode` (`'new-only' | 'full'`) and extend `IngestionOptions` with `syncMode` and `knownItemKeys`.
-- [ ] `packages/core/src/services/ingestion-service.ts` -- Build fragment-stripped parent item key sets from `DocumentRepository`, pass `syncMode` and `knownItemKeys` to `strategy.fetch()`, preserve existing documents in `'new-only'` mode (even when slicing is enabled for new items), and report accurate `newCount` / `skippedCount`.
-- [ ] `packages/adapters/src/ingestion/*.ts` -- Implement pre-fetch skipping of `knownItemKeys` across `local`, `web`, `rss`, `sitemap`, `llms-txt`, `notion`, `audio`, `video`, and `youtube` when `syncMode !== 'full'`.
-- [ ] `packages/web/src/workers/task-types.ts`, `worker-executor.ts`, `task-worker.ts` -- Pass `syncMode` and `knownItemKeys` for `local` worker sync and pass `syncMode` through `WorkerExecutor` for `IngestionService` syncs.
-- [ ] Unit & integration tests -- Verify pre-fetch skipping (0 fetch/parse/STT calls for known items), fragment-stripped sliced document matching, path-based PDF matching, and `'full'` mode override across core, adapters, and web worker tests.
+- [x] `packages/core/src/domain/models.ts` & `packages/core/src/ports/index.ts` -- Define `SyncMode` (`'new-only' | 'full'`) and extend `IngestionOptions` with `syncMode` and `knownItemKeys`.
+- [x] `packages/core/src/services/ingestion-service.ts` -- Build fragment-stripped parent item key sets from `DocumentRepository`, pass `syncMode` and `knownItemKeys` to `strategy.fetch()`, preserve existing documents in `'new-only'` mode (even when slicing is enabled for new items), and report accurate `newCount` / `skippedCount`.
+- [x] `packages/adapters/src/ingestion/*.ts` -- Implement pre-fetch skipping of `knownItemKeys` across `local`, `web`, `rss`, `sitemap`, `llms-txt`, `notion`, `audio`, `video`, and `youtube` when `syncMode !== 'full'`.
+- [x] `packages/web/src/workers/task-types.ts`, `worker-executor.ts`, `task-worker.ts` -- Pass `syncMode` and `knownItemKeys` for `local` worker sync and pass `syncMode` through `WorkerExecutor` for `IngestionService` syncs.
+- [x] Unit & integration tests -- Verify pre-fetch skipping (0 fetch/parse/STT calls for known items), fragment-stripped sliced document matching, path-based PDF matching, and `'full'` mode override across core, adapters, and web worker tests.
 
 **Acceptance Criteria:**
 - `IngestionOptions` and `SyncTaskPayload` accept `syncMode?: 'new-only' | 'full'` (default `'new-only'`).
