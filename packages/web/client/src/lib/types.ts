@@ -25,6 +25,19 @@ export interface MediaSourceItem {
   intervalMinutes?: number;
 }
 
+export interface ResolvedYouTubeUrlEntry {
+  input: string;
+  valid: boolean;
+  duplicate: boolean;
+  duplicateOf?: string;
+  videoId?: string;
+  canonicalUrl?: string;
+  title?: string;
+  channel?: string;
+  resolvedFromRemote?: boolean;
+  error?: string;
+}
+
 export interface DataSource {
   id: string;
   name: string;

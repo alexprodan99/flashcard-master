@@ -1,4 +1,4 @@
-import type { DataSourceType, DiscoveredDocument, MediaSourceItem } from './types.js';
+import type { DataSourceType, DiscoveredDocument, MediaExtractionMode, MediaSourceItem, SttProvider } from './types.js';
 
 /**
  * Formats a user-friendly page coordinate badge for a document.
@@ -209,4 +209,123 @@ export function validateMediaItems(items: MediaSourceItem[], sourceType: string)
 export function formatLocatorLabel(locator: string): string {
   const icon = /\d:\d{2}/.test(locator) ? '⏱️' : '📍';
   return `${icon} ${locator}`;
+}
+
+const CLIENT_YT_ID_RE = /^[A-Za-z0-9_-]{11}$/;
+
+/**
+ * Extracts a canonical 11-character YouTube video ID from standard watch, short youtu.be,
+ * shorts, live, embed, mobile/music URLs, or bare IDs.
+ */
+export function extractClientYouTubeVideoId(input: string): string | null {
+  const trimmed = (input || '').trim();
+  if (!trimmed) return null;
+  if (CLIENT_YT_ID_RE.test(trimmed)) return trimmed;
+
+  const candidateUrl = /^https?:\/\//i.test(trimmed)
+    ? trimmed
+    : /^(?:www\.|m\.|music\.)?(?:youtube\.com|youtu\.be|youtube-nocookie\.com)\//i.test(trimmed)
+      ? `https://${trimmed}`
+      : null;
+  if (!candidateUrl) return null;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(candidateUrl);
+  } catch {
+    return null;
+  }
+
+  const host = parsed.hostname.toLowerCase();
+  const isShortHost = host === 'youtu.be' || host.endsWith('.youtu.be');
+  const isYouTubeHost =
+    host === 'youtube.com' ||
+    host.endsWith('.youtube.com') ||
+    host === 'youtube-nocookie.com' ||
+    host.endsWith('.youtube-nocookie.com');
+  if (!isShortHost && !isYouTubeHost) return null;
+
+  const segments = parsed.pathname.split('/').filter(Boolean);
+  if (isShortHost) {
+    const id = segments[0] ?? '';
+    return CLIENT_YT_ID_RE.test(id) ? id : null;
+  }
+
+  const vParam = parsed.searchParams.get('v')?.trim() ?? '';
+  if (CLIENT_YT_ID_RE.test(vParam)) return vParam;
+
+  if (segments.length >= 2 && ['shorts', 'live', 'embed', 'v'].includes(segments[0].toLowerCase())) {
+    const id = segments[1] ?? '';
+    return CLIENT_YT_ID_RE.test(id) ? id : null;
+  }
+
+  return null;
+}
+
+export function canonicalizeYouTubeUrl(input: string): string | null {
+  const id = extractClientYouTubeVideoId(input);
+  return id ? `https://www.youtube.com/watch?v=${id}` : null;
+}
+
+/**
+ * Plans additions of YouTube URLs/IDs into a MediaSourceItem list, normalizing URLs
+ * to canonical watch links and catching duplicates across all YouTube URL formats.
+ */
+export function planYoutubeUrlAdditions(
+  inputs: string[],
+  existingItems: MediaSourceItem[],
+  defaults: { extractionMode?: MediaExtractionMode; sttProvider?: SttProvider } = {}
+): {
+  additions: MediaSourceItem[];
+  duplicates: Array<{ input: string; videoId: string; duplicateOf: string }>;
+  invalid: string[];
+} {
+  const seenVideoIds = new Map<string, string>();
+  const seenRawUris = new Set<string>();
+
+  for (const item of existingItems) {
+    const clean = (item.uri || '').trim();
+    if (!clean) continue;
+    seenRawUris.add(clean);
+    const vid = extractClientYouTubeVideoId(clean);
+    if (vid && !seenVideoIds.has(vid)) {
+      seenVideoIds.set(vid, clean);
+    }
+  }
+
+  const additions: MediaSourceItem[] = [];
+  const duplicates: Array<{ input: string; videoId: string; duplicateOf: string }> = [];
+  const invalid: string[] = [];
+
+  for (const raw of inputs) {
+    const clean = (raw || '').trim();
+    if (!clean) continue;
+    const videoId = extractClientYouTubeVideoId(clean);
+    if (!videoId) {
+      invalid.push(clean);
+      continue;
+    }
+
+    const canonicalUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    const existingMatch = seenVideoIds.get(videoId);
+    if (existingMatch || seenRawUris.has(canonicalUrl) || seenRawUris.has(clean)) {
+      duplicates.push({
+        input: clean,
+        videoId,
+        duplicateOf: existingMatch || canonicalUrl,
+      });
+      continue;
+    }
+
+    seenVideoIds.set(videoId, canonicalUrl);
+    seenRawUris.add(canonicalUrl);
+    additions.push({
+      uri: canonicalUrl,
+      extractionMode: defaults.extractionMode ?? 'auto',
+      sttProvider: defaults.sttProvider ?? 'openai',
+      timestampRanges: [],
+    });
+  }
+
+  return { additions, duplicates, invalid };
 }

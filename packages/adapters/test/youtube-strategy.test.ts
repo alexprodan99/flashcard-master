@@ -1,7 +1,7 @@
 import * as fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   DocumentSlicingEngine,
   IngestionService,
@@ -21,6 +21,7 @@ import {
   extractYouTubeVideoId,
   normalizeYouTubeUrl,
   parseYouTubeCaptionPayload,
+  resolveVideoMetadataSummary,
 } from "../src/index.js";
 
 function buildWatchHtml(
@@ -817,6 +818,220 @@ describe("YouTubeIngestionStrategy (Story 21.4)", () => {
     expect(rawDocs).toHaveLength(1);
     const clean = strategy.extractCleanText(rawDocs[0]);
     expect(clean.textContent).toContain("Valid A and invalid &#9999999; &#x110000; entities.");
+  });
+
+  describe("Lightweight Metadata Resolution, Backfill & Duplicate videoId Handling (Story 22.3)", () => {
+    it("resolves lightweight metadata via oEmbed, falls back to watch HTML, and degrades gracefully offline", async () => {
+      const oembedFetch = vi.fn(async (url: string | URL | Request) => {
+        if (String(url).includes("/oembed?")) {
+          return new Response(
+            JSON.stringify({ title: "Attention Is All You Need", author_name: "AI Channel" }),
+            { status: 200 }
+          );
+        }
+        return new Response("Not Found", { status: 404 });
+      }) as unknown as typeof fetch;
+
+      const oembedRes = await resolveVideoMetadataSummary("https://youtu.be/dQw4w9WgXcQ", {
+        fetchFn: oembedFetch,
+      });
+      expect(oembedRes).toEqual({
+        videoId: "dQw4w9WgXcQ",
+        canonicalUrl: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        title: "Attention Is All You Need",
+        channel: "AI Channel",
+        resolvedFromRemote: true,
+      });
+      expect(oembedFetch).toHaveBeenCalledTimes(1);
+
+      const watchFallbackFetch = vi.fn(async (url: string | URL | Request) => {
+        if (String(url).includes("/oembed?")) {
+          return new Response("Forbidden", { status: 403 });
+        }
+        return new Response(
+          buildWatchHtml({
+            videoDetails: { videoId: "abcdefghijk", title: "Fallback Watch Title", author: "Host" },
+          }),
+          { status: 200 }
+        );
+      }) as unknown as typeof fetch;
+
+      const watchRes = await resolveVideoMetadataSummary("https://www.youtube.com/shorts/abcdefghijk", {
+        fetchFn: watchFallbackFetch,
+      });
+      expect(watchRes).toEqual({
+        videoId: "abcdefghijk",
+        canonicalUrl: "https://www.youtube.com/watch?v=abcdefghijk",
+        title: "Fallback Watch Title",
+        channel: "Host",
+        resolvedFromRemote: true,
+      });
+
+      const offlineFetch = vi.fn(async () => {
+        throw new Error("ENOTFOUND offline");
+      }) as unknown as typeof fetch;
+      const offlineRes = await resolveVideoMetadataSummary("VideoOff123", {
+        fetchFn: offlineFetch,
+      });
+      expect(offlineRes).toEqual({
+        videoId: "VideoOff123",
+        canonicalUrl: "https://www.youtube.com/watch?v=VideoOff123",
+        title: "YouTube Video VideoOff123",
+        resolvedFromRemote: false,
+      });
+
+      // HTML <title> fallback when oEmbed returns invalid JSON and watch page lacks ytInitialPlayerResponse
+      const htmlTitleFetch = vi.fn(async (url: string | URL | Request) => {
+        if (String(url).includes("/oembed?")) {
+          return new Response("not-json", { status: 200 });
+        }
+        return new Response("<html><head><title>Transformers &amp; Scaling - YouTube</title></head></html>", {
+          status: 200,
+        });
+      }) as unknown as typeof fetch;
+      const htmlTitleRes = await resolveVideoMetadataSummary("HtmlTitle01", {
+        fetchFn: htmlTitleFetch,
+      });
+      expect(htmlTitleRes).toEqual({
+        videoId: "HtmlTitle01",
+        canonicalUrl: "https://www.youtube.com/watch?v=HtmlTitle01",
+        title: "Transformers & Scaling",
+        resolvedFromRemote: true,
+      });
+
+      // Generic "<title>YouTube</title>" is ignored and pre-aborted AbortSignal returns offline fallback
+      const aborted = new AbortController();
+      aborted.abort();
+      const genericFetch = vi.fn(async () => new Response("<title>YouTube</title>", { status: 200 })) as unknown as typeof fetch;
+      const abortedRes = await resolveVideoMetadataSummary("AbortVid001", {
+        fetchFn: genericFetch,
+        signal: aborted.signal,
+      });
+      expect(abortedRes.resolvedFromRemote).toBe(false);
+      expect(genericFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("resolveUrls detects duplicate videoIds across URL formats without re-fetching metadata", async () => {
+      const customFetch = vi.fn(async (url: string | URL | Request) => {
+        if (String(url).includes("/oembed?")) {
+          return new Response(JSON.stringify({ title: "Resolved Video" }), { status: 200 });
+        }
+        return new Response("Not Found", { status: 404 });
+      }) as unknown as typeof fetch;
+
+      const strategy = new YouTubeIngestionStrategy({ customFetch });
+      const resolved = await strategy.resolveUrls(
+        [
+          "https://youtu.be/VideoOne111",
+          "https://www.youtube.com/watch?v=VideoOne111",
+          "https://www.youtube.com/shorts/VideoTwo222",
+          "https://example.com/not-youtube",
+        ],
+        { existingUrls: ["https://www.youtube.com/shorts/VideoTwo222"] }
+      );
+
+      expect(resolved).toHaveLength(4);
+      expect(resolved[0]).toMatchObject({
+        valid: true,
+        duplicate: false,
+        videoId: "VideoOne111",
+        canonicalUrl: "https://www.youtube.com/watch?v=VideoOne111",
+        title: "Resolved Video",
+      });
+      expect(resolved[1]).toMatchObject({
+        valid: true,
+        duplicate: true,
+        duplicateOf: "https://www.youtube.com/watch?v=VideoOne111",
+        videoId: "VideoOne111",
+      });
+      expect(resolved[2]).toMatchObject({
+        valid: true,
+        duplicate: true,
+        duplicateOf: "https://www.youtube.com/watch?v=VideoTwo222",
+        videoId: "VideoTwo222",
+      });
+      expect(resolved[3]).toMatchObject({
+        valid: false,
+        duplicate: false,
+      });
+      expect(customFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("deduplicates same-videoId URLs during fetch and backfills missing titles into data_sources.uri without overwriting custom titles", async () => {
+      const db = createDatabaseClient({ inMemory: true });
+      const sourceRepo = new DataSourceRepository(db);
+      const syncRepo = new SyncStateRepository(db);
+      const docRepo = new DocumentRepository(db);
+      const registry = new StrategyRegistry();
+
+      const customFetch = vi.fn(async (url: string | URL | Request) => {
+        const u = String(url);
+        if (u.includes("VideoOne111")) {
+          return new Response(
+            buildWatchHtml({
+              playabilityStatus: { status: "OK" },
+              videoDetails: { videoId: "VideoOne111", title: "Fetched Video One", lengthSeconds: "30" },
+              captions: {
+                playerCaptionsTracklistRenderer: {
+                  captionTracks: [{ baseUrl: "https://cap.example/1", languageCode: "en" }],
+                },
+              },
+            }),
+            { status: 200 }
+          );
+        }
+        if (u.includes("VideoTwo222")) {
+          return new Response(
+            buildWatchHtml({
+              playabilityStatus: { status: "OK" },
+              videoDetails: { videoId: "VideoTwo222", title: "Fetched Video Two", lengthSeconds: "40" },
+              captions: {
+                playerCaptionsTracklistRenderer: {
+                  captionTracks: [{ baseUrl: "https://cap.example/2", languageCode: "en" }],
+                },
+              },
+            }),
+            { status: 200 }
+          );
+        }
+        return new Response('<transcript><text start="0.0" dur="3.0">Transcript text.</text></transcript>', {
+          status: 200,
+        });
+      }) as unknown as typeof fetch;
+
+      const ytStrategy = new YouTubeIngestionStrategy({ customFetch });
+      registry.register(ytStrategy);
+      const ingestion = new IngestionService(sourceRepo, syncRepo, registry, docRepo);
+
+      const source = sourceRepo.create({
+        name: "YouTube Mixed",
+        type: "youtube",
+        uri: JSON.stringify([
+          { uri: "https://youtu.be/VideoOne111", title: "YouTube Video VideoOne111", extractionMode: "auto" },
+          { uri: "https://www.youtube.com/watch?v=VideoOne111", extractionMode: "auto" },
+          { uri: "https://youtu.be/VideoTwo222", title: "User Custom Title", extractionMode: "auto" },
+        ]),
+      });
+
+      const result = await ingestion.syncSource(source.id);
+      expect(result.error).toBeUndefined();
+      // Duplicate VideoOne111 skipped cleanly -> 2 distinct videos fetched
+      expect(result.newCount).toBe(2);
+      expect(result.skippedCount).toBe(1);
+
+      const updatedSource = sourceRepo.getById(source.id)!;
+      const persistedItems = JSON.parse(updatedSource.uri);
+      expect(persistedItems).toHaveLength(2);
+      expect(persistedItems[0]).toMatchObject({
+        uri: "https://www.youtube.com/watch?v=VideoOne111",
+        title: "Fetched Video One",
+      });
+      expect(persistedItems[1]).toMatchObject({
+        uri: "https://www.youtube.com/watch?v=VideoTwo222",
+        title: "User Custom Title",
+      });
+      db.close();
+    });
   });
 });
 

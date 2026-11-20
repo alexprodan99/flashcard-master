@@ -3050,8 +3050,75 @@ export class WebServer {
             return;
           }
 
+          // 6d. Lightweight YouTube Metadata & Duplicate Resolution Endpoint: POST /api/sources/youtube/resolve
+          if (pathname === "/api/sources/youtube/resolve" && method === "POST") {
+            let body: any;
+            try {
+              body = await this.parseBody(req);
+            } catch {
+              this.sendJson(res, 400, { error: "Invalid JSON body" });
+              return;
+            }
+            if (!Array.isArray(body?.urls)) {
+              this.sendJson(res, 400, { error: "urls array is required" });
+              return;
+            }
+            if (body.urls.length > 50) {
+              this.sendJson(res, 400, { error: "Maximum 50 URLs can be resolved per request" });
+              return;
+            }
+            if (body.urls.some((u: unknown) => typeof u !== "string")) {
+              this.sendJson(res, 400, { error: "All entries in urls must be strings" });
+              return;
+            }
+            if (body.existingUrls !== undefined && (!Array.isArray(body.existingUrls) || body.existingUrls.some((u: unknown) => typeof u !== "string"))) {
+              this.sendJson(res, 400, { error: "existingUrls must be an array of strings" });
+              return;
+            }
+            const urls = body.urls.map((u: string) => u.trim()).filter(Boolean);
+            const existingUrls = Array.isArray(body.existingUrls)
+              ? body.existingUrls.map((u: string) => u.trim()).filter(Boolean)
+              : undefined;
+
+            let ytStrategy: YouTubeIngestionStrategy | undefined;
+            if (this.options.strategyRegistry?.hasStrategy("youtube")) {
+              const registered = this.options.strategyRegistry.getStrategy("youtube");
+              if (registered && typeof (registered as any).resolveUrls === "function") {
+                ytStrategy = registered as YouTubeIngestionStrategy;
+              }
+            }
+            if (!ytStrategy) {
+              ytStrategy = new YouTubeIngestionStrategy({ settingsService: this.settingsService });
+            }
+
+            const abortController = new AbortController();
+            const handleClose = () => {
+              if (!res.writableEnded) {
+                abortController.abort();
+              }
+            };
+            req.on("close", handleClose);
+
+            try {
+              const items = await ytStrategy.resolveUrls(urls, {
+                existingUrls,
+                signal: abortController.signal,
+              });
+              if (!res.writableEnded) {
+                this.sendJson(res, 200, { items });
+              }
+            } catch (err: any) {
+              if (!res.writableEnded) {
+                this.sendJson(res, 500, { error: err.message || "Failed to resolve YouTube metadata" });
+              }
+            } finally {
+              req.off("close", handleClose);
+            }
+            return;
+          }
+
           // 7. Single Source Update (PATCH) / Delete (DELETE): /api/sources/:id
-          if (pathname.startsWith("/api/sources/") && pathname !== "/api/sources/upload" && pathname !== "/api/sources/tags") {
+          if (pathname.startsWith("/api/sources/") && pathname !== "/api/sources/upload" && pathname !== "/api/sources/tags" && pathname !== "/api/sources/youtube/resolve") {
             let id = pathname.slice("/api/sources/".length);
             try {
               id = decodeURIComponent(id);

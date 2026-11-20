@@ -2,7 +2,7 @@
 title: 'Story 22.3: YouTube Lightweight Metadata Resolution, Persistence & Duplicate Detection'
 type: 'feature'
 created: '2026-11-18'
-status: 'ready-for-dev'
+status: 'review'
 baseline_commit: 'main'
 review_loop_iteration: 0
 context:
@@ -42,10 +42,10 @@ When users add YouTube URLs to a `youtube` data source, `MediaItemListEditor.sve
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `packages/adapters/src/ingestion/youtube-strategy.ts` -- Add lightweight `resolveVideoMetadataSummary()` / oEmbed + watch-page title helper and export `extractYouTubeVideoId` / `normalizeYouTubeUrl` cleanly.
-- [ ] `packages/web/src/server.ts` & `packages/web/client/src/lib/api.ts` -- Implement `POST /api/sources/youtube/resolve` endpoint and client helper, plus persist resolved video titles back into `data_sources.uri` after YouTube sync if missing.
-- [ ] `packages/web/client/src/components/MediaItemListEditor.svelte` -- Auto-resolve video titles on YouTube URL addition, store `title` + canonical `uri`, and detect/warn on duplicate `videoId`s across URL variants.
-- [ ] Unit tests -- Verify `videoId` duplicate detection across URL formats, lightweight metadata fallback when offline, `/api/sources/youtube/resolve`, and `data_sources.uri` title persistence.
+- [x] `packages/adapters/src/ingestion/youtube-strategy.ts` -- Add lightweight `resolveVideoMetadataSummary()` / oEmbed + watch-page title helper and export `extractYouTubeVideoId` / `normalizeYouTubeUrl` cleanly.
+- [x] `packages/web/src/server.ts` & `packages/web/client/src/lib/api.ts` -- Implement `POST /api/sources/youtube/resolve` endpoint and client helper, plus persist resolved video titles back into `data_sources.uri` after YouTube sync if missing.
+- [x] `packages/web/client/src/components/MediaItemListEditor.svelte` -- Auto-resolve video titles on YouTube URL addition, store `title` + canonical `uri`, and detect/warn on duplicate `videoId`s across URL variants.
+- [x] Unit tests -- Verify `videoId` duplicate detection across URL formats, lightweight metadata fallback when offline, `/api/sources/youtube/resolve`, and `data_sources.uri` title persistence.
 
 **Acceptance Criteria:**
 - Lightweight YouTube metadata resolver extracts `{ videoId, canonicalUrl, title }` cleanly and gracefully falls back if YouTube is unreachable or offline.

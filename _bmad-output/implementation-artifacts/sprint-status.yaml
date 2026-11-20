@@ -223,7 +223,7 @@ development_status:
   epic-22: in-progress
   22-1-unified-desktop-web-directory: review
   22-2-incremental-new-only-sync-engine: review
-  22-3-youtube-metadata-identity-and-dedup: ready-for-dev
+  22-3-youtube-metadata-identity-and-dedup: review
   22-4-ui-split-sync-and-item-status: ready-for-dev
   22-5-cli-full-flag-docs-and-e2e: ready-for-dev
   epic-22-retrospective: optional
