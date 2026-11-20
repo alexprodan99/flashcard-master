@@ -22,7 +22,7 @@ Download the native desktop installer for your operating system from [GitHub Rel
 * **macOS:** `Flashcard-Master-x.x.x.dmg` (Universal binary for Apple Silicon & Intel)
 * **Linux:** `Flashcard-Master-x.x.x.AppImage` or `flashcard-master_x.x.x_amd64.deb`
 
-Features native dark-slate window framing, system tray minimize/restore, and automatic storage isolation in your OS `userData` directory with zero terminal dependencies.
+Features native dark-slate window framing, system tray minimize/restore, and shared local storage in `~/.flashcard-master/` across Desktop, Web UI, and CLI with zero terminal dependencies.
 
 ---
 
@@ -223,6 +223,9 @@ flashcard-master sync
 
 # Sync a specific source by UUID
 flashcard-master sync <source-id>
+
+# Force full re-sync across all active sources (defaults to new items only)
+flashcard-master sync --full
 ```
 
 #### 2. Generate AI Flashcards (`generate`)

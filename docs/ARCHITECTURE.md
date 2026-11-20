@@ -9,7 +9,7 @@
 
 Flashcard Master is built on five non-negotiable core invariants:
 
-1. **Local-First & Zero Telemetry:** All data sources, extracted articles, vector hashes, settings, and flashcards reside strictly on the user's local disk in SQLite (`~/.flashcard-master/flashcards.db`). No telemetry or user content is ever sent to external cloud servers (except direct user-configured LLM API calls).
+1. **Local-First & Zero Telemetry:** All data sources, extracted articles, vector hashes, settings, and flashcards reside strictly on the user's local disk in SQLite (`~/.flashcard-master/data.sqlite`). No telemetry or user content is ever sent to external cloud servers (except direct user-configured LLM API calls).
 2. **Strict Factual Grounding (Zero Hallucinations):** Every flashcard MUST cite an exact, verbatim substring from the source document. Flashcards with altered, paraphrased, or hallucinated quotes are automatically rejected by `GroundingGuard`.
 3. **Ports & Adapters (Hexagonal Architecture):** Domain logic and core services are isolated from infrastructure. Database engines, LLMs, ingestion protocols, and exporters are swappable ports.
 4. **Adaptive Synthesis & Density Guarantee:** When card generation is requested, the system uses oversampling and bounded backfill loops to guarantee the exact target card quota is delivered even when ungrounded drafts are discarded.
@@ -21,7 +21,7 @@ Flashcard Master is built on five non-negotiable core invariants:
 
 ```mermaid
 graph TD
-    DESKTOP["@flashcard-master/desktop<br/>(Electron, System Tray, UserData DB)"]
+    DESKTOP["@flashcard-master/desktop<br/>(Electron, System Tray, Unified DB)"]
     CLI["@flashcard-master/cli<br/>(Commander.js, Inquirer.js, App Context)"]
     WEB["@flashcard-master/web<br/>(Node.js REST API Server + Svelte 5 Client)"]
     ADAPTERS["@flashcard-master/adapters<br/>(Ingestion, LLMs, Exporters)"]
@@ -47,7 +47,7 @@ graph TD
 | **`@flashcard-master/adapters`** | External Protocols & Vendor SDKs | `RssIngestionStrategy`, `WebReaderStrategy`, `LocalFileStrategy`, `AudioIngestionStrategy`, `VideoIngestionStrategy`, `YouTubeIngestionStrategy`, `AudioTrimmer`, `OpenAiSttAdapter`, `GeminiSttAdapter`, `LocalWhisperSttAdapter`, `EpubParser`, `SitemapIngestionStrategy`, `LlmsTxtIngestionStrategy`, `OllamaAdapter`, `OpenAIAdapter`, `GeminiAdapter`, `AnthropicAdapter`, `AnkiPackageExporter`, `AnkiConnectAdapter`, `MarkdownExporter`, `HtmlStudyGuideExporter`, `PdfStudyGuideExporter`, `CsvExporter`, `TsvExporter`. |
 | **`@flashcard-master/cli`** | Headless CLI & Terminal Wizards | `createCli()`, `createAppContext()`, Interactive Setup Wizard, Commands (`init`, `source`, `sync`, `generate`, `export`, `cards`, `serve`). |
 | **`@flashcard-master/web`** | Local SPA & REST Backend | `createWebServer()`, `server.ts` HTTP router, Svelte 5 single-page application (`DashboardView`, `SourcesView`, `GenerateStudio`, `QuestionExplorer`, `ExportCenter`). |
-| **`@flashcard-master/desktop`** | Standalone Cross-Platform Desktop App | `bootstrapDesktopServer()`, Electron main process (`main.ts`), custom dark slate window framing, system tray minimize/restore, OS `userData` SQLite storage isolation, and multi-OS `electron-builder` packaging (`.exe`, `.dmg`, `.AppImage`, `.deb`). |
+| **`@flashcard-master/desktop`** | Standalone Cross-Platform Desktop App | `bootstrapDesktopServer()`, Electron main process (`main.ts`), custom dark slate window framing, system tray minimize/restore, unified `~/.flashcard-master/` data storage, and multi-OS `electron-builder` packaging (`.exe`, `.dmg`, `.AppImage`, `.deb`). |
 
 ---
 
@@ -440,7 +440,7 @@ Question Explorer  ──▶  Clone Deck  ──▶  Atomic Duplicate with (Copy
 ┌────────────────────────────────────────────────────────────────────────┐
 │ @flashcard-master/desktop Composition Architecture                     │
 │                                                                        │
-│  [Electron Main]  ──▶  app.getPath('userData') Storage Isolation       │
+│  [Electron Main]  ──▶  ~/.flashcard-master/ Unified Data Directory     │
 │                   ──▶  bootstrapDesktopServer() -> In-Process Node API │
 │                   ──▶  Ephemeral Loopback Port (127.0.0.1:0)           │
 │                   ──▶  BrowserWindow (Dark Slate #0f172a)              │
@@ -451,8 +451,9 @@ Question Explorer  ──▶  Clone Deck  ──▶  Atomic Duplicate with (Copy
 * **Zero Backend Rewrites:**
   - Rather than re-architecting the web server into Electron IPC channels, `@flashcard-master/desktop` directly bootstraps `@flashcard-master/web` and `@flashcard-master/cli`'s application context in-process.
   - All existing REST API endpoints, Server-Sent Events (SSE) streaming task updates, and Svelte 5 UI views operate identically in desktop mode.
-* **Storage Isolation & Dynamic Port Binding:**
-  - SQLite database (`data.sqlite`) and media cache (`media/`) are placed in the OS-native user data path (`app.getPath('userData')`) — e.g., `%APPDATA%\Flashcard Master` on Windows, `~/Library/Application Support/Flashcard Master` on macOS, and `~/.config/Flashcard Master` on Linux.
+
+* **Unified Storage & Dynamic Port Binding:**
+  - Desktop, Web UI, and CLI share the unified home data directory (`~/.flashcard-master/` — containing `data.sqlite`, `media/`, and `local-files/`, overridable in CLI/Web via `--data-dir`), keeping user data unified while reserving `app.getPath('userData')` solely for Electron runtime/window cache.
   - The server binds dynamically to port `0` (an available ephemeral loopback port) to prevent collisions with any existing CLI servers running on port `3000`.
 * **Security & Native UX:**
   - Enforces safe Electron defaults: `contextIsolation: true`, `sandbox: true`, and `nodeIntegration: false`.

@@ -39,8 +39,9 @@ All application state, documents, settings, and flashcards reside locally on you
 - **Default Database Location**: `~/.flashcard-master/data.sqlite`
 - **Associated WAL Files**: `~/.flashcard-master/data.sqlite-wal` and `data.sqlite-shm`
 - **Media Cache**: `~/.flashcard-master/media/`
+- **Uploaded & Local Files**: `~/.flashcard-master/local-files/`
 
-To back up your entire knowledge base, simply copy the `~/.flashcard-master/` folder.
+Desktop, Web UI, and CLI share `~/.flashcard-master/` automatically (CLI/Web can point to a different location with `--data-dir <path>`). To back up your entire knowledge base, simply copy `~/.flashcard-master/`.
 
 ---
 
